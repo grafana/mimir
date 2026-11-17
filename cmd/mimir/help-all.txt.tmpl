@@ -1971,6 +1971,10 @@ Usage of ./cmd/mimir/mimir:
     	Period at which metadata we have not seen will remain in memory before being deleted. (default 10m0s)
   -ingester.native-histograms-ingestion-enabled
     	[experimental] Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'. (default true)
+  -ingester.native-metadata-grouped-lookup-max-series int
+    	[experimental] How many series with native resources a lookup of them by target may match in an ingester, which reads every series of each target. Past it, the lookup fails. 0 means no limit. (default 1000000)
+  -ingester.native-metadata-lookup-max-series int
+    	[experimental] How many series with native metric metadata or resources a lookup of them by series may match in an ingester. Past it, the lookup fails. 0 means no limit. (default 100000)
   -ingester.native-metric-metadata-change-window duration
     	[experimental] The window, in sample time, that -ingester.native-metric-metadata-max-changes-per-series counts the changes of a series' own metric metadata in. (default 1h)
   -ingester.native-metric-metadata-enabled

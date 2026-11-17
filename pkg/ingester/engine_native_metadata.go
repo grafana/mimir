@@ -7,15 +7,21 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 )
 
 // nativeMetadataEngine is a tenantEngine that keeps native metric metadata: the type, unit and help of each series,
 // as change points over time.
 type nativeMetadataEngine interface {
 	// nativeMetricMetadata returns the metadata of the series matching any of the matcher sets, in label order, and
-	// with a positive limit at most that many series.
-	nativeMetricMetadata(ctx context.Context, matcherSets [][]*labels.Matcher, limit int) (nativeMetadataResult, error)
+	// with a positive limit at most that many series. With a positive maxSeries, it fails with
+	// errNativeLookupTooManySeries once more series with metadata than that match.
+	nativeMetricMetadata(ctx context.Context, matcherSets [][]*labels.Matcher, limit, maxSeries int) (nativeMetadataResult, error)
 }
+
+// errNativeLookupTooManySeries is the error of a lookup of native metadata that more series matched than its cap.
+var errNativeLookupTooManySeries = store.ErrLookupTooManySeries
 
 var _ nativeMetadataEngine = seriesstoreEngine{}
 
@@ -27,6 +33,8 @@ type nativeMetadataResult struct {
 	// CoverageStart is when the metadata starts: the later of the head's min time and, as the seriesstore engine
 	// doesn't persist native metadata, the first observation since it opened.
 	CoverageStart int64
+	// SeriesVisited is how many series with metadata matched, whatever the limit let through.
+	SeriesVisited int
 }
 
 // nativeMetadataSeries is a series' metadata as change points, oldest first.
@@ -37,6 +45,9 @@ type nativeMetadataSeries struct {
 	Truncated bool
 	// Coalesced reports that changes over the seriesstore engine's limit were merged into one range.
 	Coalesced bool
+	// NewestSample is the timestamp of the series' newest sample the engine holds, which its last version lasts until,
+	// or math.MinInt64 when it holds none.
+	NewestSample int64
 }
 
 // nativeMetricMetadataVersion is a series' metric metadata from a sample time on.
@@ -45,22 +56,23 @@ type nativeMetricMetadataVersion struct {
 	Metadata      metadata.Metadata
 }
 
-func (e seriesstoreEngine) nativeMetricMetadata(ctx context.Context, matcherSets [][]*labels.Matcher, limit int) (nativeMetadataResult, error) {
-	series, limited, err := e.NativeMetricMetadata(ctx, matcherSets, limit)
+func (e seriesstoreEngine) nativeMetricMetadata(ctx context.Context, matcherSets [][]*labels.Matcher, limit, maxSeries int) (nativeMetadataResult, error) {
+	series, limited, visited, err := e.NativeMetricMetadataCapped(ctx, matcherSets, limit, maxSeries)
 	if err != nil {
-		return nativeMetadataResult{}, err
+		return nativeMetadataResult{SeriesVisited: visited}, err
 	}
 	result := nativeMetadataResult{
 		Series:        make([]nativeMetadataSeries, 0, len(series)),
 		Limited:       limited,
 		CoverageStart: e.NativeMetricMetadataCoverageStart(),
+		SeriesVisited: visited,
 	}
 	for _, s := range series {
 		versions := make([]nativeMetricMetadataVersion, 0, len(s.Versions))
 		for _, v := range s.Versions {
 			versions = append(versions, nativeMetricMetadataVersion{EffectiveFrom: v.EffectiveFrom, Metadata: v.Metadata})
 		}
-		result.Series = append(result.Series, nativeMetadataSeries{Labels: s.Labels, Versions: versions, Truncated: s.Truncated, Coalesced: s.Coalesced})
+		result.Series = append(result.Series, nativeMetadataSeries{Labels: s.Labels, Versions: versions, Truncated: s.Truncated, Coalesced: s.Coalesced, NewestSample: s.NewestSample})
 	}
 	return result, nil
 }

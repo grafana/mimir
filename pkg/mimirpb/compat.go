@@ -494,6 +494,28 @@ func MetricMetadataMetricTypeToMetricType(mt MetricMetadata_MetricType) model.Me
 	}
 }
 
+// MetricTypeToMetricMetadataMetricType converts a Prometheus metric type to our internal client's.
+func MetricTypeToMetricMetadataMetricType(mt model.MetricType) MetricMetadata_MetricType {
+	switch mt {
+	case model.MetricTypeCounter:
+		return COUNTER
+	case model.MetricTypeGauge:
+		return GAUGE
+	case model.MetricTypeHistogram:
+		return HISTOGRAM
+	case model.MetricTypeGaugeHistogram:
+		return GAUGEHISTOGRAM
+	case model.MetricTypeSummary:
+		return SUMMARY
+	case model.MetricTypeInfo:
+		return INFO
+	case model.MetricTypeStateset:
+		return STATESET
+	default:
+		return UNKNOWN
+	}
+}
+
 // isTesting is only set from tests to get special behavior to verify that custom sample encode and decode is used,
 // both when using jsoniter or standard json package.
 var isTesting = false

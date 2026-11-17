@@ -330,3 +330,21 @@ func labelMatcherToString(sb *bytes.Buffer, m *client.LabelMatcher) {
 	sb.WriteString(m.Value)
 	sb.WriteString(",}")
 }
+
+func (i *ActivityTrackerWrapper) NativeMetricMetadata(request *client.NativeMetricMetadataRequest, server client.Ingester_NativeMetricMetadataServer) error {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(server.Context(), "Ingester/NativeMetricMetadata", request)
+	})
+	defer i.tracker.Delete(ix)
+
+	return i.ing.NativeMetricMetadata(request, server)
+}
+
+func (i *ActivityTrackerWrapper) NativeResources(request *client.NativeResourcesRequest, server client.Ingester_NativeResourcesServer) error {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(server.Context(), "Ingester/NativeResources", request)
+	})
+	defer i.tracker.Delete(ix)
+
+	return i.ing.NativeResources(request, server)
+}

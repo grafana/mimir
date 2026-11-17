@@ -2087,6 +2087,544 @@ func (m *LabelMatcher) GetValue() string {
 	return ""
 }
 
+type NativeMetricMetadataRequest struct {
+	MatcherSets []*LabelMatchers `protobuf:"bytes,1,rep,name=matcher_sets,json=matcherSets,proto3" json:"matcher_sets,omitempty"`
+	// At most this many series, the first by labels, when positive.
+	Limit int64 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+}
+
+func (m *NativeMetricMetadataRequest) Reset()      { *m = NativeMetricMetadataRequest{} }
+func (*NativeMetricMetadataRequest) ProtoMessage() {}
+func (*NativeMetricMetadataRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_60f6df4f3586b478, []int{33}
+}
+func (m *NativeMetricMetadataRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *NativeMetricMetadataRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_NativeMetricMetadataRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *NativeMetricMetadataRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_NativeMetricMetadataRequest.Merge(m, src)
+}
+func (m *NativeMetricMetadataRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *NativeMetricMetadataRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_NativeMetricMetadataRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_NativeMetricMetadataRequest proto.InternalMessageInfo
+
+func (m *NativeMetricMetadataRequest) GetMatcherSets() []*LabelMatchers {
+	if m != nil {
+		return m.MatcherSets
+	}
+	return nil
+}
+
+func (m *NativeMetricMetadataRequest) GetLimit() int64 {
+	if m != nil {
+		return m.Limit
+	}
+	return 0
+}
+
+// A NativeMetricMetadataResponse is a batch of the lookup's series, in label order. The first batch has the lookup's
+// limited, coverage_start_ms and series_visited, and is sent even without series.
+type NativeMetricMetadataResponse struct {
+	Series []NativeMetricMetadataSeries `protobuf:"bytes,1,rep,name=series,proto3" json:"series"`
+	// Whether more series matched than the limit let through.
+	Limited bool `protobuf:"varint,2,opt,name=limited,proto3" json:"limited,omitempty"`
+	// When the ingester's native metadata starts, math.MinInt64 when it has no series of the tenant.
+	CoverageStartMs int64 `protobuf:"varint,3,opt,name=coverage_start_ms,json=coverageStartMs,proto3" json:"coverage_start_ms,omitempty"`
+	// How many series with native metadata matched, whatever the limit let through.
+	SeriesVisited int64 `protobuf:"varint,4,opt,name=series_visited,json=seriesVisited,proto3" json:"series_visited,omitempty"`
+}
+
+func (m *NativeMetricMetadataResponse) Reset()      { *m = NativeMetricMetadataResponse{} }
+func (*NativeMetricMetadataResponse) ProtoMessage() {}
+func (*NativeMetricMetadataResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_60f6df4f3586b478, []int{34}
+}
+func (m *NativeMetricMetadataResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *NativeMetricMetadataResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_NativeMetricMetadataResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *NativeMetricMetadataResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_NativeMetricMetadataResponse.Merge(m, src)
+}
+func (m *NativeMetricMetadataResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *NativeMetricMetadataResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_NativeMetricMetadataResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_NativeMetricMetadataResponse proto.InternalMessageInfo
+
+func (m *NativeMetricMetadataResponse) GetSeries() []NativeMetricMetadataSeries {
+	if m != nil {
+		return m.Series
+	}
+	return nil
+}
+
+func (m *NativeMetricMetadataResponse) GetLimited() bool {
+	if m != nil {
+		return m.Limited
+	}
+	return false
+}
+
+func (m *NativeMetricMetadataResponse) GetCoverageStartMs() int64 {
+	if m != nil {
+		return m.CoverageStartMs
+	}
+	return 0
+}
+
+func (m *NativeMetricMetadataResponse) GetSeriesVisited() int64 {
+	if m != nil {
+		return m.SeriesVisited
+	}
+	return 0
+}
+
+type NativeMetricMetadataSeries struct {
+	Labels []github_com_grafana_mimir_pkg_mimirpb.LabelAdapter `protobuf:"bytes,1,rep,name=labels,proto3,customtype=github.com/grafana/mimir/pkg/mimirpb.LabelAdapter" json:"labels"`
+	// The versions, oldest first.
+	Versions []NativeMetricMetadataVersion `protobuf:"bytes,2,rep,name=versions,proto3" json:"versions"`
+	// Whether the ingester's cap on versions per series evicted older ones.
+	Truncated bool `protobuf:"varint,3,opt,name=truncated,proto3" json:"truncated,omitempty"`
+	// Whether a version stands for changes over the change limit in its window, with the latest of their values.
+	Coalesced bool `protobuf:"varint,4,opt,name=coalesced,proto3" json:"coalesced,omitempty"`
+}
+
+func (m *NativeMetricMetadataSeries) Reset()      { *m = NativeMetricMetadataSeries{} }
+func (*NativeMetricMetadataSeries) ProtoMessage() {}
+func (*NativeMetricMetadataSeries) Descriptor() ([]byte, []int) {
+	return fileDescriptor_60f6df4f3586b478, []int{35}
+}
+func (m *NativeMetricMetadataSeries) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *NativeMetricMetadataSeries) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_NativeMetricMetadataSeries.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *NativeMetricMetadataSeries) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_NativeMetricMetadataSeries.Merge(m, src)
+}
+func (m *NativeMetricMetadataSeries) XXX_Size() int {
+	return m.Size()
+}
+func (m *NativeMetricMetadataSeries) XXX_DiscardUnknown() {
+	xxx_messageInfo_NativeMetricMetadataSeries.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_NativeMetricMetadataSeries proto.InternalMessageInfo
+
+func (m *NativeMetricMetadataSeries) GetVersions() []NativeMetricMetadataVersion {
+	if m != nil {
+		return m.Versions
+	}
+	return nil
+}
+
+func (m *NativeMetricMetadataSeries) GetTruncated() bool {
+	if m != nil {
+		return m.Truncated
+	}
+	return false
+}
+
+func (m *NativeMetricMetadataSeries) GetCoalesced() bool {
+	if m != nil {
+		return m.Coalesced
+	}
+	return false
+}
+
+// A NativeMetricMetadataVersion is in force over [min_time_ms, max_time_ms]: until the next version's start, or for
+// the last version, the series' newest sample.
+type NativeMetricMetadataVersion struct {
+	MinTimeMs int64                             `protobuf:"varint,1,opt,name=min_time_ms,json=minTimeMs,proto3" json:"min_time_ms,omitempty"`
+	MaxTimeMs int64                             `protobuf:"varint,2,opt,name=max_time_ms,json=maxTimeMs,proto3" json:"max_time_ms,omitempty"`
+	Type      mimirpb.MetricMetadata_MetricType `protobuf:"varint,3,opt,name=type,proto3,enum=cortexpb.MetricMetadata_MetricType" json:"type,omitempty"`
+	Unit      string                            `protobuf:"bytes,4,opt,name=unit,proto3" json:"unit,omitempty"`
+	Help      string                            `protobuf:"bytes,5,opt,name=help,proto3" json:"help,omitempty"`
+}
+
+func (m *NativeMetricMetadataVersion) Reset()      { *m = NativeMetricMetadataVersion{} }
+func (*NativeMetricMetadataVersion) ProtoMessage() {}
+func (*NativeMetricMetadataVersion) Descriptor() ([]byte, []int) {
+	return fileDescriptor_60f6df4f3586b478, []int{36}
+}
+func (m *NativeMetricMetadataVersion) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *NativeMetricMetadataVersion) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_NativeMetricMetadataVersion.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *NativeMetricMetadataVersion) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_NativeMetricMetadataVersion.Merge(m, src)
+}
+func (m *NativeMetricMetadataVersion) XXX_Size() int {
+	return m.Size()
+}
+func (m *NativeMetricMetadataVersion) XXX_DiscardUnknown() {
+	xxx_messageInfo_NativeMetricMetadataVersion.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_NativeMetricMetadataVersion proto.InternalMessageInfo
+
+func (m *NativeMetricMetadataVersion) GetMinTimeMs() int64 {
+	if m != nil {
+		return m.MinTimeMs
+	}
+	return 0
+}
+
+func (m *NativeMetricMetadataVersion) GetMaxTimeMs() int64 {
+	if m != nil {
+		return m.MaxTimeMs
+	}
+	return 0
+}
+
+func (m *NativeMetricMetadataVersion) GetType() mimirpb.MetricMetadata_MetricType {
+	if m != nil {
+		return m.Type
+	}
+	return mimirpb.UNKNOWN
+}
+
+func (m *NativeMetricMetadataVersion) GetUnit() string {
+	if m != nil {
+		return m.Unit
+	}
+	return ""
+}
+
+func (m *NativeMetricMetadataVersion) GetHelp() string {
+	if m != nil {
+		return m.Help
+	}
+	return ""
+}
+
+type NativeResourcesRequest struct {
+	MatcherSets []*LabelMatchers `protobuf:"bytes,1,rep,name=matcher_sets,json=matcherSets,proto3" json:"matcher_sets,omitempty"`
+	// The versions in force during [start_timestamp_ms, end_timestamp_ms].
+	StartTimestampMs int64 `protobuf:"varint,2,opt,name=start_timestamp_ms,json=startTimestampMs,proto3" json:"start_timestamp_ms,omitempty"`
+	EndTimestampMs   int64 `protobuf:"varint,3,opt,name=end_timestamp_ms,json=endTimestampMs,proto3" json:"end_timestamp_ms,omitempty"`
+	// At most this many series, or targets, the first by labels, when positive.
+	Limit int64 `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
+	// Whether to answer with one entry per target, its job and instance, with the versions of all its series.
+	GroupByTarget bool `protobuf:"varint,5,opt,name=group_by_target,json=groupByTarget,proto3" json:"group_by_target,omitempty"`
+}
+
+func (m *NativeResourcesRequest) Reset()      { *m = NativeResourcesRequest{} }
+func (*NativeResourcesRequest) ProtoMessage() {}
+func (*NativeResourcesRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_60f6df4f3586b478, []int{37}
+}
+func (m *NativeResourcesRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *NativeResourcesRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_NativeResourcesRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *NativeResourcesRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_NativeResourcesRequest.Merge(m, src)
+}
+func (m *NativeResourcesRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *NativeResourcesRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_NativeResourcesRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_NativeResourcesRequest proto.InternalMessageInfo
+
+func (m *NativeResourcesRequest) GetMatcherSets() []*LabelMatchers {
+	if m != nil {
+		return m.MatcherSets
+	}
+	return nil
+}
+
+func (m *NativeResourcesRequest) GetStartTimestampMs() int64 {
+	if m != nil {
+		return m.StartTimestampMs
+	}
+	return 0
+}
+
+func (m *NativeResourcesRequest) GetEndTimestampMs() int64 {
+	if m != nil {
+		return m.EndTimestampMs
+	}
+	return 0
+}
+
+func (m *NativeResourcesRequest) GetLimit() int64 {
+	if m != nil {
+		return m.Limit
+	}
+	return 0
+}
+
+func (m *NativeResourcesRequest) GetGroupByTarget() bool {
+	if m != nil {
+		return m.GroupByTarget
+	}
+	return false
+}
+
+// A NativeResourcesResponse is a batch of the lookup's series, or targets, in label order. The first batch has the
+// lookup's limited, coverage_start_ms and series_visited, and is sent even without series.
+type NativeResourcesResponse struct {
+	Series []NativeResourcesSeries `protobuf:"bytes,1,rep,name=series,proto3" json:"series"`
+	// Whether more series, or targets, matched than the limit let through.
+	Limited bool `protobuf:"varint,2,opt,name=limited,proto3" json:"limited,omitempty"`
+	// When the ingester's native resources start, math.MinInt64 when it has no series of the tenant.
+	CoverageStartMs int64 `protobuf:"varint,3,opt,name=coverage_start_ms,json=coverageStartMs,proto3" json:"coverage_start_ms,omitempty"`
+	// How many series with native resources matched, whatever the limit let through.
+	SeriesVisited int64 `protobuf:"varint,4,opt,name=series_visited,json=seriesVisited,proto3" json:"series_visited,omitempty"`
+}
+
+func (m *NativeResourcesResponse) Reset()      { *m = NativeResourcesResponse{} }
+func (*NativeResourcesResponse) ProtoMessage() {}
+func (*NativeResourcesResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_60f6df4f3586b478, []int{38}
+}
+func (m *NativeResourcesResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *NativeResourcesResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_NativeResourcesResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *NativeResourcesResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_NativeResourcesResponse.Merge(m, src)
+}
+func (m *NativeResourcesResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *NativeResourcesResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_NativeResourcesResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_NativeResourcesResponse proto.InternalMessageInfo
+
+func (m *NativeResourcesResponse) GetSeries() []NativeResourcesSeries {
+	if m != nil {
+		return m.Series
+	}
+	return nil
+}
+
+func (m *NativeResourcesResponse) GetLimited() bool {
+	if m != nil {
+		return m.Limited
+	}
+	return false
+}
+
+func (m *NativeResourcesResponse) GetCoverageStartMs() int64 {
+	if m != nil {
+		return m.CoverageStartMs
+	}
+	return 0
+}
+
+func (m *NativeResourcesResponse) GetSeriesVisited() int64 {
+	if m != nil {
+		return m.SeriesVisited
+	}
+	return 0
+}
+
+type NativeResourcesSeries struct {
+	// The series' labels, or a target's job and instance.
+	Labels []github_com_grafana_mimir_pkg_mimirpb.LabelAdapter `protobuf:"bytes,1,rep,name=labels,proto3,customtype=github.com/grafana/mimir/pkg/mimirpb.LabelAdapter" json:"labels"`
+	// The versions, oldest first, which don't overlap.
+	Versions []NativeResourceVersion `protobuf:"bytes,2,rep,name=versions,proto3" json:"versions"`
+	// Whether a version stands for changes over the ingester's limits, a range of unknown resource.
+	Coalesced bool `protobuf:"varint,3,opt,name=coalesced,proto3" json:"coalesced,omitempty"`
+}
+
+func (m *NativeResourcesSeries) Reset()      { *m = NativeResourcesSeries{} }
+func (*NativeResourcesSeries) ProtoMessage() {}
+func (*NativeResourcesSeries) Descriptor() ([]byte, []int) {
+	return fileDescriptor_60f6df4f3586b478, []int{39}
+}
+func (m *NativeResourcesSeries) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *NativeResourcesSeries) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_NativeResourcesSeries.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *NativeResourcesSeries) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_NativeResourcesSeries.Merge(m, src)
+}
+func (m *NativeResourcesSeries) XXX_Size() int {
+	return m.Size()
+}
+func (m *NativeResourcesSeries) XXX_DiscardUnknown() {
+	xxx_messageInfo_NativeResourcesSeries.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_NativeResourcesSeries proto.InternalMessageInfo
+
+func (m *NativeResourcesSeries) GetVersions() []NativeResourceVersion {
+	if m != nil {
+		return m.Versions
+	}
+	return nil
+}
+
+func (m *NativeResourcesSeries) GetCoalesced() bool {
+	if m != nil {
+		return m.Coalesced
+	}
+	return false
+}
+
+// A NativeResourceVersion is in force over [min_time_ms, max_time_ms]: until the next version's start, or for the last
+// version, the newest sample of the series, or of the target's series.
+type NativeResourceVersion struct {
+	MinTimeMs   int64             `protobuf:"varint,1,opt,name=min_time_ms,json=minTimeMs,proto3" json:"min_time_ms,omitempty"`
+	MaxTimeMs   int64             `protobuf:"varint,2,opt,name=max_time_ms,json=maxTimeMs,proto3" json:"max_time_ms,omitempty"`
+	Identifying map[string]string `protobuf:"bytes,3,rep,name=identifying,proto3" json:"identifying,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+	Descriptive map[string]string `protobuf:"bytes,4,rep,name=descriptive,proto3" json:"descriptive,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+}
+
+func (m *NativeResourceVersion) Reset()      { *m = NativeResourceVersion{} }
+func (*NativeResourceVersion) ProtoMessage() {}
+func (*NativeResourceVersion) Descriptor() ([]byte, []int) {
+	return fileDescriptor_60f6df4f3586b478, []int{40}
+}
+func (m *NativeResourceVersion) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *NativeResourceVersion) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_NativeResourceVersion.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *NativeResourceVersion) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_NativeResourceVersion.Merge(m, src)
+}
+func (m *NativeResourceVersion) XXX_Size() int {
+	return m.Size()
+}
+func (m *NativeResourceVersion) XXX_DiscardUnknown() {
+	xxx_messageInfo_NativeResourceVersion.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_NativeResourceVersion proto.InternalMessageInfo
+
+func (m *NativeResourceVersion) GetMinTimeMs() int64 {
+	if m != nil {
+		return m.MinTimeMs
+	}
+	return 0
+}
+
+func (m *NativeResourceVersion) GetMaxTimeMs() int64 {
+	if m != nil {
+		return m.MaxTimeMs
+	}
+	return 0
+}
+
+func (m *NativeResourceVersion) GetIdentifying() map[string]string {
+	if m != nil {
+		return m.Identifying
+	}
+	return nil
+}
+
+func (m *NativeResourceVersion) GetDescriptive() map[string]string {
+	if m != nil {
+		return m.Descriptive
+	}
+	return nil
+}
+
 func init() {
 	proto.RegisterEnum("cortex.CountMethod", CountMethod_name, CountMethod_value)
 	proto.RegisterEnum("cortex.SearchOrdering", SearchOrdering_name, SearchOrdering_value)
@@ -2128,145 +2666,182 @@ func init() {
 	proto.RegisterType((*Chunk)(nil), "cortex.Chunk")
 	proto.RegisterType((*LabelMatchers)(nil), "cortex.LabelMatchers")
 	proto.RegisterType((*LabelMatcher)(nil), "cortex.LabelMatcher")
+	proto.RegisterType((*NativeMetricMetadataRequest)(nil), "cortex.NativeMetricMetadataRequest")
+	proto.RegisterType((*NativeMetricMetadataResponse)(nil), "cortex.NativeMetricMetadataResponse")
+	proto.RegisterType((*NativeMetricMetadataSeries)(nil), "cortex.NativeMetricMetadataSeries")
+	proto.RegisterType((*NativeMetricMetadataVersion)(nil), "cortex.NativeMetricMetadataVersion")
+	proto.RegisterType((*NativeResourcesRequest)(nil), "cortex.NativeResourcesRequest")
+	proto.RegisterType((*NativeResourcesResponse)(nil), "cortex.NativeResourcesResponse")
+	proto.RegisterType((*NativeResourcesSeries)(nil), "cortex.NativeResourcesSeries")
+	proto.RegisterType((*NativeResourceVersion)(nil), "cortex.NativeResourceVersion")
+	proto.RegisterMapType((map[string]string)(nil), "cortex.NativeResourceVersion.DescriptiveEntry")
+	proto.RegisterMapType((map[string]string)(nil), "cortex.NativeResourceVersion.IdentifyingEntry")
 }
 
 func init() { proto.RegisterFile("ingester.proto", fileDescriptor_60f6df4f3586b478) }
 
 var fileDescriptor_60f6df4f3586b478 = []byte{
-	// 2125 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xcc, 0x59, 0xcd, 0x6f, 0x1b, 0xc7,
-	0x15, 0xe7, 0x90, 0x4b, 0x8a, 0x7c, 0xa4, 0xe4, 0xd5, 0x50, 0x12, 0x69, 0x2a, 0xa6, 0x94, 0x2d,
-	0x9c, 0x28, 0xae, 0x2b, 0x7f, 0x36, 0x75, 0xdc, 0x14, 0x28, 0x45, 0x51, 0x32, 0x19, 0x51, 0xb4,
-	0x97, 0x94, 0xd3, 0x18, 0x08, 0x16, 0x2b, 0x72, 0x44, 0x2d, 0x44, 0x2e, 0xd9, 0xdd, 0x65, 0x6a,
-	0xe9, 0x54, 0xf4, 0xd0, 0x5e, 0x0b, 0xf4, 0xd8, 0x5e, 0x0a, 0xf4, 0x50, 0x14, 0xe8, 0xad, 0x68,
-	0x2f, 0xfd, 0x03, 0x7c, 0x29, 0xe0, 0x43, 0x0f, 0x41, 0x0f, 0x46, 0x2d, 0x5f, 0x7a, 0xcc, 0x9f,
-	0x50, 0xcc, 0xc7, 0x2e, 0x77, 0xf9, 0xa1, 0x8f, 0x00, 0x36, 0x72, 0xd2, 0xce, 0xfb, 0x9a, 0xf7,
-	0x7e, 0x7c, 0xf3, 0xde, 0x9b, 0x11, 0xcc, 0x19, 0x66, 0x9b, 0xd8, 0x0e, 0xb1, 0xd6, 0xfb, 0x56,
-	0xcf, 0xe9, 0xe1, 0x58, 0xb3, 0x67, 0x39, 0xe4, 0x79, 0xee, 0x76, 0xdb, 0x70, 0x0e, 0x07, 0xfb,
-	0xeb, 0xcd, 0x5e, 0xf7, 0x56, 0xdb, 0xd2, 0x0f, 0x74, 0x53, 0xbf, 0xd5, 0x35, 0xba, 0x86, 0x75,
-	0xab, 0x7f, 0xd4, 0xe6, 0x5f, 0xfd, 0x7d, 0xfe, 0x97, 0x6b, 0xe6, 0x16, 0xda, 0xbd, 0x76, 0x8f,
-	0x7d, 0xde, 0xa2, 0x5f, 0x9c, 0xaa, 0xfc, 0x1a, 0x41, 0x6e, 0x47, 0xdf, 0x27, 0x9d, 0x5d, 0xbd,
-	0x4b, 0xec, 0x82, 0xd9, 0x7a, 0xaa, 0x77, 0x06, 0xc4, 0x56, 0xc9, 0xcf, 0x07, 0xc4, 0x76, 0xf0,
-	0x6d, 0x88, 0x77, 0x75, 0xa7, 0x79, 0x48, 0x2c, 0x3b, 0x8b, 0x56, 0x23, 0x6b, 0xc9, 0xbb, 0x0b,
-	0xeb, 0xdc, 0x83, 0x75, 0xa6, 0x55, 0xe5, 0x4c, 0xd5, 0x93, 0xc2, 0x1f, 0x43, 0xaa, 0xd9, 0x1b,
-	0x98, 0x8e, 0xd6, 0x25, 0xce, 0x61, 0xaf, 0x95, 0x0d, 0xaf, 0xa2, 0xb5, 0xb9, 0xbb, 0x69, 0x57,
-	0xab, 0x48, 0x79, 0x55, 0xc6, 0x52, 0x93, 0xcd, 0xe1, 0x42, 0x79, 0x04, 0xcb, 0x13, 0xfd, 0xb0,
-	0xfb, 0x3d, 0xd3, 0x26, 0xf8, 0x23, 0x88, 0x1a, 0x0e, 0xe9, 0xba, 0x5e, 0xa4, 0x03, 0x5e, 0x08,
-	0x59, 0x2e, 0xa1, 0x6c, 0x42, 0xd2, 0x47, 0xc5, 0xd7, 0x00, 0x3a, 0x74, 0xa9, 0x99, 0x7a, 0x97,
-	0x64, 0xd1, 0x2a, 0x5a, 0x4b, 0xa8, 0x89, 0x8e, 0xbb, 0x15, 0x5e, 0x82, 0xd8, 0x57, 0x4c, 0x30,
-	0x1b, 0x5e, 0x8d, 0xac, 0x25, 0x54, 0xb1, 0x52, 0xfe, 0x82, 0xe0, 0x9a, 0xcf, 0x4c, 0x51, 0xb7,
-	0x5a, 0x86, 0xa9, 0x77, 0x0c, 0xe7, 0xd8, 0xc5, 0x66, 0x05, 0x92, 0x43, 0xc3, 0xdc, 0xb1, 0x84,
-	0x0a, 0x9e, 0x65, 0x3b, 0x00, 0x5e, 0xf8, 0x5b, 0x81, 0x17, 0xb9, 0x20, 0x78, 0x7b, 0x90, 0x9f,
-	0xe6, 0xab, 0xc0, 0xef, 0x5e, 0x10, 0xbf, 0x6b, 0xe3, 0xf8, 0xd5, 0x89, 0x65, 0x10, 0x9b, 0x6d,
-	0xe1, 0x22, 0xf9, 0x0a, 0xc1, 0xe2, 0x44, 0x81, 0xf3, 0x40, 0xd5, 0x01, 0x73, 0x36, 0x03, 0x53,
-	0xb3, 0x99, 0xa6, 0xc0, 0xe0, 0xde, 0x99, 0x5b, 0x8f, 0x51, 0x4b, 0xa6, 0x63, 0x1d, 0xab, 0x72,
-	0x67, 0x84, 0x9c, 0x2b, 0xc2, 0xe2, 0x44, 0x51, 0x2c, 0x43, 0xe4, 0x88, 0x1c, 0x0b, 0x9f, 0xe8,
-	0x27, 0x5e, 0x80, 0x28, 0xf3, 0x83, 0xe5, 0xa2, 0xa4, 0xf2, 0xc5, 0xc3, 0xf0, 0x03, 0xa4, 0xbc,
-	0x41, 0x90, 0x7a, 0x32, 0x20, 0x96, 0xf7, 0x9b, 0xde, 0x04, 0x6c, 0x3b, 0xba, 0xe5, 0x68, 0x8e,
-	0xd1, 0x25, 0xb6, 0xa3, 0x77, 0xfb, 0x1a, 0xc3, 0x0c, 0xad, 0x45, 0x54, 0x99, 0x71, 0x1a, 0x2e,
-	0xa3, 0x6a, 0xe3, 0x35, 0x90, 0x89, 0xd9, 0x0a, 0xca, 0x86, 0x99, 0xec, 0x1c, 0x31, 0x5b, 0x7e,
-	0x49, 0x7f, 0x2a, 0x44, 0x2e, 0x94, 0x0a, 0x3f, 0x81, 0x65, 0xdb, 0xb1, 0x88, 0xde, 0x35, 0xcc,
-	0xb6, 0xd6, 0x3c, 0x1c, 0x98, 0x47, 0xb6, 0xb6, 0x4f, 0x99, 0x9a, 0x6d, 0x9c, 0x90, 0x6c, 0x8b,
-	0x85, 0x92, 0xf5, 0x44, 0x8a, 0x4c, 0x62, 0x83, 0x0a, 0xd4, 0x8d, 0x13, 0x52, 0x91, 0xe2, 0x92,
-	0x1c, 0xad, 0x48, 0xf1, 0xa8, 0x1c, 0x53, 0xfe, 0x88, 0x60, 0xa1, 0xf4, 0x9c, 0x74, 0xfb, 0x1d,
-	0xdd, 0x7a, 0x27, 0xd1, 0xde, 0x19, 0x8b, 0x76, 0x71, 0x52, 0xb4, 0xf6, 0x30, 0x5c, 0xe5, 0x9f,
-	0x08, 0xd2, 0x85, 0xa6, 0x63, 0x7c, 0x25, 0x7e, 0xcb, 0x6f, 0x5f, 0x80, 0x7e, 0x0c, 0x92, 0x73,
-	0xdc, 0x27, 0xa2, 0xf0, 0x7c, 0xe8, 0x4a, 0x4f, 0x30, 0xbe, 0x2e, 0xfe, 0x36, 0x8e, 0xfb, 0x44,
-	0x65, 0x4a, 0xca, 0xc7, 0x90, 0xf4, 0x11, 0x31, 0x40, 0xac, 0x5e, 0x52, 0xcb, 0xa5, 0xba, 0x1c,
-	0xc2, 0xcb, 0x90, 0xd9, 0x2d, 0x34, 0xca, 0x4f, 0x4b, 0xda, 0xa3, 0x72, 0xbd, 0x51, 0xdb, 0x56,
-	0x0b, 0x55, 0x4d, 0x30, 0x91, 0xf2, 0xa7, 0x30, 0xa4, 0xea, 0x44, 0xb7, 0x9a, 0x87, 0x5b, 0x46,
-	0xc7, 0x21, 0x16, 0xcd, 0x39, 0x87, 0x58, 0x5d, 0xb7, 0x2c, 0xf0, 0x05, 0xfe, 0x08, 0xe4, 0xa6,
-	0x6e, 0x13, 0xcd, 0x30, 0x6d, 0x62, 0xda, 0x06, 0xf5, 0x88, 0xf9, 0x19, 0x57, 0xaf, 0x50, 0x7a,
-	0x79, 0x48, 0xc6, 0x3f, 0x82, 0xf8, 0xc1, 0xe0, 0xe4, 0x44, 0xd3, 0x3b, 0x6d, 0x51, 0x06, 0xde,
-	0x73, 0x43, 0xf1, 0x6f, 0xb4, 0xbe, 0x35, 0x38, 0x39, 0x29, 0x74, 0xda, 0xea, 0xcc, 0x01, 0xff,
-	0xc0, 0xd7, 0x61, 0x8e, 0x29, 0x3a, 0x87, 0x16, 0xb1, 0x0f, 0x7b, 0x9d, 0x56, 0x56, 0x5a, 0x45,
-	0x6b, 0x51, 0x75, 0x96, 0x52, 0x1b, 0x2e, 0x51, 0xb1, 0x61, 0x46, 0xa8, 0xe2, 0x2c, 0x2c, 0x6c,
-	0xed, 0x3d, 0x7b, 0xa6, 0x15, 0x76, 0xb6, 0xb5, 0xfa, 0xde, 0x46, 0xbd, 0xf4, 0x64, 0xaf, 0xb4,
-	0x5b, 0x2c, 0xc9, 0x21, 0x7c, 0x15, 0x16, 0x3d, 0x4e, 0xa5, 0xa0, 0xd6, 0xb4, 0xcf, 0xcb, 0xbb,
-	0x9f, 0xed, 0x94, 0x54, 0x19, 0x51, 0x38, 0x02, 0x4a, 0x0d, 0xb5, 0xbc, 0xbb, 0xad, 0xed, 0x94,
-	0xb6, 0x1a, 0x72, 0x18, 0x2f, 0x01, 0x1e, 0x67, 0xca, 0x11, 0xe5, 0xf7, 0x61, 0xc8, 0x70, 0xef,
-	0x87, 0xb5, 0xfe, 0xbb, 0x77, 0xf4, 0x6e, 0x42, 0xec, 0x80, 0x81, 0xcb, 0x90, 0xf3, 0xc9, 0xfb,
-	0x81, 0x57, 0x85, 0x0c, 0xbe, 0x0b, 0xf1, 0x9e, 0xd5, 0x22, 0x96, 0x61, 0xb6, 0xb3, 0x51, 0xf6,
-	0x43, 0x2d, 0x05, 0xe5, 0x6b, 0x82, 0xab, 0x7a, 0x72, 0x34, 0x3b, 0x3a, 0x46, 0xd7, 0x70, 0xb2,
-	0x31, 0xe6, 0x32, 0x5f, 0x28, 0x7f, 0x0f, 0x43, 0xd6, 0x87, 0x4e, 0xb0, 0x13, 0xbf, 0x2d, 0x78,
-	0x30, 0x48, 0xac, 0x86, 0x47, 0x58, 0xbd, 0x64, 0xdf, 0x01, 0xc8, 0xa4, 0x4b, 0x42, 0x16, 0xbd,
-	0x24, 0x64, 0xb1, 0xcb, 0x42, 0x36, 0xe3, 0x83, 0xac, 0x22, 0xc5, 0xe3, 0x72, 0x42, 0xf9, 0x2b,
-	0x82, 0x79, 0xae, 0xa8, 0x12, 0x7b, 0xd0, 0x71, 0x58, 0x19, 0xc4, 0x3f, 0x85, 0x19, 0x8b, 0x2d,
-	0xdd, 0xca, 0xb1, 0x1a, 0xdc, 0xc4, 0x27, 0xbb, 0x2e, 0xbe, 0xa5, 0x17, 0xaf, 0x56, 0x42, 0xaa,
-	0xab, 0x86, 0x73, 0x10, 0xff, 0x85, 0x6e, 0x99, 0x86, 0xd9, 0x76, 0xa7, 0x03, 0x6f, 0x9d, 0x7b,
-	0x08, 0x31, 0xae, 0x34, 0x6c, 0x2f, 0xbc, 0xe5, 0xf0, 0x05, 0xa5, 0xda, 0xcd, 0x9e, 0xc5, 0xcf,
-	0x37, 0x52, 0xf9, 0xa2, 0x22, 0xc5, 0x23, 0xb2, 0xa4, 0xfc, 0x2a, 0x0c, 0x69, 0x56, 0x88, 0xeb,
-	0xac, 0x7c, 0x7b, 0x4d, 0xba, 0x02, 0xf2, 0xb0, 0xe6, 0x8b, 0xa6, 0xc9, 0x53, 0xf6, 0xaa, 0xeb,
-	0xba, 0x4f, 0x8d, 0xd7, 0x32, 0xe1, 0xf3, 0x15, 0x4f, 0x91, 0x93, 0xf1, 0x7d, 0xc8, 0x18, 0xb6,
-	0x46, 0x93, 0xa0, 0x77, 0x20, 0x6c, 0x69, 0x5c, 0x86, 0x65, 0x75, 0x5c, 0x4d, 0x1b, 0x76, 0xc9,
-	0x6c, 0xd5, 0x0e, 0xb8, 0x3c, 0x37, 0x89, 0xbf, 0x84, 0xcc, 0xa8, 0x07, 0xa2, 0xf9, 0x64, 0xa3,
-	0xcc, 0x91, 0x95, 0xa9, 0x8e, 0x88, 0x0e, 0xc4, 0xdd, 0x59, 0x1c, 0x71, 0x87, 0x33, 0x2b, 0x52,
-	0x1c, 0xc9, 0xe1, 0x8a, 0x14, 0x0f, 0xcb, 0x11, 0xe5, 0x0f, 0x08, 0xe6, 0xc7, 0x8c, 0xe0, 0x03,
-	0x88, 0xb1, 0x56, 0x3f, 0x3a, 0xe8, 0xf5, 0xf7, 0x79, 0xea, 0x3d, 0xd6, 0x0d, 0x6b, 0xe3, 0x13,
-	0xba, 0xc7, 0x7f, 0x5e, 0xad, 0xdc, 0xb9, 0xc8, 0x10, 0xcc, 0xf5, 0x0a, 0x2d, 0xbd, 0xcf, 0x52,
-	0x90, 0x5b, 0xa7, 0xc3, 0x1b, 0x8b, 0x4b, 0x63, 0x63, 0x94, 0x38, 0x1b, 0xc0, 0x48, 0x6c, 0x0e,
-	0x51, 0x0c, 0xc8, 0x4c, 0x09, 0x11, 0xbf, 0x0f, 0x29, 0x01, 0x8d, 0x61, 0xb6, 0xc8, 0x73, 0xf6,
-	0xbb, 0x4b, 0x6a, 0x92, 0xd3, 0xca, 0x94, 0x84, 0xbf, 0x0f, 0x31, 0x01, 0x1b, 0x1f, 0x7a, 0x66,
-	0xbd, 0x11, 0x8e, 0x52, 0x05, 0x48, 0x42, 0x44, 0xa9, 0xc3, 0xe2, 0x48, 0x7b, 0x16, 0xf9, 0xf0,
-	0x10, 0x80, 0x9d, 0x60, 0x9e, 0x09, 0xc1, 0xf6, 0xd7, 0xdf, 0x5f, 0xa7, 0xc7, 0x38, 0x90, 0x04,
-	0x3e, 0x69, 0xe5, 0xdf, 0x08, 0xf0, 0x84, 0x32, 0x72, 0xce, 0xe0, 0x36, 0xb9, 0xca, 0x84, 0x2f,
-	0x51, 0x65, 0x22, 0xe7, 0x4e, 0x04, 0xbc, 0xa8, 0x9e, 0x37, 0x11, 0x0c, 0x0f, 0x7c, 0xd4, 0x5f,
-	0x23, 0x1f, 0x40, 0x3a, 0x10, 0x95, 0x40, 0xea, 0x7d, 0x48, 0xf9, 0x06, 0x4e, 0xb7, 0xeb, 0x26,
-	0x87, 0x53, 0xa3, 0xad, 0xfc, 0x0d, 0xc1, 0xfc, 0xbb, 0xeb, 0x3a, 0xc1, 0x11, 0xe8, 0x72, 0x01,
-	0x4b, 0xfe, 0x80, 0x7f, 0x08, 0xd8, 0xef, 0xb5, 0x88, 0xf7, 0xbc, 0xbb, 0x87, 0x52, 0x01, 0x79,
-	0xcf, 0x26, 0x56, 0xdd, 0xd1, 0x1d, 0x2f, 0xd6, 0xd1, 0xdb, 0x05, 0xba, 0xe0, 0xed, 0xe2, 0x1f,
-	0x08, 0xe6, 0x7d, 0xc6, 0x84, 0x0b, 0xd7, 0xdd, 0xbb, 0xa9, 0xd1, 0x33, 0x35, 0x4b, 0x77, 0x78,
-	0x36, 0x21, 0x75, 0xd6, 0xa3, 0xaa, 0xba, 0x43, 0x68, 0xc2, 0x99, 0x83, 0xee, 0xf0, 0x0a, 0x40,
-	0x8f, 0x4a, 0xc2, 0x1c, 0xb8, 0xe7, 0xfd, 0x26, 0x60, 0xbd, 0x6f, 0x68, 0x23, 0x96, 0x22, 0xcc,
-	0x92, 0xac, 0xf7, 0x8d, 0x72, 0xc0, 0xd8, 0x3a, 0xa4, 0xad, 0x41, 0x87, 0x8c, 0x8a, 0x4b, 0x4c,
-	0x7c, 0x9e, 0xb2, 0x02, 0xf2, 0xca, 0x97, 0x90, 0xa6, 0x8e, 0x97, 0x37, 0x83, 0xae, 0x67, 0x60,
-	0x66, 0x60, 0x13, 0x4b, 0x33, 0x5a, 0xe2, 0x04, 0xc4, 0xe8, 0xb2, 0xdc, 0xc2, 0x3f, 0x00, 0xa9,
-	0xa5, 0x3b, 0x3a, 0x73, 0xd3, 0x57, 0x74, 0xc7, 0x82, 0x57, 0x99, 0x98, 0xb2, 0x0d, 0x98, 0xb2,
-	0xec, 0xa0, 0xf5, 0x3b, 0x10, 0xb5, 0x29, 0x41, 0x1c, 0xd8, 0x65, 0xbf, 0x95, 0x11, 0x4f, 0x54,
-	0x2e, 0xa9, 0xbc, 0x40, 0x90, 0xaf, 0x12, 0xc7, 0x32, 0x9a, 0xf6, 0x56, 0xcf, 0x0a, 0x26, 0xc8,
-	0x5b, 0x4e, 0xd4, 0x07, 0x90, 0x72, 0x33, 0x50, 0xb3, 0x89, 0x73, 0xf6, 0xbc, 0x9e, 0x74, 0x45,
-	0xeb, 0xc4, 0x99, 0x92, 0xaf, 0x9f, 0xc1, 0xca, 0xd4, 0x48, 0x04, 0x40, 0x6b, 0x10, 0xeb, 0x32,
-	0x11, 0x81, 0x90, 0x3c, 0x2c, 0x69, 0x5c, 0x55, 0x15, 0x7c, 0xe5, 0x77, 0x08, 0x96, 0x84, 0xb5,
-	0x2a, 0x71, 0x74, 0x0a, 0xba, 0x8b, 0x87, 0xb7, 0x3b, 0x85, 0x60, 0x5e, 0xec, 0x4e, 0xe3, 0x66,
-	0x1f, 0x5a, 0x9f, 0x58, 0x9a, 0xd8, 0x24, 0xcc, 0x04, 0xe6, 0x18, 0xfd, 0x31, 0xb1, 0xb8, 0x3d,
-	0x7a, 0xef, 0x17, 0x7c, 0x3e, 0xf9, 0x88, 0x15, 0xad, 0x24, 0xfc, 0x4b, 0x1c, 0x2d, 0x89, 0x57,
-	0x12, 0x4e, 0xe3, 0x67, 0xab, 0x06, 0x99, 0x31, 0xa7, 0x44, 0x68, 0xf7, 0x21, 0xde, 0x15, 0x34,
-	0x11, 0x5c, 0x76, 0x34, 0x38, 0x4f, 0xc7, 0x93, 0x54, 0x9a, 0xb0, 0x10, 0xbc, 0x9e, 0x5c, 0x16,
-	0x28, 0xea, 0xf5, 0xfe, 0xa0, 0x79, 0x44, 0x1c, 0xaf, 0x9f, 0x45, 0x68, 0x4b, 0xe2, 0x34, 0xde,
-	0xd0, 0xfe, 0x85, 0x20, 0xca, 0xba, 0xcf, 0x5b, 0x4b, 0xa5, 0x1c, 0xc4, 0x89, 0xd9, 0xec, 0xb5,
-	0xe8, 0x58, 0x17, 0x61, 0x77, 0x0e, 0x6f, 0x8d, 0x1f, 0x8b, 0x93, 0x45, 0x73, 0x25, 0xb5, 0xf1,
-	0xa9, 0x68, 0xe0, 0xf7, 0x2f, 0xd4, 0xc0, 0xf7, 0x4c, 0x5b, 0x3f, 0x20, 0x1b, 0xc7, 0x0e, 0xa9,
-	0x77, 0x8c, 0xa6, 0x7b, 0xf8, 0x0a, 0x30, 0x1b, 0x48, 0xaf, 0xcb, 0x5f, 0x15, 0x15, 0x0d, 0x52,
-	0x7e, 0x0e, 0xbe, 0x2e, 0xae, 0x8e, 0xbc, 0x30, 0xce, 0xbb, 0xda, 0x8c, 0x3d, 0xbc, 0x24, 0x7a,
-	0x23, 0x73, 0xd8, 0x37, 0x32, 0x7b, 0x43, 0x60, 0xc4, 0x37, 0x04, 0xde, 0x58, 0x83, 0xa4, 0xaf,
-	0xaa, 0xe2, 0x59, 0x48, 0x94, 0x77, 0xb5, 0x6a, 0xa9, 0x5a, 0x53, 0xbf, 0x90, 0x43, 0xf4, 0x76,
-	0x59, 0x28, 0xd2, 0x1b, 0xa5, 0x8c, 0x6e, 0x3c, 0x83, 0xb9, 0xe0, 0xe8, 0x4b, 0xef, 0x50, 0x35,
-	0x75, 0xb3, 0xa4, 0x6a, 0x1b, 0x5f, 0x68, 0x4f, 0x0b, 0x3b, 0x7b, 0x25, 0xad, 0x50, 0x2f, 0xca,
-	0x21, 0x9c, 0x81, 0xf4, 0x08, 0x7d, 0xb3, 0x54, 0x2f, 0xca, 0x28, 0xc0, 0xa8, 0x17, 0x6b, 0xaa,
-	0x60, 0x84, 0x6f, 0x54, 0x20, 0xe1, 0x85, 0x80, 0x13, 0x10, 0x2d, 0x3d, 0xd9, 0x2b, 0xec, 0xc8,
-	0x21, 0xea, 0xce, 0x6e, 0xad, 0xa1, 0xf1, 0x25, 0xc2, 0x57, 0x20, 0xa9, 0x96, 0xb6, 0x4b, 0x3f,
-	0xd3, 0xaa, 0x85, 0x46, 0xf1, 0x91, 0x1c, 0xc6, 0x18, 0xe6, 0x38, 0x61, 0xb7, 0x26, 0x68, 0x91,
-	0xbb, 0xbf, 0x49, 0x40, 0xbc, 0x2c, 0x9e, 0x24, 0xf1, 0x27, 0x20, 0x3d, 0x1e, 0xd8, 0x87, 0x78,
-	0x69, 0x98, 0x97, 0x9f, 0x5b, 0x86, 0x43, 0xc4, 0x19, 0xcd, 0x65, 0xc6, 0xe8, 0x3c, 0xb1, 0x95,
-	0x10, 0xde, 0x84, 0xa4, 0x6f, 0xbc, 0xc2, 0x0b, 0x81, 0xb1, 0xd2, 0xd5, 0x5f, 0x9e, 0x30, 0x6c,
-	0x0e, 0x6d, 0xdc, 0x46, 0xb8, 0x06, 0x73, 0x8c, 0xe5, 0x8e, 0x4f, 0x36, 0xf6, 0x2e, 0xc9, 0x93,
-	0x1e, 0x3c, 0x72, 0xd7, 0xa6, 0x70, 0x3d, 0xb7, 0x1e, 0x05, 0xdf, 0x0e, 0x73, 0x93, 0x9e, 0x19,
-	0x47, 0x9d, 0x9b, 0x30, 0x8f, 0x28, 0x21, 0x5c, 0x02, 0x18, 0xf6, 0x6d, 0x7c, 0x35, 0x20, 0xec,
-	0x9f, 0x40, 0x72, 0xb9, 0x49, 0x2c, 0xcf, 0xcc, 0x06, 0x24, 0xbc, 0xee, 0x83, 0xb3, 0x13, 0x1a,
-	0x12, 0x37, 0x32, 0xbd, 0x55, 0x29, 0x21, 0xbc, 0x05, 0xa9, 0x42, 0xa7, 0x73, 0x11, 0x33, 0x39,
-	0x3f, 0xc7, 0x1e, 0xb5, 0xd3, 0x81, 0xcc, 0x94, 0xd2, 0x8e, 0x3f, 0xf0, 0xce, 0xca, 0x99, 0x5d,
-	0x2c, 0xf7, 0xe1, 0xb9, 0x72, 0xde, 0x6e, 0x0d, 0xb8, 0x32, 0x52, 0x65, 0x71, 0x7e, 0x44, 0x7b,
-	0xa4, 0x27, 0xe4, 0x56, 0xa6, 0xf2, 0x3d, 0xab, 0xfb, 0x90, 0x1e, 0xe2, 0xec, 0x3d, 0x33, 0x63,
-	0x65, 0xfc, 0x47, 0x18, 0x7d, 0x0b, 0xcf, 0x7d, 0xef, 0x4c, 0x19, 0x5f, 0x56, 0x1e, 0xc1, 0xd2,
-	0xe4, 0xd7, 0x58, 0x7c, 0x7d, 0x42, 0xce, 0x8c, 0xbf, 0x2c, 0xe7, 0x3e, 0x38, 0x4f, 0xcc, 0xb7,
-	0x59, 0x15, 0x52, 0xfe, 0xde, 0x81, 0x97, 0xcf, 0x78, 0xf0, 0xca, 0xbd, 0x37, 0x99, 0xe9, 0x33,
-	0xa7, 0x82, 0x3c, 0xfa, 0x40, 0x83, 0x57, 0x82, 0xf7, 0xe6, 0xf1, 0x14, 0xbe, 0x3a, 0xf5, 0x62,
-	0xcd, 0x6c, 0x36, 0x60, 0xde, 0xa7, 0x29, 0x10, 0x5f, 0x9d, 0x60, 0x34, 0x88, 0xf7, 0xd9, 0x56,
-	0x37, 0x3e, 0x7d, 0xf9, 0x3a, 0x1f, 0xfa, 0xfa, 0x75, 0x3e, 0xf4, 0xcd, 0xeb, 0x3c, 0xfa, 0xe5,
-	0x69, 0x1e, 0xfd, 0xf9, 0x34, 0x8f, 0x5e, 0x9c, 0xe6, 0xd1, 0xcb, 0xd3, 0x3c, 0xfa, 0xef, 0x69,
-	0x1e, 0xfd, 0xef, 0x34, 0x1f, 0xfa, 0xe6, 0x34, 0x8f, 0x7e, 0xfb, 0x26, 0x1f, 0x7a, 0xf9, 0x26,
-	0x1f, 0xfa, 0xfa, 0x4d, 0x3e, 0xf4, 0x2c, 0xd6, 0xec, 0x18, 0xc4, 0x74, 0xf6, 0x63, 0xec, 0xdf,
-	0x1f, 0xf7, 0xfe, 0x3f, 0x00, 0xcd, 0x6c, 0x13, 0x23, 0x60, 0x19, 0x00, 0x00,
+	// 2552 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xcc, 0x3a, 0x49, 0x6c, 0x1b, 0xd7,
+	0xd9, 0x1c, 0x6e, 0x22, 0x3f, 0x6a, 0x19, 0x3d, 0x6d, 0x34, 0x65, 0x53, 0xca, 0xe4, 0x77, 0xa2,
+	0xf8, 0x4f, 0xe5, 0xb5, 0x89, 0xe3, 0xa4, 0x6d, 0x28, 0x89, 0xb2, 0xa9, 0x88, 0x92, 0x3d, 0xa4,
+	0x94, 0xc6, 0x40, 0x30, 0x18, 0x91, 0x4f, 0xd4, 0xc0, 0xe4, 0x90, 0x9d, 0x37, 0x74, 0x2d, 0x9d,
+	0x8a, 0x1e, 0xda, 0x6b, 0x81, 0x1e, 0xdb, 0x4b, 0x81, 0x1e, 0x8a, 0x02, 0xbd, 0x15, 0xed, 0xa5,
+	0xe8, 0xa5, 0x40, 0xe1, 0x4b, 0x00, 0x1f, 0x7a, 0x08, 0x7a, 0x30, 0x6a, 0xf9, 0x92, 0x63, 0xee,
+	0xbd, 0x14, 0x6f, 0x99, 0x95, 0x43, 0x2d, 0x09, 0xec, 0xf6, 0xa4, 0xf7, 0xbe, 0xed, 0x7d, 0xef,
+	0xe3, 0xb7, 0xbe, 0x11, 0x8c, 0x1b, 0x66, 0x0b, 0x13, 0x1b, 0x5b, 0xcb, 0x3d, 0xab, 0x6b, 0x77,
+	0x51, 0xba, 0xd1, 0xb5, 0x6c, 0xfc, 0xa4, 0x70, 0xad, 0x65, 0xd8, 0x07, 0xfd, 0xbd, 0xe5, 0x46,
+	0xb7, 0x73, 0xb5, 0x65, 0xe9, 0xfb, 0xba, 0xa9, 0x5f, 0xed, 0x18, 0x1d, 0xc3, 0xba, 0xda, 0x7b,
+	0xd4, 0xe2, 0xab, 0xde, 0x1e, 0xff, 0xcb, 0x39, 0x0b, 0xd3, 0xad, 0x6e, 0xab, 0xcb, 0x96, 0x57,
+	0xe9, 0x8a, 0x43, 0x95, 0x9f, 0x49, 0x50, 0xd8, 0xd4, 0xf7, 0x70, 0x7b, 0x4b, 0xef, 0x60, 0x52,
+	0x32, 0x9b, 0xbb, 0x7a, 0xbb, 0x8f, 0x89, 0x8a, 0x7f, 0xd4, 0xc7, 0xc4, 0x46, 0xd7, 0x20, 0xd3,
+	0xd1, 0xed, 0xc6, 0x01, 0xb6, 0x48, 0x5e, 0x5a, 0x4c, 0x2c, 0xe5, 0x6e, 0x4c, 0x2f, 0x73, 0x0d,
+	0x96, 0x19, 0x57, 0x95, 0x23, 0x55, 0x97, 0x0a, 0xbd, 0x07, 0xa3, 0x8d, 0x6e, 0xdf, 0xb4, 0xb5,
+	0x0e, 0xb6, 0x0f, 0xba, 0xcd, 0x7c, 0x7c, 0x51, 0x5a, 0x1a, 0xbf, 0x31, 0xe5, 0x70, 0xad, 0x52,
+	0x5c, 0x95, 0xa1, 0xd4, 0x5c, 0xc3, 0xdb, 0x28, 0xf7, 0x60, 0x3e, 0x52, 0x0f, 0xd2, 0xeb, 0x9a,
+	0x04, 0xa3, 0x77, 0x20, 0x65, 0xd8, 0xb8, 0xe3, 0x68, 0x31, 0x15, 0xd0, 0x42, 0xd0, 0x72, 0x0a,
+	0x65, 0x0d, 0x72, 0x3e, 0x28, 0xba, 0x04, 0xd0, 0xa6, 0x5b, 0xcd, 0xd4, 0x3b, 0x38, 0x2f, 0x2d,
+	0x4a, 0x4b, 0x59, 0x35, 0xdb, 0x76, 0x8e, 0x42, 0xb3, 0x90, 0x7e, 0xcc, 0x08, 0xf3, 0xf1, 0xc5,
+	0xc4, 0x52, 0x56, 0x15, 0x3b, 0xe5, 0xf7, 0x12, 0x5c, 0xf2, 0x89, 0x59, 0xd5, 0xad, 0xa6, 0x61,
+	0xea, 0x6d, 0xc3, 0x3e, 0x74, 0x6c, 0xb3, 0x00, 0x39, 0x4f, 0x30, 0x57, 0x2c, 0xab, 0x82, 0x2b,
+	0x99, 0x04, 0x8c, 0x17, 0xff, 0x46, 0xc6, 0x4b, 0x9c, 0xd1, 0x78, 0x3b, 0x50, 0x1c, 0xa6, 0xab,
+	0xb0, 0xdf, 0xcd, 0xa0, 0xfd, 0x2e, 0x0d, 0xda, 0xaf, 0x86, 0x2d, 0x03, 0x13, 0x76, 0x84, 0x63,
+	0xc9, 0xe7, 0x12, 0xcc, 0x44, 0x12, 0x9c, 0x66, 0x54, 0x1d, 0x10, 0x47, 0x33, 0x63, 0x6a, 0x84,
+	0x71, 0x0a, 0x1b, 0xdc, 0x3c, 0xf1, 0xe8, 0x01, 0x68, 0xd9, 0xb4, 0xad, 0x43, 0x55, 0x6e, 0x87,
+	0xc0, 0x85, 0x55, 0x98, 0x89, 0x24, 0x45, 0x32, 0x24, 0x1e, 0xe1, 0x43, 0xa1, 0x13, 0x5d, 0xa2,
+	0x69, 0x48, 0x31, 0x3d, 0x98, 0x2f, 0x26, 0x55, 0xbe, 0xb9, 0x13, 0xbf, 0x2d, 0x29, 0x2f, 0x25,
+	0x18, 0x7d, 0xd0, 0xc7, 0x96, 0xfb, 0x9b, 0xbe, 0x0b, 0x88, 0xd8, 0xba, 0x65, 0x6b, 0xb6, 0xd1,
+	0xc1, 0xc4, 0xd6, 0x3b, 0x3d, 0x8d, 0xd9, 0x4c, 0x5a, 0x4a, 0xa8, 0x32, 0xc3, 0xd4, 0x1d, 0x44,
+	0x95, 0xa0, 0x25, 0x90, 0xb1, 0xd9, 0x0c, 0xd2, 0xc6, 0x19, 0xed, 0x38, 0x36, 0x9b, 0x7e, 0x4a,
+	0xbf, 0x2b, 0x24, 0xce, 0xe4, 0x0a, 0xdf, 0x83, 0x79, 0x62, 0x5b, 0x58, 0xef, 0x18, 0x66, 0x4b,
+	0x6b, 0x1c, 0xf4, 0xcd, 0x47, 0x44, 0xdb, 0xa3, 0x48, 0x8d, 0x18, 0x47, 0x38, 0xdf, 0x64, 0x57,
+	0xc9, 0xbb, 0x24, 0xab, 0x8c, 0x62, 0x85, 0x12, 0xd4, 0x8c, 0x23, 0xbc, 0x91, 0xcc, 0x24, 0xe5,
+	0xd4, 0x46, 0x32, 0x93, 0x92, 0xd3, 0xca, 0x6f, 0x24, 0x98, 0x2e, 0x3f, 0xc1, 0x9d, 0x5e, 0x5b,
+	0xb7, 0x5e, 0xcb, 0x6d, 0xaf, 0x0f, 0xdc, 0x76, 0x26, 0xea, 0xb6, 0xc4, 0xbb, 0xae, 0xf2, 0x17,
+	0x09, 0xa6, 0x4a, 0x0d, 0xdb, 0x78, 0x2c, 0x7e, 0xcb, 0x6f, 0x9e, 0x80, 0x3e, 0x84, 0xa4, 0x7d,
+	0xd8, 0xc3, 0x22, 0xf1, 0xbc, 0xed, 0x50, 0x47, 0x08, 0x5f, 0x16, 0x7f, 0xeb, 0x87, 0x3d, 0xac,
+	0x32, 0x26, 0xe5, 0x3d, 0xc8, 0xf9, 0x80, 0x08, 0x20, 0x5d, 0x2b, 0xab, 0x95, 0x72, 0x4d, 0x8e,
+	0xa1, 0x79, 0x98, 0xdb, 0x2a, 0xd5, 0x2b, 0xbb, 0x65, 0xed, 0x5e, 0xa5, 0x56, 0xdf, 0xbe, 0xab,
+	0x96, 0xaa, 0x9a, 0x40, 0x4a, 0xca, 0x6f, 0xe3, 0x30, 0x5a, 0xc3, 0xba, 0xd5, 0x38, 0x58, 0x37,
+	0xda, 0x36, 0xb6, 0xa8, 0xcf, 0xd9, 0xd8, 0xea, 0x38, 0x69, 0x81, 0x6f, 0xd0, 0x3b, 0x20, 0x37,
+	0x74, 0x82, 0x35, 0xc3, 0x24, 0xd8, 0x24, 0x06, 0xd5, 0x88, 0xe9, 0x99, 0x51, 0x27, 0x28, 0xbc,
+	0xe2, 0x81, 0xd1, 0xfb, 0x90, 0xd9, 0xef, 0x1f, 0x1d, 0x69, 0x7a, 0xbb, 0x25, 0xd2, 0xc0, 0x45,
+	0xe7, 0x2a, 0xfe, 0x83, 0x96, 0xd7, 0xfb, 0x47, 0x47, 0xa5, 0x76, 0x4b, 0x1d, 0xd9, 0xe7, 0x0b,
+	0x74, 0x19, 0xc6, 0x19, 0xa3, 0x7d, 0x60, 0x61, 0x72, 0xd0, 0x6d, 0x37, 0xf3, 0xc9, 0x45, 0x69,
+	0x29, 0xa5, 0x8e, 0x51, 0x68, 0xdd, 0x01, 0x2a, 0x04, 0x46, 0x04, 0x2b, 0xca, 0xc3, 0xf4, 0xfa,
+	0xce, 0xc3, 0x87, 0x5a, 0x69, 0xf3, 0xae, 0x56, 0xdb, 0x59, 0xa9, 0x95, 0x1f, 0xec, 0x94, 0xb7,
+	0x56, 0xcb, 0x72, 0x0c, 0x5d, 0x80, 0x19, 0x17, 0xb3, 0x51, 0x52, 0xb7, 0xb5, 0x4f, 0x2b, 0x5b,
+	0x9f, 0x6c, 0x96, 0x55, 0x59, 0xa2, 0xe6, 0x08, 0x30, 0xd5, 0xd5, 0xca, 0xd6, 0x5d, 0x6d, 0xb3,
+	0xbc, 0x5e, 0x97, 0xe3, 0x68, 0x16, 0xd0, 0x20, 0x52, 0x4e, 0x28, 0xbf, 0x8a, 0xc3, 0x1c, 0xd7,
+	0xde, 0xcb, 0xf5, 0xff, 0x7b, 0xa1, 0xf7, 0x2e, 0xa4, 0xf7, 0x99, 0x71, 0x99, 0xe5, 0x7c, 0xf4,
+	0x7e, 0xc3, 0xab, 0x82, 0x06, 0xdd, 0x80, 0x4c, 0xd7, 0x6a, 0x62, 0xcb, 0x30, 0x5b, 0xf9, 0x14,
+	0xfb, 0xa1, 0x66, 0x83, 0xf4, 0xdb, 0x02, 0xab, 0xba, 0x74, 0xd4, 0x3b, 0xda, 0x46, 0xc7, 0xb0,
+	0xf3, 0x69, 0xa6, 0x32, 0xdf, 0x28, 0x7f, 0x8a, 0x43, 0xde, 0x67, 0x9d, 0x60, 0x25, 0x7e, 0x55,
+	0xe6, 0x41, 0x90, 0x64, 0x39, 0x3c, 0xc1, 0xf2, 0x25, 0x5b, 0x07, 0x4c, 0x96, 0x3c, 0xa7, 0xc9,
+	0x52, 0xe7, 0x34, 0x59, 0xfa, 0xbc, 0x26, 0x1b, 0xf1, 0x99, 0x6c, 0x23, 0x99, 0xc9, 0xc8, 0x59,
+	0xe5, 0x0f, 0x12, 0x4c, 0x72, 0x46, 0x15, 0x93, 0x7e, 0xdb, 0x66, 0x69, 0x10, 0x7d, 0x0c, 0x23,
+	0x16, 0xdb, 0x3a, 0x99, 0x63, 0x31, 0x78, 0x88, 0x8f, 0x76, 0x59, 0xac, 0x93, 0x4f, 0x9f, 0x2f,
+	0xc4, 0x54, 0x87, 0x0d, 0x15, 0x20, 0xf3, 0x63, 0xdd, 0x32, 0x0d, 0xb3, 0xe5, 0x74, 0x07, 0xee,
+	0xbe, 0x70, 0x07, 0xd2, 0x9c, 0xc9, 0x2b, 0x2f, 0xbc, 0xe4, 0xf0, 0x0d, 0x85, 0x92, 0x46, 0xd7,
+	0xe2, 0xf1, 0x2d, 0xa9, 0x7c, 0xb3, 0x91, 0xcc, 0x24, 0xe4, 0xa4, 0xf2, 0xd3, 0x38, 0x4c, 0xb1,
+	0x44, 0x5c, 0x63, 0xe9, 0xdb, 0x2d, 0xd2, 0x1b, 0x20, 0x7b, 0x39, 0x5f, 0x14, 0x4d, 0xee, 0xb2,
+	0x17, 0x1c, 0xd5, 0x7d, 0x6c, 0x3c, 0x97, 0x09, 0x9d, 0x27, 0x5c, 0x46, 0x0e, 0x46, 0xb7, 0x60,
+	0xce, 0x20, 0x1a, 0x75, 0x82, 0xee, 0xbe, 0x90, 0xa5, 0x71, 0x1a, 0xe6, 0xd5, 0x19, 0x75, 0xca,
+	0x20, 0x65, 0xb3, 0xb9, 0xbd, 0xcf, 0xe9, 0xb9, 0x48, 0xf4, 0x39, 0xcc, 0x85, 0x35, 0x10, 0xc5,
+	0x27, 0x9f, 0x62, 0x8a, 0x2c, 0x0c, 0x55, 0x44, 0x54, 0x20, 0xae, 0xce, 0x4c, 0x48, 0x1d, 0x8e,
+	0xdc, 0x48, 0x66, 0x24, 0x39, 0xbe, 0x91, 0xcc, 0xc4, 0xe5, 0x84, 0xf2, 0x6b, 0x09, 0x26, 0x07,
+	0x84, 0xa0, 0x7d, 0x48, 0xb3, 0x52, 0x1f, 0x6e, 0xf4, 0x7a, 0x7b, 0xdc, 0xf5, 0xee, 0xeb, 0x86,
+	0xb5, 0xf2, 0x01, 0x3d, 0xe3, 0x9f, 0xcf, 0x17, 0xae, 0x9f, 0xa5, 0x09, 0xe6, 0x7c, 0xa5, 0xa6,
+	0xde, 0x63, 0x2e, 0xc8, 0xa5, 0xd3, 0xe6, 0x8d, 0xdd, 0x4b, 0x63, 0x6d, 0x94, 0x88, 0x0d, 0x60,
+	0x20, 0xd6, 0x87, 0x28, 0x06, 0xcc, 0x0d, 0xb9, 0x22, 0x7a, 0x03, 0x46, 0x85, 0x69, 0x0c, 0xb3,
+	0x89, 0x9f, 0xb0, 0xdf, 0x3d, 0xa9, 0xe6, 0x38, 0xac, 0x42, 0x41, 0xe8, 0xff, 0x21, 0x2d, 0xcc,
+	0xc6, 0x9b, 0x9e, 0x31, 0xb7, 0x85, 0xa3, 0x50, 0x61, 0x24, 0x41, 0xa2, 0xd4, 0x60, 0x26, 0x54,
+	0x9e, 0x85, 0x3f, 0xdc, 0x01, 0x60, 0x11, 0xcc, 0x3d, 0x21, 0x58, 0xfe, 0x7a, 0x7b, 0xcb, 0x34,
+	0x8c, 0x03, 0x4e, 0xe0, 0xa3, 0x56, 0xfe, 0x21, 0x01, 0x8a, 0x48, 0x23, 0xa7, 0x34, 0x6e, 0xd1,
+	0x59, 0x26, 0x7e, 0x8e, 0x2c, 0x93, 0x38, 0xb5, 0x23, 0xe0, 0x49, 0xf5, 0xb4, 0x8e, 0xc0, 0x0b,
+	0xf8, 0x94, 0x3f, 0x47, 0xde, 0x86, 0xa9, 0xc0, 0xad, 0x84, 0xa5, 0xde, 0x80, 0x51, 0x5f, 0xc3,
+	0xe9, 0x54, 0xdd, 0x9c, 0xd7, 0x35, 0x12, 0xe5, 0x8f, 0x12, 0x4c, 0xbe, 0xbe, 0xaa, 0x13, 0x6c,
+	0x81, 0xce, 0x77, 0xe1, 0xa4, 0xff, 0xc2, 0xdf, 0x05, 0xe4, 0xd7, 0x5a, 0xdc, 0xf7, 0xb4, 0xd9,
+	0x43, 0xd9, 0x00, 0x79, 0x87, 0x60, 0xab, 0x66, 0xeb, 0xb6, 0x7b, 0xd7, 0xf0, 0x74, 0x21, 0x9d,
+	0x71, 0xba, 0xf8, 0xb3, 0x04, 0x93, 0x3e, 0x61, 0x42, 0x85, 0xcb, 0xce, 0x6c, 0x6a, 0x74, 0x4d,
+	0xcd, 0xd2, 0x6d, 0xee, 0x4d, 0x92, 0x3a, 0xe6, 0x42, 0x55, 0xdd, 0xc6, 0xd4, 0xe1, 0xcc, 0x7e,
+	0xc7, 0x1b, 0x01, 0x68, 0xa8, 0x64, 0xcd, 0xbe, 0x13, 0xef, 0xef, 0x02, 0xd2, 0x7b, 0x86, 0x16,
+	0x92, 0x94, 0x60, 0x92, 0x64, 0xbd, 0x67, 0x54, 0x02, 0xc2, 0x96, 0x61, 0xca, 0xea, 0xb7, 0x71,
+	0x98, 0x3c, 0xc9, 0xc8, 0x27, 0x29, 0x2a, 0x40, 0xaf, 0x7c, 0x0e, 0x53, 0x54, 0xf1, 0xca, 0x5a,
+	0x50, 0xf5, 0x39, 0x18, 0xe9, 0x13, 0x6c, 0x69, 0x46, 0x53, 0x44, 0x40, 0x9a, 0x6e, 0x2b, 0x4d,
+	0xf4, 0x1d, 0x48, 0x36, 0x75, 0x5b, 0x67, 0x6a, 0xfa, 0x92, 0xee, 0xc0, 0xe5, 0x55, 0x46, 0xa6,
+	0xdc, 0x05, 0x44, 0x51, 0x24, 0x28, 0xfd, 0x3a, 0xa4, 0x08, 0x05, 0x88, 0x80, 0x9d, 0xf7, 0x4b,
+	0x09, 0x69, 0xa2, 0x72, 0x4a, 0xe5, 0xa9, 0x04, 0xc5, 0x2a, 0xb6, 0x2d, 0xa3, 0x41, 0xd6, 0xbb,
+	0x56, 0xd0, 0x41, 0x5e, 0xb1, 0xa3, 0xde, 0x86, 0x51, 0xc7, 0x03, 0x35, 0x82, 0xed, 0x93, 0xfb,
+	0xf5, 0x9c, 0x43, 0x5a, 0xc3, 0xf6, 0x10, 0x7f, 0xfd, 0x04, 0x16, 0x86, 0xde, 0x44, 0x18, 0x68,
+	0x09, 0xd2, 0x1d, 0x46, 0x22, 0x2c, 0x24, 0x7b, 0x29, 0x8d, 0xb3, 0xaa, 0x02, 0xaf, 0xfc, 0x52,
+	0x82, 0x59, 0x21, 0xad, 0x8a, 0x6d, 0x9d, 0x1a, 0xdd, 0xb1, 0x87, 0x7b, 0x3a, 0x35, 0xc1, 0xa4,
+	0x38, 0x9d, 0xde, 0x9b, 0x2d, 0xb4, 0x1e, 0xb6, 0x34, 0x71, 0x48, 0x9c, 0x11, 0x8c, 0x33, 0xf8,
+	0x7d, 0x6c, 0x71, 0x79, 0x74, 0xee, 0x17, 0x78, 0xde, 0xf9, 0x88, 0x1d, 0xcd, 0x24, 0x7c, 0x25,
+	0x42, 0x2b, 0xc9, 0x33, 0x09, 0x87, 0xf1, 0xd8, 0xda, 0x86, 0xb9, 0x01, 0xa5, 0xc4, 0xd5, 0x6e,
+	0x41, 0xa6, 0x23, 0x60, 0xe2, 0x72, 0xf9, 0xf0, 0xe5, 0x5c, 0x1e, 0x97, 0x52, 0x69, 0xc0, 0x74,
+	0x70, 0x3c, 0x39, 0xaf, 0xa1, 0xa8, 0xd6, 0x7b, 0xfd, 0xc6, 0x23, 0x6c, 0xbb, 0xf5, 0x2c, 0x41,
+	0x4b, 0x12, 0x87, 0xf1, 0x82, 0xf6, 0x85, 0x04, 0x29, 0x56, 0x7d, 0x5e, 0x99, 0x2b, 0x15, 0x20,
+	0x83, 0xcd, 0x46, 0xb7, 0x49, 0xdb, 0xba, 0x04, 0x9b, 0x39, 0xdc, 0x3d, 0xba, 0x2f, 0x22, 0x8b,
+	0xfa, 0xca, 0xe8, 0xca, 0x47, 0xa2, 0x80, 0xdf, 0x3a, 0x53, 0x01, 0xdf, 0x31, 0x89, 0xbe, 0x8f,
+	0x57, 0x0e, 0x6d, 0x5c, 0x6b, 0x1b, 0x0d, 0x27, 0xf8, 0x4a, 0x30, 0x16, 0x70, 0xaf, 0xf3, 0x8f,
+	0x8a, 0x8a, 0x06, 0xa3, 0x7e, 0x0c, 0xba, 0x2c, 0x46, 0x47, 0x9e, 0x18, 0x27, 0x1d, 0x6e, 0x86,
+	0xf6, 0x86, 0x44, 0xb7, 0x65, 0x8e, 0xfb, 0x5a, 0x66, 0xb7, 0x09, 0x4c, 0xf8, 0x9a, 0x40, 0xa5,
+	0x03, 0xf3, 0x5b, 0x3a, 0xfd, 0x61, 0x43, 0x3f, 0xbd, 0xf0, 0x61, 0x2f, 0xf6, 0x68, 0xe8, 0x39,
+	0x5a, 0x9f, 0x12, 0x7b, 0x35, 0x6c, 0xfb, 0x6a, 0x45, 0xdc, 0x1f, 0x7b, 0x5f, 0x48, 0x70, 0x31,
+	0xfa, 0x3c, 0xe1, 0x50, 0x1f, 0x43, 0x3a, 0xd0, 0x4c, 0x28, 0xce, 0x51, 0x51, 0x5c, 0x81, 0xd6,
+	0x42, 0xf0, 0xa1, 0x3c, 0x8c, 0xb0, 0xb3, 0x70, 0x53, 0x0c, 0xae, 0xce, 0x16, 0x5d, 0x81, 0xc9,
+	0x46, 0xf7, 0x31, 0xb6, 0xf4, 0x16, 0xd6, 0xb8, 0x7b, 0xb9, 0xdd, 0xc0, 0x84, 0x83, 0xa8, 0x51,
+	0x78, 0x95, 0xd0, 0xda, 0x21, 0x3a, 0xa8, 0xc7, 0x06, 0x61, 0xc2, 0x78, 0x0e, 0x19, 0xe3, 0xd0,
+	0x5d, 0x0e, 0x54, 0x7e, 0x1e, 0x87, 0xc2, 0x70, 0xcd, 0x5e, 0x5b, 0xaf, 0x58, 0x86, 0xcc, 0x63,
+	0x6c, 0x11, 0xa3, 0x6b, 0x3a, 0xed, 0xdc, 0x9b, 0x27, 0xd9, 0x6d, 0x97, 0xd3, 0x0a, 0xc3, 0xb9,
+	0xac, 0xe8, 0x22, 0x64, 0x6d, 0xab, 0x6f, 0x36, 0x74, 0x7a, 0xdf, 0x04, 0x33, 0x9e, 0x07, 0xa0,
+	0xd8, 0x46, 0x57, 0x6f, 0x63, 0xd2, 0x10, 0xd6, 0xc8, 0xa8, 0x1e, 0x40, 0xf9, 0xab, 0x04, 0xf3,
+	0x27, 0x9c, 0x85, 0x8a, 0x90, 0xeb, 0x18, 0x26, 0x0b, 0x52, 0x2f, 0x96, 0xb3, 0x1d, 0xc3, 0xa4,
+	0xf1, 0x59, 0x25, 0x0c, 0xaf, 0x3f, 0x71, 0xf1, 0x71, 0x81, 0xd7, 0x9f, 0x08, 0xfc, 0xfb, 0xc2,
+	0xf3, 0xf9, 0x4b, 0xc3, 0x9b, 0xc3, 0x72, 0x96, 0xd8, 0x06, 0x63, 0xa1, 0x6f, 0x8a, 0x1a, 0x90,
+	0x55, 0xd9, 0x9a, 0xc2, 0x0e, 0x70, 0xbb, 0xc7, 0x1a, 0xb7, 0xac, 0xca, 0xd6, 0xca, 0x57, 0x12,
+	0xcc, 0xf2, 0x0b, 0xa8, 0x98, 0x74, 0xfb, 0x56, 0x03, 0x93, 0x6f, 0x1f, 0x05, 0xaf, 0xaa, 0x5b,
+	0x8d, 0xac, 0x6c, 0xe8, 0x2d, 0x98, 0x68, 0x59, 0xdd, 0x7e, 0x4f, 0xdb, 0x3b, 0xd4, 0x6c, 0xdd,
+	0x6a, 0x61, 0xde, 0x9a, 0x66, 0xd4, 0x31, 0x06, 0x5e, 0x39, 0xac, 0x33, 0xa0, 0xf2, 0x37, 0x09,
+	0xe6, 0x06, 0xae, 0x2a, 0x02, 0xf0, 0xc3, 0x50, 0x00, 0x5e, 0x0a, 0x3a, 0x92, 0xcb, 0xf0, 0xdf,
+	0x8f, 0x3d, 0xfa, 0xf6, 0x1b, 0xa9, 0xd4, 0x6b, 0x0b, 0xbb, 0x1f, 0x0c, 0x84, 0xdd, 0x10, 0x6b,
+	0x9d, 0x10, 0x70, 0x5e, 0x48, 0x25, 0xc2, 0x21, 0xf5, 0xef, 0x38, 0xcc, 0x44, 0xca, 0xf9, 0xd6,
+	0xc1, 0x74, 0x1f, 0x72, 0x46, 0x13, 0x9b, 0xb6, 0xb1, 0x7f, 0xc8, 0x4b, 0x21, 0xd5, 0x7d, 0xf9,
+	0x44, 0xdd, 0x97, 0x2b, 0x1e, 0x03, 0x7f, 0xf1, 0xf6, 0x8b, 0xa0, 0x12, 0x9b, 0x98, 0x34, 0x2c,
+	0xa3, 0x47, 0x79, 0xf3, 0xc9, 0xb3, 0x48, 0x5c, 0xf3, 0x18, 0x84, 0x44, 0x9f, 0x88, 0xc2, 0xf7,
+	0x41, 0x0e, 0x1f, 0x79, 0xda, 0xcb, 0x79, 0xd6, 0xf7, 0x72, 0x4e, 0xf9, 0xc3, 0x07, 0x9c, 0x87,
+	0xff, 0xca, 0x12, 0xe4, 0x7c, 0xf3, 0x06, 0x1a, 0x83, 0x6c, 0x65, 0x4b, 0xab, 0x96, 0xab, 0xdb,
+	0xea, 0x67, 0x72, 0x8c, 0xbe, 0xbb, 0x96, 0x56, 0xe9, 0x5b, 0xab, 0x2c, 0x5d, 0x79, 0x08, 0xe3,
+	0xc1, 0x47, 0x21, 0xfa, 0xba, 0xb8, 0xad, 0xae, 0x95, 0x55, 0x6d, 0xe5, 0x33, 0x6d, 0xb7, 0xb4,
+	0xb9, 0x53, 0xd6, 0x4a, 0xb5, 0x55, 0x39, 0x86, 0xe6, 0x60, 0x2a, 0x04, 0x5f, 0x2b, 0xd7, 0x56,
+	0x65, 0x29, 0x80, 0xa8, 0xad, 0x6e, 0xab, 0x02, 0x11, 0xbf, 0xb2, 0x01, 0x59, 0xb7, 0xb8, 0xa3,
+	0x2c, 0xa4, 0xca, 0x0f, 0x76, 0x4a, 0x9b, 0x72, 0x8c, 0xaa, 0xb3, 0xb5, 0x5d, 0xd7, 0xf8, 0x56,
+	0x42, 0x13, 0x90, 0x53, 0xcb, 0x77, 0xcb, 0x3f, 0xd4, 0xaa, 0xa5, 0xfa, 0xea, 0x3d, 0x39, 0x8e,
+	0x10, 0x8c, 0x73, 0xc0, 0xd6, 0xb6, 0x80, 0x25, 0x6e, 0xfc, 0x1d, 0x20, 0x53, 0x11, 0x1f, 0xeb,
+	0xd0, 0x07, 0x90, 0xbc, 0xdf, 0x27, 0x07, 0x68, 0xd6, 0x8b, 0x8d, 0x4f, 0x2d, 0xc3, 0xc6, 0x22,
+	0xe7, 0x15, 0xe6, 0x06, 0xe0, 0x3c, 0x41, 0x28, 0x31, 0xb4, 0x06, 0x39, 0xdf, 0xc3, 0x03, 0x9a,
+	0x0e, 0x3c, 0xb8, 0x38, 0xfc, 0xf3, 0x11, 0xcf, 0x30, 0x9e, 0x8c, 0x6b, 0x12, 0xda, 0x86, 0x71,
+	0x86, 0x72, 0x1e, 0x16, 0x08, 0x72, 0x9f, 0x8f, 0xa3, 0x3e, 0x05, 0x14, 0x2e, 0x0d, 0xc1, 0xba,
+	0x6a, 0xdd, 0x0b, 0x7e, 0x55, 0x2b, 0x44, 0x7d, 0x80, 0x0b, 0x2b, 0x17, 0x31, 0xa9, 0x2b, 0x31,
+	0x54, 0x06, 0xf0, 0x26, 0x5a, 0x74, 0x21, 0x40, 0xec, 0x9f, 0xcd, 0x0b, 0x85, 0x28, 0x94, 0x2b,
+	0x66, 0x05, 0xb2, 0xee, 0x5c, 0x86, 0xf2, 0x11, 0xa3, 0x1a, 0x17, 0x32, 0x7c, 0x88, 0x53, 0x62,
+	0x68, 0x1d, 0x46, 0x4b, 0xed, 0xf6, 0x59, 0xc4, 0x14, 0xfc, 0x18, 0x12, 0x96, 0xd3, 0x86, 0xb9,
+	0x21, 0x43, 0x0f, 0x7a, 0xcb, 0xed, 0x22, 0x4f, 0x9c, 0xef, 0x0a, 0x6f, 0x9f, 0x4a, 0xe7, 0x9e,
+	0x56, 0x87, 0x89, 0xd0, 0xfc, 0x81, 0x8a, 0x21, 0xee, 0x50, 0xa7, 0x59, 0x58, 0x18, 0x8a, 0x77,
+	0xa5, 0xee, 0xc1, 0x94, 0x67, 0x67, 0xf7, 0x03, 0x2c, 0x52, 0x06, 0x7f, 0x84, 0xf0, 0x57, 0xe2,
+	0xc2, 0x9b, 0x27, 0xd2, 0xf8, 0xbc, 0xf2, 0x11, 0xcc, 0x46, 0x7f, 0xa7, 0x44, 0x97, 0x23, 0x7c,
+	0x66, 0xf0, 0x9b, 0x6b, 0xe1, 0xad, 0xd3, 0xc8, 0x7c, 0x87, 0x55, 0x61, 0xd4, 0x3f, 0x55, 0xa1,
+	0xf9, 0x13, 0x3e, 0x05, 0x15, 0x2e, 0x46, 0x23, 0x7d, 0xe2, 0x54, 0x90, 0xc3, 0x9f, 0x2e, 0xd0,
+	0x42, 0xf0, 0x45, 0x79, 0xd0, 0x85, 0x2f, 0x0c, 0x7d, 0x72, 0x66, 0x32, 0xeb, 0x30, 0xe9, 0xe3,
+	0x14, 0x16, 0x5f, 0x8c, 0x10, 0x1a, 0xb4, 0xf7, 0x29, 0x52, 0x31, 0x4c, 0x47, 0xf5, 0x8a, 0xe8,
+	0xc4, 0xae, 0xd5, 0x91, 0xfd, 0x7f, 0x27, 0x13, 0xf9, 0x0c, 0xb2, 0x0b, 0x13, 0xa1, 0x06, 0xc1,
+	0x73, 0xc3, 0xe8, 0x56, 0xaf, 0xb0, 0x30, 0x14, 0xef, 0xc9, 0x5d, 0xf9, 0xe8, 0xd9, 0x8b, 0x62,
+	0xec, 0xcb, 0x17, 0xc5, 0xd8, 0xd7, 0x2f, 0x8a, 0xd2, 0x4f, 0x8e, 0x8b, 0xd2, 0xef, 0x8e, 0x8b,
+	0xd2, 0xd3, 0xe3, 0xa2, 0xf4, 0xec, 0xb8, 0x28, 0xfd, 0xeb, 0xb8, 0x28, 0x7d, 0x75, 0x5c, 0x8c,
+	0x7d, 0x7d, 0x5c, 0x94, 0x7e, 0xf1, 0xb2, 0x18, 0x7b, 0xf6, 0xb2, 0x18, 0xfb, 0xf2, 0x65, 0x31,
+	0xf6, 0x30, 0xdd, 0x68, 0x1b, 0xd8, 0xb4, 0xf7, 0xd2, 0xec, 0xff, 0x1a, 0x6e, 0xfe, 0x67, 0x00,
+	0x9e, 0x8c, 0xac, 0x43, 0x39, 0x21, 0x00, 0x00,
 }
 
 func (x CountMethod) String() string {
@@ -3432,6 +4007,317 @@ func (this *LabelMatcher) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *NativeMetricMetadataRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*NativeMetricMetadataRequest)
+	if !ok {
+		that2, ok := that.(NativeMetricMetadataRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.MatcherSets) != len(that1.MatcherSets) {
+		return false
+	}
+	for i := range this.MatcherSets {
+		if !this.MatcherSets[i].Equal(that1.MatcherSets[i]) {
+			return false
+		}
+	}
+	if this.Limit != that1.Limit {
+		return false
+	}
+	return true
+}
+func (this *NativeMetricMetadataResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*NativeMetricMetadataResponse)
+	if !ok {
+		that2, ok := that.(NativeMetricMetadataResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Series) != len(that1.Series) {
+		return false
+	}
+	for i := range this.Series {
+		if !this.Series[i].Equal(&that1.Series[i]) {
+			return false
+		}
+	}
+	if this.Limited != that1.Limited {
+		return false
+	}
+	if this.CoverageStartMs != that1.CoverageStartMs {
+		return false
+	}
+	if this.SeriesVisited != that1.SeriesVisited {
+		return false
+	}
+	return true
+}
+func (this *NativeMetricMetadataSeries) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*NativeMetricMetadataSeries)
+	if !ok {
+		that2, ok := that.(NativeMetricMetadataSeries)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Labels) != len(that1.Labels) {
+		return false
+	}
+	for i := range this.Labels {
+		if !this.Labels[i].Equal(that1.Labels[i]) {
+			return false
+		}
+	}
+	if len(this.Versions) != len(that1.Versions) {
+		return false
+	}
+	for i := range this.Versions {
+		if !this.Versions[i].Equal(&that1.Versions[i]) {
+			return false
+		}
+	}
+	if this.Truncated != that1.Truncated {
+		return false
+	}
+	if this.Coalesced != that1.Coalesced {
+		return false
+	}
+	return true
+}
+func (this *NativeMetricMetadataVersion) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*NativeMetricMetadataVersion)
+	if !ok {
+		that2, ok := that.(NativeMetricMetadataVersion)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.MinTimeMs != that1.MinTimeMs {
+		return false
+	}
+	if this.MaxTimeMs != that1.MaxTimeMs {
+		return false
+	}
+	if this.Type != that1.Type {
+		return false
+	}
+	if this.Unit != that1.Unit {
+		return false
+	}
+	if this.Help != that1.Help {
+		return false
+	}
+	return true
+}
+func (this *NativeResourcesRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*NativeResourcesRequest)
+	if !ok {
+		that2, ok := that.(NativeResourcesRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.MatcherSets) != len(that1.MatcherSets) {
+		return false
+	}
+	for i := range this.MatcherSets {
+		if !this.MatcherSets[i].Equal(that1.MatcherSets[i]) {
+			return false
+		}
+	}
+	if this.StartTimestampMs != that1.StartTimestampMs {
+		return false
+	}
+	if this.EndTimestampMs != that1.EndTimestampMs {
+		return false
+	}
+	if this.Limit != that1.Limit {
+		return false
+	}
+	if this.GroupByTarget != that1.GroupByTarget {
+		return false
+	}
+	return true
+}
+func (this *NativeResourcesResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*NativeResourcesResponse)
+	if !ok {
+		that2, ok := that.(NativeResourcesResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Series) != len(that1.Series) {
+		return false
+	}
+	for i := range this.Series {
+		if !this.Series[i].Equal(&that1.Series[i]) {
+			return false
+		}
+	}
+	if this.Limited != that1.Limited {
+		return false
+	}
+	if this.CoverageStartMs != that1.CoverageStartMs {
+		return false
+	}
+	if this.SeriesVisited != that1.SeriesVisited {
+		return false
+	}
+	return true
+}
+func (this *NativeResourcesSeries) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*NativeResourcesSeries)
+	if !ok {
+		that2, ok := that.(NativeResourcesSeries)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Labels) != len(that1.Labels) {
+		return false
+	}
+	for i := range this.Labels {
+		if !this.Labels[i].Equal(that1.Labels[i]) {
+			return false
+		}
+	}
+	if len(this.Versions) != len(that1.Versions) {
+		return false
+	}
+	for i := range this.Versions {
+		if !this.Versions[i].Equal(&that1.Versions[i]) {
+			return false
+		}
+	}
+	if this.Coalesced != that1.Coalesced {
+		return false
+	}
+	return true
+}
+func (this *NativeResourceVersion) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*NativeResourceVersion)
+	if !ok {
+		that2, ok := that.(NativeResourceVersion)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.MinTimeMs != that1.MinTimeMs {
+		return false
+	}
+	if this.MaxTimeMs != that1.MaxTimeMs {
+		return false
+	}
+	if len(this.Identifying) != len(that1.Identifying) {
+		return false
+	}
+	for i := range this.Identifying {
+		if this.Identifying[i] != that1.Identifying[i] {
+			return false
+		}
+	}
+	if len(this.Descriptive) != len(that1.Descriptive) {
+		return false
+	}
+	for i := range this.Descriptive {
+		if this.Descriptive[i] != that1.Descriptive[i] {
+			return false
+		}
+	}
+	return true
+}
 func (this *LabelNamesAndValuesRequest) GoString() string {
 	if this == nil {
 		return "nil"
@@ -3908,6 +4794,161 @@ func (this *LabelMatcher) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *NativeMetricMetadataRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&client.NativeMetricMetadataRequest{")
+	if this.MatcherSets != nil {
+		s = append(s, "MatcherSets: "+fmt.Sprintf("%#v", this.MatcherSets)+",\n")
+	}
+	s = append(s, "Limit: "+fmt.Sprintf("%#v", this.Limit)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *NativeMetricMetadataResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 8)
+	s = append(s, "&client.NativeMetricMetadataResponse{")
+	if this.Series != nil {
+		vs := make([]NativeMetricMetadataSeries, len(this.Series))
+		for i := range vs {
+			vs[i] = this.Series[i]
+		}
+		s = append(s, "Series: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "Limited: "+fmt.Sprintf("%#v", this.Limited)+",\n")
+	s = append(s, "CoverageStartMs: "+fmt.Sprintf("%#v", this.CoverageStartMs)+",\n")
+	s = append(s, "SeriesVisited: "+fmt.Sprintf("%#v", this.SeriesVisited)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *NativeMetricMetadataSeries) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 8)
+	s = append(s, "&client.NativeMetricMetadataSeries{")
+	s = append(s, "Labels: "+fmt.Sprintf("%#v", this.Labels)+",\n")
+	if this.Versions != nil {
+		vs := make([]NativeMetricMetadataVersion, len(this.Versions))
+		for i := range vs {
+			vs[i] = this.Versions[i]
+		}
+		s = append(s, "Versions: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "Truncated: "+fmt.Sprintf("%#v", this.Truncated)+",\n")
+	s = append(s, "Coalesced: "+fmt.Sprintf("%#v", this.Coalesced)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *NativeMetricMetadataVersion) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 9)
+	s = append(s, "&client.NativeMetricMetadataVersion{")
+	s = append(s, "MinTimeMs: "+fmt.Sprintf("%#v", this.MinTimeMs)+",\n")
+	s = append(s, "MaxTimeMs: "+fmt.Sprintf("%#v", this.MaxTimeMs)+",\n")
+	s = append(s, "Type: "+fmt.Sprintf("%#v", this.Type)+",\n")
+	s = append(s, "Unit: "+fmt.Sprintf("%#v", this.Unit)+",\n")
+	s = append(s, "Help: "+fmt.Sprintf("%#v", this.Help)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *NativeResourcesRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 9)
+	s = append(s, "&client.NativeResourcesRequest{")
+	if this.MatcherSets != nil {
+		s = append(s, "MatcherSets: "+fmt.Sprintf("%#v", this.MatcherSets)+",\n")
+	}
+	s = append(s, "StartTimestampMs: "+fmt.Sprintf("%#v", this.StartTimestampMs)+",\n")
+	s = append(s, "EndTimestampMs: "+fmt.Sprintf("%#v", this.EndTimestampMs)+",\n")
+	s = append(s, "Limit: "+fmt.Sprintf("%#v", this.Limit)+",\n")
+	s = append(s, "GroupByTarget: "+fmt.Sprintf("%#v", this.GroupByTarget)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *NativeResourcesResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 8)
+	s = append(s, "&client.NativeResourcesResponse{")
+	if this.Series != nil {
+		vs := make([]NativeResourcesSeries, len(this.Series))
+		for i := range vs {
+			vs[i] = this.Series[i]
+		}
+		s = append(s, "Series: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "Limited: "+fmt.Sprintf("%#v", this.Limited)+",\n")
+	s = append(s, "CoverageStartMs: "+fmt.Sprintf("%#v", this.CoverageStartMs)+",\n")
+	s = append(s, "SeriesVisited: "+fmt.Sprintf("%#v", this.SeriesVisited)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *NativeResourcesSeries) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&client.NativeResourcesSeries{")
+	s = append(s, "Labels: "+fmt.Sprintf("%#v", this.Labels)+",\n")
+	if this.Versions != nil {
+		vs := make([]NativeResourceVersion, len(this.Versions))
+		for i := range vs {
+			vs[i] = this.Versions[i]
+		}
+		s = append(s, "Versions: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "Coalesced: "+fmt.Sprintf("%#v", this.Coalesced)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *NativeResourceVersion) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 8)
+	s = append(s, "&client.NativeResourceVersion{")
+	s = append(s, "MinTimeMs: "+fmt.Sprintf("%#v", this.MinTimeMs)+",\n")
+	s = append(s, "MaxTimeMs: "+fmt.Sprintf("%#v", this.MaxTimeMs)+",\n")
+	keysForIdentifying := make([]string, 0, len(this.Identifying))
+	for k, _ := range this.Identifying {
+		keysForIdentifying = append(keysForIdentifying, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Strings(keysForIdentifying)
+	mapStringForIdentifying := "map[string]string{"
+	for _, k := range keysForIdentifying {
+		mapStringForIdentifying += fmt.Sprintf("%#v: %#v,", k, this.Identifying[k])
+	}
+	mapStringForIdentifying += "}"
+	if this.Identifying != nil {
+		s = append(s, "Identifying: "+mapStringForIdentifying+",\n")
+	}
+	keysForDescriptive := make([]string, 0, len(this.Descriptive))
+	for k, _ := range this.Descriptive {
+		keysForDescriptive = append(keysForDescriptive, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Strings(keysForDescriptive)
+	mapStringForDescriptive := "map[string]string{"
+	for _, k := range keysForDescriptive {
+		mapStringForDescriptive += fmt.Sprintf("%#v: %#v,", k, this.Descriptive[k])
+	}
+	mapStringForDescriptive += "}"
+	if this.Descriptive != nil {
+		s = append(s, "Descriptive: "+mapStringForDescriptive+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func valueToGoStringIngester(v interface{}, typ string) string {
 	rv := reflect.ValueOf(v)
 	if rv.IsNil() {
@@ -3950,6 +4991,12 @@ type IngesterClient interface {
 	SearchLabelNames(ctx context.Context, in *SearchLabelNamesRequest, opts ...grpc.CallOption) (Ingester_SearchLabelNamesClient, error)
 	// SearchLabelValues streams label values for the given label name matching the search filter.
 	SearchLabelValues(ctx context.Context, in *SearchLabelValuesRequest, opts ...grpc.CallOption) (Ingester_SearchLabelValuesClient, error)
+	// NativeMetricMetadata streams the series' own metric metadata, as versions over time, of the series matching any
+	// of the matcher sets. Experimental, for the native metadata prototype.
+	NativeMetricMetadata(ctx context.Context, in *NativeMetricMetadataRequest, opts ...grpc.CallOption) (Ingester_NativeMetricMetadataClient, error)
+	// NativeResources streams the series' OTel resources, as versions over time, of the series matching any of the
+	// matcher sets, or of their targets. Experimental, for the native metadata prototype.
+	NativeResources(ctx context.Context, in *NativeResourcesRequest, opts ...grpc.CallOption) (Ingester_NativeResourcesClient, error)
 }
 
 type ingesterClient struct {
@@ -4224,6 +5271,70 @@ func (x *ingesterSearchLabelValuesClient) Recv() (*SearchResultBatch, error) {
 	return m, nil
 }
 
+func (c *ingesterClient) NativeMetricMetadata(ctx context.Context, in *NativeMetricMetadataRequest, opts ...grpc.CallOption) (Ingester_NativeMetricMetadataClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_Ingester_serviceDesc.Streams[6], "/cortex.Ingester/NativeMetricMetadata", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &ingesterNativeMetricMetadataClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Ingester_NativeMetricMetadataClient interface {
+	Recv() (*NativeMetricMetadataResponse, error)
+	grpc.ClientStream
+}
+
+type ingesterNativeMetricMetadataClient struct {
+	grpc.ClientStream
+}
+
+func (x *ingesterNativeMetricMetadataClient) Recv() (*NativeMetricMetadataResponse, error) {
+	m := new(NativeMetricMetadataResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *ingesterClient) NativeResources(ctx context.Context, in *NativeResourcesRequest, opts ...grpc.CallOption) (Ingester_NativeResourcesClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_Ingester_serviceDesc.Streams[7], "/cortex.Ingester/NativeResources", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &ingesterNativeResourcesClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Ingester_NativeResourcesClient interface {
+	Recv() (*NativeResourcesResponse, error)
+	grpc.ClientStream
+}
+
+type ingesterNativeResourcesClient struct {
+	grpc.ClientStream
+}
+
+func (x *ingesterNativeResourcesClient) Recv() (*NativeResourcesResponse, error) {
+	m := new(NativeResourcesResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // IngesterServer is the server API for Ingester service.
 type IngesterServer interface {
 	Push(context.Context, *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
@@ -4247,6 +5358,12 @@ type IngesterServer interface {
 	SearchLabelNames(*SearchLabelNamesRequest, Ingester_SearchLabelNamesServer) error
 	// SearchLabelValues streams label values for the given label name matching the search filter.
 	SearchLabelValues(*SearchLabelValuesRequest, Ingester_SearchLabelValuesServer) error
+	// NativeMetricMetadata streams the series' own metric metadata, as versions over time, of the series matching any
+	// of the matcher sets. Experimental, for the native metadata prototype.
+	NativeMetricMetadata(*NativeMetricMetadataRequest, Ingester_NativeMetricMetadataServer) error
+	// NativeResources streams the series' OTel resources, as versions over time, of the series matching any of the
+	// matcher sets, or of their targets. Experimental, for the native metadata prototype.
+	NativeResources(*NativeResourcesRequest, Ingester_NativeResourcesServer) error
 }
 
 // UnimplementedIngesterServer can be embedded to have forward compatible implementations.
@@ -4294,6 +5411,12 @@ func (*UnimplementedIngesterServer) SearchLabelNames(req *SearchLabelNamesReques
 }
 func (*UnimplementedIngesterServer) SearchLabelValues(req *SearchLabelValuesRequest, srv Ingester_SearchLabelValuesServer) error {
 	return status.Errorf(codes.Unimplemented, "method SearchLabelValues not implemented")
+}
+func (*UnimplementedIngesterServer) NativeMetricMetadata(req *NativeMetricMetadataRequest, srv Ingester_NativeMetricMetadataServer) error {
+	return status.Errorf(codes.Unimplemented, "method NativeMetricMetadata not implemented")
+}
+func (*UnimplementedIngesterServer) NativeResources(req *NativeResourcesRequest, srv Ingester_NativeResourcesServer) error {
+	return status.Errorf(codes.Unimplemented, "method NativeResources not implemented")
 }
 
 func RegisterIngesterServer(s *grpc.Server, srv IngesterServer) {
@@ -4570,6 +5693,48 @@ func (x *ingesterSearchLabelValuesServer) Send(m *SearchResultBatch) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _Ingester_NativeMetricMetadata_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(NativeMetricMetadataRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(IngesterServer).NativeMetricMetadata(m, &ingesterNativeMetricMetadataServer{stream})
+}
+
+type Ingester_NativeMetricMetadataServer interface {
+	Send(*NativeMetricMetadataResponse) error
+	grpc.ServerStream
+}
+
+type ingesterNativeMetricMetadataServer struct {
+	grpc.ServerStream
+}
+
+func (x *ingesterNativeMetricMetadataServer) Send(m *NativeMetricMetadataResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _Ingester_NativeResources_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(NativeResourcesRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(IngesterServer).NativeResources(m, &ingesterNativeResourcesServer{stream})
+}
+
+type Ingester_NativeResourcesServer interface {
+	Send(*NativeResourcesResponse) error
+	grpc.ServerStream
+}
+
+type ingesterNativeResourcesServer struct {
+	grpc.ServerStream
+}
+
+func (x *ingesterNativeResourcesServer) Send(m *NativeResourcesResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 var _Ingester_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "cortex.Ingester",
 	HandlerType: (*IngesterServer)(nil),
@@ -4636,6 +5801,16 @@ var _Ingester_serviceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "SearchLabelValues",
 			Handler:       _Ingester_SearchLabelValues_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "NativeMetricMetadata",
+			Handler:       _Ingester_NativeMetricMetadata_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "NativeResources",
+			Handler:       _Ingester_NativeResources_Handler,
 			ServerStreams: true,
 		},
 	},
@@ -6180,6 +7355,479 @@ func (m *LabelMatcher) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *NativeMetricMetadataRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *NativeMetricMetadataRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *NativeMetricMetadataRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Limit != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.Limit))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.MatcherSets) > 0 {
+		for iNdEx := len(m.MatcherSets) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.MatcherSets[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintIngester(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *NativeMetricMetadataResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *NativeMetricMetadataResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *NativeMetricMetadataResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.SeriesVisited != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.SeriesVisited))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.CoverageStartMs != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.CoverageStartMs))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.Limited {
+		i--
+		if m.Limited {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.Series) > 0 {
+		for iNdEx := len(m.Series) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Series[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintIngester(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *NativeMetricMetadataSeries) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *NativeMetricMetadataSeries) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *NativeMetricMetadataSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Coalesced {
+		i--
+		if m.Coalesced {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.Truncated {
+		i--
+		if m.Truncated {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x18
+	}
+	if len(m.Versions) > 0 {
+		for iNdEx := len(m.Versions) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Versions[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintIngester(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if len(m.Labels) > 0 {
+		for iNdEx := len(m.Labels) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size := m.Labels[iNdEx].Size()
+				i -= size
+				if _, err := m.Labels[iNdEx].MarshalTo(dAtA[i:]); err != nil {
+					return 0, err
+				}
+				i = encodeVarintIngester(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *NativeMetricMetadataVersion) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *NativeMetricMetadataVersion) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *NativeMetricMetadataVersion) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Help) > 0 {
+		i -= len(m.Help)
+		copy(dAtA[i:], m.Help)
+		i = encodeVarintIngester(dAtA, i, uint64(len(m.Help)))
+		i--
+		dAtA[i] = 0x2a
+	}
+	if len(m.Unit) > 0 {
+		i -= len(m.Unit)
+		copy(dAtA[i:], m.Unit)
+		i = encodeVarintIngester(dAtA, i, uint64(len(m.Unit)))
+		i--
+		dAtA[i] = 0x22
+	}
+	if m.Type != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.Type))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.MaxTimeMs != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.MaxTimeMs))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.MinTimeMs != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.MinTimeMs))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *NativeResourcesRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *NativeResourcesRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *NativeResourcesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.GroupByTarget {
+		i--
+		if m.GroupByTarget {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x28
+	}
+	if m.Limit != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.Limit))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.EndTimestampMs != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.EndTimestampMs))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.StartTimestampMs != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.StartTimestampMs))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.MatcherSets) > 0 {
+		for iNdEx := len(m.MatcherSets) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.MatcherSets[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintIngester(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *NativeResourcesResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *NativeResourcesResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *NativeResourcesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.SeriesVisited != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.SeriesVisited))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.CoverageStartMs != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.CoverageStartMs))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.Limited {
+		i--
+		if m.Limited {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.Series) > 0 {
+		for iNdEx := len(m.Series) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Series[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintIngester(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *NativeResourcesSeries) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *NativeResourcesSeries) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *NativeResourcesSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Coalesced {
+		i--
+		if m.Coalesced {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x18
+	}
+	if len(m.Versions) > 0 {
+		for iNdEx := len(m.Versions) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Versions[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintIngester(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if len(m.Labels) > 0 {
+		for iNdEx := len(m.Labels) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size := m.Labels[iNdEx].Size()
+				i -= size
+				if _, err := m.Labels[iNdEx].MarshalTo(dAtA[i:]); err != nil {
+					return 0, err
+				}
+				i = encodeVarintIngester(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *NativeResourceVersion) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *NativeResourceVersion) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *NativeResourceVersion) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Descriptive) > 0 {
+		for k := range m.Descriptive {
+			v := m.Descriptive[k]
+			baseI := i
+			i -= len(v)
+			copy(dAtA[i:], v)
+			i = encodeVarintIngester(dAtA, i, uint64(len(v)))
+			i--
+			dAtA[i] = 0x12
+			i -= len(k)
+			copy(dAtA[i:], k)
+			i = encodeVarintIngester(dAtA, i, uint64(len(k)))
+			i--
+			dAtA[i] = 0xa
+			i = encodeVarintIngester(dAtA, i, uint64(baseI-i))
+			i--
+			dAtA[i] = 0x22
+		}
+	}
+	if len(m.Identifying) > 0 {
+		for k := range m.Identifying {
+			v := m.Identifying[k]
+			baseI := i
+			i -= len(v)
+			copy(dAtA[i:], v)
+			i = encodeVarintIngester(dAtA, i, uint64(len(v)))
+			i--
+			dAtA[i] = 0x12
+			i -= len(k)
+			copy(dAtA[i:], k)
+			i = encodeVarintIngester(dAtA, i, uint64(len(k)))
+			i--
+			dAtA[i] = 0xa
+			i = encodeVarintIngester(dAtA, i, uint64(baseI-i))
+			i--
+			dAtA[i] = 0x1a
+		}
+	}
+	if m.MaxTimeMs != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.MaxTimeMs))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.MinTimeMs != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.MinTimeMs))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintIngester(dAtA []byte, offset int, v uint64) int {
 	offset -= sovIngester(v)
 	base := offset
@@ -6867,6 +8515,207 @@ func (m *LabelMatcher) Size() (n int) {
 	return n
 }
 
+func (m *NativeMetricMetadataRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.MatcherSets) > 0 {
+		for _, e := range m.MatcherSets {
+			l = e.Size()
+			n += 1 + l + sovIngester(uint64(l))
+		}
+	}
+	if m.Limit != 0 {
+		n += 1 + sovIngester(uint64(m.Limit))
+	}
+	return n
+}
+
+func (m *NativeMetricMetadataResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Series) > 0 {
+		for _, e := range m.Series {
+			l = e.Size()
+			n += 1 + l + sovIngester(uint64(l))
+		}
+	}
+	if m.Limited {
+		n += 2
+	}
+	if m.CoverageStartMs != 0 {
+		n += 1 + sovIngester(uint64(m.CoverageStartMs))
+	}
+	if m.SeriesVisited != 0 {
+		n += 1 + sovIngester(uint64(m.SeriesVisited))
+	}
+	return n
+}
+
+func (m *NativeMetricMetadataSeries) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Labels) > 0 {
+		for _, e := range m.Labels {
+			l = e.Size()
+			n += 1 + l + sovIngester(uint64(l))
+		}
+	}
+	if len(m.Versions) > 0 {
+		for _, e := range m.Versions {
+			l = e.Size()
+			n += 1 + l + sovIngester(uint64(l))
+		}
+	}
+	if m.Truncated {
+		n += 2
+	}
+	if m.Coalesced {
+		n += 2
+	}
+	return n
+}
+
+func (m *NativeMetricMetadataVersion) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.MinTimeMs != 0 {
+		n += 1 + sovIngester(uint64(m.MinTimeMs))
+	}
+	if m.MaxTimeMs != 0 {
+		n += 1 + sovIngester(uint64(m.MaxTimeMs))
+	}
+	if m.Type != 0 {
+		n += 1 + sovIngester(uint64(m.Type))
+	}
+	l = len(m.Unit)
+	if l > 0 {
+		n += 1 + l + sovIngester(uint64(l))
+	}
+	l = len(m.Help)
+	if l > 0 {
+		n += 1 + l + sovIngester(uint64(l))
+	}
+	return n
+}
+
+func (m *NativeResourcesRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.MatcherSets) > 0 {
+		for _, e := range m.MatcherSets {
+			l = e.Size()
+			n += 1 + l + sovIngester(uint64(l))
+		}
+	}
+	if m.StartTimestampMs != 0 {
+		n += 1 + sovIngester(uint64(m.StartTimestampMs))
+	}
+	if m.EndTimestampMs != 0 {
+		n += 1 + sovIngester(uint64(m.EndTimestampMs))
+	}
+	if m.Limit != 0 {
+		n += 1 + sovIngester(uint64(m.Limit))
+	}
+	if m.GroupByTarget {
+		n += 2
+	}
+	return n
+}
+
+func (m *NativeResourcesResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Series) > 0 {
+		for _, e := range m.Series {
+			l = e.Size()
+			n += 1 + l + sovIngester(uint64(l))
+		}
+	}
+	if m.Limited {
+		n += 2
+	}
+	if m.CoverageStartMs != 0 {
+		n += 1 + sovIngester(uint64(m.CoverageStartMs))
+	}
+	if m.SeriesVisited != 0 {
+		n += 1 + sovIngester(uint64(m.SeriesVisited))
+	}
+	return n
+}
+
+func (m *NativeResourcesSeries) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Labels) > 0 {
+		for _, e := range m.Labels {
+			l = e.Size()
+			n += 1 + l + sovIngester(uint64(l))
+		}
+	}
+	if len(m.Versions) > 0 {
+		for _, e := range m.Versions {
+			l = e.Size()
+			n += 1 + l + sovIngester(uint64(l))
+		}
+	}
+	if m.Coalesced {
+		n += 2
+	}
+	return n
+}
+
+func (m *NativeResourceVersion) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.MinTimeMs != 0 {
+		n += 1 + sovIngester(uint64(m.MinTimeMs))
+	}
+	if m.MaxTimeMs != 0 {
+		n += 1 + sovIngester(uint64(m.MaxTimeMs))
+	}
+	if len(m.Identifying) > 0 {
+		for k, v := range m.Identifying {
+			_ = k
+			_ = v
+			mapEntrySize := 1 + len(k) + sovIngester(uint64(len(k))) + 1 + len(v) + sovIngester(uint64(len(v)))
+			n += mapEntrySize + 1 + sovIngester(uint64(mapEntrySize))
+		}
+	}
+	if len(m.Descriptive) > 0 {
+		for k, v := range m.Descriptive {
+			_ = k
+			_ = v
+			mapEntrySize := 1 + len(k) + sovIngester(uint64(len(k))) + 1 + len(v) + sovIngester(uint64(len(v)))
+			n += mapEntrySize + 1 + sovIngester(uint64(mapEntrySize))
+		}
+	}
+	return n
+}
+
 func sovIngester(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
@@ -7373,6 +9222,159 @@ func (this *LabelMatcher) String() string {
 		`Type:` + fmt.Sprintf("%v", this.Type) + `,`,
 		`Name:` + fmt.Sprintf("%v", this.Name) + `,`,
 		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *NativeMetricMetadataRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForMatcherSets := "[]*LabelMatchers{"
+	for _, f := range this.MatcherSets {
+		repeatedStringForMatcherSets += strings.Replace(f.String(), "LabelMatchers", "LabelMatchers", 1) + ","
+	}
+	repeatedStringForMatcherSets += "}"
+	s := strings.Join([]string{`&NativeMetricMetadataRequest{`,
+		`MatcherSets:` + repeatedStringForMatcherSets + `,`,
+		`Limit:` + fmt.Sprintf("%v", this.Limit) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *NativeMetricMetadataResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForSeries := "[]NativeMetricMetadataSeries{"
+	for _, f := range this.Series {
+		repeatedStringForSeries += strings.Replace(strings.Replace(f.String(), "NativeMetricMetadataSeries", "NativeMetricMetadataSeries", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForSeries += "}"
+	s := strings.Join([]string{`&NativeMetricMetadataResponse{`,
+		`Series:` + repeatedStringForSeries + `,`,
+		`Limited:` + fmt.Sprintf("%v", this.Limited) + `,`,
+		`CoverageStartMs:` + fmt.Sprintf("%v", this.CoverageStartMs) + `,`,
+		`SeriesVisited:` + fmt.Sprintf("%v", this.SeriesVisited) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *NativeMetricMetadataSeries) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForVersions := "[]NativeMetricMetadataVersion{"
+	for _, f := range this.Versions {
+		repeatedStringForVersions += strings.Replace(strings.Replace(f.String(), "NativeMetricMetadataVersion", "NativeMetricMetadataVersion", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForVersions += "}"
+	s := strings.Join([]string{`&NativeMetricMetadataSeries{`,
+		`Labels:` + fmt.Sprintf("%v", this.Labels) + `,`,
+		`Versions:` + repeatedStringForVersions + `,`,
+		`Truncated:` + fmt.Sprintf("%v", this.Truncated) + `,`,
+		`Coalesced:` + fmt.Sprintf("%v", this.Coalesced) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *NativeMetricMetadataVersion) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&NativeMetricMetadataVersion{`,
+		`MinTimeMs:` + fmt.Sprintf("%v", this.MinTimeMs) + `,`,
+		`MaxTimeMs:` + fmt.Sprintf("%v", this.MaxTimeMs) + `,`,
+		`Type:` + fmt.Sprintf("%v", this.Type) + `,`,
+		`Unit:` + fmt.Sprintf("%v", this.Unit) + `,`,
+		`Help:` + fmt.Sprintf("%v", this.Help) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *NativeResourcesRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForMatcherSets := "[]*LabelMatchers{"
+	for _, f := range this.MatcherSets {
+		repeatedStringForMatcherSets += strings.Replace(f.String(), "LabelMatchers", "LabelMatchers", 1) + ","
+	}
+	repeatedStringForMatcherSets += "}"
+	s := strings.Join([]string{`&NativeResourcesRequest{`,
+		`MatcherSets:` + repeatedStringForMatcherSets + `,`,
+		`StartTimestampMs:` + fmt.Sprintf("%v", this.StartTimestampMs) + `,`,
+		`EndTimestampMs:` + fmt.Sprintf("%v", this.EndTimestampMs) + `,`,
+		`Limit:` + fmt.Sprintf("%v", this.Limit) + `,`,
+		`GroupByTarget:` + fmt.Sprintf("%v", this.GroupByTarget) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *NativeResourcesResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForSeries := "[]NativeResourcesSeries{"
+	for _, f := range this.Series {
+		repeatedStringForSeries += strings.Replace(strings.Replace(f.String(), "NativeResourcesSeries", "NativeResourcesSeries", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForSeries += "}"
+	s := strings.Join([]string{`&NativeResourcesResponse{`,
+		`Series:` + repeatedStringForSeries + `,`,
+		`Limited:` + fmt.Sprintf("%v", this.Limited) + `,`,
+		`CoverageStartMs:` + fmt.Sprintf("%v", this.CoverageStartMs) + `,`,
+		`SeriesVisited:` + fmt.Sprintf("%v", this.SeriesVisited) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *NativeResourcesSeries) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForVersions := "[]NativeResourceVersion{"
+	for _, f := range this.Versions {
+		repeatedStringForVersions += strings.Replace(strings.Replace(f.String(), "NativeResourceVersion", "NativeResourceVersion", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForVersions += "}"
+	s := strings.Join([]string{`&NativeResourcesSeries{`,
+		`Labels:` + fmt.Sprintf("%v", this.Labels) + `,`,
+		`Versions:` + repeatedStringForVersions + `,`,
+		`Coalesced:` + fmt.Sprintf("%v", this.Coalesced) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *NativeResourceVersion) String() string {
+	if this == nil {
+		return "nil"
+	}
+	keysForIdentifying := make([]string, 0, len(this.Identifying))
+	for k, _ := range this.Identifying {
+		keysForIdentifying = append(keysForIdentifying, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Strings(keysForIdentifying)
+	mapStringForIdentifying := "map[string]string{"
+	for _, k := range keysForIdentifying {
+		mapStringForIdentifying += fmt.Sprintf("%v: %v,", k, this.Identifying[k])
+	}
+	mapStringForIdentifying += "}"
+	keysForDescriptive := make([]string, 0, len(this.Descriptive))
+	for k, _ := range this.Descriptive {
+		keysForDescriptive = append(keysForDescriptive, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Strings(keysForDescriptive)
+	mapStringForDescriptive := "map[string]string{"
+	for _, k := range keysForDescriptive {
+		mapStringForDescriptive += fmt.Sprintf("%v: %v,", k, this.Descriptive[k])
+	}
+	mapStringForDescriptive += "}"
+	s := strings.Join([]string{`&NativeResourceVersion{`,
+		`MinTimeMs:` + fmt.Sprintf("%v", this.MinTimeMs) + `,`,
+		`MaxTimeMs:` + fmt.Sprintf("%v", this.MaxTimeMs) + `,`,
+		`Identifying:` + mapStringForIdentifying + `,`,
+		`Descriptive:` + mapStringForDescriptive + `,`,
 		`}`,
 	}, "")
 	return s
@@ -11482,6 +13484,1363 @@ func (m *LabelMatcher) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Value = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipIngester(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *NativeMetricMetadataRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowIngester
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: NativeMetricMetadataRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: NativeMetricMetadataRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MatcherSets", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthIngester
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.MatcherSets = append(m.MatcherSets, &LabelMatchers{})
+			if err := m.MatcherSets[len(m.MatcherSets)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Limit", wireType)
+			}
+			m.Limit = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Limit |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipIngester(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *NativeMetricMetadataResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowIngester
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: NativeMetricMetadataResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: NativeMetricMetadataResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Series", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthIngester
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Series = append(m.Series, NativeMetricMetadataSeries{})
+			if err := m.Series[len(m.Series)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Limited", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Limited = bool(v != 0)
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CoverageStartMs", wireType)
+			}
+			m.CoverageStartMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.CoverageStartMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SeriesVisited", wireType)
+			}
+			m.SeriesVisited = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.SeriesVisited |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipIngester(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *NativeMetricMetadataSeries) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowIngester
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: NativeMetricMetadataSeries: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: NativeMetricMetadataSeries: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Labels", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthIngester
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Labels = append(m.Labels, github_com_grafana_mimir_pkg_mimirpb.LabelAdapter{})
+			if err := m.Labels[len(m.Labels)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Versions", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthIngester
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Versions = append(m.Versions, NativeMetricMetadataVersion{})
+			if err := m.Versions[len(m.Versions)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Truncated", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Truncated = bool(v != 0)
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Coalesced", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Coalesced = bool(v != 0)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipIngester(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *NativeMetricMetadataVersion) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowIngester
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: NativeMetricMetadataVersion: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: NativeMetricMetadataVersion: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MinTimeMs", wireType)
+			}
+			m.MinTimeMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.MinTimeMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MaxTimeMs", wireType)
+			}
+			m.MaxTimeMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.MaxTimeMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Type", wireType)
+			}
+			m.Type = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Type |= mimirpb.MetricMetadata_MetricType(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Unit", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthIngester
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Unit = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Help", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthIngester
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Help = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipIngester(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *NativeResourcesRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowIngester
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: NativeResourcesRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: NativeResourcesRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MatcherSets", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthIngester
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.MatcherSets = append(m.MatcherSets, &LabelMatchers{})
+			if err := m.MatcherSets[len(m.MatcherSets)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field StartTimestampMs", wireType)
+			}
+			m.StartTimestampMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.StartTimestampMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EndTimestampMs", wireType)
+			}
+			m.EndTimestampMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.EndTimestampMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Limit", wireType)
+			}
+			m.Limit = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Limit |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field GroupByTarget", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.GroupByTarget = bool(v != 0)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipIngester(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *NativeResourcesResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowIngester
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: NativeResourcesResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: NativeResourcesResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Series", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthIngester
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Series = append(m.Series, NativeResourcesSeries{})
+			if err := m.Series[len(m.Series)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Limited", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Limited = bool(v != 0)
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CoverageStartMs", wireType)
+			}
+			m.CoverageStartMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.CoverageStartMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SeriesVisited", wireType)
+			}
+			m.SeriesVisited = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.SeriesVisited |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipIngester(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *NativeResourcesSeries) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowIngester
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: NativeResourcesSeries: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: NativeResourcesSeries: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Labels", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthIngester
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Labels = append(m.Labels, github_com_grafana_mimir_pkg_mimirpb.LabelAdapter{})
+			if err := m.Labels[len(m.Labels)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Versions", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthIngester
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Versions = append(m.Versions, NativeResourceVersion{})
+			if err := m.Versions[len(m.Versions)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Coalesced", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Coalesced = bool(v != 0)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipIngester(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *NativeResourceVersion) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowIngester
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: NativeResourceVersion: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: NativeResourceVersion: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MinTimeMs", wireType)
+			}
+			m.MinTimeMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.MinTimeMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MaxTimeMs", wireType)
+			}
+			m.MaxTimeMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.MaxTimeMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Identifying", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthIngester
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Identifying == nil {
+				m.Identifying = make(map[string]string)
+			}
+			var mapkey string
+			var mapvalue string
+			for iNdEx < postIndex {
+				entryPreIndex := iNdEx
+				var wire uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowIngester
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					wire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				fieldNum := int32(wire >> 3)
+				if fieldNum == 1 {
+					var stringLenmapkey uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowIngester
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						stringLenmapkey |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					intStringLenmapkey := int(stringLenmapkey)
+					if intStringLenmapkey < 0 {
+						return ErrInvalidLengthIngester
+					}
+					postStringIndexmapkey := iNdEx + intStringLenmapkey
+					if postStringIndexmapkey < 0 {
+						return ErrInvalidLengthIngester
+					}
+					if postStringIndexmapkey > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapkey = string(dAtA[iNdEx:postStringIndexmapkey])
+					iNdEx = postStringIndexmapkey
+				} else if fieldNum == 2 {
+					var stringLenmapvalue uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowIngester
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						stringLenmapvalue |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					intStringLenmapvalue := int(stringLenmapvalue)
+					if intStringLenmapvalue < 0 {
+						return ErrInvalidLengthIngester
+					}
+					postStringIndexmapvalue := iNdEx + intStringLenmapvalue
+					if postStringIndexmapvalue < 0 {
+						return ErrInvalidLengthIngester
+					}
+					if postStringIndexmapvalue > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapvalue = string(dAtA[iNdEx:postStringIndexmapvalue])
+					iNdEx = postStringIndexmapvalue
+				} else {
+					iNdEx = entryPreIndex
+					skippy, err := skipIngester(dAtA[iNdEx:])
+					if err != nil {
+						return err
+					}
+					if (skippy < 0) || (iNdEx+skippy) < 0 {
+						return ErrInvalidLengthIngester
+					}
+					if (iNdEx + skippy) > postIndex {
+						return io.ErrUnexpectedEOF
+					}
+					iNdEx += skippy
+				}
+			}
+			m.Identifying[mapkey] = mapvalue
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Descriptive", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthIngester
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Descriptive == nil {
+				m.Descriptive = make(map[string]string)
+			}
+			var mapkey string
+			var mapvalue string
+			for iNdEx < postIndex {
+				entryPreIndex := iNdEx
+				var wire uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowIngester
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					wire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				fieldNum := int32(wire >> 3)
+				if fieldNum == 1 {
+					var stringLenmapkey uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowIngester
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						stringLenmapkey |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					intStringLenmapkey := int(stringLenmapkey)
+					if intStringLenmapkey < 0 {
+						return ErrInvalidLengthIngester
+					}
+					postStringIndexmapkey := iNdEx + intStringLenmapkey
+					if postStringIndexmapkey < 0 {
+						return ErrInvalidLengthIngester
+					}
+					if postStringIndexmapkey > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapkey = string(dAtA[iNdEx:postStringIndexmapkey])
+					iNdEx = postStringIndexmapkey
+				} else if fieldNum == 2 {
+					var stringLenmapvalue uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowIngester
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						stringLenmapvalue |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					intStringLenmapvalue := int(stringLenmapvalue)
+					if intStringLenmapvalue < 0 {
+						return ErrInvalidLengthIngester
+					}
+					postStringIndexmapvalue := iNdEx + intStringLenmapvalue
+					if postStringIndexmapvalue < 0 {
+						return ErrInvalidLengthIngester
+					}
+					if postStringIndexmapvalue > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapvalue = string(dAtA[iNdEx:postStringIndexmapvalue])
+					iNdEx = postStringIndexmapvalue
+				} else {
+					iNdEx = entryPreIndex
+					skippy, err := skipIngester(dAtA[iNdEx:])
+					if err != nil {
+						return err
+					}
+					if (skippy < 0) || (iNdEx+skippy) < 0 {
+						return ErrInvalidLengthIngester
+					}
+					if (iNdEx + skippy) > postIndex {
+						return io.ErrUnexpectedEOF
+					}
+					iNdEx += skippy
+				}
+			}
+			m.Descriptive[mapkey] = mapvalue
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex

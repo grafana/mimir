@@ -44,6 +44,14 @@ service Ingester {
   // SearchLabelValues streams label values for the given label name matching the search filter.
   rpc SearchLabelValues(SearchLabelValuesRequest) returns (stream SearchResultBatch) {}
 
+  // NativeMetricMetadata streams the series' own metric metadata, as versions over time, of the series matching any
+  // of the matcher sets. Experimental, for the native metadata prototype.
+  rpc NativeMetricMetadata(NativeMetricMetadataRequest) returns (stream NativeMetricMetadataResponse) {}
+
+  // NativeResources streams the series' OTel resources, as versions over time, of the series matching any of the
+  // matcher sets, or of their targets. Experimental, for the native metadata prototype.
+  rpc NativeResources(NativeResourcesRequest) returns (stream NativeResourcesResponse) {}
+
   // When adding more read-path methods here, please update ingester_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well.
 }
 
@@ -324,4 +332,89 @@ message LabelMatcher {
   MatchType type = 1;
   string name = 2;
   string value = 3;
+}
+
+message NativeMetricMetadataRequest {
+  repeated LabelMatchers matcher_sets = 1;
+  // At most this many series, the first by labels, when positive.
+  int64 limit = 2;
+}
+
+// A NativeMetricMetadataResponse is a batch of the lookup's series, in label order. The first batch has the lookup's
+// limited, coverage_start_ms and series_visited, and is sent even without series.
+message NativeMetricMetadataResponse {
+  repeated NativeMetricMetadataSeries series = 1 [(gogoproto.nullable) = false];
+  // Whether more series matched than the limit let through.
+  bool limited = 2;
+  // When the ingester's native metadata starts, math.MinInt64 when it has no series of the tenant.
+  int64 coverage_start_ms = 3;
+  // How many series with native metadata matched, whatever the limit let through.
+  int64 series_visited = 4;
+}
+
+message NativeMetricMetadataSeries {
+  repeated cortexpb.LabelPair labels = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
+  ];
+  // The versions, oldest first.
+  repeated NativeMetricMetadataVersion versions = 2 [(gogoproto.nullable) = false];
+  // Whether the ingester's cap on versions per series evicted older ones.
+  bool truncated = 3;
+  // Whether a version stands for changes over the change limit in its window, with the latest of their values.
+  bool coalesced = 4;
+}
+
+// A NativeMetricMetadataVersion is in force over [min_time_ms, max_time_ms]: until the next version's start, or for
+// the last version, the series' newest sample.
+message NativeMetricMetadataVersion {
+  int64 min_time_ms = 1;
+  int64 max_time_ms = 2;
+  cortexpb.MetricMetadata.MetricType type = 3;
+  string unit = 4;
+  string help = 5;
+}
+
+message NativeResourcesRequest {
+  repeated LabelMatchers matcher_sets = 1;
+  // The versions in force during [start_timestamp_ms, end_timestamp_ms].
+  int64 start_timestamp_ms = 2;
+  int64 end_timestamp_ms = 3;
+  // At most this many series, or targets, the first by labels, when positive.
+  int64 limit = 4;
+  // Whether to answer with one entry per target, its job and instance, with the versions of all its series.
+  bool group_by_target = 5;
+}
+
+// A NativeResourcesResponse is a batch of the lookup's series, or targets, in label order. The first batch has the
+// lookup's limited, coverage_start_ms and series_visited, and is sent even without series.
+message NativeResourcesResponse {
+  repeated NativeResourcesSeries series = 1 [(gogoproto.nullable) = false];
+  // Whether more series, or targets, matched than the limit let through.
+  bool limited = 2;
+  // When the ingester's native resources start, math.MinInt64 when it has no series of the tenant.
+  int64 coverage_start_ms = 3;
+  // How many series with native resources matched, whatever the limit let through.
+  int64 series_visited = 4;
+}
+
+message NativeResourcesSeries {
+  // The series' labels, or a target's job and instance.
+  repeated cortexpb.LabelPair labels = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
+  ];
+  // The versions, oldest first, which don't overlap.
+  repeated NativeResourceVersion versions = 2 [(gogoproto.nullable) = false];
+  // Whether a version stands for changes over the ingester's limits, a range of unknown resource.
+  bool coalesced = 3;
+}
+
+// A NativeResourceVersion is in force over [min_time_ms, max_time_ms]: until the next version's start, or for the last
+// version, the newest sample of the series, or of the target's series.
+message NativeResourceVersion {
+  int64 min_time_ms = 1;
+  int64 max_time_ms = 2;
+  map<string, string> identifying = 3;
+  map<string, string> descriptive = 4;
 }

@@ -86,3 +86,13 @@ func (m *IngesterServerMock) SearchLabelValues(req *SearchLabelValuesRequest, sr
 	args := m.Called(req, srv)
 	return args.Error(0)
 }
+
+func (m *IngesterServerMock) NativeMetricMetadata(req *NativeMetricMetadataRequest, srv Ingester_NativeMetricMetadataServer) error {
+	args := m.Called(req, srv)
+	return args.Error(0)
+}
+
+func (m *IngesterServerMock) NativeResources(req *NativeResourcesRequest, srv Ingester_NativeResourcesServer) error {
+	args := m.Called(req, srv)
+	return args.Error(0)
+}

@@ -72,7 +72,7 @@ func TestSeriesstoreEngineServesNativeMetricMetadata(t *testing.T) {
 
 				db := ingester.getTSDB("tenant")
 				require.NotNil(t, db.nativeMetadata)
-				result, err := db.nativeMetadata.nativeMetricMetadata(context.Background(), [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "requests_total")}}, 5)
+				result, err := db.nativeMetadata.nativeMetricMetadata(context.Background(), [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "requests_total")}}, 5, 0)
 				if !enabled {
 					// The seriesstore engine keeps none while it's off, whatever the switch was when it opened.
 					require.NoError(t, err)
@@ -123,7 +123,7 @@ func TestSeriesstoreCoalescesMetricMetadataChangesOverTheLimit(t *testing.T) {
 	defer cancel()
 	require.NoError(t, ingester.ingestReader.WaitReadConsistencyUntilOffsets(waitCtx, kmeta.NewSingleClusterPartitionOffsets(last())))
 
-	result, err := ingester.getTSDB("tenant").nativeMetadata.nativeMetricMetadata(context.Background(), [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "requests_total")}}, 0)
+	result, err := ingester.getTSDB("tenant").nativeMetadata.nativeMetricMetadata(context.Background(), [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "requests_total")}}, 0, 0)
 	require.NoError(t, err)
 	require.Len(t, result.Series, 1)
 	require.True(t, result.Series[0].Coalesced)

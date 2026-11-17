@@ -43,8 +43,9 @@ func resourceAttributeString(a mimirpb.ResourceAttribute) string {
 type nativeResourcesEngine interface {
 	// nativeResources returns the resource versions in force during [mint, maxt] of the series matching any of the
 	// matcher sets, in label order, and with a positive limit at most that many series. A version is in force from its
-	// EffectiveFrom until the next one's.
-	nativeResources(ctx context.Context, matcherSets [][]*labels.Matcher, mint, maxt int64, limit int) (nativeResourcesResult, error)
+	// EffectiveFrom until the next one's. With a positive maxSeries, it fails with errNativeLookupTooManySeries once
+	// more series with resources than that match.
+	nativeResources(ctx context.Context, matcherSets [][]*labels.Matcher, mint, maxt int64, limit, maxSeries int) (nativeResourcesResult, error)
 }
 
 var _ nativeResourcesEngine = seriesstoreEngine{}
@@ -57,6 +58,8 @@ type nativeResourcesResult struct {
 	// CoverageStart is when the resources start: the later of the head's min time and, as the seriesstore engine
 	// doesn't persist them, the first observation since it opened.
 	CoverageStart int64
+	// SeriesVisited is how many series with resources matched, whatever the limit let through.
+	SeriesVisited int
 }
 
 // nativeResourcesSeries is a series' resource versions as change points, oldest first.
@@ -66,6 +69,9 @@ type nativeResourcesSeries struct {
 	// Coalesced reports that changes over the seriesstore engine's limits were merged into a range of unknown
 	// resource.
 	Coalesced bool
+	// NewestSample is the timestamp of the series' newest sample the engine holds, which its last version lasts until,
+	// or math.MinInt64 when it holds none.
+	NewestSample int64
 }
 
 // nativeResourceVersion is a resource's attributes from a sample time on, with values as strings.
@@ -98,14 +104,14 @@ func (r *seriesstoreResources) resource(entry *mimirpb.ResourceEntry, _ storage.
 	return built
 }
 
-func (e seriesstoreEngine) nativeResources(ctx context.Context, matcherSets [][]*labels.Matcher, mint, maxt int64, limit int) (nativeResourcesResult, error) {
-	series, limited, err := e.NativeResources(ctx, matcherSets, mint, maxt, limit)
+func (e seriesstoreEngine) nativeResources(ctx context.Context, matcherSets [][]*labels.Matcher, mint, maxt int64, limit, maxSeries int) (nativeResourcesResult, error) {
+	series, limited, visited, err := e.NativeResourcesCapped(ctx, matcherSets, mint, maxt, limit, maxSeries)
 	if err != nil {
-		return nativeResourcesResult{}, err
+		return nativeResourcesResult{SeriesVisited: visited}, err
 	}
-	result := nativeResourcesResult{Series: make([]nativeResourcesSeries, 0, len(series)), Limited: limited, CoverageStart: e.NativeResourcesCoverageStart()}
+	result := nativeResourcesResult{Series: make([]nativeResourcesSeries, 0, len(series)), Limited: limited, CoverageStart: e.NativeResourcesCoverageStart(), SeriesVisited: visited}
 	for _, s := range series {
-		out := nativeResourcesSeries{Labels: s.Labels, Versions: make([]nativeResourceVersion, 0, len(s.Versions))}
+		out := nativeResourcesSeries{Labels: s.Labels, Versions: make([]nativeResourceVersion, 0, len(s.Versions)), NewestSample: s.NewestSample}
 		for _, v := range s.Versions {
 			out.Coalesced = out.Coalesced || v.Coalesced
 			out.Versions = append(out.Versions, nativeResourceVersion{

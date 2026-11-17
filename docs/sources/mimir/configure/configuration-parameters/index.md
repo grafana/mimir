@@ -4925,6 +4925,18 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.native-resources-max-dictionary-bytes
 [native_resources_max_dictionary_bytes: <int> | default = 268435456]
 
+# (experimental) How many series with native metric metadata or resources a
+# lookup of them by series may match in an ingester. Past it, the lookup fails.
+# 0 means no limit.
+# CLI flag: -ingester.native-metadata-lookup-max-series
+[native_metadata_lookup_max_series: <int> | default = 100000]
+
+# (experimental) How many series with native resources a lookup of them by
+# target may match in an ingester, which reads every series of each target. Past
+# it, the lookup fails. 0 means no limit.
+# CLI flag: -ingester.native-metadata-grouped-lookup-max-series
+[native_metadata_grouped_lookup_max_series: <int> | default = 1000000]
+
 # (experimental) Encoding used for float chunks written for this tenant by the
 # ingester and block-builder, and by the compactor when it re-encodes
 # overlapping chunks. Supported values are: xor, xor2.

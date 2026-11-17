@@ -6231,6 +6231,28 @@
         },
         {
           "kind": "field",
+          "name": "native_metadata_lookup_max_series",
+          "required": false,
+          "desc": "How many series with native metric metadata or resources a lookup of them by series may match in an ingester. Past it, the lookup fails. 0 means no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 100000,
+          "fieldFlag": "ingester.native-metadata-lookup-max-series",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "native_metadata_grouped_lookup_max_series",
+          "required": false,
+          "desc": "How many series with native resources a lookup of them by target may match in an ingester, which reads every series of each target. Past it, the lookup fails. 0 means no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1000000,
+          "fieldFlag": "ingester.native-metadata-grouped-lookup-max-series",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "float_chunk_encoding",
           "required": false,
           "desc": "Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: xor, xor2.",

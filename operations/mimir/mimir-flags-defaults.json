@@ -432,6 +432,8 @@
   "ingester.native-resources-max-versions-per-identity": 10,
   "ingester.native-resources-max-new-identities": 100000,
   "ingester.native-resources-max-dictionary-bytes": 268435456,
+  "ingester.native-metadata-lookup-max-series": 100000,
+  "ingester.native-metadata-grouped-lookup-max-series": 1000000,
   "blocks-storage.tsdb.float-chunk-encoding": "xor",
   "blocks-storage.tsdb.histogram-chunk-encoding": "histogram",
   "ingester.active-series-custom-trackers": {},

@@ -62,6 +62,24 @@ func (s searchLabelNamesStream) Context() context.Context {
 	return s.ctx
 }
 
+type nativeMetricMetadataStream struct {
+	ctx context.Context
+	client.Ingester_NativeMetricMetadataServer
+}
+
+func (s nativeMetricMetadataStream) Context() context.Context {
+	return s.ctx
+}
+
+type nativeResourcesStream struct {
+	ctx context.Context
+	client.Ingester_NativeResourcesServer
+}
+
+func (s nativeResourcesStream) Context() context.Context {
+	return s.ctx
+}
+
 type searchLabelValuesStream struct {
 	ctx context.Context
 	client.Ingester_SearchLabelValuesServer
@@ -436,4 +454,32 @@ func (i *ProfilingWrapper) LabelChurnHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	i.ing.LabelChurnHandler(w, r)
+}
+
+func (i *ProfilingWrapper) NativeMetricMetadata(request *client.NativeMetricMetadataRequest, server client.Ingester_NativeMetricMetadataServer) error {
+	ctx := server.Context()
+	if isTraceSampled(ctx) {
+		userID, _ := tenant.TenantID(ctx)
+		labels := pprof.Labels("userID", userID)
+		defer pprof.SetGoroutineLabels(ctx)
+		ctx = pprof.WithLabels(ctx, labels)
+		pprof.SetGoroutineLabels(ctx)
+		server = nativeMetricMetadataStream{ctx, server}
+	}
+
+	return i.ing.NativeMetricMetadata(request, server)
+}
+
+func (i *ProfilingWrapper) NativeResources(request *client.NativeResourcesRequest, server client.Ingester_NativeResourcesServer) error {
+	ctx := server.Context()
+	if isTraceSampled(ctx) {
+		userID, _ := tenant.TenantID(ctx)
+		labels := pprof.Labels("userID", userID)
+		defer pprof.SetGoroutineLabels(ctx)
+		ctx = pprof.WithLabels(ctx, labels)
+		pprof.SetGoroutineLabels(ctx)
+		server = nativeResourcesStream{ctx, server}
+	}
+
+	return i.ing.NativeResources(request, server)
 }

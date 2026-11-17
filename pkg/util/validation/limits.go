@@ -274,6 +274,8 @@ type Limits struct {
 	NativeResourcesMaxVersionsPerIdentity   int                    `yaml:"native_resources_max_versions_per_identity" json:"native_resources_max_versions_per_identity" category:"experimental"`
 	NativeResourcesMaxNewIdentities         int                    `yaml:"native_resources_max_new_identities" json:"native_resources_max_new_identities" category:"experimental"`
 	NativeResourcesMaxDictionaryBytes       int64                  `yaml:"native_resources_max_dictionary_bytes" json:"native_resources_max_dictionary_bytes" category:"experimental"`
+	NativeMetadataLookupMaxSeries           int                    `yaml:"native_metadata_lookup_max_series" json:"native_metadata_lookup_max_series" category:"experimental"`
+	NativeMetadataGroupedLookupMaxSeries    int                    `yaml:"native_metadata_grouped_lookup_max_series" json:"native_metadata_grouped_lookup_max_series" category:"experimental"`
 
 	// Float chunk encoding.
 	FloatChunkEncoding string `yaml:"float_chunk_encoding" json:"float_chunk_encoding" category:"experimental"`
@@ -516,6 +518,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.NativeResourcesMaxNewIdentities, "ingester.native-resources-max-new-identities", 100_000, "How many new resource identities the seriesstore engine takes per window. Past them, the resources of series with new identities are unknown. 0 means no limit.")
 	f.Int64Var(&l.NativeResourcesMaxDictionaryBytes, "ingester.native-resources-max-dictionary-bytes", 256<<20, "How many bytes of resource attributes the seriesstore engine keeps. Past them, new resources are unknown. 0 means no limit.")
 	f.Var(&l.NativeResourcesIndexedAttributes, "ingester.native-resources-indexed-attributes", "Comma-separated descriptive attributes of resources, besides the identifying service.name, service.namespace and service.instance.id, that the ingester indexes, to find series by. Changing it takes effect when the tenant's TSDB next opens.")
+	f.IntVar(&l.NativeMetadataLookupMaxSeries, "ingester.native-metadata-lookup-max-series", 100_000, "How many series with native metric metadata or resources a lookup of them by series may match in an ingester. Past it, the lookup fails. 0 means no limit.")
+	f.IntVar(&l.NativeMetadataGroupedLookupMaxSeries, "ingester.native-metadata-grouped-lookup-max-series", 1_000_000, "How many series with native resources a lookup of them by target may match in an ingester, which reads every series of each target. Past it, the lookup fails. 0 means no limit.")
 	f.BoolVar(&l.NativeMetricMetadataEnabled, "ingester.native-metric-metadata-enabled", false, "Store each series' metric metadata (type, unit and help) in the ingester's memory, as versions over time, in addition to the metric families' metadata. Turning it on takes effect when the tenant's TSDB next opens; turning it off stops storing new metadata right away.")
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", true, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
 	f.StringVar(&l.FloatChunkEncoding, "blocks-storage.tsdb.float-chunk-encoding", DefaultFloatChunkEncodingValue, fmt.Sprintf("Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: %s.", strings.Join(FloatChunkEncodingValues, ", ")))
@@ -1587,6 +1591,16 @@ func (o *Overrides) NativeResourcesIndexedAttributes(userID string) []string {
 // NativeMetricMetadataEnabled returns whether the ingester stores the tenant's per-series metric metadata.
 func (o *Overrides) NativeMetricMetadataEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).NativeMetricMetadataEnabled
+}
+
+// NativeMetadataLookupMaxSeries returns how many series with native metadata a lookup may match in an ingester, by
+// series or, with byTarget, by target.
+func (o *Overrides) NativeMetadataLookupMaxSeries(userID string, byTarget bool) int {
+	limits := o.getOverridesForUser(userID)
+	if byTarget {
+		return limits.NativeMetadataGroupedLookupMaxSeries
+	}
+	return limits.NativeMetadataLookupMaxSeries
 }
 
 // NativeMetricMetadataChangeLimit returns how many changes of a series' own metric metadata the seriesstore engine
