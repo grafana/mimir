@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 
@@ -81,7 +82,7 @@ func TestIngesterRetainsNoRecordBuffers(t *testing.T) {
 					return
 				}
 				require.Equal(t, records.Load(), collected.Load(), "buffers collected")
-				requireIntactMetadata(t, ingester, false)
+				requireIntactMetadata(t, ingester, true)
 			})
 		}
 	})
@@ -136,7 +137,7 @@ func TestIngesterRetainsNoRecordBuffers(t *testing.T) {
 					return
 				}
 				require.Nil(t, fault)
-				requireIntactMetadata(t, ingester, test.engine == mimir_tsdb.EngineSeriesstore)
+				requireIntactMetadata(t, ingester, true)
 			})
 		}
 	})
@@ -253,14 +254,15 @@ func readEverything(t *testing.T, ingester *Ingester) {
 		read.WriteString(m.MetricFamilyName + m.Help + m.Unit)
 	}
 
-	if db.nativeMetadata != nil {
-		result, err := db.nativeMetadata.nativeMetricMetadata(context.Background(), [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+")}}, 0, 0)
-		require.NoError(t, err)
+	result, err := db.nativeMetadata.nativeMetricMetadata(context.Background(), [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+")}}, 0, 0)
+	if err == nil {
 		for _, series := range result.Series {
 			for _, version := range series.Versions {
 				read.WriteString(string(version.Metadata.Type) + version.Metadata.Help + version.Metadata.Unit)
 			}
 		}
+	} else {
+		require.ErrorIs(t, err, tsdb.ErrNativeMetadataDisabled)
 	}
 
 	if db.nativeResources != nil {

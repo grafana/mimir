@@ -10,6 +10,7 @@ import (
 
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -183,7 +184,11 @@ func nativeLookupMatcherSets(sets []*client.LabelMatchers) ([][]*labels.Matcher,
 
 // nativeLookupEngineError is the status of an engine's error that a querier tells apart from failures.
 func nativeLookupEngineError(err error, maxSeries int) error {
-	if errors.Is(err, errNativeLookupTooManySeries) {
+	switch {
+	case errors.Is(err, tsdb.ErrNativeMetadataDisabled):
+		// The TSDB opened before the tenant's native metadata was turned on.
+		return client.ErrNativeMetadataDisabled
+	case errors.Is(err, errNativeLookupTooManySeries):
 		return client.NativeLookupTooManySeriesError(maxSeries)
 	}
 	return err

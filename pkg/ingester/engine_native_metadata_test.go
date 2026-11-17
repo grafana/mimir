@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -23,13 +24,14 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// The seriesstore engine stores each series' metadata from records and serves it.
-func TestSeriesstoreEngineServesNativeMetricMetadata(t *testing.T) {
-	skipIfSeriesstore(t, "it sets the engine itself")
+// Each engine stores each series' metadata from records, with the sequential and the parallel pusher, and serves it
+// through the engine.
+func TestEnginesServeNativeMetricMetadata(t *testing.T) {
+	skipIfSeriesstore(t, "it runs both engines itself")
 	for _, test := range []struct {
 		engine      string
 		concurrency int
-	}{{mimir_tsdb.EngineSeriesstore, 0}} {
+	}{{mimir_tsdb.EnginePrometheus, 0}, {mimir_tsdb.EnginePrometheus, 8}, {mimir_tsdb.EngineSeriesstore, 0}} {
 		for _, enabled := range []bool{false, true} {
 			engine, concurrency := test.engine, test.concurrency
 			t.Run(fmt.Sprintf("engine=%s concurrency=%d enabled=%t", engine, concurrency, enabled), func(t *testing.T) {
@@ -73,6 +75,10 @@ func TestSeriesstoreEngineServesNativeMetricMetadata(t *testing.T) {
 				db := ingester.getTSDB("tenant")
 				require.NotNil(t, db.nativeMetadata)
 				result, err := db.nativeMetadata.nativeMetricMetadata(context.Background(), [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "requests_total")}}, 5, 0)
+				if !enabled && engine == mimir_tsdb.EnginePrometheus {
+					require.ErrorIs(t, err, tsdb.ErrNativeMetadataDisabled)
+					return
+				}
 				if !enabled {
 					// The seriesstore engine keeps none while it's off, whatever the switch was when it opened.
 					require.NoError(t, err)

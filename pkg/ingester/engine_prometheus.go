@@ -38,6 +38,10 @@ type prometheusEngine struct {
 	*tsdb.DB
 	// The time range of a block, which a flush compacts the head by.
 	blockDuration int64
+	// The head's max time when the TSDB opened, which native metadata starts after: the WAL replay brings none back.
+	nativeMetadataSince int64
+	// nativeResourcesEnabled is whether the TSDB opened with native resources.
+	nativeResourcesEnabled bool
 }
 
 func (e prometheusEngine) ChunkQuerier(mint, maxt int64, unordered bool) (storage.ChunkQuerier, error) {
@@ -55,7 +59,7 @@ func openPrometheusEngine(dir string, logger *slog.Logger, reg prometheus.Regist
 	}
 	// The ingester compacts on its own schedule.
 	db.DisableCompactions()
-	return prometheusEngine{DB: db, blockDuration: opts.MinBlockDuration}, nil
+	return prometheusEngine{DB: db, blockDuration: opts.MinBlockDuration, nativeMetadataSince: db.Head().MaxTime(), nativeResourcesEnabled: opts.EnableNativeResources}, nil
 }
 
 func (h prometheusHead) Ownership(owned ring.TokenRanges) (int, []storage.SeriesRef) {
@@ -186,12 +190,16 @@ type extendedAppender interface {
 
 // Ingest appends the batch with an appender, commits it, and rolls it back when a hard error stops it.
 func (e prometheusEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcome, error) {
-	return ingestThroughAppender(ctx, e.AppenderV2(ctx).(extendedAppender), batch)
+	var resources resourceStep
+	if batch.NativeResources && e.nativeResourcesEnabled {
+		resources = newTSDBResources(e.DB)
+	}
+	return ingestThroughAppender(ctx, e.AppenderV2(ctx).(extendedAppender), batch, resources)
 }
 
 // ingestThroughAppender appends the batch with the appender, commits it, and rolls it back when a hard error stops it.
-func ingestThroughAppender(ctx *ingestContext, app extendedAppender, batch ingestBatch) (ingestOutcome, error) {
-	outcome, err := appendBatch(ctx, app, batch, nil, false, nil, nil)
+func ingestThroughAppender(ctx *ingestContext, app extendedAppender, batch ingestBatch, resources resourceStep) (ingestOutcome, error) {
+	outcome, err := appendBatch(ctx, app, batch, nil, false, nil, resources)
 	if err != nil {
 		if rollbackErr := app.Rollback(); rollbackErr != nil {
 			err = errors.Join(err, fmt.Errorf("roll back the appender: %w", rollbackErr))

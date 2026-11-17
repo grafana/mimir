@@ -90,7 +90,8 @@ func nativeLookupIngester(t *testing.T, engine string, limits validation.Limits,
 	cfg := defaultIngesterTestConfig(t)
 	cfg.IngestStorageConfig.KafkaConfig.ConsumeFromPositionAtStartup = "start"
 	cfg.BlocksStorageConfig.TSDB.Engine = engine
-	// The sequential pusher appends each record by itself.
+	// The sequential pusher appends each record by itself: #17740 keeps a series' first resource of an appender, which
+	// the parallel pusher may append several records with.
 	cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyMax = 0
 	ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, validation.NewOverrides(limits, nil), nil, nil, nil)
 	write, last := compatProducer(t, cfg.IngestStorageConfig.KafkaConfig)
@@ -112,7 +113,7 @@ func nativeLookupMatchers(matchers ...*client.LabelMatcher) []*client.LabelMatch
 var requestsTotal = &client.LabelMatcher{Type: client.EQUAL, Name: "__name__", Value: "requests_total"}
 
 func TestIngester_NativeResources(t *testing.T) {
-	skipIfSeriesstore(t, "it sets the engine itself")
+	skipIfSeriesstore(t, "it runs both engines itself")
 	base := time.Now().Truncate(time.Minute).Add(-time.Hour).UnixMilli()
 	version := func(minTime, maxTime int64, instance, host string) client.NativeResourceVersion {
 		return client.NativeResourceVersion{
@@ -129,7 +130,7 @@ func TestIngester_NativeResources(t *testing.T) {
 		return []mimirpb.LabelAdapter{{Name: "instance", Value: instance}, {Name: "job", Value: "api"}}
 	}
 
-	for _, engine := range []string{mimir_tsdb.EngineSeriesstore} {
+	for _, engine := range []string{mimir_tsdb.EnginePrometheus, mimir_tsdb.EngineSeriesstore} {
 		t.Run(engine, func(t *testing.T) {
 			limits := defaultLimitsTestConfig()
 			limits.NativeResourcesEnabled = true
@@ -183,9 +184,9 @@ func TestIngester_NativeResources(t *testing.T) {
 }
 
 func TestIngester_NativeMetricMetadata(t *testing.T) {
-	skipIfSeriesstore(t, "it sets the engine itself")
+	skipIfSeriesstore(t, "it runs both engines itself")
 	base := time.Now().Truncate(time.Minute).Add(-time.Hour).UnixMilli()
-	for _, engine := range []string{mimir_tsdb.EngineSeriesstore} {
+	for _, engine := range []string{mimir_tsdb.EnginePrometheus, mimir_tsdb.EngineSeriesstore} {
 		t.Run(engine, func(t *testing.T) {
 			limits := defaultLimitsTestConfig()
 			limits.NativeMetricMetadataEnabled = true
@@ -205,24 +206,13 @@ func TestIngester_NativeMetricMetadata(t *testing.T) {
 }
 
 // A querier falls back to target_info for a tenant whose native metadata an ingester doesn't keep, which it tells apart
-// from one without such series by the status: a tenant with native metadata off, on either engine, and any tenant on
-// the TSDB engine, which keeps none. The seriesstore engine would answer a tenant with it off with nothing.
+// from one without such series by the status. The seriesstore engine would answer such a tenant with nothing.
 func TestIngester_NativeLookupsOfADisabledTenant(t *testing.T) {
 	skipIfSeriesstore(t, "it runs both engines itself")
 	base := time.Now().Truncate(time.Minute).Add(-time.Hour).UnixMilli()
-	on := defaultLimitsTestConfig()
-	on.NativeMetricMetadataEnabled = true
-	on.NativeResourcesEnabled = true
-	for name, test := range map[string]struct {
-		engine string
-		limits validation.Limits
-	}{
-		"prometheus engine, tenant off":  {mimir_tsdb.EnginePrometheus, defaultLimitsTestConfig()},
-		"seriesstore engine, tenant off": {mimir_tsdb.EngineSeriesstore, defaultLimitsTestConfig()},
-		"prometheus engine, tenant on":   {mimir_tsdb.EnginePrometheus, on},
-	} {
-		t.Run(name, func(t *testing.T) {
-			ingester := nativeLookupIngester(t, test.engine, test.limits, nativeLookupData(base))
+	for _, engine := range []string{mimir_tsdb.EnginePrometheus, mimir_tsdb.EngineSeriesstore} {
+		t.Run(engine, func(t *testing.T) {
+			ingester := nativeLookupIngester(t, engine, defaultLimitsTestConfig(), nativeLookupData(base))
 			ctx := user.InjectOrgID(context.Background(), "tenant")
 			err := ingester.NativeResources(&client.NativeResourcesRequest{MatcherSets: nativeLookupMatchers(requestsTotal)}, &mockNativeResourcesServer{ctx: ctx})
 			require.True(t, client.IsNativeMetadataDisabled(err), fmt.Sprint(err))

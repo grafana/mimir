@@ -207,6 +207,10 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		OutOfOrderTimeWindow:                 oooTW.Milliseconds(),                // The unit must be same as our timestamps.
 		FloatChunkEncoding:                   i.limits.FloatChunkEncoding(userID), // Seeds the encoding at open; updated per tenant via applyTSDBSettings.
 		EnableHistogramSTEncoding:            i.limits.HistogramSTEncodingEnabled(userID),
+		EnableNativeMetadata:                 i.limits.NativeMetricMetadataEnabled(userID),
+		EnableNativeResources:                i.limits.NativeResourcesEnabled(userID),
+		EnableResourceAttrIndex:              true,
+		IndexedResourceAttrs:                 indexedResourceAttributes(i.limits.NativeResourcesIndexedAttributes(userID)),
 		OutOfOrderCapMax:                     int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
 		TimelyCompaction:                     i.cfg.BlocksStorageConfig.TSDB.TimelyHeadCompaction,
 		SharedPostingsForMatchersCache:       i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache,

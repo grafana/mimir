@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -34,14 +35,16 @@ func testResourceEntry(service, host string) mimirpb.ResourceEntry {
 	}}
 }
 
-// The seriesstore engine stores each series' resource from records, with the sequential and the parallel pusher,
-// which keep the series' resources when they rebatch them, and serves them through the engine.
-func TestSeriesstoreEngineServesNativeResources(t *testing.T) {
-	skipIfSeriesstore(t, "it sets the engine itself")
+// Each engine stores each series' resource from records, with the sequential and the parallel pusher, which keep
+// the series' resources when they rebatch them, and serves them through the engine. #17740 keeps a series' first
+// resource per appender, so with the parallel pusher, which may append both records with one, the TSDB may record a
+// change only with a later batch.
+func TestEnginesServeNativeResources(t *testing.T) {
+	skipIfSeriesstore(t, "it runs the engines itself")
 	for _, test := range []struct {
 		engine      string
 		concurrency int
-	}{{mimir_tsdb.EngineSeriesstore, 0}, {mimir_tsdb.EngineSeriesstore, 8}} {
+	}{{mimir_tsdb.EnginePrometheus, 0}, {mimir_tsdb.EnginePrometheus, 8}, {mimir_tsdb.EngineSeriesstore, 0}, {mimir_tsdb.EngineSeriesstore, 8}} {
 		for _, enabled := range []bool{false, true} {
 			engine, concurrency := test.engine, test.concurrency
 			t.Run(fmt.Sprintf("engine=%s concurrency=%d enabled=%t", engine, concurrency, enabled), func(t *testing.T) {
@@ -84,6 +87,10 @@ func TestSeriesstoreEngineServesNativeResources(t *testing.T) {
 				require.NotNil(t, db.nativeResources)
 				matchers := [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "requests_total")}}
 				result, err := db.nativeResources.nativeResources(context.Background(), matchers, math.MinInt64, math.MaxInt64, 6, 0)
+				if !enabled && engine == mimir_tsdb.EnginePrometheus {
+					require.ErrorIs(t, err, errNativeResourcesDisabled)
+					return
+				}
 				if !enabled {
 					// The seriesstore engine keeps none while it's off.
 					require.NoError(t, err)
@@ -107,6 +114,10 @@ func TestSeriesstoreEngineServesNativeResources(t *testing.T) {
 						}, series.Versions)
 						continue
 					}
+					if engine == mimir_tsdb.EnginePrometheus && concurrency > 0 && len(series.Versions) == 1 {
+						require.Equal(t, backendVersions[:1], series.Versions)
+						continue
+					}
 					require.Equal(t, backendVersions, series.Versions)
 				}
 				require.Equal(t, base, result.CoverageStart)
@@ -128,6 +139,40 @@ func TestSeriesstoreEngineServesNativeResources(t *testing.T) {
 			})
 		}
 	}
+}
+
+// The TSDB's resource step builds each resource once per batch, with values as OTLP gives them as strings, and skips
+// the head for a series that already has the resource.
+func TestTSDBResources(t *testing.T) {
+	opts := tsdb.DefaultOptions()
+	opts.EnableNativeResources = true
+	db, err := tsdb.Open(t.TempDir(), nil, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	entry := &mimirpb.ResourceEntry{Attributes: []mimirpb.ResourceAttribute{
+		{Key: "service.name", StringValue: "frontend"},
+		{Key: "debug", Type: mimirpb.RESOURCE_ATTRIBUTE_BOOL, BoolValue: true},
+		{Key: "ratio", Type: mimirpb.RESOURCE_ATTRIBUTE_DOUBLE, DoubleValue: 1e21},
+		{Key: "id", Type: mimirpb.RESOURCE_ATTRIBUTE_BYTES, BytesValue: []byte{1, 2}},
+		{Key: "tags", StringValue: `["a"]`},
+	}}
+	step := newTSDBResources(db)
+	resource := step.resource(entry, 0)
+	require.Equal(t, &storage.ResourceContext{
+		Identifying: map[string]string{"service.name": "frontend"},
+		Descriptive: map[string]string{"debug": "true", "ratio": "1e+21", "id": "AQI=", "tags": `["a"]`},
+	}, resource)
+	require.Same(t, resource, step.resource(entry, 0), "built once per batch")
+
+	app := db.AppenderV2(context.Background())
+	ref, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "requests"), 0, 100, 1, nil, nil, storage.AOptions{Resource: resource})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.Nil(t, newTSDBResources(db).resource(entry, ref), "the series has the resource")
+	changed := &mimirpb.ResourceEntry{Attributes: append([]mimirpb.ResourceAttribute{{Key: "host.name", StringValue: "node-1"}}, entry.Attributes...)}
+	require.NotNil(t, newTSDBResources(db).resource(changed, ref))
 }
 
 // The seriesstore engine's native resources metrics come from its ResourceStats.

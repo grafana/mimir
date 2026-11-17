@@ -1,6 +1,6 @@
 # The native metadata prototype's resources smoke run, which `make native-metadata-gates` runs: the Prometheus TSDB
-# against the seriesstore engine, both of the tree, with the series' resources, which only the seriesstore engine keeps
-# on this branch. Without early compactions, neither removes series during the short run.
+# against the seriesstore engine, both of the tree, keeping the series' resources. Without early compactions, neither
+# removes series during the short run.
 common:
   args:
     distributor.native-resources-enabled: "true"

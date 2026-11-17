@@ -78,6 +78,11 @@ type TSDBMetrics struct {
 	seriesstoreMetadataMemoHits   *prometheus.Desc
 	seriesstoreMetadataMemoMisses *prometheus.Desc
 
+	// The TSDB's native resources, #17740's store: its series, versions and distinct contents.
+	nativeResourceEntries   *prometheus.Desc
+	nativeResourceVersions  *prometheus.Desc
+	nativeResourceCanonical *prometheus.Desc
+
 	// The seriesstore engine's keeping of native resources, over all tenants.
 	seriesstoreResources []seriesstoreResourcesMetric
 
@@ -312,6 +317,18 @@ func NewTSDBMetrics(r prometheus.Registerer, logger log.Logger) *TSDBMetrics {
 			"Total number of native metric metadata values a batch's memo didn't have yet.",
 			nil, nil),
 
+		nativeResourceEntries: prometheus.NewDesc(
+			"tsdb_head_seriesmetadata_resource_entries",
+			"Number of series with resource metadata in the head block.",
+			[]string{"user"}, nil),
+		nativeResourceVersions: prometheus.NewDesc(
+			"tsdb_head_seriesmetadata_resource_versions",
+			"Total number of resource metadata versions across all series in the head block.",
+			[]string{"user"}, nil),
+		nativeResourceCanonical: prometheus.NewDesc(
+			"tsdb_head_seriesmetadata_resource_canonical",
+			"Number of unique canonical resource metadata entries in the head block.",
+			[]string{"user"}, nil),
 		seriesstoreResources: newSeriesstoreResourcesMetrics(),
 
 		tsdbWalReplayUnknownRefsTotal: prometheus.NewDesc(
@@ -430,6 +447,9 @@ func (sm *TSDBMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- sm.seriesstoreMetadataClamped
 	out <- sm.seriesstoreMetadataMemoHits
 	out <- sm.seriesstoreMetadataMemoMisses
+	out <- sm.nativeResourceEntries
+	out <- sm.nativeResourceVersions
+	out <- sm.nativeResourceCanonical
 	for _, m := range sm.seriesstoreResources {
 		out <- m.desc
 	}
@@ -496,6 +516,9 @@ func (sm *TSDBMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCounters(out, sm.seriesstoreMetadataClamped, "seriesstore_native_metric_metadata_clamped_total")
 	data.SendSumOfCounters(out, sm.seriesstoreMetadataMemoHits, "seriesstore_native_metric_metadata_memo_hits_total")
 	data.SendSumOfCounters(out, sm.seriesstoreMetadataMemoMisses, "seriesstore_native_metric_metadata_memo_misses_total")
+	data.SendSumOfGaugesPerTenant(out, sm.nativeResourceEntries, "prometheus_tsdb_head_seriesmetadata_resource_entries")
+	data.SendSumOfGaugesPerTenant(out, sm.nativeResourceVersions, "prometheus_tsdb_head_seriesmetadata_resource_versions")
+	data.SendSumOfGaugesPerTenant(out, sm.nativeResourceCanonical, "prometheus_tsdb_head_seriesmetadata_resource_canonical")
 	for _, m := range sm.seriesstoreResources {
 		if m.counter {
 			data.SendSumOfCounters(out, m.desc, m.name)

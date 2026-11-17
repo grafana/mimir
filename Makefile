@@ -748,11 +748,11 @@ native-metadata-gates: ## Run the native metadata prototype's gates: the build, 
 	go run ./tools/ingester-bench -config=tools/ingester-bench/native-metadata-smoke.yaml -series=20000 -backfill=15m -warmup=2m -duration=2m -cpu-profile-seconds=10 -out=$(NATIVE_METADATA_SMOKE_DIR)
 	# Every read compared matches, and some are.
 	jq -e '([.apis[].mismatch] | add) == 0 and ([.apis[].compared] | add) > 0' $(NATIVE_METADATA_SMOKE_DIR)/report.json
-	# Again with resources, with Phase 3's threshold profile: the seriesstore engine keeps some, and every read compared
-	# matches. The TSDB engine keeps none on this branch.
+	# Again with both engines keeping resources, with Phase 3's threshold profile: they keep some, and every read compared
+	# matches.
 	$(eval NATIVE_RESOURCES_SMOKE_DIR := $(shell mktemp -d))
 	go run ./tools/ingester-bench -config=tools/ingester-bench/native-resources-smoke.yaml -profile=tools/ingester-bench/native-metadata/phase3-threshold.json -series=20000 -backfill=15m -warmup=2m -duration=2m -cpu-profile-seconds=10 -out=$(NATIVE_RESOURCES_SMOKE_DIR)
-	jq -e '([.apis[].mismatch] | add) == 0 and ([.apis[].compared] | add) > 0 and .composition.otlp_records > 0 and .end_memory[1]["cortex_ingester_seriesstore_native_resources_series"] > 0' $(NATIVE_RESOURCES_SMOKE_DIR)/report.json
+	jq -e '([.apis[].mismatch] | add) == 0 and ([.apis[].compared] | add) > 0 and .composition.otlp_records > 0 and .end_memory[0]["cortex_ingester_tsdb_head_seriesmetadata_resource_entries"] > 0 and .end_memory[1]["cortex_ingester_seriesstore_native_resources_series"] > 0' $(NATIVE_RESOURCES_SMOKE_DIR)/report.json
 
 %.pb.go.expdiff: ## Regenerates expected diff files from the current content of .pb.go files.
 %.pb.go.expdiff: %.pb.go
