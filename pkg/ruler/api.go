@@ -421,18 +421,23 @@ func marshalAndSend(output interface{}, w http.ResponseWriter, logger log.Logger
 		return
 	}
 
+	sendYAML(w, logger, [][]byte{d}, headers)
+}
+
+// sendYAML writes parts in order as one YAML response with the given headers.
+func sendYAML(w http.ResponseWriter, logger log.Logger, parts [][]byte, headers []http.Header) {
 	w.Header().Set("Content-Type", "application/yaml")
-	if len(headers) > 0 {
-		for _, v := range headers {
-			for headerKey, headerValue := range v {
-				w.Header().Set(headerKey, strings.Join(headerValue, ","))
-			}
+	for _, v := range headers {
+		for headerKey, headerValue := range v {
+			w.Header().Set(headerKey, strings.Join(headerValue, ","))
 		}
 	}
 
-	if _, err := w.Write(d); err != nil {
-		level.Error(logger).Log("msg", "error writing yaml response", "err", err)
-		return
+	for _, d := range parts {
+		if _, err := w.Write(d); err != nil {
+			level.Error(logger).Log("msg", "error writing yaml response", "err", err)
+			return
+		}
 	}
 }
 
@@ -485,19 +490,7 @@ func marshalNamespacesAndSend[V any](formatted map[string]V, concurrency int, w 
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/yaml")
-	for _, v := range headers {
-		for headerKey, headerValue := range v {
-			w.Header().Set(headerKey, strings.Join(headerValue, ","))
-		}
-	}
-
-	for _, d := range parts {
-		if _, err := w.Write(d); err != nil {
-			level.Error(logger).Log("msg", "error writing yaml response", "err", err)
-			return
-		}
-	}
+	sendYAML(w, logger, parts, headers)
 }
 
 func respondAccepted(w http.ResponseWriter, logger log.Logger, headers ...http.Header) {
