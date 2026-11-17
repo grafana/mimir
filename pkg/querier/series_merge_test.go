@@ -163,6 +163,96 @@ func TestDeterministicSeriesMerge(t *testing.T) {
 	}
 }
 
+// BenchmarkDeterministicSeriesMerge compares deterministicSeriesMerge with storage.ChainedSeriesMerge, for the
+// same series from many store-gateway responses. Samples at the same timestamp are where the two differ, because
+// deterministicSeriesMerge reads both samples to choose one.
+func BenchmarkDeterministicSeriesMerge(b *testing.B) {
+	lbls := labels.FromStrings(model.MetricNameLabel, "test_metric")
+	const numSamples = 120
+
+	mergeFuncs := []struct {
+		name  string
+		merge storage.VerticalSeriesMergeFunc
+	}{
+		{"chained", storage.ChainedSeriesMerge},
+		{"deterministic", deterministicSeriesMerge},
+	}
+
+	for _, overlap := range []string{"none", "identical", "different"} {
+		for _, typ := range []string{"float", "histogram", "float_histogram"} {
+			for _, numSources := range []int{2, 3, 10} {
+				series := make([]storage.Series, 0, numSources)
+				for s := 0; s < numSources; s++ {
+					ts := make([]int64, 0, numSamples)
+					vals := make([]int, 0, numSamples)
+					for i := 0; i < numSamples; i++ {
+						t := int64(i)
+						v := i
+						switch overlap {
+						case "none":
+							// Each source has a different time range, like blocks with different time ranges.
+							t = int64(s*numSamples + i)
+						case "different":
+							v = i + s
+						}
+						ts = append(ts, t)
+						vals = append(vals, v)
+					}
+					var chk storepb.AggrChunk
+					switch typ {
+					case "float":
+						pts := make([]promql.FPoint, 0, numSamples)
+						for i := range ts {
+							pts = append(pts, promql.FPoint{T: ts[i], F: float64(vals[i])})
+						}
+						chk = createAggrChunkWithSamples(pts...)
+					case "histogram":
+						pairs := make([]any, 0, 2*numSamples)
+						for i := range ts {
+							pairs = append(pairs, int(ts[i]), test.GenerateTestHistogram(vals[i]))
+						}
+						chk = createAggrHistogramChunkWithSamples(b, pairs...)
+					case "float_histogram":
+						pts := make([]promql.HPoint, 0, numSamples)
+						for i := range ts {
+							pts = append(pts, promql.HPoint{T: ts[i], H: test.GenerateTestFloatHistogram(vals[i])})
+						}
+						chk = createAggrChunkWithFloatHistogramSamples(pts...)
+					}
+					series = append(series, newTestBlockSeries(lbls, []storepb.AggrChunk{chk}))
+				}
+
+				for _, mf := range mergeFuncs {
+					b.Run(fmt.Sprintf("merge=%s/overlap=%s/type=%s/sources=%d", mf.name, overlap, typ, numSources), func(b *testing.B) {
+						b.ReportAllocs()
+						// The iterator is reused, as the PromQL engine does, so that the benchmark includes the reuse
+						// of the tie-break.
+						var it chunkenc.Iterator
+						var h *histogram.Histogram
+						var fh *histogram.FloatHistogram
+						for b.Loop() {
+							it = mf.merge(series...).Iterator(it)
+							for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+								switch vt {
+								case chunkenc.ValFloat:
+									it.At()
+								case chunkenc.ValHistogram:
+									_, h = it.AtHistogram(h)
+								case chunkenc.ValFloatHistogram:
+									_, fh = it.AtFloatHistogram(fh)
+								}
+							}
+							if it.Err() != nil {
+								b.Fatal(it.Err())
+							}
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
 // newTestBlockSeries returns a series with the same iterator as a series from a store-gateway response.
 func newTestBlockSeries(lbls labels.Labels, chks []storepb.AggrChunk) storage.Series {
 	return &storage.SeriesEntry{
@@ -174,7 +264,7 @@ func newTestBlockSeries(lbls labels.Labels, chks []storepb.AggrChunk) storage.Se
 }
 
 // createAggrHistogramChunkWithSamples takes pairs of timestamp (int64) and *histogram.Histogram.
-func createAggrHistogramChunkWithSamples(t *testing.T, pairs ...any) storepb.AggrChunk {
+func createAggrHistogramChunkWithSamples(t testing.TB, pairs ...any) storepb.AggrChunk {
 	chunk := chunkenc.NewHistogramChunk()
 	appender, err := chunk.Appender()
 	require.NoError(t, err)
