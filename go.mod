@@ -31,7 +31,7 @@ require (
 	github.com/prometheus/alertmanager v0.31.1
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.3
-	github.com/prometheus/common v0.72.0
+	github.com/prometheus/common v0.72.1
 	github.com/prometheus/prometheus v1.99.0
 	github.com/segmentio/fasthash v1.0.3
 	github.com/spf13/afero v1.15.0
