@@ -18264,6 +18264,17 @@
           "fieldFlag": "ruler.rule-evaluation-write-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "list_rules_encode_concurrency",
+          "required": false,
+          "desc": "Maximum number of namespaces that the list rule groups API encodes at the same time. A value of 1 or less encodes all namespaces in one pass.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.list-rules-encode-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

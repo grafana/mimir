@@ -1270,6 +1270,7 @@
   "ruler.max-independent-rule-evaluation-concurrency": 0,
   "ruler.independent-rule-evaluation-concurrency-min-duration-percentage": 50,
   "ruler.rule-evaluation-write-enabled": true,
+  "ruler.list-rules-encode-concurrency": 0,
   "ruler-storage.backend": "filesystem",
   "ruler-storage.s3.endpoint": "",
   "ruler-storage.s3.region": "",
