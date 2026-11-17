@@ -287,7 +287,9 @@ func (t QueriedTimeRange) Union(other QueriedTimeRange) QueriedTimeRange {
 }
 
 type OperatorParameters struct {
-	Queryable                storage.Queryable
+	Queryable storage.Queryable
+	// InfoQueryable is what info() function's info series are selected from, Queryable when nil.
+	InfoQueryable            storage.Queryable
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	EagerLoadSelectors       bool
 	QueryParameters          *QueryParameters

@@ -147,6 +147,7 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 
 		pedantic:                        opts.Pedantic,
 		eagerLoadSelectors:              opts.EagerLoadSelectors,
+		infoSeriesQueryable:             opts.InfoSeriesQueryable,
 		planner:                         planner,
 		nodeMaterializers:               nodeMaterializers,
 		memoryConsumptionTrackerFactory: memoryConsumptionTrackerFactory,
@@ -189,6 +190,8 @@ type Engine struct {
 	pedantic bool
 
 	eagerLoadSelectors bool
+
+	infoSeriesQueryable func(storage.Queryable) storage.Queryable
 
 	planner                         *QueryPlanner
 	nodeMaterializers               map[planning.NodeType]planning.NodeMaterializer
@@ -320,6 +323,9 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		EagerLoadSelectors: e.eagerLoadSelectors,
 		QueryParameters:    params,
 		Logger:             e.logger,
+	}
+	if e.infoSeriesQueryable != nil {
+		operatorParams.InfoQueryable = e.infoSeriesQueryable(queryable)
 	}
 
 	// When we are executing from within a time split query the memory consumption tracker will be allocated for the entire query

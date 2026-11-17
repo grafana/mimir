@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	rangevectorsplittingcache "github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
@@ -52,6 +53,10 @@ type EngineOpts struct {
 	// TimeNow returns the current time. It is used when materializing range vector splitting operators to compute
 	// out-of-order thresholds. Defaults to time.Now if nil. Useful for tests that need a fixed "now".
 	TimeNow func() time.Time `yaml:"-"`
+
+	// InfoSeriesQueryable, when set, wraps a query's queryable for selecting info() function's info series, such as
+	// the native metadata prototype's native target_info. The query's other selectors use its queryable as it is.
+	InfoSeriesQueryable func(storage.Queryable) storage.Queryable `yaml:"-"`
 
 	EnableCommonSubexpressionElimination                      bool `yaml:"enable_common_subexpression_elimination" category:"experimental"`
 	EnableSubsetSelectorElimination                           bool `yaml:"enable_subset_selector_elimination" category:"experimental"`

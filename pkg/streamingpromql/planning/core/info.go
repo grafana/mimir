@@ -153,8 +153,12 @@ func (t *DataLabelSelector) MinimumRequiredPlanVersion(types.QueryTimeRange) (pl
 }
 
 func MaterializeDataLabelSelector(_ context.Context, t *DataLabelSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	queryable := params.Queryable
+	if params.InfoQueryable != nil {
+		queryable = params.InfoQueryable
+	}
 	selector := &selectors.Selector{
-		Queryable:                params.Queryable,
+		Queryable:                queryable,
 		TimeRange:                timeRange,
 		LookbackDelta:            params.QueryParameters.LookbackDelta,
 		Matchers:                 LabelMatchersToOperatorType(t.Matchers),
