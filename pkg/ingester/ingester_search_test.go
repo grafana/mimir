@@ -80,6 +80,9 @@ func TestIngesterSearchLabelNames(t *testing.T) {
 
 			var got []string
 			for _, b := range s.sent {
+				// Every batch says whether the server applied the cursor, so a
+				// caller can tell it from a server that predates cursors.
+				assert.Equal(t, tc.resumeAfter != "", b.CursorApplied)
 				for _, r := range b.Results {
 					got = append(got, r.Value)
 				}
@@ -160,6 +163,9 @@ func TestIngesterSearchLabelValues(t *testing.T) {
 
 			var got []string
 			for _, b := range s.sent {
+				// Every batch says whether the server applied the cursor, so a
+				// caller can tell it from a server that predates cursors.
+				assert.Equal(t, tc.resumeAfter != "", b.CursorApplied)
 				for _, r := range b.Results {
 					got = append(got, r.Value)
 				}
@@ -243,7 +249,7 @@ func TestStreamSearchResultsPropagatesWarnings(t *testing.T) {
 				sent = append(sent, b)
 				return nil
 			}
-			require.NoError(t, streamSearchResults(context.Background(), rs, send))
+			require.NoError(t, streamSearchResults(context.Background(), rs, false, send))
 			assert.Equal(t, tc.wantSent, sent)
 		})
 	}
@@ -276,7 +282,7 @@ func TestStreamSearchResultsPropagatesErrInsteadOfWarnings(t *testing.T) {
 		sent = append(sent, &client.SearchResultBatch{Results: out, Warnings: b.Warnings})
 		return nil
 	}
-	require.ErrorIs(t, streamSearchResults(context.Background(), rs, send), want)
+	require.ErrorIs(t, streamSearchResults(context.Background(), rs, false, send), want)
 	require.Len(t, sent, 1, "trailer batch carrying warnings must be suppressed when rs.Err() is non-nil")
 	assert.Len(t, sent[0].Results, searchBatchSize, "the mid-iteration flush carried the full batch")
 	assert.Empty(t, sent[0].Warnings, "warnings must never ride on mid-iteration batches")
@@ -303,7 +309,7 @@ func TestStreamSearchResultsBatching(t *testing.T) {
 		sent = append(sent, &client.SearchResultBatch{Results: results, Warnings: b.Warnings})
 		return nil
 	}
-	require.NoError(t, streamSearchResults(context.Background(), rs, send))
+	require.NoError(t, streamSearchResults(context.Background(), rs, false, send))
 	require.Len(t, sent, 2, "257 results must split into 2 batches at the searchBatchSize=256 boundary")
 	assert.Len(t, sent[0].Results, searchBatchSize, "first batch is full")
 	assert.Len(t, sent[1].Results, 1, "second batch carries the remainder")
@@ -389,13 +395,6 @@ func TestIngesterSearchRejectsInvalidCursorAsInvalidArgument(t *testing.T) {
 	}
 }
 
-func TestProtoToParamsCursor(t *testing.T) {
-	params, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}, ResumeAfter: "foo_bar", ScoreAfter: 0.25})
-	require.NoError(t, err)
-	assert.Equal(t, "foo_bar", params.ResumeAfter)
-	assert.Equal(t, 0.25, params.ScoreAfter)
-}
-
 func TestProtoToParamsFuzzAlg(t *testing.T) {
 	tests := []struct {
 		wire client.SearchFilter_FuzzAlg
@@ -438,7 +437,7 @@ func TestStreamSearchResults(t *testing.T) {
 			sent = append(sent, &client.SearchResultBatch{Results: out, Warnings: b.Warnings})
 			return nil
 		}
-		require.NoError(t, streamSearchResults(context.Background(), rs, send))
+		require.NoError(t, streamSearchResults(context.Background(), rs, false, send))
 		require.Len(t, sent, 2)
 		require.Len(t, sent[0].Results, searchBatchSize)
 		require.Len(t, sent[1].Results, 1)
@@ -451,7 +450,7 @@ func TestStreamSearchResults(t *testing.T) {
 			sent = append(sent, &client.SearchResultBatch{Results: append([]client.SearchResultBatch_Result(nil), b.Results...), Warnings: b.Warnings})
 			return nil
 		}
-		require.NoError(t, streamSearchResults(context.Background(), rs, send))
+		require.NoError(t, streamSearchResults(context.Background(), rs, false, send))
 		require.Len(t, sent, 1)
 		assert.Empty(t, sent[0].Results)
 		assert.Equal(t, []string{"all clamped"}, sent[0].Warnings)
@@ -470,7 +469,7 @@ func TestStreamSearchResultsHonoursCtxCancellation(t *testing.T) {
 	rs := &fakeSearchResultSet{results: results}
 	send := func(_ *client.SearchResultBatch) error { return nil }
 	cancel()
-	err := streamSearchResults(ctx, rs, send)
+	err := streamSearchResults(ctx, rs, false, send)
 	require.ErrorIs(t, err, context.Canceled)
 }
 

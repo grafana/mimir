@@ -62,7 +62,7 @@ func (i *Ingester) SearchLabelNames(req *client.SearchLabelNamesRequest, stream 
 
 	rs := searcher.SearchLabelNames(ctx, hints, matchers...)
 	defer rs.Close()
-	return streamSearchResults(ctx, rs, stream.Send)
+	return streamSearchResults(ctx, rs, req.Filter.GetResumeAfter() != "", stream.Send)
 }
 
 // SearchLabelValues streams label values for req.Name matching the search filter.
@@ -100,7 +100,7 @@ func (i *Ingester) SearchLabelValues(req *client.SearchLabelValuesRequest, strea
 
 	rs := searcher.SearchLabelValues(ctx, req.Name, hints, matchers...)
 	defer rs.Close()
-	return streamSearchResults(ctx, rs, stream.Send)
+	return streamSearchResults(ctx, rs, req.Filter.GetResumeAfter() != "", stream.Send)
 }
 
 // buildSearchHints constructs storage.SearchHints from the wire request,
@@ -119,6 +119,8 @@ func buildSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit 
 		return nil, nil, err
 	}
 	order := protoToOrdering(ord)
+	// With a cursor, every page reads and sorts all values of the label in
+	// each block; see BuildSearchFilter.
 	filter, err := streaminglabelvalues.BuildSearchFilter(params, order)
 	if err != nil {
 		return nil, nil, err
@@ -189,12 +191,13 @@ type searchResultSender func(*client.SearchResultBatch) error
 // final batch (or sent alone if no results were produced). Returns rs.Err()
 // at termination. The stream context is checked before iteration starts and
 // at each batch boundary so a cancelled client stops the loop promptly even
-// when rs.Next() does not yet honour context cancellation itself.
-func streamSearchResults(ctx context.Context, rs storage.SearchResultSet, send searchResultSender) error {
+// when rs.Next() does not yet honour context cancellation itself. cursorApplied
+// marks every batch, so the caller can tell this server applied its cursor.
+func streamSearchResults(ctx context.Context, rs storage.SearchResultSet, cursorApplied bool, send searchResultSender) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	batch := &client.SearchResultBatch{Results: make([]client.SearchResultBatch_Result, 0, searchBatchSize)}
+	batch := &client.SearchResultBatch{Results: make([]client.SearchResultBatch_Result, 0, searchBatchSize), CursorApplied: cursorApplied}
 	for rs.Next() {
 		if err := ctx.Err(); err != nil {
 			return err

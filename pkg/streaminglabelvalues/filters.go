@@ -8,6 +8,7 @@ package streaminglabelvalues
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -218,10 +219,39 @@ func (c *caseFoldingFilter) Accept(value string) (bool, float64) {
 	return c.inner.Accept(strings.ToLower(value))
 }
 
+// scoreScale makes BuildFilter round every score to 9 decimal places. Go may
+// fuse a multiply and an add into one instruction on some architectures, such
+// as arm64, but not on others, such as amd64. So backends on different
+// hardware can score the same value one bit apart. A score cursor compares
+// scores exactly, and merging the results of several backends assumes that
+// they order a value the same way. Rounding to a step far coarser than that
+// error makes a mismatch unlikely, but not impossible: two scores one bit
+// apart can still fall on either side of a rounding boundary. A decimal step
+// keeps a score such as 0.55 printing as 0.55 in API responses.
+const scoreScale = 1e9
+
+// quantizingFilter rounds the score of inner to 9 decimal places. Each step is
+// one correctly rounded operation with no add to fuse, and the conversion to
+// float64 forbids fusing anyway, so every architecture rounds the same score
+// to the same value.
+type quantizingFilter struct {
+	inner storage.Filter
+}
+
+func (q *quantizingFilter) Accept(value string) (bool, float64) {
+	accepted, score := q.inner.Accept(value)
+	return accepted, math.Round(float64(score*scoreScale)) / scoreScale
+}
+
 // BuildSearchFilter returns BuildFilter(p), wrapped to also reject every value
-// that a previous page returned under order. A cursor makes the filter non-nil,
-// which turns off the no-filter fast paths of storage.ApplySearchHints and the
-// TSDB limit pushdown. Callers that hold the values use BuildSortedSearch.
+// that a previous page returned under order. Callers that hold the values use
+// BuildSortedSearch.
+//
+// A cursor makes the filter non-nil, which turns off the no-filter fast paths
+// of storage.ApplySearchHints and the TSDB limit pushdown. So in a TSDB block,
+// every page after the first reads and sorts all values of the label, even for
+// a search without terms. Avoiding that needs a lower bound in
+// storage.LabelHints, which Prometheus does not have.
 func BuildSearchFilter(p *Params, order storage.Ordering) (storage.Filter, error) {
 	filter, err := BuildFilter(p)
 	if err != nil {
@@ -351,6 +381,8 @@ func (f *scoreCursorFilter) Accept(value string) (bool, float64) {
 // Case folding for !CaseSensitive is applied once per value at the OR root
 // via caseFoldingFilter; per-term filters are built case-sensitive against a
 // pre-lowercased term so they do not re-fold the same value per Accept call.
+//
+// Scores are rounded to 9 decimal places; see scoreScale for why.
 func BuildFilter(p *Params) (storage.Filter, error) {
 	if p == nil || len(p.Terms) == 0 {
 		return nil, nil
@@ -373,10 +405,10 @@ func BuildFilter(p *Params) (storage.Filter, error) {
 	} else {
 		inner = newFilterOr(perTerm...)
 	}
-	if p.CaseSensitive {
-		return inner, nil
+	if !p.CaseSensitive {
+		inner = &caseFoldingFilter{inner: inner}
 	}
-	return &caseFoldingFilter{inner: inner}, nil
+	return &quantizingFilter{inner: inner}, nil
 }
 
 // buildPerTermFilter composes the per-term filter. fuzzThresholdInt is the

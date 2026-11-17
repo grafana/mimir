@@ -7,6 +7,7 @@ package streaminglabelvalues
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -375,8 +376,10 @@ func TestBuildFilterCaseInsensitiveWrapsAtORRoot(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, f)
-	_, ok := f.(*caseFoldingFilter)
-	assert.True(t, ok, "case-insensitive BuildFilter must return *caseFoldingFilter root")
+	q, ok := f.(*quantizingFilter)
+	require.True(t, ok, "BuildFilter must return a *quantizingFilter root")
+	_, ok = q.inner.(*caseFoldingFilter)
+	assert.True(t, ok, "case-insensitive BuildFilter must wrap a *caseFoldingFilter under the root")
 
 	// Functional check: the wrapper folds the value before delegating, and the
 	// inner per-term filters were built against pre-lowered terms, so an
@@ -395,8 +398,35 @@ func TestBuildFilterCaseSensitiveReturnsLeafDirectly(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, f)
-	_, ok := f.(*caseFoldingFilter)
+	q, ok := f.(*quantizingFilter)
+	require.True(t, ok, "BuildFilter must return a *quantizingFilter root")
+	_, ok = q.inner.(*caseFoldingFilter)
 	assert.False(t, ok, "case-sensitive BuildFilter must not wrap in caseFoldingFilter")
+}
+
+// TestBuildFilter_ScoresRoundToSameDecimal protects the cross-architecture
+// contract of score cursors: a score that a backend computes one bit off, as a
+// fused multiply-add can, must round to the same score as the exact one.
+func TestBuildFilter_ScoresRoundToSameDecimal(t *testing.T) {
+	t.Run("scores round to a decimal", func(t *testing.T) {
+		// FuzzAlgSubstringLeft scores "b" in "abc" 1 - 0.9*1/2 = 0.55. The
+		// rounded score must be exactly 0.55, so that API responses print it as
+		// 0.55.
+		f, err := BuildFilter(&Params{Terms: []string{"b"}, CaseSensitive: true, FuzzAlg: FuzzAlgSubstringLeft})
+		require.NoError(t, err)
+		accepted, score := f.Accept("abc")
+		require.True(t, accepted)
+		assert.Equal(t, 0.55, score)
+	})
+
+	t.Run("one-bit neighbours round to the same score", func(t *testing.T) {
+		// 0.55 is not near a rounding boundary, so its neighbours one bit away
+		// round to it. The filter is the root that BuildFilter returns.
+		for _, raw := range []float64{math.Nextafter(0.55, 0), 0.55, math.Nextafter(0.55, 1)} {
+			_, got := (&quantizingFilter{inner: &scoreFilter{accepted: true, score: raw}}).Accept("abc")
+			assert.Equal(t, 0.55, got, "raw score %v", raw)
+		}
+	})
 }
 
 // recordingFilter captures every value passed to Accept so a test can assert

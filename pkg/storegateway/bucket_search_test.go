@@ -160,6 +160,12 @@ func testBucketStoreSearchLabelNames(t *testing.T, bs *BucketStore) {
 			s := &mockSearchLabelNamesServer{ctx: context.Background()}
 			require.NoError(t, bs.SearchLabelNames(req, s))
 			assert.Equal(t, tc.want, collectSearchNames(s.sent))
+			// Every batch, the header included, says whether the server applied
+			// the cursor, so a caller can tell it from a server that predates
+			// cursors.
+			for _, b := range s.sent {
+				assert.Equal(t, tc.resumeAfter != "", b.CursorApplied)
+			}
 		})
 	}
 }
@@ -271,6 +277,12 @@ func testBucketStoreSearchLabelValues(t *testing.T, bs *BucketStore) {
 			s := &mockSearchLabelValuesServer{ctx: context.Background()}
 			require.NoError(t, bs.SearchLabelValues(req, s))
 			assert.Equal(t, tc.want, collectSearchNames(s.sent))
+			// Every batch, the header included, says whether the server applied
+			// the cursor, so a caller can tell it from a server that predates
+			// cursors.
+			for _, b := range s.sent {
+				assert.Equal(t, tc.resumeAfter != "", b.CursorApplied)
+			}
 		})
 	}
 }
@@ -347,11 +359,71 @@ func TestBucketStoreSearchRejectsInvalidCursorAsInvalidArgument(t *testing.T) {
 	}
 }
 
-func TestStorepbToParamsCursor(t *testing.T) {
-	params, err := storepbToParams(&storepb.SearchFilter{Terms: []string{"foo"}, ResumeAfter: "foo_bar", ScoreAfter: 0.25})
-	require.NoError(t, err)
-	assert.Equal(t, "foo_bar", params.ResumeAfter)
-	assert.Equal(t, 0.25, params.ScoreAfter)
+// TestBucketStore_SearchLabelValues_CursorPagesAcrossBlocks pages through
+// values spread over several blocks. Each block applies the cursor and the
+// limit before the store-gateway merges the blocks, so the pages together must
+// equal one unpaged search. It runs with both index-header readers, since the
+// cursor cut relies on each block returning its values sorted.
+func TestBucketStore_SearchLabelValues_CursorPagesAcrossBlocks(t *testing.T) {
+	for readerName, opts := range map[string][]prepareStoreConfigOption{
+		"default index-header reader": nil,
+		"index-header bucket reader":  {withIndexHeaderBucketReaderEnabled()},
+	} {
+		t.Run(readerName, func(t *testing.T) {
+			// prepareTestBlocks puts the first four series in one block of each
+			// time slot and the last four in another, so the values are split
+			// over blocks and abc is in both. With FUZZ_ALG_SUBSTRING_LEFT, the
+			// term "b" scores b and bb 1.0, abc 0.55, and ab, cab, Ab and xb 0.1,
+			// so the score order has ties across blocks.
+			bs := prepareSearchTestStore(t, append(opts, func(cfg *prepareStoreConfig) {
+				cfg.series = []labels.Labels{
+					labels.FromStrings("v", "ab"),
+					labels.FromStrings("v", "abc"),
+					labels.FromStrings("v", "b"),
+					labels.FromStrings("v", "cab"),
+					labels.FromStrings("v", "Ab"),
+					labels.FromStrings("v", "abc"),
+					labels.FromStrings("v", "bb"),
+					labels.FromStrings("v", "xb"),
+				}
+			})...)
+
+			search := func(t *testing.T, filter *storepb.SearchFilter, ordering storepb.SearchOrdering, limit int64) (results []storepb.SearchResultBatch_Result, queriedBlocks int) {
+				req := &storepb.SearchLabelValuesRequest{Start: 0, End: math.MaxInt64, Label: "v", Filter: filter, Ordering: ordering, Limit: limit}
+				s := &mockSearchLabelValuesServer{ctx: t.Context()}
+				require.NoError(t, bs.SearchLabelValues(req, s))
+				for _, b := range s.sent {
+					results = append(results, b.Results...)
+				}
+				return results, len(s.sent[0].ResponseHints.QueriedBlocks)
+			}
+
+			for name, terms := range map[string][]string{"no terms": nil, "scored with ties": {"b"}} {
+				for _, ordering := range []storepb.SearchOrdering{storepb.ORDER_BY_VALUE_ASC, storepb.ORDER_BY_VALUE_DESC, storepb.ORDER_BY_SCORE_DESC} {
+					t.Run(fmt.Sprintf("%s/%s", name, ordering), func(t *testing.T) {
+						filter := &storepb.SearchFilter{Terms: terms, FuzzAlg: storepb.FUZZ_ALG_SUBSTRING_LEFT}
+						want, queriedBlocks := search(t, filter, ordering, 0)
+						require.Greater(t, queriedBlocks, 1, "the search must merge several blocks")
+
+						// A page of 2 makes the cursor the last value of a page with
+						// more than one value. The loop bound stops a cursor that
+						// does not advance from looping forever.
+						var got []storepb.SearchResultBatch_Result
+						for len(got) <= len(want) {
+							page, _ := search(t, filter, ordering, 2)
+							if len(page) == 0 {
+								break
+							}
+							got = append(got, page...)
+							last := page[len(page)-1]
+							filter = &storepb.SearchFilter{Terms: terms, FuzzAlg: storepb.FUZZ_ALG_SUBSTRING_LEFT, ResumeAfter: last.Value, ScoreAfter: last.Score}
+						}
+						assert.Equal(t, want, got)
+					})
+				}
+			}
+		})
+	}
 }
 
 func TestStorepbToParamsFuzzAlg(t *testing.T) {
@@ -403,7 +475,7 @@ func TestStreamBucketSearchResultsBatching(t *testing.T) {
 		return nil
 	}
 	queried := []ulid.ULID{ulid.MustNew(1, nil), ulid.MustNew(2, nil)}
-	require.NoError(t, streamBucketSearchResults(context.Background(), rs, queried, send))
+	require.NoError(t, streamBucketSearchResults(context.Background(), rs, queried, false, send))
 
 	require.Len(t, sent, 3, "header + 257 results split at the searchBatchSize=256 boundary = 3 messages")
 	// Header batch: empty Results, empty Warnings, ResponseHints populated.
@@ -437,7 +509,7 @@ func TestStreamBucketSearchResultsHeaderOnlyWhenNoResults(t *testing.T) {
 		return nil
 	}
 	queried := []ulid.ULID{ulid.MustNew(1, nil)}
-	require.NoError(t, streamBucketSearchResults(context.Background(), rs, queried, send))
+	require.NoError(t, streamBucketSearchResults(context.Background(), rs, queried, false, send))
 
 	require.Len(t, sent, 1, "no results and no warnings should yield header-only stream")
 	require.NotNil(t, sent[0].ResponseHints)
@@ -458,7 +530,7 @@ func TestStreamBucketSearchResultsHeaderWhenNoQueriedBlocks(t *testing.T) {
 		sent = append(sent, b)
 		return nil
 	}
-	require.NoError(t, streamBucketSearchResults(context.Background(), rs, nil, send))
+	require.NoError(t, streamBucketSearchResults(context.Background(), rs, nil, false, send))
 
 	require.Len(t, sent, 1, "empty queried-blocks set still requires a header batch")
 	require.NotNil(t, sent[0].ResponseHints, "header must carry a (possibly empty) response_hints struct")
@@ -476,7 +548,7 @@ func TestStreamBucketSearchResultsHonoursCtxCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	send := func(_ *storepb.SearchResultBatch) error { return nil }
-	err := streamBucketSearchResults(ctx, rs, nil, send)
+	err := streamBucketSearchResults(ctx, rs, nil, false, send)
 	require.Error(t, err)
 	require.True(t, errors.Is(err, context.Canceled), "expected context.Canceled, got %v", err)
 }

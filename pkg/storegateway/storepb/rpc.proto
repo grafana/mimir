@@ -262,11 +262,17 @@ message SearchFilter {
   // matching Prometheus PR #18573's fuzz_threshold URL param. The server
   // divides by 100 to compare against the matcher's [0,1] score.
   int32 fuzz_threshold = 4;
-  // Tag 5 is kept for the search expression.
+  // Tag 5 is reserved for the search expression, so that nothing else takes
+  // it. The change that adds the search expression removes the reservation.
+  reserved 5;
 
   // ResumeAfter is the last value of the previous page of a cursor search.
   // Empty means no cursor. Before the server applies the limit, it drops
   // every value that sorts at or before resume_after in the request ordering.
+  // A cursor is only valid for a request with the same label name, matchers,
+  // time range, filter and ordering as the one that returned the previous
+  // page. The server cannot check that, so whoever hands out cursors must
+  // bind each one to those parameters and reject it for any other request.
   string resume_after = 6;
   // ScoreAfter is the score of resume_after, for an ORDER_BY_SCORE_DESC
   // cursor. It must be in [0,1], and it must be 0 when resume_after is empty.
@@ -325,6 +331,15 @@ message SearchResultBatch {
   // missing blocks (e.g. unloaded on the selected store-gateway) trigger a
   // retry instead of silently dropping results.
   SearchResponseHints response_hints = 3;
+
+  // CursorApplied is set on every batch of a response to a request with a
+  // resume_after cursor, including the response_hints header, once the
+  // server dropped the values of previous pages. A server that predates
+  // cursors ignores resume_after and returns the first page again without
+  // this flag, so a caller that sent a cursor must reject a result batch that
+  // lacks it. An empty response is correct either way: when the first page
+  // is empty, so is every later page.
+  bool cursor_applied = 4;
 }
 
 message SearchResponseHints {
