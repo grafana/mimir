@@ -153,6 +153,10 @@ Assuming you run one compactor instance every 20 million active series, the esti
 - Memory: 4GB
 - Disk: 300GB
 
+{{< admonition type="note" >}}
+The disk requirement has been estimated assuming a scrape interval of 15 seconds, the longest `-compactor.block-ranges` period 24h (default), and 2 bytes per sample per compacted TSDB block.
+{{< /admonition >}}
+
 For more information about disk requirements, refer to [Compactor disk utilization](../../../references/architecture/components/compactor/#compactor-disk-utilization).
 
 For more information about how to scale the compactor for large tenants, refer to [Manage capacity for large tenants](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/run-production-environment/production-tips/#manage-capacity-for-large-tenants).

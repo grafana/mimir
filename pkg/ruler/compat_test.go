@@ -68,10 +68,18 @@ type fakePusher struct {
 	request  *mimirpb.WriteRequest
 	response *mimirpb.WriteResponse
 	err      error
+
+	pushedNonEmptyWrite atomic.Bool
 }
 
 func (p *fakePusher) Push(_ context.Context, r *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	p.request = r
+	for _, series := range r.Timeseries {
+		if len(series.Samples) > 0 || len(series.Histograms) > 0 {
+			p.pushedNonEmptyWrite.Store(true)
+			break
+		}
+	}
 	return p.response, p.err
 }
 
@@ -1242,17 +1250,44 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 			expectedOperatorFailed: false,
 			expectedUserFailed:     true,
 		},
+		"tenant REQUEST_RATE_LIMITED push error during write (user)": {
+			writeError:             mustStatusWithMessageAndDetails(codes.ResourceExhausted, globalerror.RequestRateLimited.MessageWithPerTenantLimitConfig("request rate exceeded", "request-rate-limit"), mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED).Err(),
+			expectedOperatorFailed: false,
+			expectedUserFailed:     true,
+		},
+		"INGESTION_RATE_LIMITED push error during write (user)": {
+			writeError:             mustStatusWithDetails(codes.ResourceExhausted, mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED).Err(),
+			expectedOperatorFailed: false,
+			expectedUserFailed:     true,
+		},
+		"ACTIVE_SERIES_LIMITED push error during write (user)": {
+			writeError:             mustStatusWithDetails(codes.ResourceExhausted, mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED).Err(),
+			expectedOperatorFailed: false,
+			expectedUserFailed:     true,
+		},
+		"forwarded ingester REQUEST_RATE_LIMITED push error during write (operator)": {
+			// Ingester overload shares the request-rate cause, and the distributor forwards it as
+			// ResourceExhausted. Only the missing tenant error ID tells it apart from a tenant limit.
+			writeError:             mustStatusWithMessageAndDetails(codes.ResourceExhausted, "failed pushing to ingester <id>: limit exceeded", mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED).Err(),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
+			// Write failures need a real result sample, rather than relying on empty commits.
+			expression := "vector(1)"
+			if tc.queryError != nil {
+				expression = "up"
+			}
 			// Create a simple recording rule
 			ruleGroup := rulespb.RuleGroupDesc{
 				Name:     "test",
 				Interval: interval100ms,
 				Rules: []*rulespb.RuleDesc{{
 					Record: "test_metric",
-					Expr:   "up",
+					Expr:   expression,
 				}},
 			}
 
@@ -1303,6 +1338,10 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 			require.NoError(t, manager.Update(interval100ms, ruleFiles, labels.EmptyLabels(), "", nil))
 			go manager.Run()
 			t.Cleanup(manager.Stop)
+
+			if tc.writeError != nil {
+				require.Eventually(t, pusher.pushedNonEmptyWrite.Load, 5*time.Second, 100*time.Millisecond, "expected a nonempty write before classifying its failure")
+			}
 
 			// Wait for rule evaluation to complete and metrics to be recorded
 			if tc.expectedOperatorFailed {
