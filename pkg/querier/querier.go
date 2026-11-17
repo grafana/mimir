@@ -212,6 +212,14 @@ func New(
 	case PrometheusEngine:
 		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.PrometheusEngineOpts()))
 	case MimirEngine:
+		// The native metadata prototype's native target_info, for info() function's info series.
+		if native, ok := distributor.(NativeMetadataDistributor); ok {
+			nativeMetrics := NewNativeTargetInfoMetrics(reg)
+			lookbackDelta := streamingpromql.DetermineLookbackDelta(opts.CommonOpts)
+			opts.InfoSeriesQueryable = func(q storage.Queryable) storage.Queryable {
+				return NewNativeTargetInfoQueryable(q, native, limits, lookbackDelta, nativeMetrics)
+			}
+		}
 		var err error
 		streamingEngine, err = streamingpromql.NewEngine(opts, queryMetrics, planner)
 		if err != nil {

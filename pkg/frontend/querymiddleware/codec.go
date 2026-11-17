@@ -59,7 +59,7 @@ var (
 
 	// List of HTTP headers to propagate when a Prometheus request is encoded into a HTTP request.
 	// Read consistency level and max delay headers are propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
-	codecPropagateHeadersMetrics = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader, api.ReadConsistencyOffsetsHeader}
+	codecPropagateHeadersMetrics = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader, api.ReadConsistencyOffsetsHeader, api.NativeTargetInfoHeader}
 	// Read consistency level and max delay headers are propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
 	codecPropagateHeadersLabels = []string{api.ReadConsistencyOffsetsHeader}
 )
