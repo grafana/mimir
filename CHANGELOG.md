@@ -166,7 +166,6 @@
 * [BUGFIX] Query-frontend: Abort the connection when the response body can't be fully written, so clients detect truncated responses instead of treating them as complete. #16565
 * [BUGFIX] Ruler: Restore the `for` state of alerts from `ALERTS_FOR_STATE` when `-ruler.tenant-federation.enabled=true`. Previously the ruler queried `ALERTS_FOR_STATE` through the federated queryable, which adds the `__tenant_id__` label. Restored series never matched the alert labels, so every ruler restart or rule group move reset alerts to `pending`. #16745
 * [BUGFIX] Ruler: Return HTTP 499 from the ruler API when the client cancels the request. Previously, client cancellations were reported as 500 by the Prometheus rules and alerts endpoints and the rule group write and delete endpoints, and as 400 by the rule group read endpoints. #16726
-* [BUGFIX] Ruler: Fix the restoration of the `for` state of alerts failing with `attempted to read series at index N from ingester chunks stream, but the stream has series with index M`, which caused alerts to lose their original activation time after a ruler restart or rule group move. The series of `ALERTS_FOR_STATE` are now read in the order they are streamed by the ingesters. #17388
 * [BUGFIX] Mimirtool: Accept block directories with a trailing slash in `mimirtool backfill`. #16747
 * [BUGFIX] Alertmanager: Fix an issue where configuration that referenced files could load local files. Resolves `CVE-2026-81938`. #16783
 * [BUGFIX] Querier: Resolve metric family metadata for suffixed metric names in experimental search API `/api/v1/search/metric_names` when `include_metadata=true` is set. For example, `http_request_duration_seconds_bucket` now gets the metadata of the `http_request_duration_seconds` histogram. #16759
@@ -188,6 +187,7 @@
 * [BUGFIX] MQE: Fix binary operations with `on (__name__, ...)` returning empty results when narrowing binary selectors is enabled and the other side has no metric name, for example `sum by (pod) (a) / on (__name__, pod) abs(b)`. Narrowing added a matcher for an empty metric name, which selects no series. #17156
 * [BUGFIX] MQE: Fix an issue where only part of a query that couldn't return results was optimized, resulting in trying to remotely execute an invalid query plan. #17152
 * [BUGFIX] Admin: Use relative links for the config, runtime config and ingester links in the administration web UI, so that they work when the UI is served behind a reverse proxy that adds a path prefix. #17271
+* [BUGFIX] Ruler: Fix the restoration of the `for` state of alerts failing with `attempted to read series at index N from ingester chunks stream, but the stream has series with index M`, which caused alerts to lose their original activation time after a ruler restart or rule group move. The series of `ALERTS_FOR_STATE` are now read in the order they are streamed by the ingesters. #17388
 
 ### Mixin
 

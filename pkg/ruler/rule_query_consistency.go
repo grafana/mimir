@@ -96,7 +96,7 @@ func (q *readConsistencyQuerier) Select(ctx context.Context, sortSeries bool, hi
 
 	set := q.next.Select(ctx, sortSeries, hints, matchers...)
 	if isQueryingAlertsForStateMetric("", matchers...) {
-		return bufferAlertsForStateSeries(set)
+		return bufferAlertsForStateSeries(ctx, set)
 	}
 
 	return set
@@ -112,16 +112,25 @@ func (q *readConsistencyQuerier) Select(ctx context.Context, sortSeries bool, hi
 //
 // RestoreForState only looks at the last float sample of each series, so that is the only one retained
 // to keep memory bounded. The queryable wrapped by this function is only used for restoring the alerts state.
-func bufferAlertsForStateSeries(set storage.SeriesSet) storage.SeriesSet {
+func bufferAlertsForStateSeries(ctx context.Context, set storage.SeriesSet) storage.SeriesSet {
 	var series []storage.Series
 
 	for set.Next() {
+		if err := ctx.Err(); err != nil {
+			return storage.ErrSeriesSet(err)
+		}
+
 		s := set.At()
-		lbls := s.Labels()
+		// Copy the labels: they may be backed by a buffer that is reused once the stream moves on.
+		lbls := s.Labels().Copy()
 
 		var floats []promql.FPoint
 		it := s.Iterator(nil)
-		for it.Next() == chunkenc.ValFloat {
+		// Drain the whole series, even past a non-float sample, so the next series can be read from the stream.
+		for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+			if vt != chunkenc.ValFloat {
+				continue
+			}
 			t, v := it.At()
 			// Replace the previous sample, so that at most one is retained.
 			floats = append(floats[:0], promql.FPoint{T: t, F: v})
