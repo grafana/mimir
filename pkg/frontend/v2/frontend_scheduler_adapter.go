@@ -25,6 +25,7 @@ func (a *frontendToSchedulerAdapter) frontendToSchedulerEnqueueRequest(
 		FrontendAddress:           frontendAddr,
 		StatsEnabled:              req.statsEnabled,
 		AdditionalQueueDimensions: req.touchedQueryComponents,
+		ReservationID:             req.reservationID,
 	}
 
 	if req.httpRequest == nil && req.protobufRequest == nil {

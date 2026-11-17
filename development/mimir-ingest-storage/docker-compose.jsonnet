@@ -207,7 +207,7 @@ std.manifestYamlDoc({
       hostname: 'nginx',
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
       depends_on: [
-        'ingester-zone-a-1',
+        'distributor-1',
         'alertmanager-1',
         'ruler-1',
         'query-frontend',
@@ -216,7 +216,7 @@ std.manifestYamlDoc({
       ],
       environment: [
         'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
-        'DISTRIBUTOR_HOST=ingester-zone-a-1:8080',
+        'DISTRIBUTOR_HOST=distributor-1:8080',
         'ALERT_MANAGER_HOST=alertmanager-1:8080',
         'RULER_HOST=ruler-1:8080',
         'QUERY_FRONTEND_HOST=query-frontend:8080',
@@ -278,7 +278,7 @@ std.manifestYamlDoc({
 
   kafka_1:: {
     kafka_1: {
-      image: 'confluentinc/cp-kafka:latest',
+      image: 'confluentinc/cp-kafka:8.3.2',
       environment: commonKafkaEnvVars + [
         'KAFKA_BROKER_ID=1',
         'KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092',
@@ -292,7 +292,7 @@ std.manifestYamlDoc({
   },
   kafka_2:: {
     kafka_2: {
-      image: 'confluentinc/cp-kafka:latest',
+      image: 'confluentinc/cp-kafka:8.3.2',
       environment: commonKafkaEnvVars + [
         'KAFKA_BROKER_ID=2',
         'KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29093',
@@ -306,7 +306,7 @@ std.manifestYamlDoc({
   },
   kafka_3:: {
     kafka_3: {
-      image: 'confluentinc/cp-kafka:latest',
+      image: 'confluentinc/cp-kafka:8.3.2',
       environment: commonKafkaEnvVars + [
         'KAFKA_BROKER_ID=3',
         'KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29094',
@@ -320,7 +320,7 @@ std.manifestYamlDoc({
   },
   redpanda_console:: {
     redpanda_console: {
-      image: 'docker.redpanda.com/redpandadata/console:latest',
+      image: 'docker.redpanda.com/redpandadata/console:v3.13.1',
       environment: [
         'KAFKA_BROKERS=kafka_1:9092,kafka_2:9092,kafka_3:9092',
       ],
@@ -332,20 +332,20 @@ std.manifestYamlDoc({
 
   memcached:: {
     memcached: {
-      image: 'memcached:1.6.19-alpine',
+      image: 'memcached:1.6.45-alpine',
     },
   },
 
   grafana:: {
     grafana: {
-      image: 'grafana/grafana:10.4.3',
+      image: 'grafana/grafana:13.1.3',
       environment: [
         'GF_AUTH_ANONYMOUS_ENABLED=true',
         'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
       ],
       volumes: [
         './config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
-        './config/grafana-provisioning.yaml:/etc/grafana/provisioning/dashboards/local.yml',
+        './config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml',
         '../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards',
       ],
       ports: ['3000:3000'],
@@ -435,4 +435,6 @@ std.manifestYamlDoc({
   },
 
   // "true" option for std.manifestYamlDoc indents arrays in objects.
-}, true)
+  // quote_keys=false quotes a key only when YAML needs quotes.
+  // The Renovate docker-compose manager reads only the docker-compose.yml lines that start with "image:".
+}, true, quote_keys=false)

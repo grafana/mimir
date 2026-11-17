@@ -25,6 +25,7 @@ var errCannotMergeBinaryExpressionHints = errors.New("cannot merge hints for bin
 
 //node:generate
 type BinaryExpression struct {
+	NodeIdentifier
 	*BinaryExpressionDetails `node:"hints=Hints"`
 	LHS                      planning.Node `node:"child,label=LHS"`
 	RHS                      planning.Node `node:"child,label=RHS"`

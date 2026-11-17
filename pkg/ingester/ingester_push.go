@@ -7,6 +7,7 @@ package ingester
 
 import (
 	"context"
+	"errors"
 	"math"
 	"time"
 
@@ -14,7 +15,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -32,8 +33,9 @@ import (
 
 // GetRef() is an extra method added to TSDB to let Mimir check before calling Add()
 type extendedAppender interface {
-	storage.Appender
+	storage.AppenderV2
 	storage.GetRef
+	storage.ExemplarAppenderV2
 }
 
 type pushStats struct {
@@ -50,6 +52,8 @@ type pushStats struct {
 	perMetricSeriesLimitCount   int
 	invalidNativeHistogramCount int
 	labelsNotSortedCount        int
+
+	seriesWithFloatsAndHistogramsCount int
 }
 
 type ctxKey int
@@ -387,57 +391,24 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		)
 	)
 
-	// Walk the samples, appending them to the users database
-	app := db.Appender(ctx).(extendedAppender)
-	spanlog.DebugLog("event", "got appender for timeseries", "series", len(req.Timeseries))
-
 	var activeSeries *activeseries.ActiveSeries
 	if i.cfg.ActiveSeriesMetrics.Enabled {
 		activeSeries = db.activeSeries
 	}
 
-	minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
-
-	if pushSamplesToAppenderErr := i.pushSamplesToAppender(
-		userID,
-		req.Timeseries,
-		app,
-		startAppend,
-		&stats,
-		&errProcessor,
-		updateFirstPartial,
-		activeSeries,
-		i.limits.OutOfOrderTimeWindow(userID),
-		minAppendTimeAvailable,
-		minAppendTime,
-		req.Source == mimirpb.OTLP,
-	); pushSamplesToAppenderErr != nil {
-		if err := app.Rollback(); err != nil {
-			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
-		}
-
-		return wrapOrAnnotateWithUser(pushSamplesToAppenderErr, userID)
-	}
-
-	// At this point all samples have been added to the appender, so we can track the time it took.
-	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
-
-	spanlog.DebugLog(
-		"event", "start commit",
-		"succeededSamplesCount", stats.succeededSamplesCount,
-		"failedSamplesCount", stats.failedSamplesCount,
-		"succeededExemplarsCount", stats.succeededExemplarsCount,
-		"failedExemplarsCount", stats.failedExemplarsCount,
-	)
-
-	startCommit := time.Now()
-	if err := app.Commit(); err != nil {
+	if err := db.engine().Ingest(&ingestContext{
+		Context:            ctx,
+		i:                  i,
+		userID:             userID,
+		startAppend:        startAppend,
+		stats:              &stats,
+		errProcessor:       &errProcessor,
+		updateFirstPartial: updateFirstPartial,
+		activeSeries:       activeSeries,
+		isOTLP:             req.Source == mimirpb.OTLP,
+	}, req.Timeseries); err != nil {
 		return wrapOrAnnotateWithUser(err, userID)
 	}
-
-	commitDuration := time.Since(startCommit)
-	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
-	spanlog.DebugLog("event", "complete commit", "commitDuration", commitDuration.String())
 
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
 	if stats.succeededSamplesCount > 0 {
@@ -497,6 +468,9 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	if stats.labelsNotSortedCount > 0 {
 		discarded.labelsNotSorted.WithLabelValues(userID, group).Add(float64(stats.labelsNotSortedCount))
 	}
+	if stats.seriesWithFloatsAndHistogramsCount > 0 {
+		i.metrics.seriesWithFloatsAndHistograms.WithLabelValues(userID).Add(float64(stats.seriesWithFloatsAndHistogramsCount))
+	}
 	if stats.succeededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(stats.succeededSamplesCount))
 
@@ -539,10 +513,20 @@ func (i *Ingester) pushSamplesToAppender(
 	var nonCopiedLabels labels.Labels
 
 	// idx is used to decrease active series count in case of error for cost attribution.
-	idx := i.getTSDB(userID).Head().MustIndex()
+	idx := mustIndex(i.getTSDB(userID).Head())
 	defer idx.Close()
 
+	appOptions := storage.AppendV2Options{}
+	// Zero samples for created timestamps must never go into the out-of-order head.
+	zeroSampleOptions := storage.AppendV2Options{RejectOutOfOrder: true}
+	// Reused across series, since AppendExemplars must not retain the slice it's given.
+	var exemplarBuf []exemplar.Exemplar
+
 	for _, ts := range timeseries {
+		if len(ts.Samples) > 0 && len(ts.Histograms) > 0 {
+			stats.seriesWithFloatsAndHistogramsCount++
+		}
+
 		// Fast path in case we only have samples and they are all out of bound
 		// and out-of-order support is not enabled.
 		// TODO(jesus.vazquez) If we had too many old samples we might want to
@@ -624,16 +608,16 @@ func (i *Ingester) pushSamplesToAppender(
 
 			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs && (!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
 				if ref != 0 {
-					_, err = app.AppendSTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
 				} else {
 					// Copy the label set because both TSDB and the active series tracker may retain it.
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.AppendSTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+					ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
 				}
 				if err == nil {
 					stats.succeededSamplesCount++
-				} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+				} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
 					// if the start time is unknown, then it should equal to the timestamp of the first sample,
 					// which will mean a created timestamp equal to the timestamp of the first sample for later
 					// samples. Thus we ignore if zero sample would cause duplicate.
@@ -646,7 +630,7 @@ func (i *Ingester) pushSamplesToAppender(
 
 			// If the cached reference exists, we try to use it.
 			if ref != 0 {
-				if _, err = app.Append(ref, copiedLabels, s.TimestampMs, s.Value); err == nil {
+				if _, err = app.Append(ref, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					stats.succeededSamplesCount++
 					continue
 				}
@@ -655,7 +639,7 @@ func (i *Ingester) pushSamplesToAppender(
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
+				if ref, err = app.Append(0, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					stats.succeededSamplesCount++
 					continue
 				}
@@ -694,17 +678,18 @@ func (i *Ingester) pushSamplesToAppender(
 				}
 
 				if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
+					zih, zfh := mimir_tsdb.ZeroHistogramFor(ih, fh)
 					if ref != 0 {
-						_, err = app.AppendHistogramSTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+						_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
 					} else {
 						// Copy the label set because both TSDB and the active series tracker may retain it.
 						copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-						ref, err = app.AppendHistogramSTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+						ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
 					}
 					if err == nil {
 						stats.succeededSamplesCount++
-					} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-						// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+					} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+						// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
 						// if the start time is unknown, then it should equal to the timestamp of the first sample,
 						// which will mean a created timestamp equal to the timestamp of the first sample for later
 						// samples. Thus we ignore if zero sample would cause duplicate.
@@ -717,7 +702,7 @@ func (i *Ingester) pushSamplesToAppender(
 
 				// If the cached reference exists, we try to use it.
 				if ref != 0 {
-					if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, ih, fh); err == nil {
+					if _, err = app.Append(ref, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 						stats.succeededSamplesCount++
 						continue
 					}
@@ -726,7 +711,7 @@ func (i *Ingester) pushSamplesToAppender(
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 
 					// Retain the reference in case there are multiple samples for the series.
-					if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
+					if ref, err = app.Append(0, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 						stats.succeededSamplesCount++
 						continue
 					}
@@ -761,7 +746,38 @@ func (i *Ingester) pushSamplesToAppender(
 				})
 				stats.failedExemplarsCount += len(ts.Exemplars)
 			} else { // Note that else is explicit, rather than a continue in the above if, in case of additional logic post exemplar processing.
+				// Append the exemplars within the accepted time range in one call. TSDB validates each one on
+				// its own, and reports failures by their index in the appended slice.
+				exemplarBuf = exemplarBuf[:0]
+				for _, ex := range ts.Exemplars {
+					if ex.TimestampMs > maxTimestampMs || ex.TimestampMs < minTimestampMs {
+						continue
+					}
+					exemplarBuf = append(exemplarBuf, exemplar.Exemplar{
+						Value:  ex.Value,
+						Ts:     ex.TimestampMs,
+						HasTs:  true,
+						Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
+					})
+				}
+				var appendErr error
+				var exemplarErrs []error // Indexed like exemplarBuf, only allocated if some exemplars failed.
+				if len(exemplarBuf) > 0 {
+					_, appendErr = app.AppendExemplars(ref, labels.EmptyLabels(), exemplarBuf)
+				}
+				if partialErr, ok := errors.AsType[*storage.AppendPartialError](appendErr); ok {
+					appendErr = nil
+					exemplarErrs = make([]error, len(exemplarBuf))
+					for _, exErr := range partialErr.ExemplarErrors {
+						if exemplarErrs[exErr.Index] == nil {
+							exemplarErrs[exErr.Index] = exErr.Err
+						}
+					}
+				}
+
+				// Go through the exemplars in request order, so the error reported is that of the first one to fail.
 				outOfOrderExemplars := 0
+				appendedIdx := 0
 				for _, ex := range ts.Exemplars {
 					if ex.TimestampMs > maxTimestampMs {
 						stats.failedExemplarsCount++
@@ -777,15 +793,13 @@ func (i *Ingester) pushSamplesToAppender(
 						continue
 					}
 
-					e := exemplar.Exemplar{
-						Value:  ex.Value,
-						Ts:     ex.TimestampMs,
-						HasTs:  true,
-						Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
+					// An error that isn't partial applies to every appended exemplar.
+					err := appendErr
+					if exemplarErrs != nil {
+						err = exemplarErrs[appendedIdx]
 					}
-
-					var err error
-					if _, err = app.AppendExemplar(ref, labels.EmptyLabels(), e); err == nil {
+					appendedIdx++
+					if err == nil {
 						stats.succeededExemplarsCount++
 						continue
 					}

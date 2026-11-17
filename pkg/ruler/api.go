@@ -6,6 +6,7 @@
 package ruler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,6 +33,8 @@ import (
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+const statusClientClosedRequest = 499
 
 var (
 	// errNoValidOrgIDFound is returned when no valid org id is found in the request context.
@@ -149,6 +152,17 @@ func respondServerError(logger log.Logger, w http.ResponseWriter, msg string) {
 	respondError(logger, w, http.StatusInternalServerError, v1.ErrServer, msg)
 }
 
+// respondIfClientClosedRequest responds with 499 if the client canceled the request, and reports whether it did.
+// It checks the request context rather than err, so internal cancellations are still reported as server errors.
+func respondIfClientClosedRequest(logger log.Logger, w http.ResponseWriter, req *http.Request) bool {
+	ctxErr := req.Context().Err()
+	if !errors.Is(ctxErr, context.Canceled) {
+		return false
+	}
+	respondError(logger, w, statusClientClosedRequest, v1.ErrCanceled, ctxErr.Error())
+	return true
+}
+
 // API is used to handle HTTP requests for the ruler service
 type API struct {
 	ruler *Ruler
@@ -232,6 +246,9 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	rulesResp, token, err := a.ruler.GetRules(ctx, rulesReq)
 	if err != nil {
+		if respondIfClientClosedRequest(logger, w, req) {
+			return
+		}
 		if errors.Is(err, errTenantRuleEvaluationDisabled) {
 			respondUnprocessableRequest(logger, w, fmt.Sprintf("rule evaluation is disabled for tenant %s", userID))
 			return
@@ -339,6 +356,9 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	rulesResp, _, err := a.ruler.GetRules(ctx, RulesRequest{Filter: AlertingRule})
 	if err != nil {
+		if respondIfClientClosedRequest(logger, w, req) {
+			return
+		}
 		if errors.Is(err, errTenantRuleEvaluationDisabled) {
 			respondUnprocessableRequest(logger, w, fmt.Sprintf("rule evaluation is disabled for tenant %s", userID))
 			return
@@ -524,6 +544,9 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 	// are cached and not invalidated and this API is expected to be strongly consistent.
 	rgs, err := a.store.ListRuleGroupsForUserAndNamespace(ctx, userID, namespace, rulestore.WithCacheDisabled())
 	if err != nil {
+		if respondIfClientClosedRequest(logger, w, req) {
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -538,6 +561,9 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 	level.Debug(logger).Log("msg", "retrieved rule groups from rule store", "userID", userID, "num_groups", len(rgs))
 	missing, err := a.store.LoadRuleGroups(ctx, map[string]rulespb.RuleGroupList{userID: rgs})
 	if err != nil {
+		if respondIfClientClosedRequest(logger, w, req) {
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -611,6 +637,9 @@ func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {
 
 	rg, err := a.store.GetRuleGroup(ctx, userID, namespace, groupName)
 	if err != nil {
+		if respondIfClientClosedRequest(logger, w, req) {
+			return
+		}
 		if errors.Is(err, rulestore.ErrGroupNotFound) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -652,6 +681,9 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 
 	payload, err := io.ReadAll(req.Body)
 	if err != nil {
+		if respondIfClientClosedRequest(logger, w, req) {
+			return
+		}
 		level.Error(logger).Log("msg", "unable to read rule group payload", "err", err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -713,6 +745,9 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 		}
 		rgs, err := a.store.ListRuleGroupsForUserAndNamespace(ctx, userID, namespaceToQuery, rulestore.WithCacheDisabled())
 		if err != nil {
+			if respondIfClientClosedRequest(logger, w, req) {
+				return
+			}
 			level.Error(logger).Log("msg", "unable to fetch current rule groups for validation", "err", err.Error(), "user", userID)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -730,6 +765,9 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 	level.Debug(logger).Log("msg", "attempting to store rulegroup", "userID", userID, "group", rgProto.String())
 	err = a.store.SetRuleGroup(ctx, userID, namespace, rgProto)
 	if err != nil {
+		if respondIfClientClosedRequest(logger, w, req) {
+			return
+		}
 		level.Error(logger).Log("msg", "unable to store rule group", "err", err.Error())
 
 		// If the error is an object mutation rate limit error from GCS, a 429 is returned instead of a 500. This is a
@@ -777,6 +815,9 @@ func (a *API) DeleteNamespace(w http.ResponseWriter, req *http.Request) {
 
 	err = a.store.DeleteNamespace(ctx, userID, namespace)
 	if err != nil {
+		if respondIfClientClosedRequest(logger, w, req) {
+			return
+		}
 		if errors.Is(err, rulestore.ErrGroupNamespaceNotFound) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -814,6 +855,9 @@ func (a *API) DeleteRuleGroup(w http.ResponseWriter, req *http.Request) {
 
 	err = a.store.DeleteRuleGroup(ctx, userID, namespace, groupName)
 	if err != nil {
+		if respondIfClientClosedRequest(logger, w, req) {
+			return
+		}
 		if errors.Is(err, rulestore.ErrGroupNotFound) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return

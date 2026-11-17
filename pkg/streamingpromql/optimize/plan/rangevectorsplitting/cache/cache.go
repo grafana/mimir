@@ -70,7 +70,7 @@ func NewCacheClient(cfg Config, component string, logger log.Logger, reg prometh
 func NewCacheFactory(cfg Config, ttlProvider TTLProvider, prefixGenerator caching.PrefixGenerator, logger log.Logger, reg prometheus.Registerer) (*CacheFactory, error) {
 	// Note that we're relying on this being set on the config struct by the module initialization process.
 	backend := caching.NewAdaptor(cfg.CacheClient)
-	keyGenerator := caching.NewCacheKeyGenerator(caching.VersioningAndItemTypePrefixGenerator(cacheItemTypePrefix, resultsCacheVersion), prefixGenerator)
+	keyGenerator := caching.NewCacheKeyGenerator(caching.VersioningAndItemTypePrefixGenerator(cacheItemTypePrefix, resultsCacheVersion), prefixGenerator, false)
 	return NewCacheFactoryWithBackend(backend, ttlProvider, keyGenerator, reg, logger), nil
 }
 

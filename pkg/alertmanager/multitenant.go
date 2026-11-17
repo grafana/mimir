@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -115,6 +116,12 @@ type MultitenantAlertmanagerConfig struct {
 	// expression parser will be logged.
 	LogParsingLabelMatchers bool `yaml:"log_parsing_label_matchers" category:"experimental"`
 	UTF8MigrationLogging    bool `yaml:"utf8_migration_logging" category:"experimental"`
+
+	// If true, SNS receivers must have explicit credentials configured, rather than
+	// inheriting any AWS credentials available in the environment.
+	RequireExplicitSNSReceiverCredentials bool `yaml:"require_explicit_sns_credentials" category:"advanced"`
+
+	TenantsExemptFromConfigValidationForExistingConfig flagext.StringSliceCSVMulti `yaml:"tenants_exempt_from_config_validation_for_existing_config" category:"experimental"`
 }
 
 const (
@@ -152,6 +159,9 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.BoolVar(&cfg.UTF8StrictMode, "alertmanager.utf8-strict-mode-enabled", false, "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. For more information, refer to [Enable UTF-8](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/#enable-utf-8).")
 	f.BoolVar(&cfg.LogParsingLabelMatchers, "alertmanager.log-parsing-label-matchers", false, "Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.")
 	f.BoolVar(&cfg.UTF8MigrationLogging, "alertmanager.utf8-migration-logging-enabled", false, "Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.")
+
+	f.BoolVar(&cfg.RequireExplicitSNSReceiverCredentials, "alertmanager.require-explicit-sns-credentials", true, "If true, SNS receivers must have explicit credentials configured, rather than inheriting any AWS credentials available in the environment. Note that setting this value to false could allow anyone with access to configure SNS receivers to send credentials to an arbitrary endpoint.")
+	f.Var(&cfg.TenantsExemptFromConfigValidationForExistingConfig, "alertmanager.tenants-exempt-from-config-validation-for-existing-config", "List of tenants that are exempt from config validation for existing config. Newly uploaded config will be required to pass validation.")
 }
 
 // Validate config and returns error on failure
@@ -849,6 +859,15 @@ func (am *MultitenantAlertmanager) setConfig(cfg *alertspb.AlertConfigDesc) (*Al
 	// 3) finally, the cortex AM instance is restarted and the running version is no longer present
 	if amCfg == nil {
 		return nil, fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
+	}
+
+	if validationErr := validateAlertmanagerConfig(amCfg, am.cfg); validationErr != nil {
+		if slices.Contains(am.cfg.TenantsExemptFromConfigValidationForExistingConfig, cfg.User) {
+			level.Warn(am.logger).Log("msg", "configuration failed validation during loading, this configuration should never have been accepted or the stored configuration is no longer considered valid, but the tenant is explicitly allowed to load invalid config", "user", cfg.User, "err", validationErr)
+		} else {
+			level.Warn(am.logger).Log("msg", "configuration failed validation during loading, this configuration should never have been accepted or the stored configuration is no longer considered valid", "user", cfg.User, "err", validationErr)
+			return nil, fmt.Errorf("configuration for %v failed validation: %w", cfg.User, validationErr)
+		}
 	}
 
 	cfgFp := fingerprint(cfg)

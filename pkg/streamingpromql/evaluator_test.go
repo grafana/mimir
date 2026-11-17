@@ -69,7 +69,7 @@ func TestEvaluator(t *testing.T) {
 		LookbackDelta:            lookbackDelta,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 	}
-	instantVectorOperator := selectors.NewInstantVectorSelector(instantVectorSelector, memoryConsumptionTracker, false, false)
+	instantVectorOperator := selectors.NewInstantVectorSelector(instantVectorSelector, memoryConsumptionTracker, false, false, 0)
 
 	rangeVectorNode := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
 		Matchers: []core.LabelMatcher{
@@ -85,7 +85,7 @@ func TestEvaluator(t *testing.T) {
 		Range:                    rangeVectorNode.Range,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 	}
-	rangeVectorOperator := selectors.NewRangeVectorSelector(rangeVectorSelector, memoryConsumptionTracker)
+	rangeVectorOperator := selectors.NewRangeVectorSelector(rangeVectorSelector, memoryConsumptionTracker, 0)
 
 	nodeRequests := []NodeEvaluationRequest{
 		{

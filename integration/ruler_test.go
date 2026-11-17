@@ -206,7 +206,12 @@ func TestRulerAPISingleBinary(t *testing.T) {
 func TestRulerAPIRulesPagination(t *testing.T) {
 	const (
 		numNamespaces = 3
-		numRuleGroups = 9
+		// Random ring tokens decide which ruler owns each rule group.
+		// With this many rule groups, both rulers almost always own some.
+		// The API response then merges rule groups from both rulers.
+		// The count must be odd.
+		// With a page size of 2, the last page then has 1 rule group.
+		numRuleGroups = 21
 	)
 
 	type NGPair struct {
@@ -242,6 +247,13 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 	rulers := e2emimir.NewCompositeMimirService(ruler1, ruler2)
 	require.NoError(t, s.StartAndWaitReady(ruler1, ruler2))
 
+	// Wait until each ruler sees both rulers as ACTIVE in the ring.
+	// Then rule group ownership does not change after the upload.
+	require.NoError(t, rulers.WaitSumMetricsWithOptions(e2e.Equals(4), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ruler"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"),
+	)))
+
 	// Generate and upload rule groups to one of the rulers.
 	c, err := e2emimir.NewClient("", "", "", ruler1.HTTPEndpoint(), "user-1")
 	require.NoError(t, err)
@@ -251,10 +263,11 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 	expectedGroups := make([]NGPair, 0, numRuleGroups)
 	for i := numRuleGroups - 1; i >= 0; i-- {
 		ruleGroupName := fmt.Sprintf("test_%d", i)
+		namespace := fmt.Sprintf("namespace_%d", i%numNamespaces)
 
 		expectedGroups = append(expectedGroups,
 			NGPair{
-				Namespace: fmt.Sprintf("namespace_%d", i/numNamespaces),
+				Namespace: namespace,
 				Group:     ruleGroupName,
 			},
 		)
@@ -266,10 +279,10 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 				Record: fmt.Sprintf("rule_%d", i),
 				Expr:   strconv.Itoa(i),
 			}},
-		}, fmt.Sprintf("namespace_%d", i/numNamespaces)))
+		}, namespace))
 	}
 
-	// Sort expectedGroups as it is currently in reverse order
+	// Sort expectedGroups in the API order: by namespace, then by group name.
 	slices.SortFunc(expectedGroups, func(a, b NGPair) int {
 		fileCompare := strings.Compare(a.Namespace, b.Namespace)
 
@@ -282,12 +295,10 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 	})
 
 	// Wait until rulers have loaded all rules.
-	require.NoError(t, rulers.WaitSumMetricsWithOptions(e2e.Equals(numRuleGroups), []string{"cortex_prometheus_rule_group_rules"}, e2e.WaitMissingMetrics))
-
-	// Since rulers have loaded all rules, we expect that rules have been sharded
-	// between the two rulers.
-	require.NoError(t, ruler1.WaitSumMetrics(e2e.Less(float64(numRuleGroups)), "cortex_prometheus_rule_group_rules"))
-	require.NoError(t, ruler2.WaitSumMetrics(e2e.Less(float64(numRuleGroups)), "cortex_prometheus_rule_group_rules"))
+	// A ruler that owns no rule group does not expose the metric.
+	// SkipMissingMetrics counts that ruler as 0.
+	// TestRulerSharding checks that the rulers split the rule groups.
+	require.NoError(t, rulers.WaitSumMetricsWithOptions(e2e.Equals(numRuleGroups), []string{"cortex_prometheus_rule_group_rules"}, e2e.SkipMissingMetrics))
 
 	// No page size limit
 	_, actualGroups, token, err := c.GetPrometheusRules(0, "")
@@ -299,12 +310,12 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 		require.Equal(t, expectedGroups[i].Group, actualGroups[i].Name)
 	}
 
-	// We have 9 groups, keep fetching rules with a group page size of 2. The final
-	// page should have size 1 and an empty nextToken. Also check the groups are returned
-	// in order
+	// Keep fetching rules with a group page size of 2.
+	// The final page should have size 1 and an empty nextToken.
+	// Also check the groups are returned in order.
 	var nextToken string
 	returnedGroups := make([]NGPair, 0, len(expectedGroups))
-	for i := 0; i < 4; i++ {
+	for range numRuleGroups / 2 {
 		_, gps, token, err := c.GetPrometheusRules(2, nextToken)
 		require.NoError(t, err)
 		require.Len(t, gps, 2)
@@ -1677,73 +1688,79 @@ func TestRuler_RestoreWithLongForPeriod(t *testing.T) {
 	require.Greater(t, evalsForAlertToFire, float64(evalsToRestoredAlertState), "in order to have a meaningful test, the alert should fire in more evaluations than is necessary to restore its state")
 	require.Greater(t, groupForPeriod, forGracePeriod, "the \"for\" duration should be longer than the for grace period. The prometheus ruler only tries to restore the alert from storage if its \"for\" period is longer than the for_grace_period config parameter.")
 
-	s, err := e2e.NewScenario(networkName)
-	assert.NoError(t, err)
-	t.Cleanup(s.Close)
-	// Start dependencies.
-	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
-	assert.NoError(t, s.StartAndWaitReady(minio, consul))
+	for _, tenantFederationEnabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("ruler tenant federation enabled=%t", tenantFederationEnabled), func(t *testing.T) {
+			s, err := e2e.NewScenario(networkName)
+			assert.NoError(t, err)
+			t.Cleanup(s.Close)
+			// Start dependencies.
+			consul := e2edb.NewConsul()
+			minio := e2edb.NewMinio(9000, mimirBucketName)
+			assert.NoError(t, s.StartAndWaitReady(minio, consul))
 
-	flags := mergeFlags(
-		CommonStorageBackendFlags(),
-		RulerFlags(),
-		BlocksStorageFlags(),
-		map[string]string{
-			"-ruler.for-grace-period":           forGracePeriod.String(),
-			"-auth.multitenancy-enabled":        "true",
-			"-ingester.ring.replication-factor": "1",
-			"-log.level":                        "debug",
-		},
-	)
+			flags := mergeFlags(
+				CommonStorageBackendFlags(),
+				RulerFlags(),
+				BlocksStorageFlags(),
+				map[string]string{
+					"-ruler.for-grace-period":           forGracePeriod.String(),
+					"-auth.multitenancy-enabled":        "true",
+					"-ingester.ring.replication-factor": "1",
+					"-log.level":                        "debug",
+					"-tenant-federation.enabled":        strconv.FormatBool(tenantFederationEnabled),
+					"-ruler.tenant-federation.enabled":  strconv.FormatBool(tenantFederationEnabled),
+				},
+			)
 
-	// Start up services
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
-	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
-	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
-	assert.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
+			// Start up services
+			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+			ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+			ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
+			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+			assert.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
 
-	// Wait until both the distributor and ruler are ready
-	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
-	assert.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
-	// Ruler will see 512 tokens from ingester, and 128 tokens from itself.
-	assert.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
+			// Wait until both the distributor and ruler are ready
+			// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+			assert.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
+			// Ruler will see 512 tokens from ingester, and 128 tokens from itself.
+			assert.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
 
-	// Create a client to upload and query rule groups
-	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), "tenant-1")
-	assert.NoError(t, err)
+			// Create a client to upload and query rule groups
+			c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), "tenant-1")
+			assert.NoError(t, err)
 
-	// Create an alert rule which always fires
-	g := ruleGroupWithAlertingRule("group_name", "rule_name", "1")
-	g.Interval = model.Duration(groupEvalInterval)
-	g.Rules[0].For = model.Duration(groupForPeriod)
-	assert.NoError(t, c.SetRuleGroup(g, "test_namespace"))
+			// Create an alert rule which always fires
+			g := ruleGroupWithAlertingRule("group_name", "rule_name", "1")
+			g.Interval = model.Duration(groupEvalInterval)
+			g.Rules[0].For = model.Duration(groupForPeriod)
+			assert.NoError(t, c.SetRuleGroup(g, "test_namespace"))
 
-	// Wait until the alert has had time to start firing
-	assert.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Greater(evalsForAlertToFire), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
+			// Wait until the alert has had time to start firing
+			assert.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Greater(evalsForAlertToFire), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
 
-	// Assert that the alert is firing
-	_, rules, _, err := c.GetPrometheusRules(0, "")
-	assert.NoError(t, err)
-	assert.Equal(t, "firing", rules[0].Rules[0].(v1.AlertingRule).State)
+			// Assert that the alert is firing
+			_, rules, _, err := c.GetPrometheusRules(0, "")
+			assert.NoError(t, err)
+			assert.Equal(t, "firing", rules[0].Rules[0].(v1.AlertingRule).State)
 
-	// Restart ruler to trigger an alert state restoration
-	assert.NoError(t, s.Stop(ruler))
-	assert.NoError(t, s.StartAndWaitReady(ruler))
-	assert.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
+			// Restart ruler to trigger an alert state restoration
+			assert.NoError(t, s.Stop(ruler))
+			assert.NoError(t, s.StartAndWaitReady(ruler))
+			assert.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
 
-	// Recreate client because ports may have changed
-	c, err = e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), "tenant-1")
-	assert.NoError(t, err)
+			// Recreate client because ports may have changed
+			c, err = e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), "tenant-1")
+			assert.NoError(t, err)
 
-	// Wait for actual restoration to happen
-	assert.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(evalsToRestoredAlertState), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
+			// Wait for actual restoration to happen
+			assert.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(evalsToRestoredAlertState), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
 
-	// Assert the alert is already firing
-	_, rules, _, err = c.GetPrometheusRules(0, "")
-	assert.NoError(t, err)
-	assert.Equal(t, "firing", rules[0].Rules[0].(v1.AlertingRule).State)
+			// Assert the alert is already firing
+			_, rules, _, err = c.GetPrometheusRules(0, "")
+			assert.NoError(t, err)
+			assert.Equal(t, "firing", rules[0].Rules[0].(v1.AlertingRule).State)
+		})
+	}
 }
 
 func TestRulerProtectedNamespaces(t *testing.T) {

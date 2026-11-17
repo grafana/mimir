@@ -90,9 +90,10 @@ func (f *BucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID string, 
 		matchingBlocks[block.ID] = block
 	}
 
+	excludeMarkedBefore := time.Now().Add(-f.cfg.IgnoreDeletionMarksDelay)
 	for _, mark := range idx.BlockDeletionMarks {
 		// Exclude blocks marked for deletion. This is the same logic as Thanos IgnoreDeletionMarkFilter.
-		if time.Since(time.Unix(mark.DeletionTime, 0)).Seconds() > f.cfg.IgnoreDeletionMarksDelay.Seconds() {
+		if time.Unix(mark.DeletionTime, 0).Before(excludeMarkedBefore) {
 			delete(matchingBlocks, mark.ID)
 			continue
 		}

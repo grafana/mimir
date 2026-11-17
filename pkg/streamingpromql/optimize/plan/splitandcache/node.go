@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -32,6 +33,7 @@ func init() {
 
 //node:generate
 type TimeRangeSplit struct {
+	core.NodeIdentifier
 	*TimeRangeSplitDetails
 	Inner planning.Node `node:"child"`
 }
@@ -156,6 +158,7 @@ func nextIntervalBoundary(t, step int64, interval time.Duration) int64 {
 
 //node:generate
 type Cache struct {
+	core.NodeIdentifier
 	*CacheDetails
 	Inner planning.Node `node:"child"`
 }
@@ -220,7 +223,7 @@ func NewCacheMaterializer(enabled bool, baseCache cache.Cache, cachePrefixGenera
 		m.cache = caching.NewAdaptor(baseCache)
 		// The CacheKeyGenerator takes a non-hashable and hashable prefix.
 		// The type/version prefix is not included in the hashed key, but the generated cache prefix (tenant ids) will be folded into the hashed key.
-		m.cacheKeyGenerator = caching.NewCacheKeyGenerator(caching.VersioningAndItemTypePrefixGenerator("MQEQR", cacheVersion), cachePrefixGenerator)
+		m.cacheKeyGenerator = caching.NewCacheKeyGenerator(caching.VersioningAndItemTypePrefixGenerator("MQEQR", cacheVersion), cachePrefixGenerator, false)
 	}
 
 	return m

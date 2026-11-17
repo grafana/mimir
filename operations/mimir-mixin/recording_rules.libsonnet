@@ -43,8 +43,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       {
         name: 'mimir_queries',
         rules:
-          utils.histogramRules('cortex_query_frontend_retries', [$._config.per_cluster_label, 'job'], $.rateInterval('1m'), record_native=true) +
-          utils.histogramRules('cortex_query_frontend_queue_duration_seconds', [$._config.per_cluster_label, 'job'], $.rateInterval('1m'), record_native=true),
+          utils.histogramRules('cortex_query_frontend_retries', [$._config.per_cluster_label, 'job'], $.rateInterval('1m'), record_native=true),
       },
       {
         name: 'mimir_ingester_queries_1',

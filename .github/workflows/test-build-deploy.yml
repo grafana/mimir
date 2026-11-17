@@ -105,6 +105,11 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-protos
       - name: Check Generated Node Methods
         run: make BUILD_IN_CONTAINER=false check-node-methods
+      - name: Set up Node.js for prettier
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
       - name: Check Generated Documentation
         run: make BUILD_IN_CONTAINER=false check-doc
       - name: Check Reference Help Documentation
@@ -114,7 +119,7 @@ jobs:
       - name: Check License Header
         run: make BUILD_IN_CONTAINER=false check-license
       - name: Check Docker-Compose YAML
-        run: make BUILD_IN_CONTAINER=false check-mimir-microservices-mode-docker-compose-yaml
+        run: make BUILD_IN_CONTAINER=false check-development-docker-compose-yaml
 
   lint-jsonnet:
     runs-on: ubuntu-x64
@@ -203,7 +208,7 @@ jobs:
         if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
-          path: /home/runner/.cache/go-build
+          path: ~/.cache/go-build
           key: go-build-cache-integration-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
           lookup-only: true
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -220,11 +225,11 @@ jobs:
         run: make BUILD_IN_CONTAINER=false warmup-build-cache-integration-tests
       - name: Print Go build cache size
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        run: du -sh /home/runner/.cache/go-build
+        run: du -sh ~/.cache/go-build
       - uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
-          path: /home/runner/.cache/go-build
+          path: ~/.cache/go-build
           key: go-build-cache-integration-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
 
   # Same as above but for unit tests, which compile with -race (producing different cache
@@ -661,10 +666,10 @@ jobs:
       - name: Install Docker Client
         run: ./.github/workflows/scripts/install-docker.sh
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - name: Set up Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Symlink Expected Path to Workspace
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
@@ -706,7 +711,7 @@ jobs:
       - name: Restore Go build cache
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
-          path: /home/runner/.cache/go-build
+          path: ~/.cache/go-build
           key: go-build-cache-integration-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
           restore-keys: |
             go-build-cache-integration-${{ needs.prepare.outputs.build_image }}-
@@ -801,7 +806,7 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
       - name: Log into GAR
-        uses: grafana/shared-workflows/actions/login-to-gar@1f541877ceb22c7be7667d8a8df04984aeac9f9d # login-to-gar/v1.0.3
+        uses: grafana/shared-workflows/actions/login-to-gar@afad5c7621e788905e6417f05b492972685ab1eb # login-to-gar/v1.0.4
         with:
           registry: us-docker.pkg.dev
       - name: Push Docker Images

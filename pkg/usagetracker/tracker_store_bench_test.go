@@ -156,3 +156,63 @@ func generateSnapshot(b *testing.B, tenantsCount int, totalSeries int, now time.
 	}
 	return snapshots, lim
 }
+
+// BenchmarkTrackerStoreTrackSeriesDuringSnapshot tracks series of a tenant while snapshots of that tenant are
+// being taken without pause, and reports the slowest call as max_ms: that is the stall a snapshot adds to the
+// tail latency of series tracking.
+func BenchmarkTrackerStoreTrackSeriesDuringSnapshot(b *testing.B) {
+	for _, totalSeries := range []int{16e6, 64e6} {
+		b.Run(fmt.Sprintf("totalSeries=%dM", totalSeries/1e6), func(b *testing.B) {
+			const tenant = "tenant"
+			const seriesPerRequest = 1_000
+			now := time.Now()
+			t := newTrackerStore(testIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, newTestShardFactory())
+
+			// Fill the store, and keep some of the series to track them again: tracking new series would grow
+			// the shards, and a rehash would be the slowest call rather than the snapshot.
+			r := rand.New(rand.NewSource(0))
+			known := make([]uint64, 0, 1e6)
+			refs := make([]uint64, 10_000)
+			for i := 0; i < totalSeries; i += len(refs) {
+				for j := range refs {
+					refs[j] = r.Uint64()
+				}
+				known = append(known, refs[:min(len(refs), cap(known)-len(known))]...)
+				_, err := t.trackSeries(context.Background(), tenant, refs, now)
+				require.NoError(b, err)
+			}
+
+			stop := make(chan struct{})
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				var buf []byte
+				for shard := 0; ; shard = (shard + 1) % shards {
+					select {
+					case <-stop:
+						return
+					default:
+					}
+					buf = t.snapshot(uint8(shard), now, buf[:0])
+				}
+			}()
+
+			var slowest time.Duration
+			refs = refs[:seriesPerRequest]
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				// trackSeries reorders its input, so hand it a copy.
+				start := r.Intn(len(known) - seriesPerRequest)
+				copy(refs, known[start:start+seriesPerRequest])
+				t0 := time.Now()
+				_, err := t.trackSeries(context.Background(), tenant, refs, now)
+				slowest = max(slowest, time.Since(t0))
+				require.NoError(b, err)
+			}
+			b.StopTimer()
+			close(stop)
+			<-done
+			b.ReportMetric(float64(slowest.Microseconds())/1000, "max_ms")
+		})
+	}
+}

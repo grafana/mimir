@@ -62,14 +62,31 @@ If you are using `kind` or similar local Kubernetes setup and haven't set securi
 This installation will not succeed if you have enabled the
 [PodSecurityPolicy](https://v1-23.docs.kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#podsecuritypolicy) admission controller
 or if you are enforcing the Restricted policy with [Pod Security](https://v1-24.docs.kubernetes.io/docs/concepts/security/pod-security-admission/#pod-security-admission-labels-for-namespaces) admission controller.
-The reason is that the installation includes a deployment of MinIO. The [minio/minio chart](https://github.com/minio/minio/tree/master/helm/minio)
-is not compatible with running under a Restricted policy or the PodSecurityPolicy that the mimir-distributed chart provides.
+The reason is that the installation includes a built-in object storage deployment from the [minio/minio chart](https://github.com/minio/minio/tree/master/helm/minio).
+That subchart isn't compatible with running under a Restricted policy or the PodSecurityPolicy that the mimir-distributed chart provides.
 
-If you are using the PodSecurityPolicy admission controller, then it is not possible to deploy the mimir-distributed chart with MinIO.
+By default, `mimir-distributed` overrides the MinIO subchart images to `pgsty/silo:RELEASE.2026-09-03T13-18-01Z` for both `minio.image` and `minio.mcImage`.
+Silo is a MinIO fork maintained by PGSTY that provides the same S3 API, and the image includes both the server and the `mc` client.
+The chart sets these values because MinIO community edition images are no longer available in public container registries.
+If your cluster pulls only from a private registry or enforces an image policy, allow or mirror that image, or override the values:
+
+```yaml
+minio:
+  image:
+    repository: <YOUR_REGISTRY>/silo
+    tag: RELEASE.2026-09-03T13-18-01Z
+  mcImage:
+    repository: <YOUR_REGISTRY>/silo
+    tag: RELEASE.2026-09-03T13-18-01Z
+```
+
+Replace `<YOUR_REGISTRY>` with your registry host and path.
+
+If you are using the PodSecurityPolicy admission controller, then it is not possible to deploy the mimir-distributed chart with the built-in object storage.
 Refer to [Run Grafana Mimir in production using the Helm chart](../run-production-environment-with-helm/) for instructions on
 setting up an external object storage and disable the built-in MinIO deployment with `minio.enabled: false` in the Helm values file.
 
-If you are using the [Pod Security](https://kubernetes.io/docs/concepts/security/pod-security-admission/) admission controller, then MinIO and the mimir-distributed chart can successfully deploy under the [baseline](https://kubernetes.io/docs/concepts/security/pod-security-admission/#pod-security-levels) pod security level.
+If you are using the [Pod Security](https://kubernetes.io/docs/concepts/security/pod-security-admission/) admission controller, then the built-in object storage and the mimir-distributed chart can successfully deploy under the [baseline](https://kubernetes.io/docs/concepts/security/pod-security-admission/#pod-security-levels) pod security level.
 
 ## Install the Helm chart in a custom namespace
 

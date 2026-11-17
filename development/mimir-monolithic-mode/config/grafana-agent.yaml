@@ -9,6 +9,11 @@ prometheus:
   configs:
     - name: local
       host_filter: false
+      # These jobs keep labels that the Mimir dashboards do not select.
+      # The default compose-up.sh profiles run this agent next to Prometheus.
+      # Both write the same targets to Mimir.
+      # Only the scraped_by label tells the two copies apart.
+      # With the mixin labels, the dashboards would count each series twice.
       scrape_configs:
         - job_name: mimir-1
           static_configs:

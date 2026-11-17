@@ -31,14 +31,15 @@ var (
 	errMaxInflightRequestsBytesReached = newInstanceLimitReachedError(globalerror.IngesterMaxInflightPushRequestsBytes.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed total size in bytes of inflight push requests", maxInflightPushRequestsBytesFlag))
 )
 
-// InstanceLimits describes limits used by ingester. Reaching any of these will result in Push method to return
-// (internal) error.
+// InstanceLimits describes limits used by ingester.
 type InstanceLimits struct {
 	MaxIngestionRate             float64 `yaml:"max_ingestion_rate" category:"advanced"`
 	MaxInMemoryTenants           int64   `yaml:"max_tenants" category:"advanced"`
 	MaxInMemorySeries            int64   `yaml:"max_series" category:"advanced"`
 	MaxInflightPushRequests      int64   `yaml:"max_inflight_push_requests" category:"advanced"`
 	MaxInflightPushRequestsBytes int64   `yaml:"max_inflight_push_requests_bytes" category:"advanced"`
+
+	EarlyHeadCompactionMinInMemorySeries int64 `yaml:"early_head_compaction_min_in_memory_series" category:"experimental" doc:"description=When greater than 0, overrides -blocks-storage.tsdb.early-head-compaction-min-in-memory-series. Set it in the runtime configuration to change the early compaction threshold without restarting the ingester. 0 = use the value of -blocks-storage.tsdb.early-head-compaction-min-in-memory-series.|default=0"`
 }
 
 func (l *InstanceLimits) RegisterFlags(f *flag.FlagSet) {

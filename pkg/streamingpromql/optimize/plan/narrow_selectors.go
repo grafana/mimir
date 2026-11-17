@@ -107,14 +107,15 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 }
 
 // hintsForOn handles "on (labels)" matching: it uses the matching labels as Include
-// hints, filtered by any labels synthesised by label_replace/label_join. Returns true
-// if a hint was set.
+// hints, without any labels synthesised by label_replace/label_join and without the metric
+// name, because many operations remove the metric name before the binary operation, so a
+// matcher for it would often select no series. Returns true if a hint was set.
 func (n *NarrowSelectorsOptimizationPass) hintsForOn(ctx context.Context, e *core.BinaryExpression, created map[string]struct{}) bool {
 	if len(e.VectorMatching.MatchingLabels) == 0 {
 		return false
 	}
 
-	include := filterLabels(e.VectorMatching.MatchingLabels, created)
+	include := filterLabelsForDefaultMatching(e.VectorMatching.MatchingLabels, created)
 	if len(include) == 0 {
 		return false
 	}
@@ -213,18 +214,6 @@ func filterLabelsForDefaultMatching(lbls []string, created map[string]struct{}) 
 		if lbl == model.MetricNameLabel {
 			continue
 		}
-		if _, ok := created[lbl]; !ok {
-			out = append(out, lbl)
-		}
-	}
-
-	return out
-}
-
-// filterLabels returns a new slice of labels that does not include any label in the created set.
-func filterLabels(lbls []string, created map[string]struct{}) []string {
-	out := make([]string, 0, len(lbls))
-	for _, lbl := range lbls {
 		if _, ok := created[lbl]; !ok {
 			out = append(out, lbl)
 		}

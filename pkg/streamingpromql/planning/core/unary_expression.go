@@ -20,6 +20,7 @@ import (
 
 //node:generate
 type UnaryExpression struct {
+	NodeIdentifier
 	*UnaryExpressionDetails
 	Inner planning.Node `node:"child"`
 }

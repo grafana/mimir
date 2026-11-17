@@ -37,6 +37,7 @@ var (
 	ErrNoMemcachedAddresses                    = errors.New("no memcached addresses provided")
 	ErrMemcachedMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
 	ErrMemcachedAddressLookupPeriodNotPositive = errors.New("address lookup period must be greater than 0")
+	ErrMemcachedFreeListShardsNotPositive      = errors.New("free list shards must be greater than 0")
 
 	_ Cache = (*MemcachedClient)(nil)
 )
@@ -120,6 +121,10 @@ type MemcachedClientConfig struct {
 	// Items bigger than MaxItemSize are skipped. If set to 0, no maximum size is enforced.
 	MaxItemSize int `yaml:"max_item_size" category:"advanced"`
 
+	// FreeListShards specifies the number of shards to "stripe" the free list used for connections
+	// in the cache client over.
+	FreeListShards int `yaml:"free_list_shards" category:"experimental"`
+
 	// TLSEnabled enables connecting to Memcached with TLS.
 	TLSEnabled bool `yaml:"tls_enabled" category:"advanced"`
 
@@ -140,6 +145,7 @@ func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.F
 	f.IntVar(&c.MaxGetMultiConcurrency, prefix+"max-get-multi-concurrency", 100, "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.")
 	f.IntVar(&c.MaxGetMultiBatchSize, prefix+"max-get-multi-batch-size", 100, "The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited.")
 	f.IntVar(&c.MaxItemSize, prefix+"max-item-size", 1024*1024, "The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced.")
+	f.IntVar(&c.FreeListShards, prefix+"free-list-shards", 1, "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.")
 	f.BoolVar(&c.TLSEnabled, prefix+"tls-enabled", false, "Enable connecting to Memcached with TLS.")
 	c.TLS.RegisterFlagsWithPrefix(prefix, f)
 }
@@ -156,6 +162,10 @@ func (c *MemcachedClientConfig) Validate() error {
 
 	if c.AddressesLookupPeriod <= 0 {
 		return ErrMemcachedAddressLookupPeriodNotPositive
+	}
+
+	if c.FreeListShards <= 0 {
+		return ErrMemcachedFreeListShardsNotPositive
 	}
 
 	return nil
@@ -209,7 +219,7 @@ func NewMemcachedClientWithConfig(logger log.Logger, name string, config Memcach
 	// for servers selection.
 	selector := &MemcachedJumpHashSelector{}
 
-	client := memcache.NewFromSelector(selector)
+	client := memcache.NewShardedFromSelector(selector, config.FreeListShards)
 	client.Timeout = config.Timeout
 	client.ConnectTimeout = config.ConnectTimeout
 	client.MinIdleConnsHeadroomPercentage = config.MinIdleConnectionsHeadroomPercentage
@@ -448,6 +458,25 @@ func (c *MemcachedClient) GetMulti(ctx context.Context, keys []string, opts ...O
 }
 
 func (c *MemcachedClient) GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (map[string][]byte, error) {
+	return getMulti(ctx, c, keys, opts, func(item *memcache.Item) []byte { return item.Value })
+}
+
+// CASItem is a value read by GetMultiWithCAS together with the CAS token of that read.
+type CASItem struct {
+	Value []byte
+	// CasID is the compare-and-swap token Memcached assigned to the item when it was last
+	// stored. CompareAndSwap takes it to store only while the item is still that version.
+	CasID uint64
+}
+
+// GetMultiWithCAS is GetMultiWithError returning each value with its CAS token.
+func (c *MemcachedClient) GetMultiWithCAS(ctx context.Context, keys []string, opts ...Option) (map[string]CASItem, error) {
+	return getMulti(ctx, c, keys, opts, func(item *memcache.Item) CASItem { return CASItem{Value: item.Value, CasID: item.CasID} })
+}
+
+// getMulti fetches keys in batches and maps each item found with conv. It returns the hits of
+// the successful batches together with the error of a failed one, if any.
+func getMulti[T any](ctx context.Context, c *MemcachedClient, keys []string, opts []Option, conv func(*memcache.Item) T) (map[string]T, error) {
 	if len(keys) == 0 {
 		return nil, nil
 	}
@@ -456,12 +485,10 @@ func (c *MemcachedClient) GetMultiWithError(ctx context.Context, keys []string, 
 	options := toMemcacheOptions(opts...)
 	batches, err := c.getMultiBatched(ctx, keys, options...)
 
-	// Build hits map from successful batches even if there was an error,
-	// since some batch requests may have succeeded.
-	hits := map[string][]byte{}
+	hits := map[string]T{}
 	for _, items := range batches {
 		for key, item := range items {
-			hits[key] = item.Value
+			hits[key] = conv(item)
 		}
 	}
 
@@ -555,7 +582,17 @@ func (c *MemcachedClient) Touch(ctx context.Context, key string, ttl time.Durati
 	return err
 }
 
-func (c *MemcachedClient) CompareAndSwap(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+// CompareAndSwap stores value with ttl only while the item is still the version that a
+// GetMultiWithCAS read returned with casID. Memcached assigns a new token on every store, so a
+// conflict means the item was modified since that read. It returns ErrCASConflict then,
+// memcache.ErrCacheMiss if the item no longer exists, ErrInvalidTTL as Set does, and
+// ErrItemTooLarge for a value over MaxItemSize, which Set and Add skip silently.
+func (c *MemcachedClient) CompareAndSwap(ctx context.Context, key string, value []byte, ttl time.Duration, casID uint64) error {
+	// A skipped store must not read as a successful conditional store.
+	if !c.itemSizeIsAcceptable(key, value, opCompareAndSwap) {
+		return fmt.Errorf("%w: %d bytes for compare-and-swap operation on %s", ErrItemTooLarge, len(value), key)
+	}
+
 	return c.storeOperation(ctx, key, value, ttl, opCompareAndSwap, func(ctx context.Context, key string, value []byte, ttl time.Duration) error {
 		select {
 		case <-ctx.Done():
@@ -566,11 +603,18 @@ func (c *MemcachedClient) CompareAndSwap(ctx context.Context, key string, value 
 				return fmt.Errorf("%w: for compare-and-swap operation on %s %s", ErrInvalidTTL, key, ttl)
 			}
 
-			return c.client.CompareAndSwap(&memcache.Item{
+			err := c.client.CompareAndSwap(&memcache.Item{
 				Key:        key,
 				Value:      value,
 				Expiration: ttlSeconds,
+				CasID:      casID,
 			})
+
+			if errors.Is(err, memcache.ErrCASConflict) {
+				return fmt.Errorf("%w: for compare-and-swap operation on %s", ErrCASConflict, key)
+			}
+
+			return err
 		}
 	})
 }
@@ -655,6 +699,10 @@ func (c *MemcachedClient) trackError(op string, err error, msg ...interface{}) {
 		}
 	case errors.Is(err, ErrNotStored):
 		c.metrics.failures.WithLabelValues(op, reasonNotStored).Inc()
+	case errors.Is(err, ErrCASConflict):
+		c.metrics.failures.WithLabelValues(op, reasonCASConflict).Inc()
+	case errors.Is(err, memcache.ErrCacheMiss):
+		c.metrics.failures.WithLabelValues(op, reasonCacheMiss).Inc()
 	case errors.Is(err, ErrInvalidTTL):
 		c.metrics.failures.WithLabelValues(op, reasonInvalidTTL).Inc()
 	case errors.Is(err, memcache.ErrMalformedKey):

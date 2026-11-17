@@ -199,12 +199,15 @@ There are two use cases in general:
          - name: zone-a
            nodeSelector:
              topology.kubernetes.io/zone: us-central1-a
+           prepareDownscale: true
          - name: zone-b
            nodeSelector:
              topology.kubernetes.io/zone: us-central1-b
+           prepareDownscale: true
          - name: zone-c
            nodeSelector:
              topology.kubernetes.io/zone: us-central1-c
+           prepareDownscale: true
    ```
 
 > **Note**: as `zones` value is an array, you must copy and modify it to make changes to it, there is no way to overwrite just parts of the array!
@@ -369,12 +372,15 @@ There are two use cases in general:
          - name: zone-a
            nodeSelector:
              topology.kubernetes.io/zone: us-central1-a
+           prepareDownscale: true
          - name: zone-b
            nodeSelector:
              topology.kubernetes.io/zone: us-central1-b
+           prepareDownscale: true
          - name: zone-c
            nodeSelector:
              topology.kubernetes.io/zone: us-central1-c
+           prepareDownscale: true
    ```
 
 > **Note**: as `zones` value is an array, you must copy and modify it to make changes to it, there is no way to overwrite just parts of the array!

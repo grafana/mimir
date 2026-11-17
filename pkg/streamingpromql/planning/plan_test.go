@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package planning
+package planning_test
 
 import (
 	"errors"
@@ -15,6 +15,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -25,23 +27,23 @@ func TestQueryPlan_String(t *testing.T) {
 
 	sharedNode2 := &testNode{
 		description: "second shared node",
-		children: []Node{
+		children: []planning.Node{
 			sharedNode1,
 			sharedNode1,
 		},
 	}
 
-	plan := &QueryPlan{
+	plan := &planning.QueryPlan{
 		Root: &testNode{
 			description: "node with many children",
-			children: []Node{
+			children: []planning.Node{
 				sharedNode2,
 				&testNode{
 					description: "node with no children",
 				},
 				&testNode{
 					description: "node with a child",
-					children: []Node{
+					children: []planning.Node{
 						&testNode{
 							// Test node with no description.
 						},
@@ -66,9 +68,11 @@ func TestQueryPlan_String(t *testing.T) {
 }
 
 type testNode struct {
-	children                   []Node
+	core.NodeIdentifier
+
+	children                   []planning.Node
 	description                string
-	minimumRequiredPlanVersion QueryPlanVersion
+	minimumRequiredPlanVersion planning.QueryPlanVersion
 }
 
 func (t *testNode) Describe() string {
@@ -96,11 +100,11 @@ func (t *testNode) Details() proto.Message {
 	panic("not supported")
 }
 
-func (t *testNode) NodeType() NodeType {
+func (t *testNode) NodeType() planning.NodeType {
 	panic("not supported")
 }
 
-func (t *testNode) Child(idx int) Node {
+func (t *testNode) Child(idx int) planning.Node {
 	return t.children[idx]
 }
 
@@ -108,19 +112,19 @@ func (t *testNode) ChildCount() int {
 	return len(t.children)
 }
 
-func (t *testNode) SetChildren(_ []Node) error {
+func (t *testNode) SetChildren(_ []planning.Node) error {
 	panic("not supported")
 }
 
-func (t *testNode) ReplaceChild(_ int, _ Node) error {
+func (t *testNode) ReplaceChild(_ int, _ planning.Node) error {
 	panic("not supported")
 }
 
-func (t *testNode) EquivalentToIgnoringHintsAndChildren(_ Node) bool {
+func (t *testNode) EquivalentToIgnoringHintsAndChildren(_ planning.Node) bool {
 	panic("not supported")
 }
 
-func (t *testNode) MergeHints(_ Node) error { panic("not supported") }
+func (t *testNode) MergeHints(_ planning.Node) error { panic("not supported") }
 
 func (t *testNode) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
 	return timeRange
@@ -130,7 +134,7 @@ func (t *testNode) ResultType() (parser.ValueType, error) {
 	panic("not supported")
 }
 
-func (t *testNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (QueriedTimeRange, error) {
+func (t *testNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	panic("not supported")
 }
 
@@ -138,28 +142,28 @@ func (t *testNode) ExpressionPosition() (posrange.PositionRange, error) {
 	panic("not supported")
 }
 
-func (t *testNode) MinimumRequiredPlanVersion(types.QueryTimeRange) (QueryPlanVersion, error) {
+func (t *testNode) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	return t.minimumRequiredPlanVersion, nil
 }
 
 func TestQueryPlanVersion(t *testing.T) {
-	v0 := QueryPlanVersion(0)
-	v1 := QueryPlanVersion(1)
-	v2 := QueryPlanVersion(2)
+	v0 := planning.QueryPlanVersion(0)
+	v1 := planning.QueryPlanVersion(1)
+	v2 := planning.QueryPlanVersion(2)
 
 	testCases := map[string]struct {
-		plan            QueryPlan
-		expectedVersion QueryPlanVersion
+		plan            planning.QueryPlan
+		expectedVersion planning.QueryPlanVersion
 		expectedError   error
 	}{
 		"no root node": {
-			plan:            QueryPlan{},
+			plan:            planning.QueryPlan{},
 			expectedVersion: v0,
 			expectedError:   errors.New("query plan version can not be determined without a root node"),
 		},
 		"single root node": {
-			plan: QueryPlan{
-				Parameters: &QueryParameters{
+			plan: planning.QueryPlan{
+				Parameters: &planning.QueryParameters{
 					TimeRange: types.NewInstantQueryTimeRange(time.Now()),
 				},
 				Root: &testNode{minimumRequiredPlanVersion: v1},
@@ -167,13 +171,13 @@ func TestQueryPlanVersion(t *testing.T) {
 			expectedVersion: v1,
 		},
 		"node with children": {
-			plan: QueryPlan{
-				Parameters: &QueryParameters{
+			plan: planning.QueryPlan{
+				Parameters: &planning.QueryParameters{
 					TimeRange: types.NewInstantQueryTimeRange(time.Now()),
 				},
 				Root: &testNode{
 					minimumRequiredPlanVersion: v1,
-					children: []Node{
+					children: []planning.Node{
 						&testNode{
 							minimumRequiredPlanVersion: v2,
 						},
@@ -186,19 +190,19 @@ func TestQueryPlanVersion(t *testing.T) {
 			expectedVersion: v2,
 		},
 		"node with deep children": {
-			plan: QueryPlan{
-				Parameters: &QueryParameters{
+			plan: planning.QueryPlan{
+				Parameters: &planning.QueryParameters{
 					TimeRange: types.NewInstantQueryTimeRange(time.Now()),
 				},
 				Root: &testNode{
 					minimumRequiredPlanVersion: v0,
-					children: []Node{
+					children: []planning.Node{
 						&testNode{
 							minimumRequiredPlanVersion: v1,
-							children: []Node{
+							children: []planning.Node{
 								&testNode{
 									minimumRequiredPlanVersion: v0,
-									children: []Node{
+									children: []planning.Node{
 										&testNode{
 											minimumRequiredPlanVersion: v2,
 										},
@@ -228,44 +232,44 @@ func TestQueryPlanVersion(t *testing.T) {
 
 func TestQueriedTimeRange_Union(t *testing.T) {
 	testCases := map[string]struct {
-		first    QueriedTimeRange
-		second   QueriedTimeRange
-		expected QueriedTimeRange
+		first    planning.QueriedTimeRange
+		second   planning.QueriedTimeRange
+		expected planning.QueriedTimeRange
 	}{
 		"neither queries any data": {
-			first:    NoDataQueried(),
-			second:   NoDataQueried(),
-			expected: NoDataQueried(),
+			first:    planning.NoDataQueried(),
+			second:   planning.NoDataQueried(),
+			expected: planning.NoDataQueried(),
 		},
 		"only one queries any data": {
-			first:    NoDataQueried(),
-			second:   NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
-			expected: NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			first:    planning.NoDataQueried(),
+			second:   planning.NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			expected: planning.NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
 		},
 		"both query data and are the same": {
-			first:    NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
-			second:   NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
-			expected: NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			first:    planning.NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			second:   planning.NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			expected: planning.NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
 		},
 		"both query data and don't overlap": {
-			first:    NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
-			second:   NewQueriedTimeRange(timestamp.Time(4000), timestamp.Time(5000)),
-			expected: NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(5000)),
+			first:    planning.NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			second:   planning.NewQueriedTimeRange(timestamp.Time(4000), timestamp.Time(5000)),
+			expected: planning.NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(5000)),
 		},
 		"both query data and don't overlap, but the end of one aligns with the start of the other": {
-			first:    NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
-			second:   NewQueriedTimeRange(timestamp.Time(3000), timestamp.Time(5000)),
-			expected: NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(5000)),
+			first:    planning.NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			second:   planning.NewQueriedTimeRange(timestamp.Time(3000), timestamp.Time(5000)),
+			expected: planning.NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(5000)),
 		},
 		"both query data and one is entirely contained by the other": {
-			first:    NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
-			second:   NewQueriedTimeRange(timestamp.Time(2000), timestamp.Time(2500)),
-			expected: NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			first:    planning.NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			second:   planning.NewQueriedTimeRange(timestamp.Time(2000), timestamp.Time(2500)),
+			expected: planning.NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
 		},
 		"both query data and overlap": {
-			first:    NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
-			second:   NewQueriedTimeRange(timestamp.Time(2000), timestamp.Time(5000)),
-			expected: NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(5000)),
+			first:    planning.NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(3000)),
+			second:   planning.NewQueriedTimeRange(timestamp.Time(2000), timestamp.Time(5000)),
+			expected: planning.NewQueriedTimeRange(timestamp.Time(1000), timestamp.Time(5000)),
 		},
 	}
 

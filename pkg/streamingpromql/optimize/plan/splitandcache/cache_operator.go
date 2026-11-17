@@ -174,7 +174,11 @@ func (c *CacheOperator) encodeNodeForCacheKey() ([]byte, error) {
 	cacheKeyParams.TimeRange = types.QueryTimeRange{}
 
 	plan := &planning.QueryPlan{Root: c.Inner, Parameters: &cacheKeyParams}
-	encoded, _, err := plan.ToEncodedPlan(false, true)
+	encoded, _, err := plan.ToEncodedPlan(planning.QueryPlanEncodingOptions{
+		IncludeDescriptions: false,
+		IncludeDetails:      true,
+		IncludeNodeId:       false,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("encoding plan for cache key: %w", err)
 	}

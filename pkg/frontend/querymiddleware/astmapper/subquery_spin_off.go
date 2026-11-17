@@ -36,9 +36,6 @@ type subquerySpinOffMapper struct {
 //
 // wrapper controls how the spun-off subqueries and downstream queries are represented in the mapped
 // query.
-//
-// opts enables optional, more aggressive spin-off behaviours; the zero value keeps the conservative
-// default behaviour.
 func NewSubquerySpinOffMapper(wrapper SubquerySpinOffWrapper, defaultStepFunc func(rangeMillis int64) int64, logger log.Logger, stats *SubquerySpinOffMapperStats, spinOffSimpleSubqueries bool) ASTMapper {
 	queryMapper := NewASTExprMapper(
 		&subquerySpinOffMapper{

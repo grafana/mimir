@@ -205,6 +205,13 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	postingGroups, omittedPostingGroups := r.postingsStrategy.selectPostings(postingGroups)
 	logSelectedPostingGroups(ctx, r.block.logger, r.block.meta.ULID, postingGroups, omittedPostingGroups)
 
+	// The posting- and omittedPosting groups share one backing slice.
+	// Explicitly clear the omitted groups here so their keys and offsets aren't retained while postings are fetched.
+	// This shortens how long the omitted groups stay in memory during expansion of postings.
+	// Ref https://github.com/grafana/mimir/issues/16836 for a detailed explanation of the problem.
+	pendingMatchers = extractLabelMatchers(omittedPostingGroups)
+	clear(omittedPostingGroups)
+
 	keysOffsets := extractKeysOffsets(postingGroups)
 
 	fetchedPostings, err := r.fetchPostings(ctx, keysOffsets, stats)
@@ -253,7 +260,7 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 		}
 	}
 
-	return ps, extractLabelMatchers(omittedPostingGroups), nil
+	return ps, pendingMatchers, nil
 }
 
 func logSelectedPostingGroups(ctx context.Context, logger log.Logger, blockID ulid.ULID, selectedGroups, omittedGroups []postingGroup) {

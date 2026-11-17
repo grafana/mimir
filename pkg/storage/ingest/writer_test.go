@@ -1822,7 +1822,11 @@ func assertHistogramSampleCount(t *testing.T, reg prometheus.Gatherer, metricNam
 // histograms) are present and populated on both backends, so a dashboard or
 // alert written against one backend keeps working on the other.
 func TestWriter_KafkaClientMetricsParity(t *testing.T) {
-	runForEachKafkaBackend(t, testWriter_KafkaClientMetricsParity)
+	runForEachKafkaBackend(t, func(t *testing.T, backend string) {
+		synctest.Test(t, func(t *testing.T) {
+			testWriter_KafkaClientMetricsParity(t, backend)
+		})
+	})
 }
 
 func testWriter_KafkaClientMetricsParity(t *testing.T, backend string) {
@@ -1834,12 +1838,20 @@ func testWriter_KafkaClientMetricsParity(t *testing.T, backend string) {
 	)
 	ctx := context.Background()
 
-	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+	// The test runs in a synctest bubble, so use a virtual network: goroutines blocked on a real network connection
+	// would stop synctest.Wait from returning.
+	var vnet kfake.VirtualNetwork
+	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, testkafka.WithVirtualNetwork(&vnet))
 	cfg := createTestKafkaConfigForBackend(backend, clusterAddr, topicName)
+	cfg.Dialer = vnet.DialContext
 	writer, reg := createTestWriter(t, cfg)
 
 	req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}, Source: mimirpb.API}
 	require.NoError(t, writer.WriteSync(ctx, topicName, partitionID, tenantID, req))
+
+	// franz-go updates some metrics, such as the produce batch counters, from a goroutine after the produce request
+	// completes, so they can still be zero right after WriteSync returns. Wait until that goroutine is done.
+	synctest.Wait()
 
 	mfm, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 	require.NoError(t, err)

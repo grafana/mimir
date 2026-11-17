@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types" //lint:ignore faillint streamingpromql is fine
+	"github.com/grafana/mimir/pkg/util/rootqueryid"      //lint:ignore faillint queryTracker needs rootqueryid
 )
 
 func init() {
@@ -61,4 +62,9 @@ func TestActivityDescription(t *testing.T) {
 	assert.Equal(t, `stage=first query="query string"`, generateActivityDescription(ctx, "query string", "first", types.QueryTimeRange{}, false))
 	assert.Equal(t, `stage=first instant_ts_ms=1234 query="query string"`, generateActivityDescription(ctx, "query string", "first", types.NewInstantQueryTimeRange(timestamp.Time(1234)), true))
 	assert.Equal(t, `stage=first start_ts_ms=1234 end_ts_ms=5678 interval_ms=100 query="query string"`, generateActivityDescription(ctx, "query string", "first", types.NewRangeQueryTimeRange(timestamp.Time(1234), timestamp.Time(5678), 100*time.Millisecond), true))
+
+	ctxWithRootQueryID := rootqueryid.ContextWithID(ctx, "9c5b94b1-35ad-49bb-b118-8e8fc24abf80")
+	assert.Equal(t, `root_query_id=9c5b94b1-35ad-49bb-b118-8e8fc24abf80 query="query string"`, generateActivityDescription(ctxWithRootQueryID, "query string", "", types.QueryTimeRange{}, false))
+	assert.Equal(t, `tenant=user root_query_id=9c5b94b1-35ad-49bb-b118-8e8fc24abf80 stage=first instant_ts_ms=1234 query="query string"`, generateActivityDescription(user.InjectOrgID(ctxWithRootQueryID, "user"), "query string", "first", types.NewInstantQueryTimeRange(timestamp.Time(1234)), true))
+	assert.Equal(t, `query="query string"`, generateActivityDescription(rootqueryid.ContextWithID(ctx, ""), "query string", "", types.QueryTimeRange{}, false))
 }

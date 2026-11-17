@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
@@ -557,8 +558,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 					appendHistogram := func(seriesID int, ts int64) {
 						lbls := labels.FromStrings("series_id", strconv.Itoa(seriesID))
 
-						app := db.Appender(context.Background())
-						_, err := app.AppendHistogram(0, lbls, ts, util_test.GenerateTestHistogram(seriesID), nil)
+						app := db.AppenderV2(context.Background())
+						_, err := app.Append(0, lbls, 0, ts, 0, util_test.GenerateTestHistogram(seriesID), nil, storage.AOptions{})
 						require.NoError(t, err)
 
 						err = app.Commit()

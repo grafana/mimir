@@ -4,7 +4,6 @@ package querier
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -322,6 +322,7 @@ func TestSearchLabelNamesHandler_HasMoreWhenLimitHit(t *testing.T) {
 	trailer := lines[len(lines)-1]
 	assert.Equal(t, "success", trailer["status"])
 	assert.Equal(t, true, trailer["has_more"])
+	assert.Equal(t, float64(2), trailer["returned"], "returned must not count the probe record")
 }
 
 // TestSearchLabelNamesHandler_HasMoreFalseWhenDataExactlyFillsLimit
@@ -348,6 +349,7 @@ func TestSearchLabelNamesHandler_HasMoreFalseWhenDataExactlyFillsLimit(t *testin
 	assert.Equal(t, "success", trailer["status"])
 	assert.Equal(t, false, trailer["has_more"],
 		"data length == limit must not be reported as has_more (limit+1 probe distinguishes this from a real overflow)")
+	assert.Equal(t, float64(2), trailer["returned"])
 }
 
 func TestSearchLabelNamesHandler_HasMoreFalseWhenUnderLimit(t *testing.T) {
@@ -365,6 +367,40 @@ func TestSearchLabelNamesHandler_HasMoreFalseWhenUnderLimit(t *testing.T) {
 	trailer := lines[len(lines)-1]
 	assert.Equal(t, "success", trailer["status"])
 	assert.Equal(t, false, trailer["has_more"])
+	assert.Equal(t, float64(1), trailer["returned"])
+}
+
+func TestSearchLabelNamesHandler_ReturnedCountsEveryBatch(t *testing.T) {
+	results := []storage.SearchResult{sr("a", 1), sr("b", 1), sr("c", 1), sr("d", 1), sr("e", 1)}
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice(results, nil)
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=10&batch_size=2"))
+
+	lines := drainNDJSON(t, w.Body.String())
+	require.Len(t, lines, 4, "three batches and the trailer")
+	trailer := lines[len(lines)-1]
+	assert.Equal(t, false, trailer["has_more"])
+	assert.Equal(t, float64(len(results)), trailer["returned"])
+}
+
+func TestSearchLabelNamesHandler_ReturnedIsZeroForNoResults(t *testing.T) {
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice(nil, nil)
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=10"))
+
+	assert.Equal(t, `{"status":"success","has_more":false,"returned":0}`+"\n", w.Body.String())
 }
 
 // TestSearchLabelNamesHandler_HintsLimitIsLimitPlusOne pins that the
@@ -452,6 +488,7 @@ func TestSearchLabelNamesHandler_HasMoreWhenClampFires(t *testing.T) {
 	assert.Equal(t, "success", trailer["status"])
 	assert.Equal(t, true, trailer["has_more"],
 		"clamp warning must flip has_more even when emitted (%d) < requested limit", len(results))
+	assert.Equal(t, float64(len(results)), trailer["returned"])
 	warnsField := trailer["warnings"].([]any)
 	require.Len(t, warnsField, 1)
 	assert.Contains(t, warnsField[0], validation.MaxLabelNamesLimitFlag)
@@ -1185,7 +1222,7 @@ func TestSearchMetricNamesHandler_IncludeScoreAndMetadataCompose(t *testing.T) {
 }
 
 func TestSearchMetricNamesHandler_ShouldFetchMetadataFromIngesters(t *testing.T) {
-	makeQueryable := func(dist *mockDistributor) storage.Queryable {
+	makeQueryable := func(dist Distributor) storage.Queryable {
 		var cfg Config
 		flagext.DefaultValues(&cfg)
 
@@ -1243,7 +1280,8 @@ func TestSearchMetricNamesHandler_ShouldFetchMetadataFromIngesters(t *testing.T)
 		assert.Equal(t, "Total HTTP requests.", httpRec["help"])
 
 		require.NotNil(t, gotReq, "the metadata fan-out RPC must be invoked")
-		assert.Equal(t, []string{"cpu_usage_seconds", "http_requests_total"}, gotReq.MetricNames)
+		// http_requests is the family name an OpenMetrics counter would be stored under.
+		assert.Equal(t, []string{"cpu_usage_seconds", "http_requests_total", "http_requests"}, gotReq.MetricNames)
 	})
 
 	t.Run("leaves results un-enriched when the metadata fetch fails", func(t *testing.T) {
@@ -1262,6 +1300,309 @@ func TestSearchMetricNamesHandler_ShouldFetchMetadataFromIngesters(t *testing.T)
 		_, hasType := rec["type"]
 		assert.False(t, hasType, "a failed metadata fetch leaves enrichment fields absent")
 	})
+
+	// Ported from the Prometheus search API tests (prometheus/prometheus#19824, prometheus/prometheus#19910).
+	t.Run("resolves metric family metadata for suffixed metric names", func(t *testing.T) {
+		gauge := metadata.Metadata{Type: model.MetricTypeGauge, Help: "Number of goroutines."}
+		counter := metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total CPU time.", Unit: "seconds"}
+		histogram := metadata.Metadata{Type: model.MetricTypeHistogram, Help: "Request duration.", Unit: "seconds"}
+		summary := metadata.Metadata{Type: model.MetricTypeSummary, Help: "GC duration.", Unit: "seconds"}
+		gaugeHistogram := metadata.Metadata{Type: model.MetricTypeGaugeHistogram, Help: "Queue size."}
+		info := metadata.Metadata{Type: model.MetricTypeInfo, Help: "Target information."}
+		unknown := metadata.Metadata{Type: model.MetricTypeUnknown, Help: "Custom metric."}
+
+		for _, tc := range []struct {
+			name string
+			// stored is the ingester metadata, keyed by metric family name, in the
+			// order the ingester returns it.
+			stored   map[string][]metadata.Metadata
+			matching map[string]metadata.Metadata
+			missing  []string
+		}{
+			{
+				name:     "gauge",
+				stored:   map[string][]metadata.Metadata{"go_goroutines": {gauge}},
+				matching: map[string]metadata.Metadata{"go_goroutines": gauge},
+				missing:  []string{"go_goroutines_total", "go_goroutines_count", "go_goroutines_bucket", "go_goroutines_info"},
+			},
+			{
+				name:     "name without underscore",
+				stored:   map[string][]metadata.Metadata{"up": {gauge}},
+				matching: map[string]metadata.Metadata{"up": gauge},
+				missing:  []string{"uptime"},
+			},
+			{
+				name:     "OpenMetrics counter",
+				stored:   map[string][]metadata.Metadata{"process_cpu_seconds": {counter}},
+				matching: map[string]metadata.Metadata{"process_cpu_seconds_total": counter},
+				missing:  []string{"process_cpu_seconds_created", "process_cpu_seconds_sum", "process_cpu_seconds_bucket", "process_cpu_seconds_total_total"},
+			},
+			{
+				name:     "Prometheus counter",
+				stored:   map[string][]metadata.Metadata{"process_cpu_seconds_total": {counter}},
+				matching: map[string]metadata.Metadata{"process_cpu_seconds_total": counter},
+				missing:  []string{"process_cpu_seconds"},
+			},
+			{
+				// x_total_total is not a series of the x_total family.
+				name:     "Prometheus counter with doubled suffix",
+				stored:   map[string][]metadata.Metadata{"process_cpu_seconds_total": {counter}},
+				matching: map[string]metadata.Metadata{"process_cpu_seconds_total": counter},
+				missing:  []string{"process_cpu_seconds_total_total"},
+			},
+			{
+				name:     "info with doubled suffix",
+				stored:   map[string][]metadata.Metadata{"build_info": {info}},
+				matching: map[string]metadata.Metadata{"build_info": info},
+				missing:  []string{"build_info_info"},
+			},
+			{
+				name: "exact metadata for doubled suffix",
+				stored: map[string][]metadata.Metadata{
+					"requests_total_total": {{Type: model.MetricTypeGauge, Help: "Independent gauge."}},
+					"requests_total":       {{Type: model.MetricTypeCounter, Help: "Requests."}},
+				},
+				matching: map[string]metadata.Metadata{"requests_total_total": {Type: model.MetricTypeGauge, Help: "Independent gauge."}},
+			},
+			{
+				// The ingester returns one record per family, so the first one wins.
+				name: "conflicting types with compatible type first",
+				stored: map[string][]metadata.Metadata{"requests": {
+					{Type: model.MetricTypeCounter, Help: "Requests."},
+					{Type: model.MetricTypeGauge, Help: "In-flight requests."},
+				}},
+				matching: map[string]metadata.Metadata{"requests_total": {Type: model.MetricTypeCounter, Help: "Requests."}},
+			},
+			{
+				name: "exact metadata takes precedence",
+				stored: map[string][]metadata.Metadata{
+					"http_request_duration_seconds_count": {{Type: model.MetricTypeGauge, Help: "Independent gauge."}},
+					"http_request_duration_seconds":       {histogram},
+				},
+				matching: map[string]metadata.Metadata{"http_request_duration_seconds_count": {Type: model.MetricTypeGauge, Help: "Independent gauge."}},
+			},
+			{
+				name:   "histogram",
+				stored: map[string][]metadata.Metadata{"http_request_duration_seconds": {histogram}},
+				matching: map[string]metadata.Metadata{
+					"http_request_duration_seconds":        histogram,
+					"http_request_duration_seconds_bucket": histogram,
+					"http_request_duration_seconds_sum":    histogram,
+					"http_request_duration_seconds_count":  histogram,
+				},
+				missing: []string{"http_request_duration_seconds_created", "http_request_duration_seconds_total", "http_request_duration_seconds_gsum", "http_request_duration_seconds_gcount"},
+			},
+			{
+				name:   "summary",
+				stored: map[string][]metadata.Metadata{"go_gc_duration_seconds": {summary}},
+				matching: map[string]metadata.Metadata{
+					"go_gc_duration_seconds":       summary,
+					"go_gc_duration_seconds_sum":   summary,
+					"go_gc_duration_seconds_count": summary,
+				},
+				missing: []string{"go_gc_duration_seconds_created", "go_gc_duration_seconds_bucket", "go_gc_duration_seconds_total"},
+			},
+			{
+				// OpenMetrics text uses _gsum and _gcount, the protobuf format
+				// uses _sum and _count.
+				name:   "gauge histogram",
+				stored: map[string][]metadata.Metadata{"queue_size": {gaugeHistogram}},
+				matching: map[string]metadata.Metadata{
+					"queue_size":        gaugeHistogram,
+					"queue_size_bucket": gaugeHistogram,
+					"queue_size_gsum":   gaugeHistogram,
+					"queue_size_gcount": gaugeHistogram,
+					"queue_size_sum":    gaugeHistogram,
+					"queue_size_count":  gaugeHistogram,
+				},
+				missing: []string{"queue_size_total", "queue_size_created"},
+			},
+			{
+				name:     "info",
+				stored:   map[string][]metadata.Metadata{"target": {info}},
+				matching: map[string]metadata.Metadata{"target_info": info},
+				missing:  []string{"target_total", "target_created"},
+			},
+			{
+				name:     "unknown type",
+				stored:   map[string][]metadata.Metadata{"custom_metric": {unknown}},
+				matching: map[string]metadata.Metadata{"custom_metric": unknown},
+				missing:  []string{"custom_metric_total", "custom_metric_sum", "custom_metric_count", "custom_metric_created"},
+			},
+			{
+				// x_count matches both its own family and the x family, so the
+				// ingester finds more families than there are results. The fetch
+				// limit must still leave room for the y family.
+				name: "fetch limit covers family names",
+				stored: map[string][]metadata.Metadata{
+					"x_count": {gauge},
+					"x":       {histogram},
+					"y":       {summary},
+				},
+				matching: map[string]metadata.Metadata{"x_count": gauge, "y_sum": summary},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var series []string
+				for name := range tc.matching {
+					series = append(series, name)
+				}
+				series = append(series, tc.missing...)
+				// The merge requires each source to be sorted.
+				slices.Sort(series)
+
+				dist := &ingesterMetadataDistributor{
+					mockDistributor: &mockDistributor{searchLabelValuesFn: searchValues(series...)},
+					stored:          map[string][]scrape.MetricMetadata{},
+				}
+				for family, mds := range tc.stored {
+					for _, md := range mds {
+						dist.stored[family] = append(dist.stored[family], scrape.MetricMetadata{MetricFamily: family, Type: md.Type, Help: md.Help, Unit: md.Unit})
+					}
+				}
+
+				h := SearchMetricNamesHandler(makeQueryable(dist), enabledSearchConfig(), nil, log.NewNopLogger())
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
+				require.Equal(t, http.StatusOK, w.Code)
+
+				lines := drainNDJSON(t, w.Body.String())
+				require.NotEmpty(t, lines)
+				got := map[string]map[string]any{}
+				for _, line := range lines[:len(lines)-1] {
+					for _, r := range line["results"].([]any) {
+						rec := r.(map[string]any)
+						got[rec["name"].(string)] = rec
+					}
+				}
+				require.Len(t, got, len(series))
+
+				for name, want := range tc.matching {
+					rec := got[name]
+					assert.Equal(t, string(want.Type), rec["type"], "type of %s", name)
+					assert.Equal(t, want.Help, rec["help"], "help of %s", name)
+					if want.Unit == "" {
+						assert.NotContains(t, rec, "unit", "unit of %s", name)
+					} else {
+						assert.Equal(t, want.Unit, rec["unit"], "unit of %s", name)
+					}
+				}
+				for _, name := range tc.missing {
+					rec := got[name]
+					assert.NotContains(t, rec, "type", "%s must not be enriched", name)
+					assert.NotContains(t, rec, "help", "%s must not be enriched", name)
+					assert.NotContains(t, rec, "unit", "%s must not be enriched", name)
+				}
+
+				require.NotEmpty(t, dist.requests, "the metadata fan-out RPC must be invoked")
+				for _, req := range dist.requests {
+					unique := slices.Clone(req.MetricNames)
+					slices.Sort(unique)
+					assert.Equal(t, len(req.MetricNames), len(slices.Compact(unique)), "requested metric names must not repeat: %v", req.MetricNames)
+				}
+			})
+		}
+	})
+
+	t.Run("does not fetch metadata for the has_more probe result", func(t *testing.T) {
+		// The handler reads limit+1 results to detect has_more. With the default
+		// limit equal to the fetch batch size, the probe result is alone in the
+		// second batch, which must not fan out to the ingesters.
+		series := make([]string, 0, searchDefaultLimit+1)
+		for i := range searchDefaultLimit + 1 {
+			series = append(series, fmt.Sprintf("m%03d", i))
+		}
+
+		dist := &ingesterMetadataDistributor{
+			mockDistributor: &mockDistributor{searchLabelValuesFn: searchValues(series...)},
+			stored:          map[string][]scrape.MetricMetadata{},
+		}
+
+		h := SearchMetricNamesHandler(makeQueryable(dist), enabledSearchConfig(), nil, log.NewNopLogger())
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
+		require.Equal(t, http.StatusOK, w.Code)
+
+		require.Len(t, dist.requests, 1, "only the results within the limit may be fetched")
+		assert.Equal(t, series[:searchDefaultLimit], dist.requests[0].MetricNames)
+
+		lines := drainNDJSON(t, w.Body.String())
+		require.NotEmpty(t, lines)
+		assert.Equal(t, true, lines[len(lines)-1]["has_more"])
+	})
+
+	t.Run("enriches a family and its suffixed name in different batches", func(t *testing.T) {
+		// x is in the first batch and x_bucket is in the second.
+		series := []string{"x"}
+		for i := range searchDefaultBatchSize {
+			series = append(series, fmt.Sprintf("x_a%03d", i))
+		}
+		series = append(series, "x_bucket")
+		require.True(t, slices.IsSorted(series))
+
+		dist := &ingesterMetadataDistributor{
+			mockDistributor: &mockDistributor{searchLabelValuesFn: searchValues(series...)},
+			stored: map[string][]scrape.MetricMetadata{
+				"x": {{MetricFamily: "x", Type: model.MetricTypeHistogram, Help: "Histogram."}},
+			},
+		}
+
+		h := SearchMetricNamesHandler(makeQueryable(dist), enabledSearchConfig(), nil, log.NewNopLogger())
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, newSearchHandlerRequest(t, fmt.Sprintf("/api/v1/search/metric_names?include_metadata=true&batch_size=%d&limit=%d", searchDefaultBatchSize, len(series))))
+		require.Equal(t, http.StatusOK, w.Code)
+
+		require.Len(t, dist.requests, 2, "x and x_bucket must be in different batches")
+
+		lines := drainNDJSON(t, w.Body.String())
+		got := map[string]map[string]any{}
+		for _, line := range lines[:len(lines)-1] {
+			for _, r := range line["results"].([]any) {
+				rec := r.(map[string]any)
+				got[rec["name"].(string)] = rec
+			}
+		}
+		for _, name := range []string{"x", "x_bucket"} {
+			require.Contains(t, got, name)
+			assert.Equal(t, "histogram", got[name]["type"], "type of %s", name)
+		}
+	})
+}
+
+// ingesterMetadataDistributor serves MetricsMetadata the way the ingester's
+// userMetricsMetadata.toClientMetadata does for a MetricNames request: exact
+// lookups by family name, where Limit caps the number of families found and
+// LimitPerMetric caps the records per family.
+type ingesterMetadataDistributor struct {
+	*mockDistributor
+	stored   map[string][]scrape.MetricMetadata
+	requests []*client.MetricsMetadataRequest
+}
+
+func (d *ingesterMetadataDistributor) MetricsMetadata(_ context.Context, req *client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
+	d.requests = append(d.requests, req)
+	if req.Limit == 0 {
+		return nil, nil
+	}
+	var (
+		out        []scrape.MetricMetadata
+		numMetrics int32
+	)
+	for _, name := range req.MetricNames {
+		if req.Limit > 0 && numMetrics >= req.Limit {
+			break
+		}
+		mds, ok := d.stored[name]
+		if !ok {
+			continue
+		}
+		if req.LimitPerMetric > 0 && int32(len(mds)) > req.LimitPerMetric {
+			mds = mds[:req.LimitPerMetric]
+		}
+		out = append(out, mds...)
+		numMetrics++
+	}
+	return out, nil
 }
 
 func TestSearchLabelNamesHandler_MetadataParamSilentlyIgnored(t *testing.T) {
@@ -1321,21 +1662,6 @@ func TestSearchLabelValuesHandler_MalformedMetadataParamReturns400(t *testing.T)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_values?label=env&include_metadata=maybe"))
 	assert.Equal(t, http.StatusBadRequest, w.Code)
-}
-
-// TestDefaultSuccessTrailer_MatchesEncoderOutput pins the byte-for-byte
-// equivalence between the hand-rolled defaultSuccessTrailer constant and
-// what json.Encoder produces for a zero-warning success trailer. If
-// searchTrailerEnvelope's JSON tags, field order, or default-value
-// rendering ever change, this test forces a deliberate update to
-// defaultSuccessTrailer rather than letting the two paths drift silently.
-func TestDefaultSuccessTrailer_MatchesEncoderOutput(t *testing.T) {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	require.NoError(t, enc.Encode(searchTrailerEnvelope{Status: "success"}))
-	assert.Equal(t, buf.String(), string(defaultSuccessTrailer),
-		"defaultSuccessTrailer must match json.Encoder output for the zero-warning success trailer")
 }
 
 // newBenchmarkSearchResults builds n SearchResults with uniform-length names

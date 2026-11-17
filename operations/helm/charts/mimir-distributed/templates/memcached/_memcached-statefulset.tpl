@@ -80,6 +80,7 @@ spec:
       dnsConfig:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if or .extraVolumes $.ctx.Values.global.extraVolumes }}
       volumes:
         {{- with .extraVolumes }}
         {{- toYaml . | nindent 8 }}
@@ -87,6 +88,7 @@ spec:
         {{- with $.ctx.Values.global.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+      {{- end }}
       containers:
         {{- if .extraContainers }}
         {{ toYaml .extraContainers | nindent 8 }}
@@ -111,7 +113,9 @@ spec:
             limits:
               memory: {{ $limitMemory }}Mi
             requests:
-              cpu: 500m
+              {{- with .allocatedCPU }}
+              cpu: {{ . }}
+              {{- end }}
               memory: {{ $requestMemory }}Mi
           {{- end }}
           ports:
@@ -137,6 +141,7 @@ spec:
           {{- end }}
           securityContext:
             {{- toYaml $.ctx.Values.memcached.containerSecurityContext | nindent 12 }}
+          {{- if or .extraVolumeMounts $.ctx.Values.global.extraVolumeMounts }}
           volumeMounts:
             {{- with .extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
@@ -144,6 +149,7 @@ spec:
             {{- with $.ctx.Values.global.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
 
       {{- if $.ctx.Values.memcachedExporter.enabled }}
         - name: exporter

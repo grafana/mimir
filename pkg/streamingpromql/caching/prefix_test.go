@@ -12,20 +12,36 @@ import (
 
 func TestCacheKeyGenerator_NoNonHashablePrefix(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "tenant-1")
-	prefix := NewCacheKeyGenerator(nil, TenantPrefixGenerator)
+	prefix := NewCacheKeyGenerator(nil, TenantPrefixGenerator, false)
 	key, hashed, err := prefix.ComputeCacheKey(ctx, []byte("my-key"))
 	require.NoError(t, err)
 	require.Equal(t, []byte("tenant-1:my-key"), key)
-	require.Equal(t, HashCacheKey(key), hashed)
+	require.Equal(t, HashCacheKey(key, false), hashed)
 }
 
 func TestCacheKeyGenerator_WithNonHashablePrefix(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "tenant-1")
-	prefix := NewCacheKeyGenerator(VersioningAndItemTypePrefixGenerator("MQEQR", 1), TenantPrefixGenerator)
+	prefix := NewCacheKeyGenerator(VersioningAndItemTypePrefixGenerator("MQEQR", 1), TenantPrefixGenerator, false)
 	key, hashed, err := prefix.ComputeCacheKey(ctx, []byte("my-key"))
 	require.NoError(t, err)
 	require.Equal(t, []byte("MQEQR@v1:tenant-1:my-key"), key)
-	require.Equal(t, "MQEQR@v1:"+HashCacheKey([]byte("tenant-1:my-key")), hashed)
+	require.Equal(t, "MQEQR@v1:"+HashCacheKey([]byte("tenant-1:my-key"), false), hashed)
+}
+
+func TestCacheKeyGenerator_CryptographicHash(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "tenant-1")
+	nonCryptographicGenerator := NewCacheKeyGenerator(VersioningAndItemTypePrefixGenerator("MQEQR", 1), TenantPrefixGenerator, false)
+	cryptographicGenerator := NewCacheKeyGenerator(VersioningAndItemTypePrefixGenerator("MQEQR", 1), TenantPrefixGenerator, true)
+
+	nonCryptographicKey, nonCryptographicHash, err := nonCryptographicGenerator.ComputeCacheKey(ctx, []byte("my-key"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("MQEQR@v1:tenant-1:my-key"), nonCryptographicKey)
+
+	cryptographicKey, cryptographicHash, err := cryptographicGenerator.ComputeCacheKey(ctx, []byte("my-key"))
+	require.NoError(t, err)
+	require.Equal(t, nonCryptographicKey, cryptographicKey)
+	require.Equal(t, "MQEQR@v1:"+HashCacheKey([]byte("tenant-1:my-key"), true), cryptographicHash)
+	require.NotEqual(t, cryptographicHash, nonCryptographicHash)
 }
 
 func TestTenantPrefixGenerator(t *testing.T) {

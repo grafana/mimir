@@ -240,7 +240,7 @@ func TestApi_RegisterIngesterPartitionRings(t *testing.T) {
 
 	t.Run("compartments disabled", func(t *testing.T) {
 		api, serverCfg, kvClient := newAPI(t)
-		watcher, err := ingest.NewPartitionRingWatchers(false, 0, ringKey, ringKey, kvClient, log.NewNopLogger(), nil)
+		watcher, err := ingest.NewPartitionRingWatchers(false, 0, ringKey, ringKey, kvClient, nil, log.NewNopLogger(), nil)
 		require.NoError(t, err)
 
 		api.RegisterIngesterPartitionRings(false, watcher, ringKey, kvClient)
@@ -259,7 +259,7 @@ func TestApi_RegisterIngesterPartitionRings(t *testing.T) {
 
 	t.Run("compartments enabled", func(t *testing.T) {
 		api, serverCfg, kvClient := newAPI(t)
-		watcher, err := ingest.NewPartitionRingWatchers(true, 2, ringKey, ringKey, kvClient, log.NewNopLogger(), nil)
+		watcher, err := ingest.NewPartitionRingWatchers(true, 2, ringKey, ringKey, kvClient, nil, log.NewNopLogger(), nil)
 		require.NoError(t, err)
 
 		api.RegisterIngesterPartitionRings(true, watcher, ringKey, kvClient)
@@ -370,6 +370,30 @@ func TestStaticAssetsRespectPathPrefix(t *testing.T) {
 			require.Equal(t, http.StatusOK, w.Code, "static asset should be served at %s", tc.requestURL)
 			require.NotEmpty(t, w.Body.Bytes(), "response body should contain the asset bytes")
 		})
+	}
+}
+
+func TestIndexPageLinksAreRelative(t *testing.T) {
+	cfg := Config{GzipCompressionLevel: gzip.DefaultCompression}
+	serverCfg := getServerConfig(t)
+	srv, err := server.New(serverCfg)
+	require.NoError(t, err)
+	t.Cleanup(srv.Shutdown)
+
+	api, err := New(cfg, tenantfederation.Config{}, serverCfg, srv, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	noopHandler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	api.RegisterAPI(&cfg, &cfg, noopHandler)
+	api.RegisterRuntimeConfig(noopHandler, noopHandler)
+	api.RegisterIngester(&MockIngester{})
+	api.RegisterIngesterRing(noopHandler)
+
+	groups := api.indexPage.GetContent()
+	require.NotEmpty(t, groups)
+	for _, group := range groups {
+		for _, link := range group.Links {
+			require.False(t, strings.HasPrefix(link.Path, "/"), "index page link %q in group %q must be relative", link.Path, group.Desc)
+		}
 	}
 }
 

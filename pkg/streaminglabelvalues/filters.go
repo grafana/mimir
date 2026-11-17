@@ -11,42 +11,53 @@ import (
 	"strings"
 
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/searchexpr"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
-// FilterContains accepts values that contain a fixed substring. Score is
-// 1.0 on prefix match; for non-prefix substrings the score decays linearly
-// with the match position from 1.0 (early match) to 0.1 (latest match).
-// Mirrors Prometheus PR #18573's SubstringFilter score semantics.
+// FilterContains accepts values that contain a fixed substring.
+//
+// When anyPosition is false, the score is 1.0 on prefix match; for non-prefix
+// substrings the score decays linearly with the match position from 1.0
+// (early match) to 0.1 (latest match). This mirrors Prometheus PR #18573's
+// SubstringFilter score semantics. When anyPosition is true, every match
+// scores 1.0.
 //
 // caseSensitive drives in-Accept folding only for direct callers of
-// NewFilterContains; BuildFilter constructs leaves with caseSensitive=true
-// and lets caseFoldingFilter at the OR root fold each value once. Treat
-// this field as advisory when reading code through BuildFilter.
+// NewFilterContains; BuildFilter and newTermFilterFactory construct leaves
+// with caseSensitive=true and let caseFoldingFilter at the root fold each
+// value once. Treat this field as advisory when reading code through them.
 type FilterContains struct {
 	term          string
 	caseSensitive bool
+	anyPosition   bool
 }
 
 // NewFilterContains returns a substring-containment filter. Term must be
 // non-empty. When caseSensitive is false the term is lowercased once at
-// construction time.
-func NewFilterContains(term string, caseSensitive bool) (*FilterContains, error) {
+// construction time. See FilterContains for the meaning of anyPosition.
+func NewFilterContains(term string, caseSensitive bool, anyPosition bool) (*FilterContains, error) {
 	if term == "" {
 		return nil, errors.New("FilterContains: empty term")
 	}
 	if !caseSensitive {
 		term = strings.ToLower(term)
 	}
-	return &FilterContains{term: term, caseSensitive: caseSensitive}, nil
+	return &FilterContains{term: term, caseSensitive: caseSensitive, anyPosition: anyPosition}, nil
 }
 
-// Accept returns (true, 1.0) on prefix match; (true, score) for a non-prefix
-// substring where score = 1.0 - 0.9 * idx / maxIdx (range [0.1, 1.0));
-// (false, 0) on reject.
+// Accept returns (true, 1.0) on prefix match, or on any match when
+// anyPosition is true; (true, score) for a non-prefix substring where
+// score = 1.0 - 0.9 * idx / maxIdx (range [0.1, 1.0)); (false, 0) on reject.
 func (f *FilterContains) Accept(value string) (bool, float64) {
 	if !f.caseSensitive {
 		value = strings.ToLower(value)
+	}
+	if f.anyPosition {
+		if strings.Contains(value, f.term) {
+			return true, 1.0
+		}
+		return false, 0
 	}
 	idx := strings.Index(value, f.term)
 	if idx < 0 {
@@ -63,8 +74,8 @@ func (f *FilterContains) Accept(value string) (bool, float64) {
 // at least threshold. The underlying matcher caches term runes lazily on the
 // first Unicode candidate and is therefore not safe for concurrent use.
 //
-// See the note on FilterContains: caseSensitive is advisory under BuildFilter,
-// authoritative for direct NewFilterJaro callers.
+// See the note on FilterContains: caseSensitive is advisory under BuildFilter
+// and newTermFilterFactory, authoritative for direct NewFilterJaro callers.
 type FilterJaro struct {
 	matcher       *strutil.JaroWinklerMatcher
 	threshold     float64
@@ -105,8 +116,9 @@ func (f *FilterJaro) Accept(value string) (bool, float64) {
 // always rejected (no subsequence match). Mirrors Prometheus PR #18573's
 // SubsequenceFilter semantics. Underlying matcher is not concurrency-safe.
 //
-// See the note on FilterContains: caseSensitive is advisory under BuildFilter,
-// authoritative for direct NewFilterSubsequence callers.
+// See the note on FilterContains: caseSensitive is advisory under BuildFilter
+// and newTermFilterFactory, authoritative for direct NewFilterSubsequence
+// callers.
 type FilterSubsequence struct {
 	pattern       string // stored locally for prefix check; matcher does not expose its pattern.
 	matcher       *strutil.SubsequenceMatcher
@@ -217,11 +229,17 @@ func (c *caseFoldingFilter) Accept(value string) (bool, float64) {
 // Params will surface an error rather than silently producing a wrong
 // filter, but validation is not BuildFilter's responsibility.
 //
-// Per-term composition mirrors Prometheus PR #18573's buildSearchFilter:
+// Per-term composition for FuzzAlgSubsequence and FuzzAlgJaroWinkler mirrors
+// Prometheus PR #18573's buildSearchFilter. Prometheus has no substring
+// algorithms.
 //   - FuzzAlgSubsequence: just a FilterSubsequence (no substring fallback;
 //     prefix matches still score 1.0 inside FilterSubsequence).
 //   - FuzzAlgJaroWinkler: FilterContains OR FilterJaro via filterFallback;
 //     the FilterJaro is omitted when threshold is 0 (substring only).
+//   - FuzzAlgSubstringLeft: just a position-scored FilterContains.
+//   - FuzzAlgSubstring: just a FilterContains that scores every match 1.0.
+//
+// The substring algorithms ignore FuzzThreshold.
 //
 // Across terms, combines with filterOr (OR-max). FuzzThreshold (int 0-100)
 // is divided by 100 internally.
@@ -264,7 +282,7 @@ func BuildFilter(p *Params) (storage.Filter, error) {
 func buildPerTermFilter(term string, caseSensitive bool, alg FuzzAlg, fuzzThresholdInt int, threshold float64) (storage.Filter, error) {
 	switch alg {
 	case FuzzAlgJaroWinkler:
-		substring, err := NewFilterContains(term, caseSensitive)
+		substring, err := NewFilterContains(term, caseSensitive, false)
 		if err != nil {
 			return nil, err
 		}
@@ -276,7 +294,30 @@ func buildPerTermFilter(term string, caseSensitive bool, alg FuzzAlg, fuzzThresh
 			return nil, err
 		}
 		return &filterFallback{substring: substring, fuzzy: fuzzy}, nil
+	case FuzzAlgSubstringLeft:
+		return NewFilterContains(term, caseSensitive, false)
+	case FuzzAlgSubstring:
+		return NewFilterContains(term, caseSensitive, true)
 	default: // FuzzAlgSubsequence — no substring fallback; prefix matches still score 1.0 inside FilterSubsequence.
 		return NewFilterSubsequence(term, threshold, caseSensitive)
+	}
+}
+
+// newTermFilterFactory returns the searchexpr term factory for p. Positive
+// terms use the same leaves as BuildFilter. Negated terms use a literal
+// substring match, so fuzzy recall cannot exclude values that do not contain
+// the term. Leaves are case-sensitive against a lowercased term when
+// !p.CaseSensitive, so the caller must wrap the compiled root in
+// caseFoldingFilter, as BuildFilter does.
+func newTermFilterFactory(p *Params) searchexpr.TermFilterFactory {
+	threshold := float64(p.FuzzThreshold) / 100.0
+	return func(term string, negated bool) (storage.Filter, error) {
+		if !p.CaseSensitive {
+			term = strings.ToLower(term)
+		}
+		if negated {
+			return NewFilterContains(term, true, true)
+		}
+		return buildPerTermFilter(term, true, p.FuzzAlg, p.FuzzThreshold, threshold)
 	}
 }

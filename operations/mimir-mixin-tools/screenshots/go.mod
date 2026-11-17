@@ -1,6 +1,6 @@
 module screenshots-go
 
-go 1.26
+go 1.26.10
 
 require (
 	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc

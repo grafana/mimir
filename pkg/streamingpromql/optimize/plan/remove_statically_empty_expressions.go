@@ -745,6 +745,8 @@ func unwrap(node planning.Node) planning.Node {
 			node = n.Inner
 		case *core.DropName:
 			node = n.Inner
+		case *core.EvaluationRoot:
+			node = n.Inner
 		case *core.StepInvariantExpression:
 			node = n.Inner
 		case *core.FunctionCall:

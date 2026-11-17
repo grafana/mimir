@@ -60,6 +60,9 @@
 
   alertmanager_node_affinity_matchers:: [],
 
+  // Add key-value pairs as annotations specifically to alertmanager.
+  alertmanager_annotations:: {},
+
   alertmanager_container::
     if $._config.alertmanager_enabled then
       container.new('alertmanager', $._images.alertmanager) +
@@ -87,6 +90,7 @@
     if $._config.alertmanager_enabled then
       $.newMimirStatefulSet('alertmanager', $._config.alertmanager.replicas, $.alertmanager_container, $.alertmanager_pvc, podManagementPolicy=null) +
       $.newMimirNodeAffinityMatchers($.alertmanager_node_affinity_matchers) +
+      $.newMimirStatefulsetAnnotationsMixin($.mimirComponentAnnotations + $.alertmanager_annotations) +
       statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds($.alertmanager_termination_grace_period_seconds) +
       $.mimirVolumeMounts +
       statefulSet.mixin.spec.template.spec.withVolumesMixin(

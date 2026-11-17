@@ -335,7 +335,7 @@ func TestCompareGroups(t *testing.T) {
 			groupTwo: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
 					Name:            "example_group",
-					EvaluationDelay: pointerOf[model.Duration](model.Duration(2 * time.Minute)),
+					EvaluationDelay: pointerOf[model.Duration](model.Duration(2 * time.Minute)), //nolint:staticcheck // We want to intentionally access a deprecated field
 					Rules:           []rulefmt.Rule{ruleOne},
 				},
 			},
@@ -346,14 +346,14 @@ func TestCompareGroups(t *testing.T) {
 			groupOne: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
 					Name:            "example_group",
-					EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Minute)),
+					EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Minute)), //nolint:staticcheck // We want to intentionally access a deprecated field
 					Rules:           []rulefmt.Rule{ruleOne},
 				},
 			},
 			groupTwo: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
 					Name:            "example_group",
-					EvaluationDelay: pointerOf[model.Duration](model.Duration(2 * time.Minute)),
+					EvaluationDelay: pointerOf[model.Duration](model.Duration(2 * time.Minute)), //nolint:staticcheck // We want to intentionally access a deprecated field
 					Rules:           []rulefmt.Rule{ruleOne},
 				},
 			},
@@ -364,14 +364,14 @@ func TestCompareGroups(t *testing.T) {
 			groupOne: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
 					Name:            "example_group",
-					EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Minute)),
+					EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Minute)), //nolint:staticcheck // We want to intentionally access a deprecated field
 					Rules:           []rulefmt.Rule{ruleOne},
 				},
 			},
 			groupTwo: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
 					Name:            "example_group",
-					EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Minute)),
+					EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Minute)), //nolint:staticcheck // We want to intentionally access a deprecated field
 					Rules:           []rulefmt.Rule{ruleOne},
 				},
 			},
@@ -387,7 +387,7 @@ func TestCompareGroups(t *testing.T) {
 			groupTwo: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
 					Name:            "example_group",
-					EvaluationDelay: pointerOf[model.Duration](model.Duration(0)),
+					EvaluationDelay: pointerOf[model.Duration](model.Duration(0)), //nolint:staticcheck // We want to intentionally access a deprecated field
 					Rules:           []rulefmt.Rule{ruleOne},
 				},
 			},

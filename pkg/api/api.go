@@ -63,7 +63,7 @@ type ConfigHandler func(actualCfg interface{}, defaultCfg interface{}) http.Hand
 type Config struct {
 	SkipLabelNameValidationHeader  bool `yaml:"skip_label_name_validation_header_enabled" category:"advanced"`
 	SkipLabelCountValidationHeader bool `yaml:"skip_label_count_validation_header_enabled" category:"advanced"`
-	OTLPTranslationHeaders         bool `yaml:"otlp_translation_headers_enabled" category:"experimental"`
+	OTLPTranslationHeaders         bool `yaml:"otlp_translation_headers_enabled" category:"advanced"`
 
 	AlertmanagerHTTPPrefix string `yaml:"alertmanager_http_prefix" category:"advanced"`
 	PrometheusHTTPPrefix   string `yaml:"prometheus_http_prefix" category:"advanced"`
@@ -266,8 +266,8 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 // RegisterAPI registers the standard endpoints associated with a running Mimir.
 func (a *API) RegisterAPI(actualCfg interface{}, defaultCfg interface{}, buildInfoHandler http.Handler) {
 	a.indexPage.AddLinks(configWeight, "Current config", []IndexPageLink{
-		{Desc: "Including the default values", Path: "/config"},
-		{Desc: "Only values that differ from the defaults", Path: "/config?mode=diff"},
+		{Desc: "Including the default values", Path: "config"},
+		{Desc: "Only values that differ from the defaults", Path: "config?mode=diff"},
 	})
 
 	a.RegisterRoute("/config", a.cfg.configHandler(actualCfg, defaultCfg), false, true, "GET")
@@ -287,8 +287,8 @@ func (a *API) RegisterAPI(actualCfg interface{}, defaultCfg interface{}, buildIn
 // RegisterRuntimeConfig registers the endpoints associates with the runtime configuration
 func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc, userLimitsHandler http.HandlerFunc) {
 	a.indexPage.AddLinks(runtimeConfigWeight, "Current runtime config", []IndexPageLink{
-		{Desc: "Entire runtime config (including overrides)", Path: "/runtime_config"},
-		{Desc: "Only values that differ from the defaults", Path: "/runtime_config?mode=diff"},
+		{Desc: "Entire runtime config (including overrides)", Path: "runtime_config"},
+		{Desc: "Only values that differ from the defaults", Path: "runtime_config?mode=diff"},
 	})
 
 	a.RegisterRoute("/runtime_config", runtimeConfigHandler, false, true, "GET")
@@ -347,8 +347,8 @@ func (a *API) RegisterIngester(i ingester.API) {
 	client.RegisterIngesterServer(a.server.GRPC, i)
 
 	a.indexPage.AddLinks(dangerousWeight, "Dangerous", []IndexPageLink{
-		{Dangerous: true, Desc: "Trigger a flush of data from ingester to storage", Path: "/ingester/flush"},
-		{Dangerous: true, Desc: "Trigger ingester shutdown", Path: "/ingester/shutdown"},
+		{Dangerous: true, Desc: "Trigger a flush of data from ingester to storage", Path: "ingester/flush"},
+		{Dangerous: true, Desc: "Trigger ingester shutdown", Path: "ingester/shutdown"},
 	})
 
 	a.RegisterRoute("/ingester/flush", http.HandlerFunc(i.FlushHandler), false, true, "GET", "POST")
@@ -360,11 +360,12 @@ func (a *API) RegisterIngester(i ingester.API) {
 	a.RegisterRoute("/ingester/tsdb_metrics", http.HandlerFunc(i.UserRegistryHandler), true, true, "GET")
 
 	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
-		{Dangerous: true, Desc: "Ingester Tenants", Path: "/ingester/tenants"},
+		{Dangerous: true, Desc: "Ingester Tenants", Path: "ingester/tenants"},
 	})
 
 	a.RegisterRoute("/ingester/tenants", http.HandlerFunc(i.TenantsHandler), false, true, "GET")
 	a.RegisterRoute("/ingester/tsdb/{tenant}", http.HandlerFunc(i.TenantTSDBHandler), false, true, "GET")
+	a.RegisterRoute("/ingester/label_churn/{tenant}", http.HandlerFunc(i.LabelChurnHandler), false, true, "GET")
 }
 
 // RegisterRuler registers routes associated with the Ruler service.

@@ -103,9 +103,10 @@ type OneToOneVectorVectorBinaryOperation struct {
 	leftMetadata  []types.SeriesMetadata
 	rightMetadata []types.SeriesMetadata
 
-	remainingSeries []*oneToOneBinaryOperationOutputSeries
-	leftBuffer      *operators.InstantVectorOperatorBuffer
-	rightBuffer     *operators.InstantVectorOperatorBuffer
+	remainingSeries          []*oneToOneBinaryOperationOutputSeries
+	outputSeriesMapKeysBytes uint64 // Memory consumed by the keys of outputSeriesMap while computeOutputSeries runs.
+	leftBuffer               *operators.InstantVectorOperatorBuffer
+	rightBuffer              *operators.InstantVectorOperatorBuffer
 
 	// rightValidationGroups holds unmatched right groups that fill_right must validate without producing output.
 	rightValidationGroups []*oneToOneBinaryOperationRightSide
@@ -689,7 +690,7 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 			// queries that return many series from this operator.
 			// All series in outputSeriesMap will be returned, so this doesn't lead to over-counting
 			// of memory consumption.
-			if err := b.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(outputSeriesLabels); err != nil {
+			if err := b.increaseMemoryConsumptionForNewOutputSeries(outputSeriesLabels, outputSeriesLabelsBytes); err != nil {
 				return nil, nil, nil, -1, nil, -1, err
 			}
 
@@ -777,7 +778,25 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 		allSeries = append(allSeries, outputSeries.series)
 	}
 
+	b.MemoryConsumptionTracker.DecreaseMemoryConsumption(b.outputSeriesMapKeysBytes, limiter.BinaryOperationOutputSeries)
+	b.outputSeriesMapKeysBytes = 0
+
 	return allMetadata, allSeries, leftSeriesUsed, lastLeftSeriesUsedIndex, rightSeriesUsed, lastRightSeriesUsedIndex, nil
+}
+
+// increaseMemoryConsumptionForNewOutputSeries accounts for a new output series' labels and their copy used as the outputSeriesMap key.
+func (b *OneToOneVectorVectorBinaryOperation) increaseMemoryConsumptionForNewOutputSeries(outputSeriesLabels labels.Labels, outputSeriesMapKey []byte) error {
+	if err := b.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(outputSeriesLabels); err != nil {
+		return err
+	}
+
+	keyBytes := uint64(len(outputSeriesMapKey))
+	if err := b.MemoryConsumptionTracker.IncreaseMemoryConsumption(keyBytes, limiter.BinaryOperationOutputSeries); err != nil {
+		return err
+	}
+
+	b.outputSeriesMapKeysBytes += keyBytes
+	return nil
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) validateRightGroups(ctx context.Context) error {
@@ -922,7 +941,7 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedLeftSeriesWithFilledRi
 
 		seenGroupKeys[string(groupKey)] = newSeries
 
-		if err := b.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(outputSeriesLabels); err != nil {
+		if err := b.increaseMemoryConsumptionForNewOutputSeries(outputSeriesLabels, *outputSeriesLabelsBytes); err != nil {
 			return err
 		}
 
@@ -1015,7 +1034,7 @@ func (b *OneToOneVectorVectorBinaryOperation) addNameDroppedFillLeftSiblings(
 			continue
 		}
 
-		if err := b.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(outputSeriesLabels); err != nil {
+		if err := b.increaseMemoryConsumptionForNewOutputSeries(outputSeriesLabels, *outputSeriesLabelsBytes); err != nil {
 			return err
 		}
 
@@ -1100,7 +1119,7 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedRightGroupsWithFilledL
 		lastRightSeriesUsedIndex = max(lastRightSeriesUsedIndex, rightSide.latestRightSeriesIndex())
 		rightSide.outputSeriesCount++
 
-		if err := b.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(outputSeriesLabels); err != nil {
+		if err := b.increaseMemoryConsumptionForNewOutputSeries(outputSeriesLabels, *outputSeriesLabelsBytes); err != nil {
 			return -1, err
 		}
 

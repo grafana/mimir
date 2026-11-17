@@ -85,7 +85,7 @@ Grafana Mimir ingester circuit breakers add several metrics, which aren't part o
 
 - `cortex_ingester_circuit_breaker_transitions_total`: Counter showing the number of times a circuit breaker enters a state. It contains the labels state, with possible values of `closed`, `open`, and `half-open`, and the `request_type` setting , with possible values of `push` and `read`.
 
-- `cortex_ingester_circuit_breaker_results_total`: Counter showing the results of executing requests via a circuit breaker. It contains lables result, with possible values of `success`, `error`, and `circuit_breaker_open`, and the `request_type` setting, with possible values of `push` and `read`.
+- `cortex_ingester_circuit_breaker_results_total`: Counter showing the results of executing requests via a circuit breaker. It contains labels result, with possible values of `success`, `error`, and `circuit_breaker_open`, and the `request_type` setting, with possible values of `push` and `read`.
 
 - `cortex_ingester_circuit_breaker_request_timeouts_total`: Counter showing the number of times the circuit breaker records a request that reaches timeout. It contains the `request_type` label, with possible values of `push` and `read`.
 

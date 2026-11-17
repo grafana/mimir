@@ -16,12 +16,17 @@ import (
 // A non hashable prefix is not included in the overall hash of the key, but is instead
 // prepended to the hashed version of the generated prefix + key.
 type CacheKeyGenerator struct {
-	nonHashable PrefixGenerator
-	prefix      PrefixGenerator
+	nonHashable          PrefixGenerator
+	prefix               PrefixGenerator
+	useCryptographicHash bool
 }
 
-func NewCacheKeyGenerator(nonHashable PrefixGenerator, prefix PrefixGenerator) *CacheKeyGenerator {
-	return &CacheKeyGenerator{nonHashable: nonHashable, prefix: prefix}
+func NewCacheKeyGenerator(nonHashable PrefixGenerator, prefix PrefixGenerator, useCryptographicHash bool) *CacheKeyGenerator {
+	return &CacheKeyGenerator{
+		nonHashable:          nonHashable,
+		prefix:               prefix,
+		useCryptographicHash: useCryptographicHash,
+	}
 }
 
 // ComputeCacheKey generates a fully qualified cache key which includes the generated prefixes.
@@ -38,7 +43,7 @@ func (c *CacheKeyGenerator) ComputeCacheKey(ctx context.Context, key []byte) (pl
 		key = append([]byte(prefix), key...)
 	}
 
-	hashed = HashCacheKey(key)
+	hashed = HashCacheKey(key, c.useCryptographicHash)
 
 	if c.nonHashable != nil {
 		prefix, err := c.nonHashable(ctx)

@@ -45,11 +45,10 @@ type OptimizationPass struct {
 
 	subsetSelectorEliminationEnabled        bool
 	rangeQueryRangeVectorEliminationEnabled bool
-	scalarEliminationEnabled                bool
 	logger                                  log.Logger
 }
 
-func NewOptimizationPass(subsetSelectorEliminationEnabled bool, rangeQueryRangeVectorEliminationEnabled bool, scalarEliminationEnabled bool, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
+func NewOptimizationPass(subsetSelectorEliminationEnabled bool, rangeQueryRangeVectorEliminationEnabled bool, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
 	selectorsEliminated := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_mimir_query_engine_common_subexpression_elimination_selectors_eliminated_total",
 		Help: "Number of selectors eliminated by the common subexpression elimination optimization pass.",
@@ -69,7 +68,6 @@ func NewOptimizationPass(subsetSelectorEliminationEnabled bool, rangeQueryRangeV
 
 		subsetSelectorEliminationEnabled:        subsetSelectorEliminationEnabled,
 		rangeQueryRangeVectorEliminationEnabled: rangeQueryRangeVectorEliminationEnabled,
-		scalarEliminationEnabled:                scalarEliminationEnabled,
 		logger:                                  logger,
 	}
 }
@@ -89,7 +87,7 @@ func (e *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	}
 
 	rangeQueryRangeVectorEliminationEnabled := e.rangeQueryRangeVectorEliminationEnabled && maximumSupportedQueryPlanVersion >= planning.QueryPlanV11
-	scalarEliminationEnabled := e.scalarEliminationEnabled && maximumSupportedQueryPlanVersion >= planning.QueryPlanV19
+	scalarEliminationEnabled := maximumSupportedQueryPlanVersion >= planning.QueryPlanV19
 	stats, err := e.applyDeduplicationToGroups(groups, 0, plan.Parameters.EnableDelayedNameRemoval, rangeQueryRangeVectorEliminationEnabled, scalarEliminationEnabled)
 	if err != nil {
 		return nil, err

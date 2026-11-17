@@ -123,13 +123,14 @@ func TestIngester_LabelValuesCardinality_SentInBatches(t *testing.T) {
 	idx := 0
 	nextLabelValue := func() string { idx++; return fmt.Sprintf(labelValueTemplate, idx) }
 
-	samples := []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}}
 	seriesForLabel := func(label string) mimirpb.PreallocTimeseries {
 		return mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
 			Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(
 				model.MetricNameLabel, "metric",
 				label, nextLabelValue())),
-			Samples: samples,
+			// Make a new slice for each series: Push returns the series to a pool that keeps their slices for reuse,
+			// so the series must not share a backing array.
+			Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}},
 		}}
 	}
 
@@ -530,7 +531,6 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 	in := prepareHealthyIngester(b, nil)
 	ctx := user.InjectOrgID(context.Background(), userID)
 
-	samples := []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}}
 	writeReq := &mimirpb.WriteRequest{Source: mimirpb.API}
 	for s := 0; s < numSeries; s++ {
 		writeReq.Timeseries = append(writeReq.Timeseries, mimirpb.PreallocTimeseries{
@@ -541,7 +541,9 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 					"mod_10", strconv.Itoa(s%(2*5)),
 					"mod_77", strconv.Itoa(s%(7*11)),
 					"mod_4199", strconv.Itoa(s%(13*17*19)))),
-				Samples: samples,
+				// Make a new slice for each series: Push returns the series to a pool that keeps their slices for reuse,
+				// so the series must not share a backing array.
+				Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}},
 			},
 		})
 	}

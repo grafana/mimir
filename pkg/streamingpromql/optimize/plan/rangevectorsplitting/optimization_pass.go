@@ -157,6 +157,10 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 		return nil, "subquery_spinoff", nil
 	}
 
+	if isSubquery && containsEvaluationRoot(inner) {
+		return nil, "subquery_spinoff", nil
+	}
+
 	if !inner.GetRangeParams().IsSet {
 		// Should always be set if it's a splittable node
 		return nil, "", fmt.Errorf("time range params not specified")
@@ -171,4 +175,18 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 		Inner:                    functionCall,
 	}
 	return n, "", nil
+}
+
+func containsEvaluationRoot(node planning.Node) bool {
+	if _, ok := node.(*core.EvaluationRoot); ok {
+		return true
+	}
+
+	for child := range planning.ChildrenIter(node) {
+		if containsEvaluationRoot(child) {
+			return true
+		}
+	}
+
+	return false
 }

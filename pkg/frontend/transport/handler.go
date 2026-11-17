@@ -444,6 +444,7 @@ func (f *Handler) reportQueryStats(
 	}
 
 	// Log stats.
+	fields := queryStatsFieldsForPath(r.URL.Path)
 	logMessage := []any{
 		"msg", "query stats",
 		"component", "query-frontend",
@@ -455,22 +456,40 @@ func (f *Handler) reportQueryStats(
 		responseTime, queryResponseTime,
 		responseSizeBytes, queryResponseSizeBytes,
 		queryWallTimeSeconds, wallTime.Seconds(),
-		fetchedSeriesCount, numSeries,
-		fetchedChunkBytes, numBytes,
-		fetchedChunksCount, numChunks,
-		fetchedIndexBytes, numIndexBytes,
-		shardedQueries, stats.LoadShardedQueries(),
-		splitQueries, stats.LoadSplitQueries(),
-		"spun_off_subqueries", stats.LoadSpunOffSubqueries(),
-		"split_range_vectors", stats.LoadSplitRangeVectors(),
-		estimatedSeriesCount, stats.LoadEstimatedSeriesCount(),
 		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
-		encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
-		remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount(),
 		"retries", stats.LoadRetries(),
-		"samples_processed", samplesProcessed,
-		"equivalent_samples_read", equivalentSamplesRead,
-		"physical_samples_read", physicalSamplesRead,
+	}
+	if fields.fetchedSeries {
+		logMessage = append(logMessage, fetchedSeriesCount, numSeries)
+	}
+	if fields.fetchedChunks {
+		logMessage = append(logMessage,
+			fetchedChunkBytes, numBytes,
+			fetchedChunksCount, numChunks,
+		)
+	}
+	if fields.fetchedIndex {
+		logMessage = append(logMessage, fetchedIndexBytes, numIndexBytes)
+	}
+	if fields.shardedQueries {
+		logMessage = append(logMessage, shardedQueries, stats.LoadShardedQueries())
+	}
+	if fields.metricsQuery {
+		logMessage = append(logMessage,
+			splitQueries, stats.LoadSplitQueries(),
+			"spun_off_subqueries", stats.LoadSpunOffSubqueries(),
+			"split_range_vectors", stats.LoadSplitRangeVectors(),
+			estimatedSeriesCount, stats.LoadEstimatedSeriesCount(),
+			encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
+			remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount(),
+			"samples_processed", samplesProcessed,
+		)
+	}
+	if fields.samplesRead {
+		logMessage = append(logMessage,
+			"equivalent_samples_read", equivalentSamplesRead,
+			"physical_samples_read", physicalSamplesRead,
+		)
 	}
 
 	logMessage = rootqueryid.AppendLogFields(logMessage, rootqueryid.IDFromContext(r.Context()))
@@ -487,15 +506,21 @@ func (f *Handler) reportQueryStats(
 		if !details.MaxT.IsZero() {
 			logMessage = append(logMessage, "time_since_max_time", queryStartTime.Sub(details.MaxT))
 		}
-		logMessage = append(logMessage,
-			resultsCacheHitBytes, details.ResultsCacheHitBytes,
-			resultsCacheMissBytes, details.ResultsCacheMissBytes,
-			"results_cache_hit_count", details.ResultsCacheHitCount,
-			"results_cache_miss_count", details.ResultsCacheMissCount,
-			"results_cache_set_count", details.ResultsCacheSetCount,
-			"response_series_count", details.ResponseSeriesCount,
-			"response_samples_count", details.ResponseSamplesCount,
-		)
+		if fields.resultsCacheBytes {
+			logMessage = append(logMessage,
+				resultsCacheHitBytes, details.ResultsCacheHitBytes,
+				resultsCacheMissBytes, details.ResultsCacheMissBytes,
+			)
+		}
+		if fields.metricsQuery {
+			logMessage = append(logMessage,
+				"results_cache_hit_count", details.ResultsCacheHitCount,
+				"results_cache_miss_count", details.ResultsCacheMissCount,
+				"results_cache_set_count", details.ResultsCacheSetCount,
+				"response_series_count", details.ResponseSeriesCount,
+				"response_samples_count", details.ResponseSamplesCount,
+			)
+		}
 	}
 
 	// Log the read consistency only when explicitly defined.
@@ -534,6 +559,53 @@ func (f *Handler) reportQueryStats(
 	logMessage = append(logMessage, formatQueryString(details, queryString)...)
 
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
+}
+
+// queryStatsFields is a set of optional field groups in the "query stats" log line.
+// Each group holds stats that only some endpoints can set. A group is not logged for an
+// endpoint that never sets it, because there its value is always zero.
+type queryStatsFields struct {
+	fetchedSeries     bool
+	fetchedIndex      bool
+	fetchedChunks     bool
+	samplesRead       bool
+	shardedQueries    bool
+	resultsCacheBytes bool
+	metricsQuery      bool
+}
+
+func allQueryStatsFields() queryStatsFields {
+	return queryStatsFields{
+		fetchedSeries:     true,
+		fetchedIndex:      true,
+		fetchedChunks:     true,
+		samplesRead:       true,
+		shardedQueries:    true,
+		resultsCacheBytes: true,
+		metricsQuery:      true,
+	}
+}
+
+// queryStatsFieldsForPath returns the field groups that the code which serves path can set.
+// A path that is not known here gets all groups, so that its log line does not lose a stat.
+// Update this function when a stat starts to be set for one more endpoint.
+func queryStatsFieldsForPath(path string) queryStatsFields {
+	switch {
+	// Range and instant queries are the most frequent requests. Check them first, so that they
+	// do not run the regular expression in IsLabelValuesQuery.
+	case querymiddleware.IsRangeQuery(path), querymiddleware.IsInstantQuery(path):
+		return allQueryStatsFields()
+	case querymiddleware.IsRemoteReadQuery(path):
+		return queryStatsFields{fetchedSeries: true, fetchedIndex: true, fetchedChunks: true, samplesRead: true}
+	case querymiddleware.IsSeriesQuery(path):
+		return queryStatsFields{fetchedSeries: true, fetchedIndex: true}
+	case querymiddleware.IsActiveSeriesQuery(path), querymiddleware.IsActiveNativeHistogramMetricsQuery(path):
+		return queryStatsFields{fetchedSeries: true, shardedQueries: true}
+	case querymiddleware.IsCardinalityQuery(path), querymiddleware.IsLabelsQuery(path):
+		return queryStatsFields{resultsCacheBytes: true}
+	default:
+		return allQueryStatsFields()
+	}
 }
 
 // formatQueryString prefers printing start, end, and step from details if they are not nil.

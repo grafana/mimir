@@ -75,7 +75,7 @@ type IndexHeaderCacheConfig struct {
 }
 
 func (cfg *IndexHeaderCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for index-header cache, if not empty. Intended for use with -blocks-storage.bucket-store.index-header.bucket-reader. Supported values: %s.", strings.Join(supportedCacheBackends, ", ")))
+	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for index-header cache, if not empty. Intended for use with -blocks-storage.bucket-store.index-header.version=2. Supported values: %s.", strings.Join(supportedCacheBackends, ", ")))
 	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
 
 	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "TTL for caching object attributes of the block index for the index-header reader.  If the metadata cache is configured, attributes will be stored in the metadata cache backend, otherwise attributes are stored in the index-header cache backend.")

@@ -137,6 +137,20 @@ func BenchmarkUnMarshal(b *testing.B) {
 				require.NoError(b, err)
 			}
 		})
+
+		// Like the ingest path, which gives the series back to the pools once it's done with them.
+		b.Run(fmt.Sprintf("Unmarshal/RW2/skipExemplars=%v/pooled", skipExemplars), func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				pw := PreallocWriteRequest{}
+				pw.SkipUnmarshalingExemplars = skipExemplars
+				pw.UnmarshalFromRW2 = true
+				err := pw.Unmarshal(rw2Data)
+				require.NoError(b, err)
+				ReuseSlice(pw.Timeseries)
+			}
+		})
 	}
 }
 

@@ -126,6 +126,8 @@ type MetricsQueryRequest interface {
 	// GetStats returns the stats parameter for the request.
 	// See WithStats() comment for more details.
 	GetStats() string
+	// GetExplain returns the explain parameter for the request.
+	GetExplain() []string
 	// GetQueryOpts returns the query options for the request.
 	GetQueryOpts() (promql.QueryOpts, error)
 	// WithID clones the current request with the provided ID.
@@ -153,6 +155,8 @@ type MetricsQueryRequest interface {
 	// which are exposed via querier.Stats. Currently, only the value "all" has an effect in Mimir.
 	// Note: unlike Prometheus, Mimir does not return query stats in the response body if stats is set.
 	WithStats(string) (MetricsQueryRequest, error)
+	// WithExplain returns a copy of the current request with the provided value for the "explain" parameter.
+	WithExplain([]string) (MetricsQueryRequest, error)
 }
 
 // LabelsSeriesQueryRequest represents a label names, label values, or series query request that can be process by middlewares.
@@ -391,12 +395,16 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 		return nil, DecorateWithParamName(err, "query")
 	}
 
-	options := c.optionDecoder.DecodeOptions(r)
+	options, err := c.optionDecoder.DecodeOptions(r)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
 
 	stats := reqValues.Get("stats")
+	explain := reqValues["explain"]
 
 	req := NewPrometheusRangeQueryRequest(
-		r.URL.Path, httpHeadersToProm(r.Header), start, end, step, lookbackDelta, queryExpr, options, nil, stats,
+		r.URL.Path, httpHeadersToProm(r.Header), start, end, step, lookbackDelta, queryExpr, options, nil, stats, explain,
 	)
 	return req, nil
 }
@@ -423,12 +431,16 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 		return nil, DecorateWithParamName(err, "query")
 	}
 
-	options := c.optionDecoder.DecodeOptions(r)
+	options, err := c.optionDecoder.DecodeOptions(r)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
 
 	stats := reqValues.Get("stats")
+	explain := reqValues["explain"]
 
 	req := NewPrometheusInstantQueryRequest(
-		r.URL.Path, httpHeadersToProm(r.Header), time, lookbackDelta, queryExpr, options, nil, stats,
+		r.URL.Path, httpHeadersToProm(r.Header), time, lookbackDelta, queryExpr, options, nil, stats, explain,
 	)
 	return req, nil
 }
@@ -726,6 +738,9 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 		if s := r.GetStats(); s != "" {
 			values["stats"] = []string{s}
 		}
+		if e := r.GetExplain(); len(e) > 0 {
+			values["explain"] = slices.Clone(e)
+		}
 		u = &url.URL{
 			Path:     r.GetPath(),
 			RawQuery: values.Encode(),
@@ -742,6 +757,9 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 		}
 		if s := r.GetStats(); s != "" {
 			values["stats"] = []string{s}
+		}
+		if e := r.GetExplain(); len(e) > 0 {
+			values["explain"] = slices.Clone(e)
 		}
 		u = &url.URL{
 			Path:     r.GetPath(),
@@ -1097,7 +1115,7 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 		sp.SetAttributes(attribute.Int("series", len(a.Data.Result)))
 	}
 
-	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
+	selectedContentType, formatter := c.NegotiateContentType(req.Header.Get("Accept"))
 	if formatter == nil {
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
 	}
@@ -1188,7 +1206,7 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 		}
 	}()
 
-	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
+	selectedContentType, formatter := c.NegotiateContentType(req.Header.Get("Accept"))
 	if formatter == nil {
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
 	}
@@ -1253,7 +1271,7 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 	return &resp, nil
 }
 
-func (Codec) negotiateContentType(acceptHeader string) (string, formatter) {
+func (Codec) NegotiateContentType(acceptHeader string) (string, formatter) {
 	if acceptHeader == "" {
 		return jsonMimeType, jsonFormatterInstance
 	}

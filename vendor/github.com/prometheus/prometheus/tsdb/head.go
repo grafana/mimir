@@ -28,6 +28,7 @@ import (
 	"sync"
 	stdatomic "sync/atomic" //nolint:depguard
 	"time"
+	"unique"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -124,9 +125,18 @@ type Head struct {
 	walExpiriesMtx sync.Mutex
 	walExpiries    map[chunks.HeadSeriesRef]int64 // Series no longer in the head, and what time they must be kept until.
 
+	wblPinnedSeriesRefsMtx sync.Mutex
+	// Series references that the WBL uses. WAL replay maps each one onto a
+	// series that the head holds under a different reference. The mapping
+	// exists only in memory. The records must stay in the WAL until
+	// out-of-order compaction writes the WBL into a block.
+	wblPinnedSeriesRefs map[chunks.HeadSeriesRef]struct{}
+
 	// TODO(codesome): Extend MemPostings to return only OOOPostings, Set OOOStatus, ... Like an additional map of ooo postings.
 	postings *index.MemPostings // Postings lists for terms.
 	pfmc     *PostingsForMatchersCache
+	// seriesCreationMtx serialises series ID assignment with the postings insert.
+	seriesCreationMtx sync.Mutex
 
 	tombstones *tombstones.MemTombstones
 
@@ -161,9 +171,111 @@ type Head struct {
 
 	secondaryHashFunc func(labels.Labels) uint32
 
+	// TODO: find a better solution than this test hook in production code.
 	// testAfterSeriesLookup is invoked after getByID in appenders, before the
 	// series is locked. Tests use it to race GC against a resolved pointer.
 	testAfterSeriesLookup func(*memSeries)
+	// TODO: find a better solution than this test hook in production code.
+	// testAfterWaitingForReadersToEvictSeries is invoked by truncateSeries after it has waited for
+	// the open readers, and before it removes the series. Tests use it to open a reader at the point
+	// where a reader would otherwise not be waited for.
+	testAfterWaitingForReadersToEvictSeries func()
+	// TODO: find a better solution than this test hook in production code.
+	// testBeforeDeletingPostings is invoked by gcSeries after it unlinked the series, and before it deletes
+	// them from the postings, which is slow. Tests use it to pause the eviction there.
+	testBeforeDeletingPostings func()
+
+	// evictingSeries is the set of series that truncateSeries is removing, or nil if it is not running.
+	// The readers of queries opened while it is set skip the chunks of those series that are removed
+	// before they read them. See headChunkReader.evicting.
+	evictingSeries atomic.Pointer[evictedSeries]
+}
+
+// pendingTombstones coordinates series eviction with the creation of replacement
+// series. Its purpose is to put the evicted series' tombstone before the
+// replacement's WAL series record in the WAL.
+//
+// Without this ordering, WAL replay can treat both references as one series
+// and apply the old tombstone to the replacement's samples.
+//
+// Eviction calls reserve before unlinking series, registers each label hash via
+// add under the stripe lock before removing its series from Head, and calls
+// releaseAll once the WAL tombstone write finishes. Creation checks for a
+// pending tombstone under the same stripe lock used for insertion.
+//
+// The zero value is ready to use. Only one eviction may run at a time;
+// Head.chunkSnapshotMtx ensures this.
+type pendingTombstones struct {
+	// active is true while the set is not empty, so that creating a series does not lock mtx when no eviction is running.
+	active atomic.Bool
+
+	mtx      sync.Mutex
+	hashes   map[uint64]struct{}
+	released chan struct{} // Closed by releaseAll.
+}
+
+// reserve prepares the set for up to n hashes, so that adding them doesn't grow it. Call it before the first add
+// of an eviction, with n the number of series that the eviction may remove.
+func (p *pendingTombstones) reserve(n int) {
+	p.mtx.Lock()
+	p.hashes = make(map[uint64]struct{}, n)
+	p.released = make(chan struct{})
+	p.mtx.Unlock()
+}
+
+// add registers a label hash whose eviction tombstone is not in the WAL yet.
+// It is a no-op unless reserve has been called for an active WAL-backed eviction.
+// The caller must hold the hash's stripe lock and call add before unlinking
+// the series from Head.
+func (p *pendingTombstones) add(hash uint64) {
+	p.mtx.Lock()
+	if p.hashes != nil {
+		p.hashes[hash] = struct{}{}
+		p.active.Store(true)
+	}
+	p.mtx.Unlock()
+}
+
+// pending returns a channel if hash has a pending eviction tombstone.
+// Otherwise, it returns nil, including for a nil receiver.
+//
+// Call pending with the hash's stripe lock held. If it returns nil,
+// insert the series before releasing that lock.
+//
+// If it returns a channel, release the stripe lock and any held
+// seriesCreationMtx, then wait for the channel to close.
+// Once it closes, repeat the series lookup and pending check.
+//
+// The channel closes after the WAL write attempt finishes, even if it fails.
+func (p *pendingTombstones) pending(hash uint64) <-chan struct{} {
+	if p == nil || !p.active.Load() {
+		return nil
+	}
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	if _, ok := p.hashes[hash]; !ok {
+		return nil
+	}
+	return p.released
+}
+
+// releaseAll clears the current eviction's pending hashes and wakes all
+// creators waiting for it.
+//
+// Call it after the tombstone WAL write attempt finishes, even if writing
+// failed, so creators are not left blocked. The next eviction must not start
+// until releaseAll returns.
+//
+// It is safe to call when no hashes are pending.
+func (p *pendingTombstones) releaseAll() {
+	p.mtx.Lock()
+	released := p.released
+	p.hashes, p.released = nil, nil
+	p.mtx.Unlock()
+	p.active.Store(false)
+	if released != nil {
+		close(released)
+	}
 }
 
 type ExemplarStorage interface {
@@ -248,6 +360,11 @@ type HeadOptions struct {
 	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
 	// is implemented.
 	EnableSTAsZeroSample bool
+
+	// EnableCommitStats makes appenders collect per-series CommitStats for
+	// samples dropped at Commit. The duplicate samples metric is updated
+	// either way.
+	EnableCommitStats bool
 
 	// EnableMetadataWALRecords represents 'metadata-wal-records' feature flag.
 	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
@@ -427,6 +544,7 @@ func (h *Head) resetInMemoryState() error {
 	h.postings = index.NewUnorderedMemPostings()
 	h.tombstones = tombstones.NewMemTombstones()
 	h.walExpiries = map[chunks.HeadSeriesRef]int64{}
+	h.wblPinnedSeriesRefs = map[chunks.HeadSeriesRef]struct{}{}
 	h.chunkRange.Store(h.opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
 	h.maxTime.Store(math.MinInt64)
@@ -458,12 +576,14 @@ type headMetrics struct {
 	seriesCreated             prometheus.Counter
 	seriesRemoved             prometheus.Counter
 	seriesNotFound            prometheus.Counter
+	chunkReadsOfRemovedSeries prometheus.Counter
 	pendingCommitUnderflow    prometheus.Counter
 	chunks                    prometheus.Gauge
 	chunksCreated             prometheus.Counter
 	chunksRemoved             prometheus.Counter
 	gcDuration                prometheus.Summary
 	samplesAppended           *prometheus.CounterVec
+	duplicateSamples          *prometheus.CounterVec
 	outOfOrderSamplesAppended *prometheus.CounterVec
 	outOfBoundSamples         *prometheus.CounterVec
 	outOfOrderSamples         *prometheus.CounterVec
@@ -537,6 +657,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_head_series_not_found_total",
 			Help: "Total number of requests for series that were not found.",
 		}),
+		chunkReadsOfRemovedSeries: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_chunk_reads_of_removed_series_total",
+			Help: "Total number of chunks that queries tried to read from the head after their series or chunks were evicted. The chunks are skipped because their samples are available from blocks.",
+		}),
 		pendingCommitUnderflow: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_series_pending_commit_underflow_total",
 			Help: "Total number of attempts to release a pending-sample reservation when none was held.",
@@ -572,6 +696,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		samplesAppended: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_samples_appended_total",
 			Help: "Total number of appended samples.",
+		}, []string{"type"}),
+		duplicateSamples: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_duplicate_samples_total",
+			Help: "Total number of samples rejected at Append or dropped at Commit because the series already had a sample at the same timestamp.",
 		}, []string{"type"}),
 		outOfOrderSamplesAppended: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_out_of_order_samples_appended_total",
@@ -670,12 +798,14 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.seriesCreated,
 			m.seriesRemoved,
 			m.seriesNotFound,
+			m.chunkReadsOfRemovedSeries,
 			m.pendingCommitUnderflow,
 			m.gcDuration,
 			m.walTruncateDuration,
 			m.walCorruptionsTotal,
 			m.dataTotalReplayDuration,
 			m.samplesAppended,
+			m.duplicateSamples,
 			m.outOfOrderSamplesAppended,
 			m.outOfBoundSamples,
 			m.outOfOrderSamples,
@@ -1539,7 +1669,12 @@ func (h *Head) snapshotFingerprints(seriesRefs []storage.SeriesRef, appendIDWate
 // the caller collected the ref list are skipped before the predicate is consulted.
 // maxt is inclusive: it matches the highest sample timestamp that the caller has just persisted
 // to a block, so a head whose MinTime equals maxt still has data eligible for eviction.
+// seriesRefs must be sorted in ascending order.
 // It returns the number of series that were actually evicted.
+//
+// The caller must have written the samples of the series to a block, and added the block to the DB, before
+// calling it. The readers of queries that find a series removed skip its chunks, because they read the block.
+// See headChunkReader.evicting.
 func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (int, error) {
 	h.chunkSnapshotMtx.Lock()
 	defer h.chunkSnapshotMtx.Unlock()
@@ -1548,23 +1683,24 @@ func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, should
 		return 0, nil
 	}
 
-	h.WaitForPendingReadersInTimeRange(h.MinTime(), maxt)
+	// Publish the series before waiting for the readers, so that the readers that are opened after the wait,
+	// and are not waited for, know that the series may be removed while they read them.
+	h.evictingSeries.Store(&evictedSeries{refs: seriesRefs})
+	defer h.evictingSeries.Store(nil)
 
-	deleted := h.gcSeries(seriesRefs, maxt, shouldEvict)
+	// Also wait for the readers opened at maxt. Such a reader could otherwise skip a series removed by this eviction
+	// and miss its newest samples, which are available only in the block written by this eviction.
+	waitMaxt := min(maxt, math.MaxInt64-1) + 1
+	h.WaitForPendingReadersInTimeRange(h.MinTime(), waitMaxt)
 
-	// Record the deleted series refs in the WAL so that we can ignore them during replay.
-	if h.wal != nil {
-		stones := make([]tombstones.Stone, 0, len(seriesRefs))
-		for ref := range deleted {
-			stones = append(stones, tombstones.Stone{
-				Ref:       ref,
-				Intervals: tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}},
-			})
-		}
-		var enc record.Encoder
-		if err := h.wal.Log(enc.Tombstones(stones, nil)); err != nil {
-			return 0, err
-		}
+	if h.testAfterWaitingForReadersToEvictSeries != nil {
+		h.testAfterWaitingForReadersToEvictSeries()
+		h.testAfterWaitingForReadersToEvictSeries = nil
+	}
+
+	deleted, err := h.gcSeries(seriesRefs, maxt, shouldEvict)
+	if err != nil {
+		return 0, err
 	}
 	return len(deleted), nil
 }
@@ -1670,12 +1806,53 @@ func (h *Head) updateWALExpiry(id chunks.HeadSeriesRef, keepUntil int64) {
 	h.walExpiries[id] = max(keepUntil, h.walExpiries[id])
 }
 
+// pinWBLSeriesRefs marks series references that the WBL uses. WAL replay maps
+// each one onto a series that the head holds under a different reference. These
+// series records must stay in the WAL until out-of-order compaction writes the
+// WBL into a block. Nothing writes the mapping to disk.
+func (h *Head) pinWBLSeriesRefs(refs map[chunks.HeadSeriesRef]struct{}) {
+	h.wblPinnedSeriesRefsMtx.Lock()
+	defer h.wblPinnedSeriesRefsMtx.Unlock()
+
+	for ref := range refs {
+		h.wblPinnedSeriesRefs[ref] = struct{}{}
+	}
+}
+
+// isWBLPinnedSeriesRef reports whether the WBL uses id through a mapping that
+// WAL replay made.
+func (h *Head) isWBLPinnedSeriesRef(id chunks.HeadSeriesRef) bool {
+	h.wblPinnedSeriesRefsMtx.Lock()
+	defer h.wblPinnedSeriesRefsMtx.Unlock()
+
+	_, ok := h.wblPinnedSeriesRefs[id]
+	return ok
+}
+
+// releaseWBLPinnedSeriesRefs forgets every pinned reference. Call it only after
+// truncation removes the WBL segments that use them.
+func (h *Head) releaseWBLPinnedSeriesRefs() {
+	h.wblPinnedSeriesRefsMtx.Lock()
+	defer h.wblPinnedSeriesRefsMtx.Unlock()
+
+	h.wblPinnedSeriesRefs = map[chunks.HeadSeriesRef]struct{}{}
+}
+
 // keepSeriesInWALCheckpointFn returns a function that is used to determine whether a series record should be kept in the checkpoint.
 // mint is the time before which data in the WAL is being truncated.
 func (h *Head) keepSeriesInWALCheckpointFn(mint int64) func(id chunks.HeadSeriesRef) bool {
 	return func(id chunks.HeadSeriesRef) bool {
 		// Keep the record if the series exists in the head.
 		if h.series.getByID(id) != nil {
+			return true
+		}
+
+		// Keep the record if the WBL uses this reference. The record resolves
+		// the reference, so the out-of-order samples are lost if the WAL drops
+		// it. The mint parameter cannot express this lifetime. An out-of-order
+		// sample has a timestamp below the in-order data that the checkpoint
+		// truncates.
+		if h.isWBLPinnedSeriesRef(id) {
 			return true
 		}
 
@@ -1719,9 +1896,9 @@ func (h *Head) truncateWAL(mint int64) error {
 	}
 
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load(), true); err != nil {
+	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load()); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
-		if _, ok := errors.AsType[*chunks.CorruptionErr](err); ok {
+		if _, ok := errors.AsType[*wlog.CorruptionErr](err); ok {
 			h.metrics.walCorruptionsTotal.Inc()
 		}
 		return fmt.Errorf("create checkpoint: %w", err)
@@ -1781,7 +1958,14 @@ func (h *Head) truncateOOO(lastWBLFile int, newMinOOOMmapRef chunks.ChunkDiskMap
 		return nil
 	}
 
-	return h.wbl.Truncate(lastWBLFile)
+	if err := h.wbl.Truncate(lastWBLFile); err != nil {
+		return err
+	}
+
+	// The truncated segments held every WBL record from before the last replay.
+	// No reference that the replay made is still necessary.
+	h.releaseWBLPinnedSeriesRefs()
+	return nil
 }
 
 // truncateSeriesAndChunkDiskMapper is a helper function for truncateMemory and truncateOOO.
@@ -1839,13 +2023,35 @@ func (h *Head) Stats(statsByLabelName string, limit int) *Stats {
 	}
 }
 
+// evictedSeries is the set of series that truncateSeries is removing from the head.
+type evictedSeries struct {
+	// refs are the refs of the series, sorted in ascending order.
+	refs []storage.SeriesRef
+}
+
+// contains returns whether the series is one that is being removed. It is safe to call on a nil *evictedSeries.
+func (e *evictedSeries) contains(ref chunks.HeadSeriesRef) bool {
+	if e == nil {
+		return false
+	}
+	_, ok := slices.BinarySearch(e.refs, storage.SeriesRef(ref))
+	return ok
+}
+
 // RangeHead allows querying Head via an IndexReader, ChunkReader and tombstones.Reader
 // but only within a restricted range.  Used for queries and compactions.
+// Its readers, and queriers over it, are not safe for concurrent use from
+// multiple goroutines.
 type RangeHead struct {
 	head       *Head
 	mint, maxt int64
 
 	isolationOff bool
+
+	// skipEvictedSeries makes the chunk reader skip the chunks of the series that CompactSelectedSeries or
+	// CompactStaleHead remove from the head after the reader selected them. It must be set only for the readers
+	// used by queries. See headChunkReader.evicting.
+	skipEvictedSeries bool
 }
 
 // NewRangeHead returns a *RangeHead.
@@ -1874,7 +2080,16 @@ func (h *RangeHead) Chunks() (ChunkReader, error) {
 	if !h.isolationOff {
 		isoState = h.head.iso.State(h.mint, h.maxt)
 	}
-	return h.head.chunksRange(h.mint, h.maxt, isoState)
+	cr, err := h.head.chunksRange(h.mint, h.maxt, isoState)
+	if err != nil {
+		return nil, err
+	}
+	// Load the series being evicted after the isolation state was created, so that a reader that is not waited
+	// for by truncateSeries sees them.
+	if h.skipEvictedSeries {
+		cr.evicting = h.head.evictingSeries.Load()
+	}
+	return cr, nil
 }
 
 func (h *RangeHead) Tombstones() (tombstones.Reader, error) {
@@ -2082,6 +2297,12 @@ func (h *Head) NumSeries() uint64 {
 	return h.numSeries.Load()
 }
 
+// LabelValuesBytes returns, per label name, the sum of the lengths of its distinct label
+// values currently held in the head.
+func (h *Head) LabelValuesBytes() map[string]uint64 {
+	return h.postings.LabelValuesBytes()
+}
+
 // NumStaleSeries returns the number of stale series in the head.
 func (h *Head) NumStaleSeries() uint64 {
 	return h.numStaleSeries.Load()
@@ -2253,10 +2474,6 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	if preCreationErr := h.series.seriesLifecycleCallback.PreCreation(lset); preCreationErr != nil {
 		return nil, false, preCreationErr
 	}
-	if id == 0 {
-		// Note this id is wasted in the case where a concurrent operation creates the same series first.
-		id = chunks.HeadSeriesRef(h.lastSeriesID.Inc())
-	}
 
 	shardHash := uint64(0)
 	if h.opts.EnableSharding {
@@ -2264,21 +2481,50 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	}
 	optimisticallyCreatedSeries := newMemSeries(lset, id, shardHash, h.secondaryHashFunc(lset), h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled, pendingCommit)
 
-	s, created := h.series.setUnlessAlreadySet(hash, lset, optimisticallyCreatedSeries)
-	if !created {
-		return s, false, nil
+	assignID := id == 0
+	for {
+		if assignID {
+			// Assigning the ID and adding to the postings under one lock keeps new IDs
+			// in order in the postings, so MemPostings.Add does not have to repair the
+			// order of lists that already hold every concurrently assigned higher ID.
+			h.seriesCreationMtx.Lock()
+			// Note this id is wasted in the case where a concurrent operation creates the same series first.
+			id = chunks.HeadSeriesRef(h.lastSeriesID.Inc())
+			optimisticallyCreatedSeries.ref = id
+		}
+
+		s, created, pending := h.series.setUnlessAlreadySet(hash, lset, optimisticallyCreatedSeries)
+		if pending != nil {
+			// A series with these labels was evicted, and its tombstone is not in the WAL yet. The WAL series record
+			// of this replacement series must follow the tombstone in the WAL, which is written when the series is
+			// committed. Waiting without the series creation lock does not block the creation of other series.
+			if assignID {
+				h.seriesCreationMtx.Unlock()
+			}
+			<-pending
+			continue
+		}
+		if !created {
+			if assignID {
+				h.seriesCreationMtx.Unlock()
+			}
+			return s, false, nil
+		}
+
+		h.metrics.seriesCreated.Inc()
+		h.numSeries.Inc()
+
+		h.postings.Add(storage.SeriesRef(id), lset)
+		if assignID {
+			h.seriesCreationMtx.Unlock()
+		}
+
+		// Adding the series in the postings marks the creation of series
+		// as any further calls to this and the read methods would return that series.
+		h.series.postCreation(lset)
+
+		return s, true, nil
 	}
-
-	h.metrics.seriesCreated.Inc()
-	h.numSeries.Inc()
-
-	h.postings.Add(storage.SeriesRef(id), lset)
-
-	// Adding the series in the postings marks the creation of series
-	// as any further calls to this and the read methods would return that series.
-	h.series.postCreation(lset)
-
-	return s, true, nil
 }
 
 // onChunkCreated bumps the head chunk metrics for any newly created chunk, in-order or OOO.
@@ -2485,6 +2731,11 @@ type stripeSeries struct {
 	locks                   []stripeLock                          // Sharded by ref for series access, by label hash for hashes access.
 	mmapReady               []paddedAtomicInt32                   // Per-stripe count of series with headChunkCount >= 2 (ready for mmapping).
 	seriesLifecycleCallback SeriesLifecycleCallback
+
+	// pendingTombstones holds the label hashes of series that gcSeries unlinked from the head
+	// and whose tombstones are not in the WAL yet. A series with the same labels must not be
+	// created until then.
+	pendingTombstones pendingTombstones
 }
 
 type stripeLock struct {
@@ -2583,6 +2834,14 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			}
 			return
 		}
+		// Exemplars are not persisted in blocks. Keep their series reference resolvable
+		// until WAL truncation and replay can discard them by timestamp. An empty
+		// series retained for exemplars must not affect the minimum sample time.
+		if series.hasExemplar && series.lastExemplarTs >= mint {
+			// Clear the appender so it does not retain the removed sample chunk.
+			series.app = nil
+			return
+		}
 		// The series is gone entirely. We need to keep the series lock
 		// and make sure we have acquired the stripe locks for hash and ID of the
 		// series alike.
@@ -2620,16 +2879,40 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 	return deleted, affected, rmChunks, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted, actualMint, minOOOTime, minMmapFile
 }
 
-// gcSeries removes the provided series from the head index and updates head metrics,
-// postings, tombstones and WAL expiries accordingly. shouldEvict is the per-series predicate
-// applied after the safety check for series that received fresh samples since the caller
-// collected the ref list.
+// gcSeries removes eligible series from the head index and updates head metrics,
+// postings, tombstones and WAL expiries accordingly. Series with pending commits
+// or samples after maxt are skipped. The caller's shouldEvict predicate runs under
+// the series lock and must reject series with unpersisted samples or out-of-order data.
+// Exemplars do not prevent eviction. Pending exemplars may be discarded, and
+// exemplar recovery after a restart is not guaranteed.
 //
 // The returned references are the series that got deleted.
-func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) map[storage.SeriesRef]struct{} {
-	// Drop old chunks and remember series IDs and hashes if they can be
-	// deleted entirely.
+func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (map[storage.SeriesRef]struct{}, error) {
+	// Series with the labels of the removed ones can be created again once their tombstones are written, or if
+	// writing them fails. They are released right after the series are unlinked below, and the deferred call
+	// makes sure that they are also released if this function exits early.
+	if h.wal != nil {
+		h.series.pendingTombstones.reserve(len(seriesRefs))
+		defer h.series.pendingTombstones.releaseAll()
+	}
 	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, shouldEvict)
+
+	// Record the deleted series refs in the WAL so that we can ignore them during replay. This is done as soon as
+	// the series are unlinked, before deleting them from the postings, which takes long: the creation of series
+	// with the same labels waits until the tombstones are written.
+	var logErr error
+	if h.wal != nil {
+		stones := make([]tombstones.Stone, 0, len(deleted))
+		// The encoder only reads the interval, so all the stones can share it.
+		intervals := tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}
+		for ref := range deleted {
+			stones = append(stones, tombstones.Stone{Ref: ref, Intervals: intervals})
+		}
+		var enc record.Encoder
+		logErr = h.wal.Log(enc.Tombstones(stones, nil))
+		h.series.pendingTombstones.releaseAll()
+	}
+
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -2640,6 +2923,10 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 	h.numNativeHistogramSeries.Sub(uint64(histogramSeriesDeleted))
 	h.numNativeHistogramBuckets.Sub(uint64(histogramBucketsDeleted))
 
+	if h.testBeforeDeletingPostings != nil {
+		h.testBeforeDeletingPostings()
+	}
+
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
 
@@ -2648,19 +2935,16 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 
 	if h.wal != nil {
 		h.walExpiriesMtx.Lock()
-		// Keep series records until we're past timestamp maxt
-		// because the WAL will still have samples records with
-		// this ref ID. If we didn't keep these series records then
-		// on start up when we replay the WAL, or any other code
-		// that reads the WAL, wouldn't be able to use those
-		// samples since we would have no labels for that ref ID.
+		// Retain series declarations while WAL samples up to maxt may still be replayed.
+		// Preserve any later expiry already recorded.
 		for ref := range deleted {
-			h.walExpiries[chunks.HeadSeriesRef(ref)] = maxt
+			hRef := chunks.HeadSeriesRef(ref)
+			h.walExpiries[hRef] = max(maxt, h.walExpiries[hRef])
 		}
 		h.walExpiriesMtx.Unlock()
 	}
 
-	return deleted
+	return deleted, logErr
 }
 
 // deleteSeriesByID deletes the series with the given reference.
@@ -2814,6 +3098,8 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 			histogramBucketsDeleted += buckets
 		}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
+		// The stripe lock is held, so a series with these labels can only be created after this call.
+		s.pendingTombstones.add(hash)
 		s.hashes[hashShard].del(hash, series.ref)
 		delete(s.series[stripe], series.ref)
 		deletedForCallback[series.ref] = series.lset // OK to access lset; series is locked at the top of this function.
@@ -2898,12 +3184,20 @@ func (s *stripeSeries) unlinkHash(hash uint64, ref chunks.HeadSeriesRef) {
 	s.hashes[i].del(hash, ref)
 }
 
-func (s *stripeSeries) setUnlessAlreadySet(hash uint64, lset labels.Labels, series *memSeries) (*memSeries, bool) {
+// setUnlessAlreadySet adds the series unless one with the same labels is already set, which is returned instead.
+// If the labels hash is in pendingTombstones, nothing is added and the returned channel is non-nil: the caller must
+// wait for it to be closed, and retry. The check is done with the lock of the stripe, so that it is atomic with the
+// insertion.
+func (s *stripeSeries) setUnlessAlreadySet(hash uint64, lset labels.Labels, series *memSeries) (*memSeries, bool, <-chan struct{}) {
 	i := hash & uint64(s.size-1)
 	s.locks[i].Lock()
 	if prev := s.hashes[i].get(hash, lset); prev != nil {
 		s.locks[i].Unlock()
-		return prev, false
+		return prev, false, nil
+	}
+	if wait := s.pendingTombstones.pending(hash); wait != nil {
+		s.locks[i].Unlock()
+		return nil, false, wait
 	}
 	s.hashes[i].set(hash, series)
 	s.locks[i].Unlock()
@@ -2914,7 +3208,7 @@ func (s *stripeSeries) setUnlessAlreadySet(hash uint64, lset labels.Labels, seri
 	s.series[stripe][series.ref] = series
 	s.locks[stripe].Unlock()
 
-	return series, true
+	return series, true, nil
 }
 
 func (s *stripeSeries) postCreation(lset labels.Labels) {
@@ -2966,8 +3260,7 @@ func (s sample) Copy() chunks.Sample {
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
 	// Members up to the Mutex are not changed after construction, so can be accessed without a lock.
-	ref  chunks.HeadSeriesRef
-	meta *metadata.Metadata
+	ref chunks.HeadSeriesRef
 
 	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
 	// been explicitly enabled in TSDB.
@@ -2980,6 +3273,13 @@ type memSeries struct {
 	sync.Mutex
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
+	meta unique.Handle[metadata.Metadata]
+
+	// Latest accepted exemplar timestamp, including exemplars awaiting commit.
+	// A rolled-back exemplar may conservatively delay eviction until this time.
+	lastExemplarTs int64
+	// Whether an exemplar timestamp has been recorded, including zero or negative timestamps.
+	hasExemplar bool
 
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
@@ -3126,6 +3426,16 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64,
 		s.txs = newTxRing(0)
 	}
 	return s
+}
+
+// updateExemplarTimestamp records the latest exemplar time while holding the series lock.
+func (s *memSeries) updateExemplarTimestamp(ts int64) {
+	s.Lock()
+	if !s.hasExemplar || ts > s.lastExemplarTs {
+		s.lastExemplarTs = ts
+	}
+	s.hasExemplar = true
+	s.Unlock()
 }
 
 func (s *memSeries) minTime() int64 {

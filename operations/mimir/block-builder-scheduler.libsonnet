@@ -35,6 +35,9 @@
 
   block_builder_scheduler_node_affinity_matchers:: [],
 
+  // Add key-value pairs as annotations specifically to block-builder-scheduler.
+  block_builder_scheduler_annotations:: {},
+
   newBlockBuilderSchedulerContainer(name, args, envmap={})::
     container.new(name, $._images.block_builder_scheduler) +
     container.withPorts($.block_builder_scheduler_ports) +
@@ -53,6 +56,7 @@
   newBlockBuilderSchedulerStatefulSet(name, container, nodeAffinityMatchers=[])::
     $.newMimirStatefulSet(name, 1, container, []) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
+    $.newMimirStatefulsetAnnotationsMixin($.mimirComponentAnnotations + $.block_builder_scheduler_annotations) +
     $.mimirVolumeMounts,
 
   block_builder_scheduler_statefulset: if !$._config.block_builder.enabled then null else

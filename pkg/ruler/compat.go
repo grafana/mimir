@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -18,10 +19,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -34,6 +33,7 @@ import (
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	notifierCfg "github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/promqlext"
@@ -65,27 +65,16 @@ type PusherAppender struct {
 	userID          string
 }
 
-func (a *PusherAppender) SetOptions(*storage.AppendOptions) {
-}
+func (a *PusherAppender) Append(_ storage.SeriesRef, l labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, _ storage.AppendV2Options) (storage.SeriesRef, error) {
+	if h == nil && fh == nil {
+		a.labels = append(a.labels, mimirpb.FromLabelsToLabelAdapters(l))
+		a.samples = append(a.samples, mimirpb.Sample{
+			TimestampMs: t,
+			Value:       v,
+		})
+		return 0, nil
+	}
 
-func (a *PusherAppender) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	a.labels = append(a.labels, mimirpb.FromLabelsToLabelAdapters(l))
-	a.samples = append(a.samples, mimirpb.Sample{
-		TimestampMs: t,
-		Value:       v,
-	})
-	return 0, nil
-}
-
-func (a *PusherAppender) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
-	return 0, errors.New("exemplars are unsupported")
-}
-
-func (a *PusherAppender) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
-	return 0, errors.New("metadata updates are unsupported")
-}
-
-func (a *PusherAppender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	a.histogramLabels = append(a.histogramLabels, mimirpb.FromLabelsToLabelAdapters(l))
 	var hp mimirpb.Histogram
 	if h != nil {
@@ -95,14 +84,6 @@ func (a *PusherAppender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 	}
 	a.histograms = append(a.histograms, hp)
 	return 0, nil
-}
-
-func (a *PusherAppender) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	return 0, errors.New("ST zero samples are unsupported")
-}
-
-func (a *PusherAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 0, errors.New("ST zero samples are unsupported")
 }
 
 func (a *PusherAppender) Commit() error {
@@ -115,7 +96,7 @@ func (a *PusherAppender) Commit() error {
 
 	if err != nil {
 		failureReason := failureReasonServerError
-		if mimirpb.IsClientError(err) {
+		if isRulerClientPushError(err) {
 			// Client errors, which are the same ones that would be reported with 4xx HTTP status code
 			// (e.g. series limits, duplicate samples, out of order, etc.) are reported with their own reason.
 			failureReason = failureReasonClientError
@@ -128,13 +109,38 @@ func (a *PusherAppender) Commit() error {
 	return err
 }
 
+// isRulerClientPushError identifies tenant write rejections for ruler failure accounting.
+func isRulerClientPushError(err error) bool {
+	if mimirpb.IsClientError(err) {
+		return true
+	}
+
+	if status, ok := grpcutil.ErrorToStatus(err); ok {
+		for _, details := range status.Details() {
+			if errDetails, ok := details.(*mimirpb.ErrorDetails); ok {
+				switch errDetails.GetCause() {
+				case mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED, mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED:
+					return true
+				case mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED:
+					// Ingester overload shares this cause. Only the immutable tenant error ID
+					// distinguishes a tenant rejection, including through distributor forwarding.
+					return strings.Contains(status.Message(), strings.TrimSpace(globalerror.RequestRateLimited.Message("")))
+				default:
+					return false
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (a *PusherAppender) Rollback() error {
 	a.labels = nil
 	a.samples = nil
 	return nil
 }
 
-// PusherAppendable fulfills the storage.Appendable interface for prometheus manager
+// PusherAppendable fulfills the storage.AppendableV2 interface for prometheus manager
 type PusherAppendable struct {
 	pusher Pusher
 	userID string
@@ -152,8 +158,8 @@ func NewPusherAppendable(pusher Pusher, userID string, totalWrites, failedWrites
 	}
 }
 
-// Appender returns a storage.Appender
-func (t *PusherAppendable) Appender(ctx context.Context) storage.Appender {
+// AppenderV2 returns a storage.AppenderV2.
+func (t *PusherAppendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
 	return &PusherAppender{
 		failedWrites: t.failedWrites,
 		totalWrites:  t.totalWrites,
@@ -166,31 +172,8 @@ func (t *PusherAppendable) Appender(ctx context.Context) storage.Appender {
 
 type NoopAppender struct{}
 
-func (a *NoopAppender) SetOptions(*storage.AppendOptions) {
-}
-
-func (a *NoopAppender) Append(_ storage.SeriesRef, _ labels.Labels, _ int64, _ float64) (storage.SeriesRef, error) {
+func (a *NoopAppender) Append(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ float64, _ *histogram.Histogram, _ *histogram.FloatHistogram, _ storage.AppendV2Options) (storage.SeriesRef, error) {
 	return 0, nil
-}
-
-func (a *NoopAppender) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
-	return 0, errors.New("exemplars are unsupported")
-}
-
-func (a *NoopAppender) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
-	return 0, errors.New("metadata updates are unsupported")
-}
-
-func (a *NoopAppender) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 0, nil
-}
-
-func (a *NoopAppender) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	return 0, errors.New("ST zero samples are unsupported")
-}
-
-func (a *NoopAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 0, errors.New("ST zero samples are unsupported")
 }
 
 func (a *NoopAppender) Commit() error {
@@ -207,8 +190,8 @@ func NewNoopAppendable() *NoopAppendable {
 	return &NoopAppendable{}
 }
 
-// Appender returns a storage.Appender.
-func (t *NoopAppendable) Appender(_ context.Context) storage.Appender {
+// AppenderV2 returns a storage.AppenderV2.
+func (t *NoopAppendable) AppenderV2(_ context.Context) storage.AppenderV2 {
 	return &NoopAppender{}
 }
 
@@ -479,7 +462,7 @@ func DefaultTenantManagerFactory(
 		// Wrap the queryable with our custom logic.
 		wrappedQueryable := WrapQueryableWithReadConsistency(queryable, logger)
 
-		var appendeable storage.Appendable
+		var appendeable storage.AppendableV2
 		if cfg.RuleEvaluationWriteEnabled {
 			appendeable = NewPusherAppendable(pusher, userID, totalWrites, failedWrites)
 		} else {
@@ -490,7 +473,7 @@ func DefaultTenantManagerFactory(
 		ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 
 		return rules.NewManager(&rules.ManagerOptions{
-			Appendable:                 appendeable,
+			AppendableV2:               appendeable,
 			Queryable:                  wrappedQueryable,
 			QueryFunc:                  wrappedQueryFunc,
 			Context:                    ctx,
@@ -563,13 +546,8 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 		return true // 5xx
 	}
 
-	if status, ok := grpcutil.ErrorToStatus(err); ok {
-		for _, details := range status.Details() {
-			if errDetails, ok := details.(*mimirpb.ErrorDetails); ok {
-				return !mimirpb.IsClientErrorCause(errDetails.GetCause())
-			}
-		}
-		return true
+	if _, ok := grpcutil.ErrorToStatus(err); ok {
+		return !isRulerClientPushError(err)
 	}
 
 	if validation.IsLimitError(err) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

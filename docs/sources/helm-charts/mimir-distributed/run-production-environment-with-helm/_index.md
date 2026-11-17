@@ -136,12 +136,15 @@ ingester:
       - name: zone-a
         nodeSelector:
           topology.kubernetes.io/zone: us-central1-a
+        prepareDownscale: true
       - name: zone-b
         nodeSelector:
           topology.kubernetes.io/zone: us-central1-b
+        prepareDownscale: true
       - name: zone-c
         nodeSelector:
           topology.kubernetes.io/zone: us-central1-c
+        prepareDownscale: true
 
 store_gateway:
   zoneAwareReplication:
@@ -151,12 +154,15 @@ store_gateway:
       - name: zone-a
         nodeSelector:
           topology.kubernetes.io/zone: us-central1-a
+        prepareDownscale: true
       - name: zone-b
         nodeSelector:
           topology.kubernetes.io/zone: us-central1-b
+        prepareDownscale: true
       - name: zone-c
         nodeSelector:
           topology.kubernetes.io/zone: us-central1-c
+        prepareDownscale: true
 ```
 
 ### Existing installations

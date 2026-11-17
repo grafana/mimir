@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/compartments"
@@ -48,11 +50,7 @@ func TestIngesterQuerying_ShouldSupportCompartments(t *testing.T) {
 	minio := e2edb.NewMinio(9000, compartmentBuckets...)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
-	kafkas := make([]e2e.Service, numWriteCompartments)
-	for wc := range kafkas {
-		kafkas[wc] = e2edb.NewKafka(e2edb.WithKafkaName(fmt.Sprintf("kafka-wc-%d", wc)))
-	}
-	require.NoError(t, s.StartAndWaitReady(kafkas...))
+	startCompartmentKafkas(t, s, baseFlags, numWriteCompartments, numReadCompartments)
 
 	// Start the query-scheduler and wire the query-frontend and querier to it.
 	queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", baseFlags)
@@ -194,9 +192,12 @@ func TestStoreGatewayQuerying_ShouldSupportCompartments(t *testing.T) {
 			// the test duration to avoid auto head-compaction splitting series across blocks (the idle
 			// timeout already defaults to 1h).
 			"-blocks-storage.tsdb.block-ranges-period": "1h",
-			// Process the flush-triggered compaction and ship the resulting block quickly.
-			"-blocks-storage.tsdb.head-compaction-interval": "1s",
-			"-blocks-storage.tsdb.ship-interval":            "1s",
+			// The flush below triggers its own compaction, so periodic head compaction isn't needed. Keep the
+			// interval well above the ingester's 10s minimum delay between compaction iterations: with a shorter
+			// interval every iteration is followed by that delay, during which the flush request waits.
+			"-blocks-storage.tsdb.head-compaction-interval": "1m",
+			// Ship the flushed block quickly.
+			"-blocks-storage.tsdb.ship-interval": "1s",
 			// Sync shipped blocks into the store-gateway quickly.
 			"-blocks-storage.bucket-store.sync-interval": "1s",
 			// Force every query onto the store-gateway (never the ingester), so a result provably comes from blocks.
@@ -214,11 +215,7 @@ func TestStoreGatewayQuerying_ShouldSupportCompartments(t *testing.T) {
 	minio := e2edb.NewMinio(9000, compartmentBuckets...)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
-	kafkas := make([]e2e.Service, numWriteCompartments)
-	for wc := range kafkas {
-		kafkas[wc] = e2edb.NewKafka(e2edb.WithKafkaName(fmt.Sprintf("kafka-wc-%d", wc)))
-	}
-	require.NoError(t, s.StartAndWaitReady(kafkas...))
+	startCompartmentKafkas(t, s, baseFlags, numWriteCompartments, numReadCompartments)
 
 	// Start the query-scheduler and wire the query-frontend and querier to it.
 	queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", baseFlags)
@@ -490,6 +487,60 @@ func metricNamesPerCompartment(router *compartments.Router, numReadCompartments,
 			return names
 		}
 	}
+}
+
+// startCompartmentKafkas starts one Kafka cluster per write compartment and creates every read compartment's
+// topic in each of them. Mimir auto-creates the topics on startup, but a broker needs some time to host the
+// partitions of a new topic, so an ingester that resolves its start offset right after the topic is created
+// can get UNKNOWN_TOPIC_OR_PARTITION and fail to start. Creating the topics upfront and waiting until their
+// offsets can be listed removes that race.
+func startCompartmentKafkas(t *testing.T, s *e2e.Scenario, flags map[string]string, numWriteCompartments, numReadCompartments int) {
+	kafkas := make([]*e2edb.KafkaService, numWriteCompartments)
+	services := make([]e2e.Service, numWriteCompartments)
+	for wc := range kafkas {
+		kafkas[wc] = e2edb.NewKafka(e2edb.WithKafkaName(fmt.Sprintf("kafka-wc-%d", wc)))
+		services[wc] = kafkas[wc]
+	}
+	require.NoError(t, s.StartAndWaitReady(services...))
+
+	const (
+		kafkaBin  = "/opt/kafka/bin/"
+		bootstrap = "localhost:9092"
+	)
+	partitions, err := strconv.Atoi(flags["-ingest-storage.kafka.auto-create-topic-default-partitions"])
+	require.NoError(t, err)
+	topicTemplate := flags["-ingest-storage.kafka.topic"]
+
+	// Each Kafka CLI call starts a JVM, so run the clusters in parallel to keep the setup short.
+	g := errgroup.Group{}
+	for _, kafka := range kafkas {
+		g.Go(func() error {
+			for rc := 0; rc < numReadCompartments; rc++ {
+				topic := strings.ReplaceAll(topicTemplate, "<read-compartment-id>", strconv.Itoa(rc))
+				stdout, stderr, err := kafka.Exec(e2e.NewCommand(kafkaBin+"kafka-topics.sh", "--bootstrap-server", bootstrap,
+					"--create", "--if-not-exists", "--topic", topic, "--partitions", strconv.Itoa(partitions)))
+				if err != nil {
+					return fmt.Errorf("creating topic %s in %s: %w (stdout: %s stderr: %s)", topic, kafka.Name(), err, stdout, stderr)
+				}
+			}
+
+			// Listing the offsets sends the same ListOffsets request the ingester sends on startup, so once it
+			// succeeds for every partition the ingester can start.
+			topicsRegex := strings.ReplaceAll(topicTemplate, "<read-compartment-id>", "[0-9]+")
+			deadline := time.Now().Add(30 * time.Second)
+			for {
+				stdout, stderr, err := kafka.Exec(e2e.NewCommand(kafkaBin+"kafka-get-offsets.sh", "--bootstrap-server", bootstrap, "--topic", topicsRegex))
+				if err == nil && len(strings.Fields(stdout)) == numReadCompartments*partitions {
+					return nil
+				}
+				if time.Now().After(deadline) {
+					return fmt.Errorf("listing the offsets of the topics in %s: %w (stdout: %s stderr: %s)", kafka.Name(), err, stdout, stderr)
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		})
+	}
+	require.NoError(t, g.Wait())
 }
 
 // waitQueryFrontendToFetchOffsetsPerWriteCompartment waits until the query-frontend has successfully

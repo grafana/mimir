@@ -279,6 +279,11 @@ func (s *partitionState) completeJob(jobID string) error {
 	return nil
 }
 
+// startOffsetEmpty reports whether no end offset was ever recorded for the cluster.
+func (s *partitionState) startOffsetEmpty(clusterID int) bool {
+	return s.offsets[clusterID].startOffset == offsetEmpty
+}
+
 func (s *partitionState) committedOffset(clusterID int) int64 {
 	return s.offsets[clusterID].committed.offset()
 }

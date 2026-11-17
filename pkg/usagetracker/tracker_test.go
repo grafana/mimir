@@ -31,6 +31,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kfake"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -54,11 +55,7 @@ func TestUsageTracker_Tracking(t *testing.T) {
 			},
 		})
 
-		resp, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{
-			UserID:       "tenant",
-			Partition:    0,
-			SeriesHashes: []uint64{0, 1},
-		})
+		resp, err := trackSeriesForTests(t.Context(), tracker, "tenant", 0, []uint64{0, 1})
 		require.NoError(t, err)
 		require.Len(t, resp.RejectedSeriesHashes, 1)
 	})
@@ -73,11 +70,7 @@ func TestUsageTracker_Tracking(t *testing.T) {
 			},
 		})
 
-		resp, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{
-			UserID:       "tenant",
-			Partition:    0,
-			SeriesHashes: []uint64{},
-		})
+		resp, err := trackSeriesForTests(t.Context(), tracker, "tenant", 0, []uint64{})
 		require.NoError(t, err)
 		require.Empty(t, resp.RejectedSeriesHashes)
 	})
@@ -95,11 +88,7 @@ func TestUsageTracker_Tracking(t *testing.T) {
 			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), tracker.partitions[0]))
 		})
 
-		_, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{
-			UserID:       "tenant",
-			Partition:    0,
-			SeriesHashes: []uint64{0, 1},
-		})
+		_, err := trackSeriesForTests(t.Context(), tracker, "tenant", 0, []uint64{0, 1})
 		require.Error(t, err)
 		require.ErrorContains(t, err, "partition handler 0 is not running (state: Terminated)")
 	})
@@ -114,11 +103,7 @@ func TestUsageTracker_Tracking(t *testing.T) {
 			},
 		})
 
-		resp, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{
-			UserID:       "tenant",
-			Partition:    0,
-			SeriesHashes: []uint64{0, 1, 2, 3},
-		})
+		resp, err := trackSeriesForTests(t.Context(), tracker, "tenant", 0, []uint64{0, 1, 2, 3})
 		require.NoError(t, err)
 		require.Len(t, resp.RejectedSeriesHashes, 2)
 	})
@@ -683,11 +668,7 @@ func TestUsageTracker_GetUsersCloseToLimit(t *testing.T) {
 		})
 
 		for _, tenant := range []string{"a", "b", "c", "d", "e"} {
-			resp, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{
-				UserID:       tenant,
-				Partition:    0,
-				SeriesHashes: makeSeries(900),
-			})
+			resp, err := trackSeriesForTests(t.Context(), tracker, tenant, 0, makeSeries(900))
 			require.NoError(t, err)
 			require.Empty(t, resp.RejectedSeriesHashes)
 		}
@@ -917,6 +898,40 @@ func newTestUsageTrackerConfig(tb testing.TB, instanceID, zone string, ikv, pkv 
 
 	require.NoError(tb, cfg.ValidateForUsageTracker())
 	return cfg
+}
+
+func TestConfig_ValidateNumShards(t *testing.T) {
+	for _, tc := range []struct {
+		numShards   int
+		expectedErr string
+	}{
+		{numShards: 1},
+		{numShards: 2},
+		{numShards: tenantshard.DefaultNumShards},
+		{numShards: tenantshard.MaxNumShards},
+		// The shard of a series comes from masking its hash, so a count that isn't a power of 2
+		// would silently use only part of the shards.
+		{numShards: 0, expectedErr: "invalid number of shards 0, must be a power of 2 between 1 and 256"},
+		{numShards: -1, expectedErr: "invalid number of shards -1, must be a power of 2 between 1 and 256"},
+		{numShards: 3, expectedErr: "invalid number of shards 3, must be a power of 2 between 1 and 256"},
+		{numShards: 100, expectedErr: "invalid number of shards 100, must be a power of 2 between 1 and 256"},
+		{numShards: 255, expectedErr: "invalid number of shards 255, must be a power of 2 between 1 and 256"},
+		{numShards: tenantshard.MaxNumShards * 2, expectedErr: "invalid number of shards 512, must be a power of 2 between 1 and 256"},
+	} {
+		t.Run(strconv.Itoa(tc.numShards), func(t *testing.T) {
+			var cfg Config
+			flagext.DefaultValues(&cfg)
+			cfg.Enabled = true
+			cfg.NumShards = tc.numShards
+
+			err := cfg.ValidateForClient()
+			if tc.expectedErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.EqualError(t, err, tc.expectedErr)
+		})
+	}
 }
 
 func fakeKafkaCluster(tb testing.TB, topicsToSeed ...string) *kfake.Cluster {
@@ -1388,11 +1403,7 @@ func BenchmarkMetricsGathering(b *testing.B) {
 			for tenant := 0; tenant < tenants; tenant++ {
 				userID := strconv.Itoa(tenant)
 				for partition := int32(0); partition < partitions; partition++ {
-					resp, err := tracker.TrackSeries(b.Context(), &usagetrackerpb.TrackSeriesRequest{
-						UserID:       userID,
-						Partition:    partition,
-						SeriesHashes: []uint64{0, 1},
-					})
+					resp, err := trackSeriesForTests(b.Context(), tracker, userID, partition, []uint64{0, 1})
 					require.NoError(b, err)
 					require.Empty(b, resp.RejectedSeriesHashes)
 				}
@@ -1407,4 +1418,31 @@ func BenchmarkMetricsGathering(b *testing.B) {
 			})
 		})
 	}
+}
+
+// trackSeriesResponse holds the series rejected by trackSeriesForTests.
+type trackSeriesResponse struct {
+	RejectedSeriesHashes []uint64
+}
+
+// trackSeriesForTests tracks the series of a single tenant in a single partition through TrackSeriesBatch.
+func trackSeriesForTests(ctx context.Context, tracker *UsageTracker, userID string, partition int32, series []uint64) (*trackSeriesResponse, error) {
+	res, err := tracker.TrackSeriesBatch(ctx, &usagetrackerpb.TrackSeriesBatchRequest{
+		Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
+			{Partition: partition, Users: []*usagetrackerpb.TrackSeriesBatchUser{{UserID: userID, SeriesHashes: series}}},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &trackSeriesResponse{}
+	for _, r := range res.Rejections {
+		for _, u := range r.Users {
+			if r.Partition == partition && u.UserID == userID {
+				resp.RejectedSeriesHashes = append(resp.RejectedSeriesHashes, u.RejectedSeriesHashes...)
+			}
+		}
+	}
+	return resp, nil
 }

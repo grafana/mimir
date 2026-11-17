@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/gate"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -44,8 +45,8 @@ func BenchmarkLookupSymbol(b *testing.B) {
 	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil)
 	require.NoError(b, err)
 
-	indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-	require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+	blockDir := filepath.Join(bucketDir, idIndexV2.String())
+	require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, blockDir, BinaryFormatV1))
 
 	// TODO: are these sensible values for parallelism?
 	for _, parallelism := range []int{1, 2, 4, 8, 20, 100} {
@@ -58,8 +59,72 @@ func BenchmarkLookupSymbol(b *testing.B) {
 	}
 }
 
+func BenchmarkLazyBinaryReader_LookupSymbol(b *testing.B) {
+	ctx := context.Background()
+
+	bucketDir := b.TempDir()
+	bkt, err := filesystem.NewBucket(filepath.Join(bucketDir, "bkt"))
+	require.NoError(b, err)
+	instrBkt := objstore.WithNoopInstr(bkt)
+	b.Cleanup(func() {
+		require.NoError(b, instrBkt.Close())
+	})
+
+	nameSymbols := generateSymbols("name", 20)
+	valueSymbols := generateSymbols("value", 1000)
+	id, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
+	require.NoError(b, err)
+	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, id.String()), nil)
+	require.NoError(b, err)
+	require.NoError(b, WriteBinary(ctx, bkt, id, filepath.Join(bucketDir, id.String()), BinaryFormatV1))
+
+	newStreamReader := func(ctx context.Context) (Reader, error) {
+		return NewStreamBinaryReader(ctx, id, instrBkt, bucketDir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+	}
+	streamReader, err := newStreamReader(ctx)
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, streamReader.Close()) })
+
+	lazyReader, err := NewLazyBinaryReader(ctx, testIndexHeaderV1Config(), newStreamReader, log.NewNopLogger(), instrBkt, bucketDir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, lazyReader.Close()) })
+
+	nameIndices, _ := reverseLookup(b, streamReader.(*StreamBinaryReader), nameSymbols)
+	valueIndices, _ := reverseLookup(b, streamReader.(*StreamBinaryReader), valueSymbols)
+
+	symbol, err := lazyReader.LookupSymbol(ctx, nameIndices[0])
+	require.NoError(b, err)
+	require.Equal(b, nameSymbols[0], symbol)
+
+	for _, readerType := range []struct {
+		name   string
+		reader Reader
+	}{{"stream", streamReader}, {"lazy", lazyReader}} {
+		for _, symbols := range []struct {
+			name    string
+			symbols []string
+			indices []uint32
+		}{{"names", nameSymbols, nameIndices}, {"values", valueSymbols, valueIndices}} {
+			b.Run(fmt.Sprintf("reader=%s/symbols=%s", readerType.name, symbols.name), func(b *testing.B) {
+				b.ReportAllocs()
+				b.RunParallel(func(pb *testing.PB) {
+					random := rand.New(rand.NewSource(time.Now().UnixNano()))
+					for pb.Next() {
+						i := random.Intn(len(symbols.indices))
+						symbol, err := readerType.reader.LookupSymbol(ctx, symbols.indices[i])
+						if err != nil || symbol != symbols.symbols[i] {
+							require.NoError(b, err)
+							require.Equal(b, symbols.symbols[i], symbol)
+						}
+					}
+				})
+			})
+		}
+	}
+}
+
 func benchmarkLookupSymbol(ctx context.Context, b *testing.B, bkt objstore.InstrumentedBucketReader, bucketDir string, id ulid.ULID, parallelism int, percentageNameLookups int, nameSymbols []string, valueSymbols []string) {
-	binaryReader, err := NewStreamBinaryReader(ctx, id, bkt, bucketDir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+	binaryReader, err := NewStreamBinaryReader(ctx, id, bkt, bucketDir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 	require.NoError(b, err)
 	b.Cleanup(func() { require.NoError(b, binaryReader.Close()) })
 
@@ -126,10 +191,9 @@ func BenchmarkLabelNames(b *testing.B) {
 			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, blockDir, nil)
 			require.NoError(b, err)
 
-			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, blockDir, BinaryFormatV1))
 
-			binaryReader, err := NewStreamBinaryReader(ctx, idIndexV2, objstore.WithNoopInstr(bkt), blockDir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			binaryReader, err := NewStreamBinaryReader(ctx, idIndexV2, objstore.WithNoopInstr(bkt), blockDir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(b, err)
 			b.Cleanup(func() { require.NoError(b, binaryReader.Close()) })
 
@@ -169,15 +233,15 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(dir, blockID.String()), nil)
 			require.NoError(b, err)
 
-			indexName := filepath.Join(dir, blockID.String(), block.IndexHeaderFilename)
-			require.NoError(b, WriteBinary(ctx, bkt, blockID, indexName))
+			blockDir := filepath.Join(dir, blockID.String())
+			require.NoError(b, WriteBinary(ctx, bkt, blockID, blockDir, BinaryFormatV1))
 
 			bucketReg := prometheus.NewPedanticRegistry()
 
 			// Initialize the first index-header reader,
 			// configured to read all index-header sections from the on-disk index-header.
 			// This first call to create a reader also builds the index-header and sparse index-header from the block.
-			diskReaderCfg := Config{}
+			diskReaderCfg := testIndexHeaderV1Config()
 			diskReader, err := NewStreamBinaryReader(ctx, blockID, instrBkt, dir, diskReaderCfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(b, err)
 			b.Cleanup(func() { require.NoError(b, diskReader.Close()) })
@@ -189,10 +253,7 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 			require.NoError(b, err)
 
 			splitReaderCfg := Config{
-				BucketReader: BucketReaderConfig{
-					Enabled:             true,
-					BucketIndexSections: SectionPostingsOffsetsTable,
-				},
+				Version: BinaryFormatV2,
 			}
 			splitReader, err := NewStreamBinaryReader(ctx, blockID, cachingBucket, dir, splitReaderCfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(b, err)
@@ -279,7 +340,7 @@ func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 			// Initialize the first index-header reader,
 			// configured to read all index-header sections from the on-disk index-header.
 			// This first call to create a reader also builds the index-header and sparse index-header from the block.
-			diskReaderCfg := Config{}
+			diskReaderCfg := testIndexHeaderV1Config()
 			diskReader, err := NewStreamBinaryReader(ctx, blockID, instrBkt, blockDir, diskReaderCfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(b, err)
 			b.Cleanup(func() { require.NoError(b, diskReader.Close()) })
@@ -291,10 +352,7 @@ func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 			require.NoError(b, err)
 
 			splitReaderCfg := Config{
-				BucketReader: BucketReaderConfig{
-					Enabled:             true,
-					BucketIndexSections: SectionPostingsOffsetsTable,
-				},
+				Version: BinaryFormatV2,
 			}
 			splitReader, err := NewStreamBinaryReader(ctx, blockID, cachingBucket, blockDir, splitReaderCfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(b, err)
@@ -354,11 +412,10 @@ func BenchmarkPostingsOffset(b *testing.B) {
 		_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(dir, idIndexV2.String()), nil)
 		require.NoError(b, err)
 
-		indexName := filepath.Join(dir, idIndexV2.String(), block.IndexHeaderFilename)
-		require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+		require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, filepath.Join(dir, idIndexV2.String()), BinaryFormatV1))
 
 		b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
-			binaryReader, err := NewStreamBinaryReader(ctx, idIndexV2, objstore.WithNoopInstr(bkt), dir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			binaryReader, err := NewStreamBinaryReader(ctx, idIndexV2, objstore.WithNoopInstr(bkt), dir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(b, err)
 			b.Cleanup(func() { require.NoError(b, binaryReader.Close()) })
 
@@ -400,12 +457,11 @@ func BenchmarkNewStreamBinaryReader(b *testing.B) {
 			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, blockDir, nil)
 			require.NoError(b, err)
 
-			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, blockDir, BinaryFormatV1))
 
 			b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
-					binaryReader, err := NewStreamBinaryReader(ctx, idIndexV2, objstore.WithNoopInstr(bkt), blockDir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+					binaryReader, err := NewStreamBinaryReader(ctx, idIndexV2, objstore.WithNoopInstr(bkt), blockDir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 					require.NoError(b, err)
 					b.Cleanup(func() { require.NoError(b, binaryReader.Close()) })
 				}

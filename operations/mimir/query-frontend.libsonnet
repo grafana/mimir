@@ -10,6 +10,7 @@
     $._config.commonConfig +
     $._config.usageStatsConfig +
     $._config.grpcConfig +
+    $._config.activityTrackerConfig +
     $._config.querySchedulerRingClientConfig +
     $.query_frontend_caching_config +
     $.queryFrontendUseQuerySchedulerArgs('query-scheduler') +
@@ -28,7 +29,11 @@
       // Allow DNS changes to propagate before killing off query-frontends,
       // to avoid connection failures in ruler and cortex-gw and therefore 5xx reads.
       'server.grpc.keepalive.max-connection-age': '%ds' % max_connection_age_seconds,
-    } + $.mimirRuntimeConfigFile,
+    } + $.mimirRuntimeConfigFile + (
+      if !$._config.queue_reservation_enabled then {} else {
+        'query-frontend.queue-reservation-enabled': true,
+      }
+    ),
 
   // CLI flags that are applied only to query-frontends, and not ruler-query-frontends.
   // Values take precedence over query_frontend_args.
@@ -75,6 +80,9 @@
 
   query_frontend_node_affinity_matchers:: [],
 
+  // Add key-value pairs as annotations specifically to query-frontend.
+  query_frontend_annotations:: {},
+
   query_frontend_container::
     self.newQueryFrontendContainer('query-frontend', $.query_frontend_args + $.query_frontend_only_args, $.query_frontend_env_map),
 
@@ -83,18 +91,20 @@
   // Leave enough time to finish serving a 5m query after the shutdown delay expired.
   query_frontend_termination_grace_period_seconds:: shutdown_delay_seconds + 300,
 
-  newQueryFrontendDeployment(name, container, nodeAffinityMatchers=[])::
+  newQueryFrontendDeployment(name, container, nodeAffinityMatchers=[], annotations={})::
     deployment.new(name, 2, [container]) +
     $.mimirVolumeMounts +
+    $.mimirActivityTrackerMount +
     $.newMimirSpreadTopology(name, $._config.query_frontend_topology_spread_max_skew) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
+    $.newMimirDeploymentAnnotationsMixin($.mimirComponentAnnotations + annotations) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds($.query_frontend_termination_grace_period_seconds),
 
   query_frontend_deployment:
-    self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container, $.query_frontend_node_affinity_matchers),
+    self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container, $.query_frontend_node_affinity_matchers, $.query_frontend_annotations),
 
   query_frontend_service:
     $.util.serviceFor($.query_frontend_deployment, $._config.service_ignored_labels),

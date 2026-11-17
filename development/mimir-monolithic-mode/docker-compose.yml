@@ -19,7 +19,7 @@ services:
       - MINIO_ROOT_USER=mimir
       - MINIO_ROOT_PASSWORD=supersecret
     ports:
-      - 9100:9100
+      - 9100:9000
       - 9101:9101
     volumes:
       - .data-minio:/data:delegated
@@ -31,6 +31,8 @@ services:
     command: ["--config.file=/etc/prometheus/prometheus.yaml"]
     volumes:
       - ./config:/etc/prometheus
+      - ../../operations/mimir-mixin-compiled/alerts.yaml:/etc/mixin/mimir-alerts.yaml
+      - ../../operations/mimir-mixin-compiled/rules.yaml:/etc/mixin/mimir-rules.yaml
     ports:
       - 9190:9090
 
@@ -42,6 +44,8 @@ services:
       - "--config.file=/etc/prometheus/prometheusRW2.yaml"
     volumes:
       - ./config:/etc/prometheus
+      - ../../operations/mimir-mixin-compiled/alerts.yaml:/etc/mixin/mimir-alerts.yaml
+      - ../../operations/mimir-mixin-compiled/rules.yaml:/etc/mixin/mimir-rules.yaml
     ports:
       - 9192:9090
 
@@ -54,6 +58,8 @@ services:
       - 3000:3000
     volumes:
       - ./config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml
+      - ./config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml
+      - ../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards
 
   # Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
   # until metadata remote write is supported by Prometheus).
@@ -128,7 +134,7 @@ services:
 
   otel-remote-write:
     image: otel/opentelemetry-collector-contrib:0.154.0@sha256:b3079f45e19bdb7326bf49cdddce6cf60dfd865138db39f2733ea48ab17bc4cb
-    command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms,receiver.prometheusreceiver.RemoveStartTimeAdjustment"]
+    command: ["--config=file:/etc/otelcol-contrib/config.yaml"]
     profiles:
       - otel-collector-remote-write
     volumes:
@@ -144,7 +150,7 @@ services:
 
   otel-otlp:
     image: otel/opentelemetry-collector-contrib:0.154.0@sha256:b3079f45e19bdb7326bf49cdddce6cf60dfd865138db39f2733ea48ab17bc4cb
-    command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms,receiver.prometheusreceiver.RemoveStartTimeAdjustment"]
+    command: ["--config=file:/etc/otelcol-contrib/config.yaml"]
     profiles:
       - otel-collector-otlp-push
     volumes:

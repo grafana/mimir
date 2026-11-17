@@ -84,7 +84,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Alertmanager status](#alertmanager-status) | Alertmanager | `GET /multitenant_alertmanager/status` |
 | [Alertmanager configs](#alertmanager-configs) | Alertmanager | `GET /multitenant_alertmanager/configs` |
 | [Alertmanager ring status](#alertmanager-ring-status) | Alertmanager | `GET /multitenant_alertmanager/ring` |
-| [Alertmanager UI](#alertmanager-ui) | Alertmanager | `GET <alertmanager-http-prefix>` |
+| [Alertmanager API](#alertmanager-api) | Alertmanager | `GET,POST,DELETE <alertmanager-http-prefix>` |
 | [Build Information](#build-information) | Alertmanager | `GET <alertmanager-http-prefix>/api/v1/status/buildinfo` |
 | [Alertmanager Delete Tenant Configuration](#alertmanager-delete-tenant-configuration) | Alertmanager | `POST /multitenant_alertmanager/delete_tenant_config` |
 | [Get Alertmanager configuration](#get-alertmanager-configuration) | Alertmanager | `GET /api/v1/alerts` |
@@ -210,7 +210,7 @@ This endpoint displays a web page with the status of internal Grafana Mimir serv
 GET /ready
 ```
 
-This endoint returns 200 when Grafana Mimir is ready to serve traffic.
+This endpoint returns 200 when Grafana Mimir is ready to serve traffic.
 
 ### Metrics
 
@@ -528,6 +528,7 @@ GET /ingester/ring
 ```
 
 This endpoint displays a web page with the ingesters hash ring status, including the state, health, and last heartbeat time of each ingester.
+Each ingester links to its tenants page. To change the link, for example to go through a proxy, set `-ingester.ring.status-page-ingester-link-template`.
 
 ### Ingester tenants
 
@@ -535,7 +536,7 @@ This endpoint displays a web page with the ingesters hash ring status, including
 GET /ingester/tenants
 ```
 
-Displays a web page with the list of tenants with open TSDB on given ingester.
+Displays a web page with the list of tenants with open TSDB on given ingester, sorted by the number of head series.
 
 ### Ingester tenant TSDB
 
@@ -544,6 +545,7 @@ GET /ingester/tsdb/{tenant}
 ```
 
 Displays a web page with details about tenant's open TSDB on given ingester.
+With `-ingester.label-churn-enabled`, the page links to the label churn of the tenant.
 
 ## Query-frontend
 
@@ -735,6 +737,18 @@ When `include_metadata=true`, each result can also carry the metric's `type`, `h
 
 Metadata is served only by ingesters, which hold it in memory keyed by metric name and sourced from the metadata records included in remote write requests. It isn't served by store-gateways, so metric names returned from long-term storage carry no metadata. As a result, metadata is returned for only a subset of the returned metric names.
 
+Metadata is matched by the exact metric name first, then by the metric family name for suffixes supported by that family's type:
+
+- `_total` for counters.
+- `_bucket`, `_sum`, and `_count` for histograms.
+- `_bucket`, `_sum`, `_count`, `_gsum`, and `_gcount` for gauge histograms.
+- `_sum` and `_count` for summaries.
+- `_info` for info metrics.
+
+A metric family name that already ends with `_total` or `_info` isn't matched for the same suffix again. For example, `requests_total_total` doesn't get the metadata of a `requests_total` counter.
+
+The returned `type`, `help`, and `unit` describe the metric family, not the individual series. For example, `http_request_duration_seconds_bucket` is reported with type `histogram`. When a metric family has metadata with more than one type, only one of them is used, so a suffixed metric name might not match.
+
 #### Search label names
 
 ```bash
@@ -792,11 +806,12 @@ When `include_score=true`, each result also carries a `score` field. When `inclu
 The stream always ends with a single trailer object reporting the final status:
 
 ```json
-{ "status": "success", "has_more": false }
+{ "status": "success", "has_more": false, "returned": 2 }
 ```
 
 - **status** - `success` when iteration completed without error.
 - **has_more** - `true` when more results matched than were returned because the `limit` was reached.
+- **returned** - the number of results in this response, across all `results` batches.
 - **warnings** - _optional_ - an array of non-fatal warning messages, for example when a per-tenant limit clamped the requested `limit`.
 
 #### Search errors
@@ -1163,7 +1178,7 @@ To retrieve a single rule group from Mimir, use [`mimirtool rules get` command](
 ### Set rule group
 
 ```
-POST /<prometheus-http-prefix>/config/v1/rules/{namespace}
+POST <prometheus-http-prefix>/config/v1/rules/{namespace}
 ```
 
 Creates or updates a rule group.
@@ -1200,7 +1215,7 @@ rules:
 ### Delete rule group
 
 ```
-DELETE /<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}
+DELETE <prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}
 ```
 
 Deletes a rule group by namespace and group name. This endpoints returns `202` on success.
@@ -1218,7 +1233,7 @@ To delete a rule group from Mimir, use [`mimirtool rules delete` command](../../
 ### Delete namespace
 
 ```
-DELETE /<prometheus-http-prefix>/config/v1/rules/{namespace}
+DELETE <prometheus-http-prefix>/config/v1/rules/{namespace}
 ```
 
 Deletes all the rule groups in a namespace (including the namespace itself). This endpoint returns `202` on success.
@@ -1267,13 +1282,13 @@ GET /multitenant_alertmanager/ring
 
 Displays a web page with the Alertmanager hash ring status, including the state, healthy and last heartbeat time of each Alertmanager instance.
 
-### Alertmanager UI
+### Alertmanager API
 
 ```
-GET /<alertmanager-http-prefix>
+GET,POST,DELETE <alertmanager-http-prefix>
 ```
 
-Displays the Alertmanager UI.
+Manage the Alertmanager.
 
 Requires [authentication](#authentication).
 
@@ -1327,7 +1342,7 @@ POST /api/v1/alerts
 
 This is the multi-tenant configuration endpoint (same path family as
 [Get Alertmanager configuration](#get-alertmanager-configuration)), not the
-Alertmanager UI/API under `<alertmanager-http-prefix>`.
+Alertmanager API under `<alertmanager-http-prefix>`.
 
 Stores or updates the Alertmanager configuration for the authenticated tenant. The Alertmanager configuration is stored in the configured backend object storage.
 
@@ -1378,7 +1393,7 @@ DELETE /api/v1/alerts
 
 This is the multi-tenant configuration endpoint (same path family as
 [Get Alertmanager configuration](#get-alertmanager-configuration)), not the
-Alertmanager UI/API under `<alertmanager-http-prefix>`.
+Alertmanager API under `<alertmanager-http-prefix>`.
 
 Deletes the Alertmanager configuration for the authenticated tenant.
 

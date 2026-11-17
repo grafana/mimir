@@ -355,6 +355,8 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 		app         chunkenc.Appender
 		err         error
 		recoded     bool
+		hBuf        *histogram.Histogram
+		fhBuf       *histogram.FloatHistogram
 	)
 	mint := int64(math.MaxInt64)
 	maxt := int64(math.MinInt64)
@@ -409,7 +411,10 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			t, v = seriesIter.At()
 			app.Append(st, t, v)
 		case chunkenc.ValHistogram:
-			t, h = seriesIter.AtHistogram(nil)
+			if hBuf == nil {
+				hBuf = &histogram.Histogram{}
+			}
+			t, h = seriesIter.AtHistogram(hBuf)
 			newChk, recoded, app, err = app.AppendHistogram(nil, st, t, h, false)
 			if err != nil {
 				return errChunksIterator{err: err}
@@ -424,7 +429,10 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 				chk = newChk
 			}
 		case chunkenc.ValFloatHistogram:
-			t, fh = seriesIter.AtFloatHistogram(nil)
+			if fhBuf == nil {
+				fhBuf = &histogram.FloatHistogram{}
+			}
+			t, fh = seriesIter.AtFloatHistogram(fhBuf)
 			newChk, recoded, app, err = app.AppendFloatHistogram(nil, st, t, fh, false)
 			if err != nil {
 				return errChunksIterator{err: err}

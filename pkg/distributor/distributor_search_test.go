@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -433,6 +434,16 @@ func TestParamsToProto(t *testing.T) {
 			want: &client.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_JARO_WINKLER, FuzzThreshold: 70},
 		},
 		{
+			name: "SubstringLeft fuzz alg",
+			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzAlg: streaminglabelvalues.FuzzAlgSubstringLeft},
+			want: &client.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSTRING_LEFT},
+		},
+		{
+			name: "Substring fuzz alg",
+			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzAlg: streaminglabelvalues.FuzzAlgSubstring, FuzzThreshold: 100},
+			want: &client.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSTRING, FuzzThreshold: 100},
+		},
+		{
 			name: "Subsequence is the default (zero-value FuzzAlg)",
 			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzThreshold: 50},
 			want: &client.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSEQUENCE, FuzzThreshold: 50},
@@ -440,9 +451,34 @@ func TestParamsToProto(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, paramsToProto(tc.in))
+			got, err := paramsToProto(tc.in)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// TestParamsToProtoEncodesEveryValidFuzzAlg fails when NewParams accepts an
+// algorithm that paramsToProto cannot encode.
+func TestParamsToProtoEncodesEveryValidFuzzAlg(t *testing.T) {
+	for alg := range streaminglabelvalues.FuzzAlg(math.MaxUint8) {
+		p, err := streaminglabelvalues.NewParams([]string{"foo"}, true, alg, 0)
+		if err != nil {
+			continue
+		}
+		_, err = paramsToProto(p)
+		require.NoError(t, err, "fuzz algorithm %d", alg)
+	}
+}
+
+func TestBuildSearchRequestsRejectUnknownFuzzAlg(t *testing.T) {
+	params := &streaminglabelvalues.Params{Terms: []string{"foo"}, FuzzAlg: streaminglabelvalues.FuzzAlg(99)}
+
+	_, err := buildSearchLabelNamesRequest(0, 1, params, nil, nil)
+	require.EqualError(t, err, "unknown fuzz algorithm 99")
+
+	_, err = buildSearchLabelValuesRequest(0, 1, "env", params, nil, nil)
+	require.EqualError(t, err, "unknown fuzz algorithm 99")
 }
 
 func TestOrderingToProto(t *testing.T) {

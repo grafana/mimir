@@ -20,6 +20,14 @@ message EncodedSubsetStats {
   repeated int64 samplesProcessedPerStep = 1;
   repeated int64 samplesReadIfSubsequentStep = 2;
   repeated int64 samplesReadIfFirstStep = 3;
+  repeated EncodedSamplesPerNode samplesPerNode = 4 [(gogoproto.nullable) = false];
+}
+
+message EncodedSamplesPerNode {
+  int64 nodeId = 1;
+  repeated int64 samplesProcessedPerStep = 2;
+  repeated int64 samplesReadIfSubsequentStep = 3;
+  repeated int64 samplesReadIfFirstStep = 4;
 }
 
 message EncodedQueryTimeRange {
@@ -27,4 +35,9 @@ message EncodedQueryTimeRange {
   int64 endT = 2; // End timestamp, in milliseconds since Unix epoch.
   int64 intervalMilliseconds = 3; // Range query interval, or 1 for instant queries. Note that this is deliberately different to parser.EvalStmt.Interval for instant queries (where it is 0) to simplify some loop conditions.
   bool isInstant = 4;
+}
+
+enum ExplainValue {
+  EXPLAIN_VALUE_UNKNOWN = 0;
+  EXPLAIN_VALUE_COST = 1;
 }

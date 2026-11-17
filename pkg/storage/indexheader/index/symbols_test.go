@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"hash/crc32"
+	"math"
 	"os"
 	"path"
 	"testing"
@@ -21,6 +22,7 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
+	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	"github.com/grafana/mimir/pkg/util/filepool"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -66,16 +68,16 @@ func TestSymbolsV2(t *testing.T) {
 	}
 
 	for factoryName, decbufFactory := range factories {
-		allSymbolsCount, sparseOffsets, err := SparseValuesFromSymbolsTable(context.Background(), decbufFactory, symbolsStart, true)
+		sparseSymbols, err := SparseValuesFromSymbolsTable(context.Background(), decbufFactory, symbolsStart, true)
 		require.NoError(t, err)
 
 		s, err := NewSymbolsTableReader(
-			index.FormatV2, decbufFactory, symbolsStart, allSymbolsCount, sparseOffsets,
+			index.FormatV2, decbufFactory, symbolsStart, sparseSymbols,
 		)
 		require.NoError(t, err)
 
-		// We store only 4 SparseTableOffsets to symbols.
-		require.Len(t, s.sparseSymbolsOffsets, 4)
+		// We store only 4 sampled symbols offsets.
+		require.Equal(t, 4, s.sparseSymbols.NumOffsets())
 
 		t.Run(fmt.Sprintf("Lookup/DecbufFactory=%s", factoryName), func(t *testing.T) {
 			for i := 99; i >= 0; i-- {
@@ -99,7 +101,7 @@ func TestSymbolsV2(t *testing.T) {
 
 		t.Run(fmt.Sprintf("ForEachSymbol/DecbufFactory=%s", factoryName), func(t *testing.T) {
 			// Use ForEachSymbol to build an offset -> symbol mapping and ensure
-			// that it matches the expected SparseTableOffsets and symbols.
+			// that it matches the expected sampled offsets and symbols.
 			var symbols []string
 			expected := make(map[uint32]string)
 			for i := 99; i >= 0; i-- {
@@ -156,4 +158,15 @@ func TestSymbolsV2(t *testing.T) {
 		})
 	}
 
+}
+
+func TestSparseSymbolsFromProto(t *testing.T) {
+	sparseSymbols, err := SparseSymbolsFromProto(&indexheaderpb.Symbols{Offsets: []int64{8, 100}, SymbolsCount: 64})
+	require.NoError(t, err)
+	require.Equal(t, 64, sparseSymbols.Count())
+	require.Equal(t, 2, sparseSymbols.NumOffsets())
+	require.Equal(t, 100, sparseSymbols.tableOffset(1))
+
+	_, err = SparseSymbolsFromProto(&indexheaderpb.Symbols{Offsets: []int64{8, math.MaxUint32 + 5}, SymbolsCount: 64})
+	require.EqualError(t, err, "sparse index-header symbols table offset 4294967300 out of bounds")
 }

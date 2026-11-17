@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -25,6 +26,8 @@ import (
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 )
+
+var errPartitionNotInitialized = errors.New("partition not initialized")
 
 type BlockBuilderScheduler struct {
 	services.Service
@@ -165,7 +168,14 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 				level.Error(s.logger).Log("msg", "failed to flush offsets to Kafka", "err", err)
 			}
 
-			s.updateSchedule(ctx)
+			if err := s.updateSchedule(ctx); err != nil {
+				if errors.Is(err, errPartitionNotInitialized) {
+					// Uninitialized partition is not a failure, but an edge-case.
+					level.Warn(s.logger).Log("msg", "uninitialized partition found: will restart to reconcile scheduler internal states", "err", err)
+					return modules.ErrStopProcess
+				}
+				return err
+			}
 			s.onScheduleUpdated()
 
 		case <-ctx.Done():
@@ -193,6 +203,8 @@ func (s *BlockBuilderScheduler) loadInitialCommittedOffsets(ctx context.Context)
 		c.Each(func(o kadm.Offset) {
 			ps := s.getPartitionState(o.Topic, o.Partition)
 			ps.initCommit(clusterID, o.At)
+			// Publish loaded offsets without waiting for observation mode and the first periodic flush.
+			s.metrics.perClusterMetrics[clusterID].committedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.At))
 		})
 		s.mu.Unlock()
 	}
@@ -238,8 +250,9 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) err
 }
 
 // updateSchedule examines the state of the Kafka topic and updates the
-// schedule, creating consumption jobs if appropriate.
-func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
+// schedule, creating consumption jobs if appropriate. It returns an error only
+// if the scheduler can't continue without losing records, see recordEndOffsets.
+func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) error {
 	startTime := time.Now()
 	defer func() {
 		s.metrics.updateScheduleDuration.Observe(time.Since(startTime).Seconds())
@@ -262,14 +275,16 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 		}
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				return
+				return nil
 			}
 			level.Warn(s.compartmentLogger(clusterID)).Log("msg", "failed to list end offsets", "err", err)
 			s.metrics.perClusterMetrics[clusterID].endOffsetProbeFailed.Inc()
 			failedClusters = append(failedClusters, clusterID)
 			continue
 		}
-		s.recordEndOffsets(clusterID, endOffsets, touched)
+		if err := s.recordEndOffsets(clusterID, endOffsets, touched); err != nil {
+			return s.compartmentError(clusterID, err)
+		}
 	}
 	if len(failedClusters) > 0 && len(failedClusters) < len(s.adminClients) {
 		level.Warn(s.logger).Log("msg", "advancing schedule despite failed end offset probes", "failed_write_compartments", fmt.Sprint(failedClusters))
@@ -292,21 +307,45 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 
 	s.metrics.outstandingJobs.Set(float64(s.jobs.count()))
 	s.metrics.assignedJobs.Set(float64(s.jobs.assigned()))
+
+	return nil
 }
 
 // recordEndOffsets records one cluster's end offsets into each partition's state, marking every
 // partition it touched so the caller can advance them once all clusters are recorded.
-func (s *BlockBuilderScheduler) recordEndOffsets(clusterID int, endOffsets kadm.ListedOffsets, touched map[int32]struct{}) {
+//
+// The first end offset recorded for a partition becomes the start of its first job. Startup
+// records it for every partition, unless the partition didn't exist on the cluster yet, or its
+// probe failed. Such a partition can hold records below its first observed end offset, and
+// starting from there would skip them silently. Only the startup path knows where to resume
+// it from (planned offset or lookback), so we return an error to make the scheduler restart.
+func (s *BlockBuilderScheduler) recordEndOffsets(clusterID int, endOffsets kadm.ListedOffsets, touched map[int32]struct{}) (err error) {
 	endOffsets.Each(func(o kadm.ListedOffset) {
-		s.metrics.perClusterMetrics[clusterID].endOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
+		if err != nil {
+			return
+		}
+
+		// Do not track end-offset=0 to reduce number of series.
+		// Otherwise, this creates a dummy series per-cluster-per-partition, regardless to if the partition is active.
+		if o.Offset != 0 {
+			s.metrics.perClusterMetrics[clusterID].endOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
+		}
 
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
 		ps := s.getPartitionState(o.Topic, o.Partition)
+		// This should not happen, unless the topic changed its number of partitions while scheduler is in normal operations.
+		// The scheduler can't auto-recover from that; the safest option is to restart and reconcile partition state.
+		// A partition with end-offset=0 has never held records, so it's fine.
+		if ps.startOffsetEmpty(clusterID) && o.Offset != 0 {
+			err = fmt.Errorf("partition %d never observed start offset but has end offset %d: %w", o.Partition, o.Offset, errPartitionNotInitialized)
+			return
+		}
 		ps.updateEndOffset(clusterID, o.Offset)
 		touched[o.Partition] = struct{}{}
 	})
+	return err
 }
 
 // enqueuePendingJobsWorker is a worker method that enqueues pending jobs at a regular interval.
@@ -439,7 +478,7 @@ type partitionOffsets struct {
 func (s *BlockBuilderScheduler) initConsumptionOffsets(ctx context.Context, fallbackTime time.Time) (map[int32][]*partitionOffsets, error) {
 	offsetsByPartition := make(map[int32][]*partitionOffsets)
 	for clusterID := range s.adminClients {
-		consumeOffs, err := s.initSingleClusterConsumptionOffsets(ctx, s.cfg.Kafka.Topic, fallbackTime, clusterID)
+		consumeOffs, err := s.initSingleClusterConsumptionOffsets(ctx, clusterID, s.cfg.Kafka.Topic, fallbackTime)
 		if err != nil {
 			return nil, s.compartmentError(clusterID, err)
 		}
@@ -461,7 +500,7 @@ func (s *BlockBuilderScheduler) initConsumptionOffsets(ctx context.Context, fall
 
 // initSingleClusterConsumptionOffsets returns the resumption and end offsets for each partition on the given
 // cluster, falling back to the fallbackTime if there is no planned offset for a partition.
-func (s *BlockBuilderScheduler) initSingleClusterConsumptionOffsets(ctx context.Context, topic string, fallbackTime time.Time, clusterID int) ([]partitionOffsets, error) {
+func (s *BlockBuilderScheduler) initSingleClusterConsumptionOffsets(ctx context.Context, clusterID int, topic string, fallbackTime time.Time) ([]partitionOffsets, error) {
 	logger := s.compartmentLogger(clusterID)
 	startOffsets, err := s.adminClients[clusterID].ListStartOffsets(ctx, topic)
 	if err != nil {
@@ -527,8 +566,13 @@ func (s *BlockBuilderScheduler) initSingleClusterConsumptionOffsets(ctx context.
 			level.Debug(logger).Log("msg", "initSingleClusterConsumptionOffsets", "topic", t, "partition", partition,
 				"start", startOffset.At, "end", end.Offset, "consumeOffset", resumeOffset)
 
-			s.metrics.perClusterMetrics[clusterID].startOffset.WithLabelValues(partStr).Set(float64(startOffset.At))
-			s.metrics.perClusterMetrics[clusterID].endOffset.WithLabelValues(partStr).Set(float64(end.Offset))
+			// No need to emit per-partition start/end-offset=0 when we know that the partition is empty.
+			// Otherwise, this creates a dummy series per-cluster-per-partition, regardless to if the partition is active.
+			// TODO(narqo): this is an optimisation, that may end up being confusing; we may reconsider this decision.
+			if end.Offset != 0 {
+				s.metrics.perClusterMetrics[clusterID].startOffset.WithLabelValues(partStr).Set(float64(startOffset.At))
+				s.metrics.perClusterMetrics[clusterID].endOffset.WithLabelValues(partStr).Set(float64(end.Offset))
+			}
 
 			offs = append(offs, partitionOffsets{
 				partition: partition,

@@ -7,6 +7,7 @@ package querymiddleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -638,7 +639,7 @@ func TestLimitsMiddleware_MaxQueryLength_InstantQueryWithSubquery(t *testing.T) 
 		t.Run(testName, func(t *testing.T) {
 			queryTime := util.TimeToMillis(now)
 			req := NewPrometheusInstantQueryRequest(
-				"/query", nil, queryTime, 0, parseQuery(t, testData.query), requestoptions.Options{}, nil, "",
+				"/query", nil, queryTime, 0, parseQuery(t, testData.query), requestoptions.Options{}, nil, "", nil,
 			)
 
 			limits := mockLimits{maxTotalQueryLength: testData.maxTotalQueryLength}
@@ -1175,6 +1176,38 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestLimitedRoundTripper_ProtobufRequestWithQueryCost(t *testing.T) {
+	downstream := RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		panic("not reachable roundtripper")
+	})
+	reqCtx := user.InjectOrgID(context.Background(), "foo")
+	codec := newTestCodecWithFormat("protobuf")
+
+	r, err := codec.EncodeMetricsQueryRequest(reqCtx, &PrometheusRangeQueryRequest{
+		path:          "/api/v1/query_range",
+		start:         time.Now().Add(time.Hour).Unix(),
+		end:           util.TimeToMillis(time.Now()),
+		step:          int64(1 * time.Second * time.Millisecond),
+		queryExpr:     parseQuery(t, `foo`),
+		lookbackDelta: streamingpromql.DefaultLookbackDelta,
+		explain:       []string{"cost"},
+	})
+	require.Nil(t, err)
+
+	handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
+	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: 1}, false,
+		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
+				panic("not reachable handler")
+			})
+		}),
+	).RoundTrip(r)
+
+	var apiErr *apierror.APIError
+	require.ErrorAs(t, err, &apiErr)
+	require.Equal(t, apierror.TypeBadData, apiErr.Type)
+}
+
 func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 	maxParallelism := 10
 	workDuration := 20 * time.Millisecond
@@ -1280,7 +1313,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 	codec := newTestCodec()
-	handler := NewEngineQueryRequestRoundTripperHandler(engine, codec, logger)
+	handler := NewEngineQueryRequestRoundTripperHandler(engine, codec, false, logger)
 
 	storage := promqltest.LoadedStorage(t, `
 		load 1s
@@ -1338,7 +1371,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		expectedPhysicalSamplesRead   uint64
 	}{
 		"range query": {
-			req:                           NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, ""),
+			req:                           NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, "", nil),
 			expectedSamplesProcessed:      4,
 			expectedPhysicalSamplesRead:   4,
 			expectedEquivalentSamplesRead: 4,
@@ -1365,8 +1398,42 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 			},
 		},
 
+		"range query with cost details": {
+			req:                           NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, "", []string{"cost"}),
+			expectedSamplesProcessed:      4,
+			expectedPhysicalSamplesRead:   4,
+			expectedEquivalentSamplesRead: 4,
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []mimirpb.FloatSample{
+								{TimestampMs: 1000, Value: 5},
+								{TimestampMs: 3000, Value: 15},
+								{TimestampMs: 5000, Value: 25},
+								{TimestampMs: 7000, Value: 35},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+				NodeCost: []NodeQueryCost{
+					{
+						NodeId:      4,
+						SamplesRead: 4,
+					},
+				},
+			},
+		},
+
 		"instant query": {
-			req:                           NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, ""),
+			req:                           NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, "", nil),
 			expectedSamplesProcessed:      1,
 			expectedPhysicalSamplesRead:   1,
 			expectedEquivalentSamplesRead: 1,
@@ -1390,8 +1457,39 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 			},
 		},
 
+		"instant query with cost details": {
+			req:                           NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, "", []string{"cost"}),
+			expectedSamplesProcessed:      1,
+			expectedPhysicalSamplesRead:   1,
+			expectedEquivalentSamplesRead: 1,
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValVector.String(),
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []mimirpb.FloatSample{
+								{TimestampMs: 3000, Value: 15},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+				NodeCost: []NodeQueryCost{
+					{
+						NodeId:      4,
+						SamplesRead: 1,
+					},
+				},
+			},
+		},
+
 		"scalar result": {
-			req: NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`scalar(some_metric)`), requestOptions, requestHints, ""),
+			req: NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`scalar(some_metric)`), requestOptions, requestHints, "", nil),
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
 				Data: &PrometheusData{
@@ -1413,7 +1511,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		},
 
 		"string result": {
-			req: NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`"foo"`), requestOptions, requestHints, ""),
+			req: NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`"foo"`), requestOptions, requestHints, "", nil),
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
 				Data: &PrometheusData{
@@ -1435,12 +1533,12 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		},
 
 		"execution error": {
-			req:         NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`some_metric * on(foo) some_other_metric`), requestOptions, requestHints, ""),
+			req:         NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`some_metric * on(foo) some_other_metric`), requestOptions, requestHints, "", nil),
 			expectedErr: apierror.New(apierror.TypeExec, `found duplicate series for the match group {foo="bar"} on the right side of the operation at timestamp 1970-01-01T00:00:03Z: {__name__="some_other_metric", foo="bar", idx="0"} and {__name__="some_other_metric", foo="bar", idx="1"}`),
 		},
 
 		"annotations": {
-			req:                           NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`histogram_quantile(0.1, rate(some_metric[2s]))`), requestOptions, requestHints, ""),
+			req:                           NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`histogram_quantile(0.1, rate(some_metric[2s]))`), requestOptions, requestHints, "", nil),
 			expectedSamplesProcessed:      2,
 			expectedEquivalentSamplesRead: 2,
 			expectedPhysicalSamplesRead:   2,
@@ -1540,7 +1638,7 @@ func TestEngineQueryRequestRoundTripperHandler_ClosesQueryOnError(t *testing.T) 
 		},
 	}
 
-	req := NewPrometheusInstantQueryRequest("/", nil, util.TimeToMillis(end), lookbackDelta, parseQuery(t, "bar1"), requestoptions.Options{}, nil, "")
+	req := NewPrometheusInstantQueryRequest("/", nil, util.TimeToMillis(end), lookbackDelta, parseQuery(t, "bar1"), requestoptions.Options{}, nil, "", nil)
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -1557,7 +1655,7 @@ func TestEngineQueryRequestRoundTripperHandler_ClosesQueryOnError(t *testing.T) 
 			engine, err := streamingpromql.NewEngine(opts, queryMetrics, planner)
 			require.NoError(t, err)
 
-			handler := NewEngineQueryRequestRoundTripperHandler(engine, newTestCodec(), log.NewNopLogger())
+			handler := NewEngineQueryRequestRoundTripperHandler(engine, newTestCodec(), false, log.NewNopLogger())
 			handler.(*engineQueryRequestRoundTripperHandler).storage = tc.queryable
 
 			resp, err := handler.Do(context.Background(), req)
@@ -1596,10 +1694,6 @@ func (s *contextCapturingStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQ
 	panic("not supported")
 }
 
-func (s *contextCapturingStorage) Appender(ctx context.Context) storage.Appender {
-	panic("not supported")
-}
-
 func (s *contextCapturingStorage) StartTime() (int64, error) {
 	panic("not supported")
 }
@@ -1628,4 +1722,59 @@ func (c *contextCapturingQuerier) LabelValues(ctx context.Context, name string, 
 
 func (c *contextCapturingQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	panic("not supported")
+}
+
+func TestConvertToAPIError(t *testing.T) {
+	limitErr := validation.NewLimitError("the query exceeded the maximum allowed estimated amount of memory consumed by a single query (limit: 100 bytes) (err-mimir-max-estimated-memory-consumption-per-query)")
+
+	testCases := map[string]struct {
+		err               error
+		fallbackType      apierror.Type
+		expectedType      apierror.Type
+		expectedStatus    int
+		expectedErrorText string
+	}{
+		"limit error with internal fallback is classified as an execution error": {
+			// engine.NewRangeQuery() failures use apierror.TypeInternal as their fallback, but a
+			// limit error is caused by the request and must not be reported as an HTTP 500.
+			err:               limitErr,
+			fallbackType:      apierror.TypeInternal,
+			expectedType:      apierror.TypeExec,
+			expectedStatus:    http.StatusUnprocessableEntity,
+			expectedErrorText: limitErr.Error(),
+		},
+		"wrapped limit error is classified as an execution error": {
+			err:               fmt.Errorf("failed to prepare query: %w", limitErr),
+			fallbackType:      apierror.TypeInternal,
+			expectedType:      apierror.TypeExec,
+			expectedStatus:    http.StatusUnprocessableEntity,
+			expectedErrorText: "failed to prepare query: " + limitErr.Error(),
+		},
+		"existing API error is returned unchanged": {
+			err:               apierror.New(apierror.TypeBadData, "invalid request"),
+			fallbackType:      apierror.TypeInternal,
+			expectedType:      apierror.TypeBadData,
+			expectedStatus:    http.StatusBadRequest,
+			expectedErrorText: "invalid request",
+		},
+		"unclassifiable error falls back to the caller's type": {
+			err:               errors.New("something went wrong"),
+			fallbackType:      apierror.TypeInternal,
+			expectedType:      apierror.TypeInternal,
+			expectedStatus:    http.StatusInternalServerError,
+			expectedErrorText: "something went wrong",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			err := convertToAPIError(testCase.err, testCase.fallbackType)
+
+			var apiErr *apierror.APIError
+			require.ErrorAs(t, err, &apiErr)
+			require.Equal(t, testCase.expectedType, apiErr.Type)
+			require.Equal(t, testCase.expectedStatus, apiErr.StatusCode())
+			require.Equal(t, testCase.expectedErrorText, apiErr.Message)
+		})
+	}
 }

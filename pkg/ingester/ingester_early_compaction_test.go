@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/common/model"
@@ -156,6 +157,50 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	require.Equal(t, uint64(0), ingester.getTSDB(userID).Head().NumSeries())
 	totalActiveSeries, _, _, _ = ingester.getTSDB(userID).activeSeries.Active()
 	require.Equal(t, 0, totalActiveSeries)
+}
+
+func TestIngester_compactBlocksToReduceInMemorySeries_LimitPrecedence(t *testing.T) {
+	var (
+		ctx             = t.Context()
+		ctxWithUser     = user.InjectOrgID(ctx, userID)
+		now             = time.Now()
+		sampleTimestamp = now.UnixMilli()
+	)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.ActiveSeriesMetrics.Enabled = true
+	cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Do not trigger it during the test, so that we trigger it manually.
+	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1000
+	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 50
+
+	instanceLimits := &InstanceLimits{}
+	cfg.InstanceLimitsFn = func() *InstanceLimits { return instanceLimits }
+
+	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, ingester, r)
+
+	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+
+	for seriesID := 0; seriesID < 10; seriesID++ {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("metric_%d", seriesID)),
+			Samples: []util_test.Sample{{TS: sampleTimestamp, Val: 0}},
+		}}))
+	}
+
+	// All series are inactive in the future.
+	now = now.Add(30 * time.Minute)
+
+	// The instance limit is unset, so the config threshold (1000) applies and no compaction happens.
+	ingester.compactBlocksToReduceInMemorySeries(ctx, now)
+	require.Empty(t, listBlocksInDir(t, userBlocksDir))
+
+	// The instance limit is set and takes precedence over the config threshold.
+	instanceLimits.EarlyHeadCompactionMinInMemorySeries = 5
+	ingester.compactBlocksToReduceInMemorySeries(ctx, now)
+	require.Len(t, listBlocksInDir(t, userBlocksDir), 1)
 }
 
 func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNowMinusActiveSeriesMetricsIdleTimeout(t *testing.T) {
@@ -1854,6 +1899,14 @@ func setupTestIngesterRing(t *testing.T, zones []string, ingestersPerZone int, c
 			ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limitsCfg, nil, "", nil)
 			require.NoError(t, err)
 			startAndWaitHealthy(t, ingester, r)
+
+			// Tests using this helper expect owned series state to change only through their own actions
+			// (pushes, ownedTokenRanges, recomputeOwnedSeries). Stop the background owned series service so
+			// that a ticker-driven recompute, based on the real ring, cannot change owned series or pending
+			// non-owned refs during the test.
+			if ingester.ownedSeriesService != nil {
+				require.NoError(t, services.StopAndAwaitTerminated(t.Context(), ingester.ownedSeriesService))
+			}
 
 			ingesters = append(ingesters, ingester)
 		}

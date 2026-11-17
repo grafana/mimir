@@ -17,7 +17,7 @@ Use this dashboard for the following use cases:
 
 - Ensure the Alertmanager's performance and reliability across a multi-tenant Mimir cluster.
 - Monitor resource consumption in real time.
-- Plan future resouce allocation needs.
+- Plan future resource allocation needs.
 
 This dashboard requires [additional resources metrics](../../requirements/#additional-resources-metrics).
 

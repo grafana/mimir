@@ -87,6 +87,7 @@ spec:
               (dict "name" "KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR" "value" (min 3 $replicas | toString))
               (dict "name" "KAFKA_TRANSACTION_STATE_LOG_MIN_ISR" "value" (min 2 $replicas | toString))
               (dict "name" "KAFKA_LOG_RETENTION_HOURS" "value" (.logRetentionHours | default 24 | toString))
+              (dict "name" "KAFKA_MESSAGE_MAX_BYTES" "value" "16000000")
           -}}
           {{- include "mimir.lib.containerEnv" (dict "ctx" $ "component" "kafka" "env" $defaultEnv) | nindent 10 }}
           resources:

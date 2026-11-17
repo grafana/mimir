@@ -671,7 +671,7 @@ func TestCacheOperator(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			metrics := NewResultsCacheMetrics("query_range", reg)
 
-			o := newCacheOperator(cache, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator), materializer, createTestNode(), testCase.timeRange, memoryConsumptionTracker, posrange.PositionRange{}, params, limits, log.NewNopLogger(), cacheEntryInterval, testCase.minCacheExtent, metrics, true)
+			o := newCacheOperator(cache, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator, false), materializer, createTestNode(), testCase.timeRange, memoryConsumptionTracker, posrange.PositionRange{}, params, limits, log.NewNopLogger(), cacheEntryInterval, testCase.minCacheExtent, metrics, true)
 			o.timeNow = func() time.Time { return timeNow }
 			o.getCurrentTraceID = func(context.Context) (string, bool) { return newTraceID, true }
 
@@ -829,7 +829,7 @@ func TestCacheOperator_UnconsumedSeries(t *testing.T) {
 		timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
 		reg := prometheus.NewPedanticRegistry()
 		metrics := NewResultsCacheMetrics("query_range", reg)
-		o := newCacheOperator(cache, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator), materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics, cacheUnconsumedResults)
+		o := newCacheOperator(cache, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator, false), materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics, cacheUnconsumedResults)
 		timeNow := time.Now()
 		o.timeNow = func() time.Time { return timeNow }
 
@@ -947,7 +947,7 @@ func TestCacheOperator_CachingUnconsumedSeries_NoInnerSeries(t *testing.T) {
 		timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
 		reg := prometheus.NewPedanticRegistry()
 		metrics := NewResultsCacheMetrics("query_range", reg)
-		o := newCacheOperator(cache, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator), materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics, true)
+		o := newCacheOperator(cache, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator, false), materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics, true)
 		timeNow := time.Now()
 		o.timeNow = func() time.Time { return timeNow }
 
@@ -1048,7 +1048,7 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfFinishedReadingNotCalled(t *testin
 
 	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
 	metrics := NewResultsCacheMetrics("query_range", prometheus.NewPedanticRegistry())
-	o := newCacheOperator(cache, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator), materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics, true)
+	o := newCacheOperator(cache, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator, false), materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics, true)
 
 	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 	require.NoError(t, o.AfterPrepare(ctx))
@@ -1336,7 +1336,7 @@ func TestCacheOperator_CacheKey(t *testing.T) {
 		// Use the tenant prefix generator: as the org ID is not part of computeCacheKey, the
 		// prefix is what provides tenant isolation, so we exercise the full key (computed by
 		// populateCacheKey) rather than computeCacheKey alone.
-		o := newCacheOperator(nil, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator), nil, node, desiredTimeRange, nil, posrange.PositionRange{}, params, nil, log.NewNopLogger(), cacheEntryInterval, 0, nil, true)
+		o := newCacheOperator(nil, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator, false), nil, node, desiredTimeRange, nil, posrange.PositionRange{}, params, nil, log.NewNopLogger(), cacheEntryInterval, 0, nil, true)
 		ctx := user.InjectOrgID(context.Background(), tenantID)
 
 		require.NoError(t, o.populateCacheKey(ctx))

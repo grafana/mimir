@@ -9,8 +9,19 @@
     // If true, compute the scaling metric as non-null only when container_memory_working_set_bytes is available
     autoscaling_memory_hpa_require_metrics: false,
 
-    // If true and there is no memory trigger, add OOM protection trigger to prevent premature scale-down when pods are being OOM-killed.
-    autoscaling_oom_protection_enabled: false,
+    // If true and there is no memory trigger (for example, for distributors with distributor_gomemlimit_enabled: true), add
+    // OOM protection trigger to prevent premature scale-down when pods are being OOM-killed. It needs the kube-state-metrics
+    // metrics kube_pod_container_status_last_terminated_reason and kube_pod_container_status_restarts_total, and has no
+    // effect without them.
+    autoscaling_oom_protection_enabled: true,
+
+    // If true, also add a trigger to the distributor ScaledObjects that scales a distributor Deployment out while more
+    // than the HPA tolerance (10% by default) of its pods are being OOM-killed (experimental). Requires
+    // autoscaling_oom_protection_enabled, and the kube-state-metrics metrics kube_deployment_status_replicas,
+    // kube_pod_container_status_restarts_total and kube_pod_container_status_last_terminated_reason. It has no effect
+    // while the distributor memory trigger is enabled (distributor_gomemlimit_enabled: false): that trigger already
+    // counts the memory requests of OOM-killed pods.
+    autoscaling_distributor_oom_scale_out_enabled: false,
 
     autoscaling_querier_enabled: false,
     autoscaling_querier_min_replicas_per_zone: error 'you must set autoscaling_querier_min_replicas_per_zone in the _config',
@@ -84,6 +95,9 @@
     autoscaling_compactor_scheduler_lag_trigger_use_last_empty_metric: true,
   },
 
+  assert !$._config.autoscaling_distributor_oom_scale_out_enabled || $._config.autoscaling_oom_protection_enabled
+         : 'autoscaling_distributor_oom_scale_out_enabled requires autoscaling_oom_protection_enabled',
+
   // Utility used to override a field only if exists in super.
   local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
     super[name] + override,
@@ -124,6 +138,10 @@
       namespace: namespace,
     },
     spec: {
+      // The final spec, including overrides made after this function, such as of minReplicaCount. A trigger whose
+      // query depends on the min replica count gives a function as its query, which gets spec.minReplicaCount.
+      local spec = self,
+
       scaleTargetRef: scaleTargetRef(apiVersion, kind, name),
 
       // The min/max replica count settings are reflected to HPA too.
@@ -158,7 +176,7 @@
           metadata: {
             serverAddress: $._config.autoscaling_prometheus_url,
             [if $._config.autoscaling_prometheus_tenant != '' then 'customHeaders']: 'X-Scope-OrgID=%s' % $._config.autoscaling_prometheus_tenant,
-            query: trigger.query,
+            query: if std.isFunction(trigger.query) then trigger.query(spec.minReplicaCount) else trigger.query,
 
             // The metric name uniquely identifies a metric in the KEDA metrics server.
             // This is deprecatd in KEDA 2.10, and is instead set to a default based on the trigger type (e.g. `s0-prometheus`).
@@ -508,12 +526,17 @@
     extra_triggers=[],
     container_name='',
     extra_matchers='',
+    // If true, add the OOM scale-out trigger. It is only added together with the OOM protection trigger, that is,
+    // when with_memory_trigger is false and autoscaling_oom_protection_enabled is true. The scale target must be a
+    // Deployment.
+    with_oom_scale_out_trigger=false,
   ):: self.newScaledObject(
     name, $._config.namespace, {
       local queryParameters = {
         container: if container_name != '' then container_name else name,
         namespace: $._config.namespace,
         extra_matchers: if extra_matchers == '' then '' else ',%s' % extra_matchers,
+        deployment: name,
       },
       local effectiveQueryWeight = if query_weight != null then query_weight else weight,
 
@@ -551,12 +574,21 @@
            ] else if $._config.autoscaling_oom_protection_enabled then [
              {
                // This trigger prevents premature scale-down when pods are being OOM-killed. If any pod has been
-               // OOM-killed in the last 15 minutes, the query returns 1, which with metric_type "Value" gets
-               // multiplied by the current pod count, ensuring HPA maintains at least the current replica count.
-               // When no OOM kills occur, it returns 0, making this trigger inactive (other triggers determine scaling).
+               // OOM-killed in the last 15 minutes, the query returns 1. With metric_type "Value" and threshold 1,
+               // the usage ratio is 1, which is within the HPA tolerance (0.9 to 1.1 by default), so the HPA keeps
+               // the current replica count. When no OOM kills occur, it returns 0, making this trigger inactive
+               // (other triggers determine scaling).
+               //
+               // The query weight is deliberately not applied: a weight such as 1/N for compartment distributors moves
+               // the ratio outside the tolerance, and the HPA then computes ceil(ratio * ready pods), which allows
+               // scale-down during OOMs.
+               //
+               // The query uses the same pod matchers as the other triggers. For compartment distributors, these match
+               // every compartment in the zone, so an OOM-killed pod in one compartment holds the replica count of all
+               // compartments in that zone.
                metric_name: '%s%s_oom_protection_hpa_%s' %
                             ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
-               query: queryWithWeight(|||
+               query: |||
                  # Return 1 if any pods OOM-ed within the last 15 minutes.
                  group (
                    max by (pod) (
@@ -567,13 +599,97 @@
                      changes(kube_pod_container_status_restarts_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[15m]) > 0
                    )
                  ) or vector(0)
-               ||| % queryParameters, effectiveQueryWeight),
+               ||| % queryParameters,
                threshold: '1',
                metric_type: 'Value',
                // Disable ignoring null values to ensure the trigger properly pauses when metrics are unavailable
                ignore_null_values: false,
              },
-           ] else []) + extra_triggers,
+           ] + (if with_oom_scale_out_trigger then [
+                  {
+                    // Scales the Deployment out while its pods are being OOM-killed. It asks for min(base30 + n,
+                    // 2 * base2h): base30 is the lowest replica count in the last 30 minutes, base2h the lowest count
+                    // during OOM kills in the last 2 hours, and n the number of pods OOM-killed in the last 15 minutes.
+                    // Without OOM kills, it returns 0.
+                    // - AverageValue with threshold 1: the HPA keeps the current count within its tolerance (10% by
+                    //   default), so the trigger only scales out when more than that share of the pods were OOM-killed.
+                    //   Value would scale by the number of ready pods, which is low during OOM kills.
+                    // - The lowest recent count keeps the ask from growing with its own scale-out. While OOM kills
+                    //   continue, the cap limits growth to 2x per 2 hours; beyond that, the trigger has no effect.
+                    // - base2h only counts the times with OOM kills, and up to 1 minute before them. Growth from
+                    //   other triggers before that doesn't use up the cap, but growth during the OOM kills does. The
+                    //   query's comments explain how.
+                    // - The counts are floored at the final min replica count (the query is a function of it, see
+                    //   newScaledObject). Otherwise a count from a new Deployment, or from before the min was raised,
+                    //   keeps the cap too low for up to 2 hours.
+                    // - min() across series: after a kube-state-metrics shard change, max() would hide the lower count.
+                    // - Pods are matched by the Deployment's pod name, not extra_matchers, so each compartment counts
+                    //   only its own pods. For the same reason, the query weight isn't applied.
+                    local lowestReplicas(window) =
+                      'min(min_over_time(kube_deployment_status_replicas{namespace="%(namespace)s",deployment="%(deployment)s"}[%(window)s]))'
+                      % (queryParameters { window: window }),
+                    local oomKilledPods = |||
+                      count(
+                        max by (pod) (
+                          kube_pod_container_status_last_terminated_reason{container="%(container)s",namespace="%(namespace)s",reason="OOMKilled",pod=~"%(deployment)s-[a-z0-9]+-[a-z0-9]+"}
+                        )
+                        and
+                        max by (pod) (
+                          changes(kube_pod_container_status_restarts_total{container="%(container)s",namespace="%(namespace)s",pod=~"%(deployment)s-[a-z0-9]+-[a-z0-9]+"}[15m]) > 0
+                        )
+                      )
+                    ||| % queryParameters,
+                    local indented(expr, spaces) = std.strReplace(std.rstripChars(expr, '\n'), '\n', '\n' + std.repeat(' ', spaces)),
+
+                    metric_name: '%s%s_oom_scale_out_hpa_%s' %
+                                 ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
+                    query(minReplicas): |||
+                      # While pods are OOM-killed: min(lowest replicas in 30m + pods OOM-killed in 15m,
+                      # 2 * lowest replicas during OOM kills in 2h), with the lowest replicas floored at the min replica count.
+                      clamp_max(
+                        clamp_min(%(base30)s, %(min_replicas)d)
+                        +
+                        %(oom_killed_pods_2)s,
+                        # The cap: 2 * the lowest count during OOM kills in 2h, floored at the min replica count.
+                        # clamp_max() takes its limit as a scalar.
+                        scalar(2 * clamp_min(
+                          # The lowest count across 1-minute subquery points. Points without OOM kills are empty
+                          # and skipped, so growth from other triggers before the OOM kills doesn't count, except
+                          # up to 1 minute before them (see below).
+                          min_over_time((
+                            # The lowest count of the minute before the point, not the count at the point, so the
+                            # first point with OOM kills still sees the count from before the trigger's own
+                            # scale-out. The lookback must be at least the step, because the first point comes up
+                            # to one step after the OOM kills show up. That minute can start before the OOM kills,
+                            # so growth from other triggers in it also counts. A longer step is cheaper, but
+                            # widens this window.
+                            %(base1m)s
+                            # Keeps the count only at points with pods OOM-killed in the 15 minutes before.
+                            and on ()
+                            %(oom_killed_pods_6)s
+                          )[2h:1m])
+                          # Until the first point with OOM kills, the subquery is empty and scalar() would return
+                          # NaN. The fallback is the lowest count of the last minute: the OOM kills showed up less
+                          # than a minute ago, so it also sees the count from before the scale-out.
+                          or
+                          %(base1m)s, %(min_replicas)d))
+                      )
+                      or vector(0)
+                    ||| % {
+                      base30: lowestReplicas('30m'),
+                      base1m: lowestReplicas('1m'),
+                      oom_killed_pods_2: indented(oomKilledPods, 2),
+                      oom_killed_pods_6: indented(oomKilledPods, 6),
+                      min_replicas: minReplicas,
+                    },
+                    threshold: '1',
+                    metric_type: 'AverageValue',
+                    // With "or vector(0)", the query always returns a value, so this only matters when the query fails.
+                    // If kube_deployment_status_replicas is missing, the query returns 0 and the trigger is inactive.
+                    ignore_null_values: false,
+                  },
+                ] else [])
+           else []) + extra_triggers,
     },
   ),
 
@@ -759,6 +875,7 @@
       with_ready_trigger=true,
       extra_matchers=extra_matchers,
       with_memory_trigger=!$._config.distributor_gomemlimit_enabled,
+      with_oom_scale_out_trigger=$._config.autoscaling_distributor_oom_scale_out_enabled,
       weight=weight,
     ) + (
       {

@@ -132,6 +132,13 @@ func DeleteTempCheckpoints(logger *slog.Logger, dir string) error {
 	return nil
 }
 
+const (
+	// metadataBatchSize is how many series a single checkpoint metadata record covers.
+	metadataBatchSize = 1000
+	// flushThreshold is how many encoded bytes accumulate before they are written out.
+	flushThreshold = 1 * 1024 * 1024
+)
+
 // Checkpoint creates a compacted checkpoint of segments in range [from, to] in the given WAL.
 // It includes the most recent checkpoint if it exists.
 // All series not satisfying keep, samples/exemplars below mint, tombstones not
@@ -149,11 +156,8 @@ func DeleteTempCheckpoints(logger *slog.Logger, dir string) error {
 // This makes it easy to read it through the WAL package and concatenate
 // it with the original WAL.
 //
-// writeMinValidTime controls whether the checkpoint also carries a record of mint, readable
-// back with ReadMinValidTime. It is opt-in because not every caller's own replay path
-// tolerates an unrecognized record type equally gracefully; callers that don't consume
-// ReadMinValidTime should pass false.
-func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64, enableSTStorage, writeMinValidTime bool) (*CheckpointStats, error) {
+// The checkpoint starts with the minimum valid time, readable with ReadMinValidTime.
+func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64, enableSTStorage bool) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
 	var sgmReader io.ReadCloser
 
@@ -205,32 +209,30 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		os.RemoveAll(cpdirtmp)
 	}()
 
-	if writeMinValidTime {
-		// Persist mint as the checkpoint's first record, so a restart can recover it without
-		// depending on whether any block on disk happens to reflect it: a block produced by
-		// CompactSelectedSeries or CompactStaleHead is deliberately excluded from that search,
-		// and a truncation whose range had nothing left to write never produces a block at all.
-		//
-		// mint by itself is only guaranteed to be the highest ever used within this process:
-		// the guard that makes truncateWAL's calls strictly increasing lives in memory
-		// (Head.lastWALTruncationTime) and resets on every restart, so a later checkpoint
-		// could otherwise persist a lower mint than an earlier one already did. Read back
-		// whatever the previous checkpoint recorded and keep the higher of the two, so the
-		// persisted value never regresses across restarts. This is also what makes it safe to
-		// unconditionally drop the previous checkpoint's own copy of this record further down:
-		// its value has already been folded into the one written here.
-		persistedMinValidTime := mint
-		previous, ok, err := ReadMinValidTime(w.Dir())
-		if err != nil {
-			return nil, fmt.Errorf("read previous min valid time: %w", err)
-		}
-		if ok && previous > persistedMinValidTime {
-			persistedMinValidTime = previous
-		}
-		var minValidTimeEnc record.Encoder
-		if err := cp.Log(minValidTimeEnc.MinValidTime(persistedMinValidTime, nil)); err != nil {
-			return nil, fmt.Errorf("write min valid time record: %w", err)
-		}
+	// Persist mint as the checkpoint's first record, so a restart can recover it without
+	// depending on whether any block on disk happens to reflect it: a block produced by
+	// CompactSelectedSeries or CompactStaleHead is deliberately excluded from that search,
+	// and a truncation whose range had nothing left to write never produces a block at all.
+	//
+	// mint by itself is only guaranteed to be the highest ever used within this process:
+	// the guard that makes truncateWAL's calls strictly increasing lives in memory
+	// (Head.lastWALTruncationTime) and resets on every restart, so a later checkpoint
+	// could otherwise persist a lower mint than an earlier one already did. Read back
+	// whatever the previous checkpoint recorded and keep the higher of the two, so the
+	// persisted value never regresses across restarts. This is also what makes it safe to
+	// unconditionally drop the previous checkpoint's own copy of this record further down:
+	// its value has already been folded into the one written here.
+	persistedMinValidTime := mint
+	previous, ok, err := ReadMinValidTime(w.Dir())
+	if err != nil {
+		return nil, fmt.Errorf("read previous min valid time: %w", err)
+	}
+	if ok && previous > persistedMinValidTime {
+		persistedMinValidTime = previous
+	}
+	var minValidTimeEnc record.Encoder
+	if err := cp.Log(minValidTimeEnc.MinValidTime(persistedMinValidTime, nil)); err != nil {
+		return nil, fmt.Errorf("write min valid time record: %w", err)
 	}
 
 	r := NewReader(sgmReader)
@@ -460,8 +462,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		}
 		recs = append(recs, buf[start:])
 
-		// Flush records in 1 MB increments.
-		if len(buf) > 1*1024*1024 {
+		if len(buf) > flushThreshold {
 			if err := cp.Log(recs...); err != nil {
 				return nil, fmt.Errorf("flush records: %w", err)
 			}
@@ -479,13 +480,33 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		return nil, fmt.Errorf("flush records: %w", err)
 	}
 
-	// Flush latest metadata records for each series.
-	if len(latestMetadataMap) > 0 {
-		latestMetadata := make([]record.RefMetadata, 0, len(latestMetadataMap))
-		for _, m := range latestMetadataMap {
-			latestMetadata = append(latestMetadata, m)
+	// Flush the latest metadata record for each series. Batching caps the size of
+	// a single record, which bounds both the buffer built here and the buffer a
+	// Reader reassembles the record into on the way back out.
+	buf, recs = buf[:0], recs[:0]
+	metadata = metadata[:0]
+	remaining := len(latestMetadataMap)
+	for _, m := range latestMetadataMap {
+		metadata = append(metadata, m)
+		remaining--
+		if len(metadata) < metadataBatchSize && remaining > 0 {
+			continue
 		}
-		if err := cp.Log(enc.Metadata(latestMetadata, buf[:0])); err != nil {
+
+		start := len(buf)
+		buf = enc.Metadata(metadata, buf)
+		recs = append(recs, buf[start:])
+		metadata = metadata[:0]
+
+		if len(buf) > flushThreshold {
+			if err := cp.Log(recs...); err != nil {
+				return nil, fmt.Errorf("flush metadata records: %w", err)
+			}
+			buf, recs = buf[:0], recs[:0]
+		}
+	}
+	if len(recs) > 0 {
+		if err := cp.Log(recs...); err != nil {
 			return nil, fmt.Errorf("flush metadata records: %w", err)
 		}
 	}

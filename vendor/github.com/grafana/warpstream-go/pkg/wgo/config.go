@@ -71,9 +71,11 @@ type Config struct {
 	// purges agent-stats entries for agents that have left the cluster.
 	MetadataRefreshInterval time.Duration
 
-	// OnDemandMetadataRefreshInterval is the minimum time between the start of
-	// Metadata refreshes triggered by routing misses. Must be > 0 and no
-	// greater than MetadataRefreshInterval.
+	// OnDemandMetadataRefreshInterval is the shortest gap between the start of
+	// on-demand Metadata refreshes. Repeated on-demand fetches double that gap
+	// up to MetadataRefreshInterval, and a periodic fetch puts it back. That
+	// includes a routing miss, and follow-ups while a refresh keeps excluding
+	// a leader. Must be > 0 and no greater than MetadataRefreshInterval.
 	OnDemandMetadataRefreshInterval time.Duration
 }
 
@@ -335,9 +337,10 @@ func WithMetadataRefreshInterval(d time.Duration) Opt {
 	return opt{func(c *Config) { c.MetadataRefreshInterval = d }}
 }
 
-// WithOnDemandMetadataRefreshInterval sets the minimum time between the start
-// of Metadata refreshes triggered by routing misses. It must be no greater
-// than the background MetadataRefreshInterval.
+// WithOnDemandMetadataRefreshInterval sets the shortest gap between the start
+// of on-demand Metadata refreshes. Repeated on-demand fetches double that gap
+// up to the background MetadataRefreshInterval, which puts the gap back when
+// it runs. The gap must be no greater than that interval.
 func WithOnDemandMetadataRefreshInterval(d time.Duration) Opt {
 	return opt{func(c *Config) { c.OnDemandMetadataRefreshInterval = d }}
 }

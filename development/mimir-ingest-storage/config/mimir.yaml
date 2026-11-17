@@ -78,7 +78,7 @@ memberlist:
     enabled: true
 
 ruler:
-  alertmanager_url: http://alertmanager-1:8041/alertmanager,http://alertmanager-2:8042/alertmanager,http://alertmanager-3:8043/alertmanager
+  alertmanager_url: http://alertmanager-1:8080/alertmanager
   # Force the ruler to restore the state of any alert with a "for" period longer than 1s.
   for_grace_period: 1s
   # Evaluate rules via query-frontend (remote rule evaluation).
@@ -115,9 +115,7 @@ overrides_exporter:
 
 distributor:
   usage_tracker_client:
-    use_sync_batched_tracking: true
     sync_batch_delay: 50ms
-    use_batched_tracking: true
     requests_hedging_delay: 500ms
 
 usage_tracker:
@@ -156,6 +154,7 @@ usage_tracker:
 limits:
   native_histograms_ingestion_enabled: true
   ingestion_rate: 100000
+  max_global_exemplars_per_user: 100000
 
 runtime_config:
   file: ./config/runtime.yaml
@@ -163,3 +162,7 @@ runtime_config:
 server:
   log_level: info
   trace_request_headers: true
+
+# Do not send anonymous usage reports from a dev environment, like microservices mode.
+usage_stats:
+  enabled: false

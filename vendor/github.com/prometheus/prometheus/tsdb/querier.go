@@ -159,6 +159,9 @@ type blockQuerier struct {
 }
 
 // NewBlockQuerier returns a querier against the block reader and requested min and max time range.
+// If b is a head, such as a *RangeHead, the querier is not safe for concurrent
+// use from multiple goroutines, and neither are the series sets and series
+// obtained from it: different series must not be iterated concurrently either.
 func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 	q, err := newBlockBaseQuerier(b, mint, maxt)
 	if err != nil {
@@ -238,6 +241,9 @@ type blockChunkQuerier struct {
 }
 
 // NewBlockChunkQuerier returns a chunk querier against the block reader and requested min and max time range.
+// If b is a head, such as a *RangeHead, the querier is not safe for concurrent
+// use from multiple goroutines, and neither are the series sets and series
+// obtained from it: different series must not be iterated concurrently either.
 func NewBlockChunkQuerier(b BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 	q, err := newBlockBaseQuerier(b, mint, maxt)
 	if err != nil {
@@ -893,8 +899,20 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 	// Use the single chunk if possible.
 	if p.currMeta.Chunk != nil {
 		if len(p.bufIter.Intervals) == 0 {
+			if copyHeadChunk {
+				if safeChunk, ok := p.currMeta.Chunk.(*safeHeadChunk); ok {
+					it, filtersSamples := safeChunk.iteratorForChunkCopy(p.bufIter.Iter)
+					if it != nil {
+						p.bufIter.Iter = it
+					}
+					if filtersSamples {
+						p.currDelIter = &p.bufIter
+						return true
+					}
+				}
+			}
 			// If there is no overlap with deletion intervals and a single chunk is
-			// returned, we can take chunk as it is.
+			// returned, we can take it as is when it contains only visible samples.
 			p.currDelIter = nil
 			return true
 		}
@@ -1508,10 +1526,12 @@ func (m mergedStringIter) Err() error {
 }
 
 // DeletedIterator wraps chunk Iterator and makes sure any deleted metrics are not returned.
+// To reuse it, set both Iter and Intervals; no other state needs resetting.
 type DeletedIterator struct {
 	// Iter is an Iterator to be wrapped.
 	Iter chunkenc.Iterator
-	// Intervals are the deletion intervals.
+	// Intervals are the deletion intervals, sorted by Mint in ascending order.
+	// The iterator drops intervals from the front as it moves past them.
 	Intervals tombstones.Intervals
 }
 

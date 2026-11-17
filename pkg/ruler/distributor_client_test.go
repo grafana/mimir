@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc/encoding"
 	grpcgzip "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/mem"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -39,11 +40,12 @@ import (
 type mockDistributorServer struct {
 	distributorpb.UnimplementedDistributorServer
 
-	mu         sync.Mutex
-	requests   []*mimirpb.WriteRequest
-	userIDs    []string
-	errs       []error
-	errsByCall map[int]error
+	mu              sync.Mutex
+	requests        []*mimirpb.WriteRequest
+	userIDs         []string
+	requestMetadata []metadata.MD
+	errs            []error
+	errsByCall      map[int]error
 
 	blockUntilContextDone bool
 	onPush                func(calls int)
@@ -65,6 +67,11 @@ func (m *mockDistributorServer) Push(ctx context.Context, req *mimirpb.WriteRequ
 
 	m.requests = append(m.requests, req)
 	m.userIDs = append(m.userIDs, userID)
+	m.requestMetadata = append(m.requestMetadata, metadata.MD{
+		"client-id":     metadata.ValueFromIncomingContext(ctx, "client-id"),
+		"x-scope-orgid": metadata.ValueFromIncomingContext(ctx, "x-scope-orgid"),
+		"test-metadata": metadata.ValueFromIncomingContext(ctx, "test-metadata"),
+	})
 	calls := len(m.requests)
 	if m.onPush != nil {
 		m.onPush(calls)
@@ -757,4 +764,54 @@ func TestDistributorConfig_Validate(t *testing.T) {
 		require.EqualError(t, cfg.Validate(), `ruler's distributor client gRPC settings: unsupported compression type: "s2"`)
 		require.Empty(t, cfg.GRPCClientConfig.CustomCompressors)
 	})
+}
+
+func TestDistributorGRPCClient_ClientMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		split            bool
+		retry            bool
+		existingClientID string
+		expectedCalls    int
+	}{
+		{name: "ordinary write", expectedCalls: 1},
+		{name: "split write", split: true, expectedCalls: 4},
+		{name: "retried split", split: true, retry: true, expectedCalls: 5},
+		{name: "existing client metadata", existingClientID: "other", expectedCalls: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := &mockDistributorServer{}
+			if tc.retry {
+				srv.errsByCall = map[int]error{2: status.Error(codes.Unavailable, "retry")}
+			}
+			req := newTestWriteRequestWithSeries(4)
+			maxSize := maxWriteRequestSizeForOneSeries(req)
+			client := setupDistributorGRPCClient(t, srv, log.NewNopLogger(), func(cfg *DistributorConfig) {
+				if tc.split {
+					cfg.GRPCClientConfig.MaxSendMsgSize = maxSize
+				}
+			})
+			originalMD := metadata.Pairs("test-metadata", "retained")
+			expectedClientIDs := []string{"ruler"}
+			if tc.existingClientID != "" {
+				originalMD.Set("client-id", tc.existingClientID)
+				expectedClientIDs = []string{tc.existingClientID, "ruler"}
+			}
+			ctx := metadata.NewOutgoingContext(user.InjectOrgID(t.Context(), "test-user"), originalMD.Copy())
+			_, err := client.Push(ctx, req)
+			require.NoError(t, err)
+			unchangedMD, ok := metadata.FromOutgoingContext(ctx)
+			require.True(t, ok)
+			require.Equal(t, originalMD, unchangedMD)
+
+			srv.mu.Lock()
+			defer srv.mu.Unlock()
+			require.Len(t, srv.requestMetadata, tc.expectedCalls)
+			for _, md := range srv.requestMetadata {
+				require.Equal(t, expectedClientIDs, md.Get("client-id"))
+				require.Equal(t, []string{"test-user"}, md.Get("x-scope-orgid"))
+				require.Equal(t, []string{"retained"}, md.Get("test-metadata"))
+			}
+		})
+	}
 }

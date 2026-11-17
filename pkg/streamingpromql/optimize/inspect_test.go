@@ -69,7 +69,7 @@ func TestWalk(t *testing.T) {
 			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 
-			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, nil, observer)
 			require.NoError(t, err)
 
 			visitor := NewTestVisitor(t, testCase.skipChildrenOf)
@@ -91,7 +91,7 @@ func BenchmarkWalk(b *testing.B) {
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(b, err)
 
-	p, err := planner.NewQueryPlan(ctx, query, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
+	p, err := planner.NewQueryPlan(ctx, query, timeRange, streamingpromql.DefaultLookbackDelta, false, nil, observer)
 	require.NoError(b, err)
 
 	visitor := optimize.VisitorFunc(func(node planning.Node, path []planning.Node) (bool, error) {
@@ -191,7 +191,7 @@ func TestInspectSelectors(t *testing.T) {
 			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 
-			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, nil, observer)
 			require.NoError(t, err)
 
 			res := optimize.InspectSelectors(p.Root)

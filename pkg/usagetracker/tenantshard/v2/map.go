@@ -6,7 +6,6 @@
 package v2
 
 import (
-	"iter"
 	"math"
 	"sync"
 
@@ -18,13 +17,15 @@ import (
 const (
 	indexEntryBits = 7
 
-	// NumShards is the number of shards used by the tracker store per tenant.
-	NumShards = 16
-
 	// maxAvgGroupLoad was 7 in dolthub/swiss, but we trade in some memory for less CPU by having to check less entries.
 	maxAvgGroupLoad = groupSize / 2
 	// last is the last element in the group, just to make the code more readable
 	last = groupSize - 1
+
+	// groupsPerBlock is the number of groups that Cleanup checks at once: the data of 8 groups fills one
+	// 64-byte cache line. The number of groups is always a multiple of it, see numGroups.
+	// Cleanup is unrolled by hand for exactly this value.
+	groupsPerBlock = 8
 )
 
 // Map is an open-addressing hash map based on Abseil's flat_hash_map.
@@ -46,6 +47,10 @@ type Map struct {
 
 	resident uint32
 	limit    uint32
+
+	// numShards is the total number of shards the owning tenant is split into.
+	// It is used to derive the per-shard target size from the total tenant limit.
+	numShards uint32
 
 	// spilled is the number of groups that (may) have spilled to the next one.
 	// i.e. their last slot is empty (either by data or by a spillmark)
@@ -87,14 +92,17 @@ type prefix uint8
 type suffix uint64
 
 // New constructs a Map.
-func New(sz uint32) (m *Map) {
+// numShards is the total number of shards the owning tenant is split into; it is used to
+// derive the per-shard target size from the total tenant limit during rehashes.
+func New(sz uint32, numShards uint32) (m *Map) {
 	groups := numGroups(sz)
 	return &Map{
 		index: make([]index, groups),
 		keys:  make([]keys, groups),
 		data:  make([]data, groups),
 
-		limit: groups * maxAvgGroupLoad,
+		limit:     groups * maxAvgGroupLoad,
+		numShards: numShards,
 	}
 }
 
@@ -271,32 +279,56 @@ func (m *Map) Stats() Stats {
 }
 
 func (m *Map) Cleanup(watermark clock.Minutes, limit *atomic.Uint64) int {
+	// Each group is checked as one uint64, without a branch per slot (see expiredSlots), and the groups are
+	// checked a block at a time, with one branch per block: a block with nothing to remove is not written.
+	// A block that has something to remove is written whole: clearSlots writes a group with nothing to remove
+	// back unchanged, and the cache lines of that block's data and index are dirty anyway.
+	//
+	// The loop below is intentionally unrolled and doesn't use helper functions,
+	// as those helpers become too expensive to inline and we end up paying a function call.
 	removed := 0
-	for i := range m.data {
-		occupied := m.index[i].matchOccupied()
-		for occupied != 0 {
-			j := nextMatch(&occupied)
-			if watermark.GreaterOrEqualThan(m.data[i][j].clockMinutes()) {
-				removed++
-				m.resident--
+	w := loBits * uint64(watermark)
+	for b := 0; b < len(m.data); b += groupsPerBlock {
+		d := (*[groupsPerBlock]data)(m.data[b:])
+		// x holds a block of groups, but represented as uint64.
+		var x [groupsPerBlock]uint64
+		x[0] = *groupWord(&d[0])
+		x[1] = *groupWord(&d[1])
+		x[2] = *groupWord(&d[2])
+		x[3] = *groupWord(&d[3])
+		x[4] = *groupWord(&d[4])
+		x[5] = *groupWord(&d[5])
+		x[6] = *groupWord(&d[6])
+		x[7] = *groupWord(&d[7])
 
-				if j == last {
-					// This is the last element, if it was previously set,
-					// then group may have spilled to the next one.
-					// We need to keep that signal, so we leave a spillmark here.
-					m.data[i][j] = spillmark
-					// We need to leave spillmark in the data because that's what iterator uses.
-					m.index[i][j] = spillmark
-					// We don't need to touch the keys, because nobody will read them if index/data is a spillmark.
-					// Keys are groups of uint64 that utilize an entire cache line, better to avoid touching them.
-				} else {
-					// This is not the last element, so just mark it as empty.
-					m.data[i][j] = empty
-					m.index[i][j] = empty
-				}
-			}
+		// r holds the slots to remove in each group of the block.
+		var r [groupsPerBlock]uint64
+		r[0] = expiredSlots(x[0], w) &^ freeSlots(x[0])
+		r[1] = expiredSlots(x[1], w) &^ freeSlots(x[1])
+		r[2] = expiredSlots(x[2], w) &^ freeSlots(x[2])
+		r[3] = expiredSlots(x[3], w) &^ freeSlots(x[3])
+		r[4] = expiredSlots(x[4], w) &^ freeSlots(x[4])
+		r[5] = expiredSlots(x[5], w) &^ freeSlots(x[5])
+		r[6] = expiredSlots(x[6], w) &^ freeSlots(x[6])
+		r[7] = expiredSlots(x[7], w) &^ freeSlots(x[7])
+
+		if r[0]|r[1]|r[2]|r[3]|r[4]|r[5]|r[6]|r[7] == 0 {
+			continue
 		}
+
+		idx := (*[groupsPerBlock]index)(m.index[b:])
+		removed += 0 + // Just to align the lines below.
+			clearSlots(&idx[0], &d[0], x[0], r[0]) +
+			clearSlots(&idx[1], &d[1], x[1], r[1]) +
+			clearSlots(&idx[2], &d[2], x[2], r[2]) +
+			clearSlots(&idx[3], &d[3], x[3], r[3]) +
+			clearSlots(&idx[4], &d[4], x[4], r[4]) +
+			clearSlots(&idx[5], &d[5], x[5], r[5]) +
+			clearSlots(&idx[6], &d[6], x[6], r[6]) +
+			clearSlots(&idx[7], &d[7], x[7], r[7])
 	}
+
+	m.resident -= uint32(removed)
 	if limit == nil {
 		return removed
 	}
@@ -329,10 +361,10 @@ func (m *Map) EnsureCapacity(n uint32) {
 }
 
 // nextSize computes the number of groups for the next rehash.
-// limit is the total tenant series limit across all shards; it is divided by NumShards internally.
+// limit is the total tenant series limit across all shards; it is divided by m.numShards internally.
 // limit=0 means no limit (used by Load): grows by resident*1.25.
 func (m *Map) nextSize(limit uint64) uint32 {
-	perShard := limit / NumShards
+	perShard := limit / uint64(m.numShards)
 	alive := uint64(m.resident)
 	target := alive * 5 / 4
 	// Only let the limit influence growth when it represents a real constraint.
@@ -366,13 +398,15 @@ func (m *Map) rehash(groups uint32) {
 	}
 }
 
-// numGroups returns the minimum number of groups needed to store |n| elems.
+// numGroups returns the minimum number of groups needed to store |n| elems, rounded up to whole blocks of
+// groupsPerBlock groups, which Cleanup relies on.
 func numGroups(n uint32) uint32 {
 	if n == 0 {
-		return 1
+		return groupsPerBlock
 	}
 	// Use (n-1)/d+1 instead of (n+d-1)/d to avoid uint32 overflow when n is large.
-	return (n-1)/maxAvgGroupLoad + 1
+	groups := (n-1)/maxAvgGroupLoad + 1
+	return (groups + groupsPerBlock - 1) / groupsPerBlock * groupsPerBlock
 }
 
 // splitHash extracts the prefix and suffix components from a 64 bit hash.
@@ -393,45 +427,63 @@ func fastModN(x, n uint32) uint32 {
 	return uint32((uint64(x) * uint64(n)) >> 32)
 }
 
-var (
-	keysPool = &sync.Pool{New: func() any { return new([]keys) }}
-	dataPool = &sync.Pool{New: func() any { return new([]data) }}
-)
+// iterateGroupsPerLock is how many groups Iterate copies per lock hold: 1 MB of keys and 128 KB of data,
+// tens of microseconds.
+const iterateGroupsPerLock = 16 << 10
 
-func pooledClone[T any](input []T, pool *sync.Pool) *[]T {
-	pooled := pool.Get().(*[]T)
-	if cap(*pooled) > len(input) {
-		*pooled = (*pooled)[:len(input)]
-	} else {
-		*pooled = make([]T, len(input))
-	}
-	copy(*pooled, input)
-	return pooled
+// iterateChunk holds the groups that Iterate copies in one lock hold.
+type iterateChunk struct {
+	keys [iterateGroupsPerLock]keys
+	data [iterateGroupsPerLock]data
 }
 
-func (m *Map) Items() (length int, iterator iter.Seq2[uint64, clock.Minutes]) {
-	keysClone := pooledClone(m.keys, keysPool)
-	dataClone := pooledClone(m.data, dataPool)
-	count := m.Count()
+var iterateChunkPool = sync.Pool{New: func() any { return new(iterateChunk) }}
 
-	return count, func(yield func(uint64, clock.Minutes) bool) {
-		if count == 0 {
-			return
-		}
+// Iterate calls yield for every series in the map. Unlike every other method, the caller must NOT hold the
+// lock: Iterate takes it for a few groups at a time, and calls yield with the lock released.
+// A series put or removed while Iterate runs may or may not be yielded. A series removed after its group was
+// copied and put again into a group not yet copied is yielded twice, once with each value.
+func (m *Map) Iterate(yield func(key uint64, value clock.Minutes)) {
+	m.iterate(iterateGroupsPerLock, yield)
+}
 
-		for i, g := range *dataClone {
-			for j, entry := range g {
-				if entry == empty || entry == spillmark {
-					// There's nothing here.
-					continue
-				}
-				if !yield((*keysClone)[i][j], entry.clockMinutes()) {
-					return // stop iteration
-				}
+func (m *Map) iterate(groupsPerLock int, yield func(key uint64, value clock.Minutes)) {
+	buf := iterateChunkPool.Get().(*iterateChunk)
+	defer iterateChunkPool.Put(buf)
+	groupsPerLock = min(groupsPerLock, iterateGroupsPerLock)
+
+	m.Lock()
+	rehashes, srcKeys, srcData := m.rehashes, m.keys, m.data
+	m.Unlock()
+
+	rehashed := false
+	for b := 0; b < len(srcData); b += groupsPerLock {
+		if !rehashed {
+			m.Lock()
+			// A rehash moves the series to new arrays and never writes the old ones again,
+			// so once it happens the rest of them can be read without the lock.
+			rehashed = m.rehashes != rehashes
+			if rehashed {
+				m.Unlock()
 			}
 		}
-
-		keysPool.Put(keysClone)
-		dataPool.Put(dataClone)
+		// Copying the chunk holds the lock for a tenth of the time that finding its occupied slots takes.
+		chunkKeys := copyChunk(buf.keys[:groupsPerLock], srcKeys[b:])
+		chunkData := copyChunk(buf.data[:groupsPerLock], srcData[b:])
+		if !rehashed {
+			m.Unlock()
+		}
+		for g := range chunkData {
+			occupied := occupiedSlots(*groupWord(&chunkData[g]))
+			for occupied != 0 {
+				s := nextMatch(&occupied)
+				yield(chunkKeys[g][s], chunkData[g][s].clockMinutes())
+			}
+		}
 	}
+}
+
+// copyChunk copies as many elements of src as fit into dst, and returns the part of dst that was written.
+func copyChunk[T any](dst, src []T) []T {
+	return dst[:copy(dst, src)]
 }

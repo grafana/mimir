@@ -33,6 +33,7 @@ import (
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -50,6 +51,9 @@ type TSDBBuilder struct {
 	logger             log.Logger
 	tsdbBuilderMetrics tsdbBuilderMetrics
 	tsdbMetrics        *mimir_tsdb.TSDBMetrics
+
+	// verifyBlock verifies the integrity of a block before upload. Overridable in tests.
+	verifyBlock func(ctx context.Context, logger log.Logger, blockDir string, minTime, maxTime int64, checkChunks bool) error
 
 	// Number of series in memory across all tenants.
 	seriesCount atomic.Int64
@@ -88,6 +92,7 @@ func NewTSDBBuilder(
 		logger:             logger,
 		tsdbBuilderMetrics: tsdbBuilderMetrics,
 		tsdbMetrics:        tsdbMetrics,
+		verifyBlock:        block.VerifyBlock,
 	}
 }
 
@@ -115,7 +120,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 		return fmt.Errorf("get tsdb for tenant %s: %w", tenantID, err)
 	}
 
-	app := db.Appender(ctx).(extendedAppender)
+	app := db.AppenderV2(ctx).(extendedAppender)
 	defer func() {
 		if err != nil {
 			if e := app.Rollback(); e != nil && !errors.Is(e, tsdb.ErrAppenderClosed) {
@@ -134,6 +139,11 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 
 		discardedSamples = 0
 	)
+
+	appOptions := storage.AppendV2Options{}
+	// Zero samples for created timestamps must never go into the out-of-order head.
+	zeroSampleOptions := storage.AppendV2Options{RejectOutOfOrder: true}
+
 	for _, ts := range req.Timeseries {
 		mimirpb.FromLabelAdaptersOverwriteLabels(&labelsBuilder, ts.Labels, &nonCopiedLabels)
 		hash := nonCopiedLabels.Hash()
@@ -148,14 +158,14 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 				(!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
 				if ref != 0 {
 					// If the cached reference exists, we try to use it.
-					_, err = app.AppendSTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
 				} else {
 					// Copy the label set because TSDB may retain it.
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.AppendSTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+					ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
 				}
-				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
 					// if the start time is unknown, then it should equal to the timestamp of the first sample,
 					// which will mean a created timestamp equal to the timestamp of the first sample for later
 					// samples. Thus we ignore if zero sample would cause duplicate.
@@ -169,14 +179,14 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 
 			if ref != 0 {
 				// If the cached reference exists, we try to use it.
-				if _, err = app.Append(ref, copiedLabels, s.TimestampMs, s.Value); err == nil {
+				if _, err = app.Append(ref, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					continue
 				}
 			} else {
 				// Copy the label set because TSDB may retain it.
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
+				if ref, err = app.Append(0, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					continue
 				}
 			}
@@ -207,17 +217,16 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 			}
 
 			if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
-				// AppendHistogramSTZeroSample copies Schema, ZeroThreshold and CustomValues from
-				// the histogram it is given onto the zero sample it injects.
+				zih, zfh := mimir_tsdb.ZeroHistogramFor(ih, fh)
 				if ref != 0 {
-					_, err = app.AppendHistogramSTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
 				} else {
 					// Copy the label set because both TSDB and the active series tracker may retain it.
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.AppendHistogramSTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+					ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
 				}
-				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
 					// if the start time is unknown, then it should equal to the timestamp of the first sample,
 					// which will mean a created timestamp equal to the timestamp of the first sample for later
 					// samples. Thus we ignore if zero sample would cause duplicate.
@@ -231,14 +240,14 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 
 			if ref != 0 {
 				// If the cached reference exists, we try to use it.
-				if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, ih, fh); err == nil {
+				if _, err = app.Append(ref, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 					continue
 				}
 			} else {
 				// Copy the label set because both TSDB and the active series tracker may retain it.
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
+				if ref, err = app.Append(0, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 					continue
 				}
 			}
@@ -340,6 +349,7 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		EnableOverlappingCompaction:          false,                                                // Always false since Mimir only uploads lvl 1 compacted blocks
 		OutOfOrderTimeWindow:                 b.limits.OutOfOrderTimeWindow(userID).Milliseconds(), // The unit must be same as our timestamps.
 		FloatChunkEncoding:                   b.limits.FloatChunkEncoding(userID),                  // Evaluated once at creation; no dynamic reload unlike the ingester.
+		EnableHistogramSTEncoding:            b.limits.HistogramSTEncodingEnabled(userID),
 		OutOfOrderCapMax:                     int64(b.cfg.BlocksStorage.TSDB.OutOfOrderCapacityMax),
 		EnableBiggerOOOBlockForOldSamples:    b.cfg.BlocksStorage.TSDB.BiggerOutOfOrderBlocksForOldSamples,
 		SecondaryHashFunction:                nil, // TODO(codesome): May needed when applying limits. Used to determine the owned series by an ingesters
@@ -498,12 +508,12 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 	}
 	for tenant, db := range b.tsdbs {
 		eg.Go(func() (err error) {
+			partitionStr := strconv.Itoa(int(tenant.partitionID))
 			defer func(t time.Time) {
 				if errors.Is(err, context.Canceled) {
 					// Don't track any metrics if context was cancelled. Otherwise, it might be misleading.
 					return
 				}
-				partitionStr := strconv.Itoa(int(tenant.partitionID))
 				if err != nil {
 					b.tsdbBuilderMetrics.compactAndUploadFailed.WithLabelValues(partitionStr).Inc()
 					return
@@ -521,6 +531,12 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 			var localMetas []tsdb.BlockMeta
 			for _, b := range db.Blocks() {
 				localMetas = append(localMetas, b.Meta())
+			}
+
+			if b.cfg.VerifyBlocksBeforeUpload {
+				if err := b.verifyBlocks(ctx, partitionStr, dbDir, localMetas); err != nil {
+					return err
+				}
 			}
 
 			if b.cfg.GenerateSparseIndexHeaders {
@@ -576,7 +592,7 @@ func (b *TSDBBuilder) Close() error {
 }
 
 type extendedAppender interface {
-	storage.Appender
+	storage.AppenderV2
 	storage.GetRef
 }
 
@@ -641,6 +657,33 @@ func (u *userTSDB) compactBlocks(ctx context.Context, blockRange, maxTime int64,
 	return nil
 }
 
+// verifyBlocks verifies the integrity of each block in the metas list in the directory, before it is uploaded.
+// On failure, the block's ULID and error are logged and the failure metric is incremented.
+func (b *TSDBBuilder) verifyBlocks(ctx context.Context, partition, dbDir string, metas []tsdb.BlockMeta) (err error) {
+	start := time.Now()
+	defer func() {
+		if errors.Is(err, context.Canceled) {
+			// Don't track any metrics if context was cancelled. Otherwise, it might be misleading.
+			return
+		}
+		b.tsdbBuilderMetrics.blockVerificationDuration.WithLabelValues(partition).Observe(time.Since(start).Seconds())
+	}()
+
+	for _, m := range metas {
+		blockDir := filepath.Join(dbDir, m.ULID.String())
+		if err := b.verifyBlock(ctx, b.logger, blockDir, m.MinTime, m.MaxTime, false); err != nil {
+			if errors.Is(err, context.Canceled) {
+				// The job was cancelled (e.g. another tenant failed), the block isn't corrupt.
+				return err
+			}
+			b.tsdbBuilderMetrics.blockVerificationFailed.WithLabelValues(partition).Inc()
+			level.Error(b.logger).Log("msg", "block verification failed", "block", m.ULID.String(), "err", err)
+			return fmt.Errorf("verify block %s: %w", m.ULID.String(), err)
+		}
+	}
+	return nil
+}
+
 // buildSparseIndexHeaders builds sparse index-headers for all blocks in the metas list in the directory.
 func (b *TSDBBuilder) buildSparseIndexHeaders(ctx context.Context, dbDir string, metas []tsdb.BlockMeta) error {
 	for _, m := range metas {
@@ -651,7 +694,7 @@ func (b *TSDBBuilder) buildSparseIndexHeaders(ctx context.Context, dbDir string,
 	return nil
 }
 
-// prepareSparseIndexHeader builds a sparse index-header for a single block.
+// buildSparseIndexHeader builds a sparse index-header for a single block.
 func (b *TSDBBuilder) buildSparseIndexHeader(ctx context.Context, dbDir string, blockID ulid.ULID) (err error) {
 	ll := log.With(b.logger, "id", blockID)
 	start := time.Now()

@@ -106,7 +106,7 @@ func TestBucketIndexBlocksFinder_GetBlocks(t *testing.T) {
 func BenchmarkBucketIndexBlocksFinder_GetBlocks(b *testing.B) {
 	const (
 		numBlocks        = 1000
-		numDeletionMarks = 100
+		numDeletionMarks = 250
 		userID           = "user-1"
 	)
 
@@ -127,7 +127,13 @@ func BenchmarkBucketIndexBlocksFinder_GetBlocks(b *testing.B) {
 	}
 	for i := 1; i <= numDeletionMarks; i++ {
 		id := ulid.MustNew(uint64(i), nil)
-		idx.BlockDeletionMarks = append(idx.BlockDeletionMarks, &bucketindex.BlockDeletionMark{ID: id, DeletionTime: time.Now().Unix()})
+		deletionTime := time.Now()
+		// Odd blocks have a mark older than the ignore deletion marks delay.
+		// GetBlocks excludes them.
+		if i%2 == 1 {
+			deletionTime = deletionTime.Add(-2 * time.Hour)
+		}
+		idx.BlockDeletionMarks = append(idx.BlockDeletionMarks, &bucketindex.BlockDeletionMark{ID: id, DeletionTime: deletionTime.Unix()})
 	}
 	require.NoError(b, bucketindex.WriteIndex(ctx, bkt, userID, nil, idx))
 	finder := prepareBucketIndexBlocksFinder(b, bkt)
@@ -136,7 +142,7 @@ func BenchmarkBucketIndexBlocksFinder_GetBlocks(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		blocks, _, err := finder.GetBlocks(ctx, userID, 100, 200)
-		if err != nil || len(blocks) != 11 {
+		if err != nil || len(blocks) != 6 {
 			b.Fail()
 		}
 	}

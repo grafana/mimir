@@ -66,26 +66,31 @@ var (
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval              time.Duration      `yaml:"split_queries_by_interval" category:"advanced"`
-	ResultsCache                        ResultsCacheConfig `yaml:"results_cache"`
-	CacheResults                        bool               `yaml:"cache_results"`
-	UseMQEForSplittingAndCachingResults bool               `yaml:"use_mimir_query_engine_for_splitting_and_caching_results" category:"experimental"`
-	CacheErrors                         bool               `yaml:"cache_errors"`
-	MaxRetries                          int                `yaml:"max_retries" category:"advanced"`
-	NotRunningTimeout                   time.Duration      `yaml:"not_running_timeout" category:"advanced"`
-	ShardedQueries                      bool               `yaml:"parallelize_shardable_queries"`
-	EnableRemoteExecution               bool               `yaml:"enable_remote_execution" category:"experimental"`
-	UseMQEForSharding                   bool               `yaml:"use_mimir_query_engine_for_sharding" category:"experimental"`
-	RewriteQueriesHistogram             bool               `yaml:"rewrite_histogram_queries" category:"experimental"`
-	TargetSeriesPerShard                uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
-	ActiveSeriesMaxShardConcurrency     int                `yaml:"active_series_max_shard_concurrency" category:"experimental"`
-	ActiveSeriesFramedResponses         bool               `yaml:"active_series_framed_responses" category:"experimental"`
+	SplitQueriesByInterval              time.Duration                    `yaml:"split_queries_by_interval" category:"advanced"`
+	ResultsCache                        ResultsCacheConfig               `yaml:"results_cache"`
+	CardinalityEstimationCache          CardinalityEstimationCacheConfig `yaml:"cardinality_estimation_cache" category:"experimental"`
+	CacheResults                        bool                             `yaml:"cache_results"`
+	UseMQEForSplittingAndCachingResults bool                             `yaml:"use_mimir_query_engine_for_splitting_and_caching_results" category:"experimental"`
+	CacheErrors                         bool                             `yaml:"cache_errors"`
+	MaxRetries                          int                              `yaml:"max_retries" category:"advanced"`
+	NotRunningTimeout                   time.Duration                    `yaml:"not_running_timeout" category:"advanced"`
+	ShardedQueries                      bool                             `yaml:"parallelize_shardable_queries"`
+	EnableRemoteExecution               bool                             `yaml:"enable_remote_execution" category:"experimental"`
+	UseMQEForSharding                   bool                             `yaml:"use_mimir_query_engine_for_sharding" category:"experimental"`
+	RewriteQueriesHistogram             bool                             `yaml:"rewrite_histogram_queries" category:"experimental"`
+	TargetSeriesPerShard                uint64                           `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
+	ActiveSeriesMaxShardConcurrency     int                              `yaml:"active_series_max_shard_concurrency" category:"experimental"`
+	ActiveSeriesFramedResponses         bool                             `yaml:"active_series_framed_responses" category:"experimental"`
 
 	SubquerySpinOff subqueryspinoff.Options `yaml:",inline"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
 	CacheKeyGenerator CacheKeyGenerator `yaml:"-"`
+
+	// CardinalityEstimationCacheClient allows to inject the cache used for cardinality estimates.
+	// If nil, the querymiddleware package uses the results cache.
+	CardinalityEstimationCacheClient cache.Cache `yaml:"-"`
 
 	// ExtraInstantQueryMiddlewares and ExtraRangeQueryMiddlewares allows to
 	// inject custom middlewares into the middleware chain of instant and
@@ -110,7 +115,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.NotRunningTimeout, "query-frontend.not-running-timeout", 2*time.Second, "Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up)")
 	f.DurationVar(&cfg.SplitQueriesByInterval, splitQueriesByIntervalFlag, 24*time.Hour, "Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.")
 	f.BoolVar(&cfg.CacheResults, cacheResultsFlag, false, "Cache query results.")
-	f.BoolVar(&cfg.UseMQEForSplittingAndCachingResults, "query-frontend.use-mimir-query-engine-for-splitting-and-caching-results", false, fmt.Sprintf("Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE), and spinning off subqueries from instant queries inside MQE. This only has an effect if the corresponding feature is enabled (with -%v=true, -%v=true or -%v=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled.", splitQueriesByIntervalFlag, cacheResultsFlag, validation.SubquerySpinOffEnabledFlag))
+	f.BoolVar(&cfg.UseMQEForSplittingAndCachingResults, "query-frontend.use-mimir-query-engine-for-splitting-and-caching-results", true, fmt.Sprintf("Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE), and spinning off subqueries from instant queries inside MQE. This only has an effect if the corresponding feature is enabled (with -%v=true, -%v=true or -%v=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled.", splitQueriesByIntervalFlag, cacheResultsFlag, validation.SubquerySpinOffEnabledFlag))
 	f.BoolVar(&cfg.CacheErrors, "query-frontend.cache-errors", false, "Cache non-transient errors from queries.")
 	f.BoolVar(&cfg.ShardedQueries, ShardedQueriesFlag, true, "True to enable query sharding.")
 	f.BoolVar(&cfg.EnableRemoteExecution, EnableRemoteExecutionFlag, true, "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.")
@@ -124,6 +129,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&cfg.ExtraPropagateHeaders, "query-frontend.extra-propagated-headers", "Comma-separated list of request header names to allow to pass through to the rest of the query path. This is in addition to a list of required headers that the read path needs.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	cfg.ResultsCache.RegisterFlags(f)
+	cfg.CardinalityEstimationCache.RegisterFlags(f)
 
 	// This field isn't user-configurable, but we still need to set a default value so that subsequent Add() calls don't panic due to a nil map.
 	cfg.InternalFunctionNames = FunctionNamesSet{}
@@ -141,6 +147,10 @@ func (cfg *Config) Validate() error {
 		if err := cfg.ResultsCache.Validate(); err != nil {
 			return errors.Wrap(err, "invalid query-frontend results cache config")
 		}
+	}
+
+	if err := cfg.CardinalityEstimationCache.Validate(); err != nil {
+		return errors.Wrap(err, "invalid query-frontend cardinality estimation cache config")
 	}
 
 	if !slices.Contains(allFormats, cfg.QueryResultResponseFormat) {
@@ -242,11 +252,12 @@ func NewTripperware(
 	engineOpts promql.EngineOpts,
 	ingestStorageOffsetsReader ReadConsistencyOffsetsReader,
 	useRemoteExecution bool,
+	useQueueReservation bool,
 	streamingEngine *streamingpromql.Engine,
 	registerer prometheus.Registerer,
 	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, queryLimits, codec, cacheClient, cacheExtractor, engine, engineOpts, ingestStorageOffsetsReader, useRemoteExecution, streamingEngine, registerer, memoryConsumptionTrackerFactory)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, queryLimits, codec, cacheClient, cacheExtractor, engine, engineOpts, ingestStorageOffsetsReader, useRemoteExecution, useQueueReservation, streamingEngine, registerer, memoryConsumptionTrackerFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -268,6 +279,7 @@ func newQueryTripperware(
 	engineOpts promql.EngineOpts,
 	ingestStorageOffsetsReader ReadConsistencyOffsetsReader,
 	useRemoteExecution bool,
+	useQueueReservation bool,
 	streamingEngine *streamingpromql.Engine,
 	registerer prometheus.Registerer,
 	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker,
@@ -281,6 +293,11 @@ func newQueryTripperware(
 		cacheClient = cache.NewVersioned(cacheClient, resultsCacheVersion, log)
 	}
 
+	cardinalityCacheClient := cacheClient
+	if cfg.CardinalityEstimationCacheClient != nil {
+		cardinalityCacheClient = cache.NewVersioned(cfg.CardinalityEstimationCacheClient, resultsCacheVersion, log)
+	}
+
 	retryMetrics := newRetryMetrics(registerer)
 
 	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(
@@ -290,6 +307,7 @@ func newQueryTripperware(
 		queryLimits,
 		codec,
 		cacheClient,
+		cardinalityCacheClient,
 		cacheKeyGenerator,
 		cacheExtractor,
 		engine,
@@ -308,7 +326,7 @@ func newQueryTripperware(
 		var queryHandler MetricsQueryHandler
 
 		if useRemoteExecution {
-			queryHandler = NewEngineQueryRequestRoundTripperHandler(streamingEngine, codec, log)
+			queryHandler = NewEngineQueryRequestRoundTripperHandler(streamingEngine, codec, useQueueReservation, log)
 		} else {
 			queryHandler = NewHTTPQueryRequestRoundTripperHandler(next, codec, log)
 		}
@@ -330,7 +348,7 @@ func newQueryTripperware(
 			cardinality = newRetryRoundTripper(cardinality, log, cfg.MaxRetries, retryMetrics)
 			series = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
 			labels = newRetryRoundTripper(labels, log, cfg.MaxRetries, retryMetrics)
-			activeSeries = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
+			activeSeries = newRetryRoundTripper(activeSeries, log, cfg.MaxRetries, retryMetrics)
 		}
 
 		// Shard active series requests using special middleware.
@@ -406,6 +424,7 @@ func newQueryMiddlewares(
 	queryLimits streamingpromql.QueryLimitsProvider,
 	codec Codec,
 	cacheClient cache.Cache,
+	cardinalityCacheClient cache.Cache,
 	cacheKeyGenerator CacheKeyGenerator,
 	cacheExtractor Extractor,
 	engine promql.QueryEngine,
@@ -556,7 +575,7 @@ func newQueryMiddlewares(
 		// When splitting and caching run inside MQE, this is handled by the cardinality
 		// estimator inside the sharding optimisation pass.
 		if cfg.CardinalityBasedShardingEnabled() && !cfg.UseMQEForSplittingAndCachingResults {
-			cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(cacheClient, log, registerer)
+			cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(cardinalityCacheClient, log, registerer)
 			queryRangeMiddleware = append(
 				queryRangeMiddleware,
 				newInstrumentMiddleware("cardinality_estimation", metrics),

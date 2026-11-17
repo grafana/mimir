@@ -1,7 +1,7 @@
 exporters:
   prometheus:
     endpoint: :8083
-  otlphttp:
+  otlp_http:
     endpoint: http://distributor-1:8000/otlp
 
 processors:
@@ -91,4 +91,4 @@ service:
     metrics:
       receivers: [prometheus]
       processors: [batch]
-      exporters: [otlphttp,prometheus]
+      exporters: [otlp_http,prometheus]

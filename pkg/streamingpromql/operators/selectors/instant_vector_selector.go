@@ -33,6 +33,7 @@ type InstantVectorSelector struct {
 	chunkIterator    chunkenc.Iterator
 	memoizedIterator *storage.MemoizedSeriesIterator
 	evaluationStats  *types.OperatorEvaluationStats
+	planningNodeId   int64
 
 	// metricNames captures the metric name of each series in SeriesMetadata, so that the smoothed
 	// modifier can emit per-series annotations once the series data has been examined in NextSeries
@@ -44,12 +45,13 @@ type InstantVectorSelector struct {
 
 var _ types.InstantVectorOperator = &InstantVectorSelector{}
 
-func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, returnSampleTimestamps, returnSampleTimestampsPreserveHistograms bool) *InstantVectorSelector {
+func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, returnSampleTimestamps, returnSampleTimestampsPreserveHistograms bool, planningNodeId int64) *InstantVectorSelector {
 	v := &InstantVectorSelector{
 		Selector:                                 selector,
 		MemoryConsumptionTracker:                 memoryConsumptionTracker,
 		ReturnSampleTimestamps:                   returnSampleTimestamps,
 		ReturnSampleTimestampsPreserveHistograms: returnSampleTimestampsPreserveHistograms,
+		planningNodeId:                           planningNodeId,
 	}
 
 	if selector.Smoothed {
@@ -276,8 +278,9 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 
 			// For consistency with Prometheus' engine, we convert each histogram point to an equivalent number of float points.
 			sampleCount := types.EquivalentFloatSampleCount(h)
-			v.evaluationStats.TrackSampleForInstantVectorSelector(stepT, sampleCount, matchesSubsets)
-
+			if err := v.evaluationStats.TrackSampleForInstantVectorSelector(stepT, sampleCount, matchesSubsets, v.planningNodeId); err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
 		} else {
 			// Only create the slice once we know the series is a histogram or not.
 			if len(data.Floats) == 0 {
@@ -288,7 +291,9 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
-			v.evaluationStats.TrackSampleForInstantVectorSelector(stepT, 1, matchesSubsets)
+			if err := v.evaluationStats.TrackSampleForInstantVectorSelector(stepT, 1, matchesSubsets, v.planningNodeId); err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
 			data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: f})
 		}
 	}

@@ -27,6 +27,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -74,6 +75,8 @@ type PrometheusRangeQueryRequest struct {
 	hints *Hints
 	// stats controls query engine stats collection for the request.
 	stats string
+	// explain controls collecting extra diagnostic information during query execution.
+	explain []string
 }
 
 func NewPrometheusRangeQueryRequest(
@@ -85,6 +88,7 @@ func NewPrometheusRangeQueryRequest(
 	options requestoptions.Options,
 	hints *Hints,
 	stats string,
+	explain []string,
 ) *PrometheusRangeQueryRequest {
 	r := &PrometheusRangeQueryRequest{
 		path:          urlPath,
@@ -99,6 +103,7 @@ func NewPrometheusRangeQueryRequest(
 		options:       options,
 		hints:         hints,
 		stats:         stats,
+		explain:       explain,
 	}
 	return r.updateMinMaxT()
 }
@@ -192,8 +197,12 @@ func (r *PrometheusRangeQueryRequest) GetStats() string {
 	return r.stats
 }
 
+func (r *PrometheusRangeQueryRequest) GetExplain() []string {
+	return r.explain
+}
+
 func (r *PrometheusRangeQueryRequest) GetQueryOpts() (promql.QueryOpts, error) {
-	return createQueryOpts(r.stats, r.lookbackDelta)
+	return createQueryOpts(r.stats, r.lookbackDelta, r.explain)
 }
 
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
@@ -278,6 +287,13 @@ func (r *PrometheusRangeQueryRequest) WithStats(stats string) (MetricsQueryReque
 	return &newRequest, nil
 }
 
+func (r *PrometheusRangeQueryRequest) WithExplain(explain []string) (MetricsQueryRequest, error) {
+	newRequest := *r
+	newRequest.headers = cloneHeaders(r.headers)
+	newRequest.explain = slices.Clone(explain)
+	return &newRequest, nil
+}
+
 // AddSpanTags writes the current `PrometheusRangeQueryRequest` parameters to the specified span tags
 // ("attributes" in OpenTelemetry parlance).
 func (r *PrometheusRangeQueryRequest) AddSpanTags(sp trace.Span) {
@@ -307,6 +323,8 @@ type PrometheusInstantQueryRequest struct {
 	hints *Hints
 	// stats controls stats collection for the request.
 	stats string
+	// explain controls collecting extra diagnostic information during query execution.
+	explain []string
 }
 
 func NewPrometheusInstantQueryRequest(
@@ -318,6 +336,7 @@ func NewPrometheusInstantQueryRequest(
 	options requestoptions.Options,
 	hints *Hints,
 	stats string,
+	explain []string,
 ) *PrometheusInstantQueryRequest {
 	r := &PrometheusInstantQueryRequest{
 		path:          urlPath,
@@ -330,6 +349,7 @@ func NewPrometheusInstantQueryRequest(
 		options:       options,
 		hints:         hints,
 		stats:         stats,
+		explain:       explain,
 	}
 	return r.updateMinMaxT()
 }
@@ -427,8 +447,12 @@ func (r *PrometheusInstantQueryRequest) GetStats() string {
 	return r.stats
 }
 
+func (r *PrometheusInstantQueryRequest) GetExplain() []string {
+	return r.explain
+}
+
 func (r *PrometheusInstantQueryRequest) GetQueryOpts() (promql.QueryOpts, error) {
-	return createQueryOpts(r.stats, r.lookbackDelta)
+	return createQueryOpts(r.stats, r.lookbackDelta, r.explain)
 }
 
 func (r *PrometheusInstantQueryRequest) WithID(id int64) (MetricsQueryRequest, error) {
@@ -504,6 +528,13 @@ func (r *PrometheusInstantQueryRequest) WithStats(stats string) (MetricsQueryReq
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
 	newRequest.stats = stats
+	return &newRequest, nil
+}
+
+func (r *PrometheusInstantQueryRequest) WithExplain(explain []string) (MetricsQueryRequest, error) {
+	newRequest := *r
+	newRequest.headers = cloneHeaders(r.headers)
+	newRequest.explain = slices.Clone(explain)
 	return &newRequest, nil
 }
 
@@ -1139,6 +1170,6 @@ func cloneHeaders(headers []*PrometheusHeader) []*PrometheusHeader {
 	return cp
 }
 
-func createQueryOpts(stats string, lookbackDelta time.Duration) (promql.QueryOpts, error) {
-	return promql.NewPrometheusQueryOpts(stats == "all", lookbackDelta, nil), nil
+func createQueryOpts(stats string, lookbackDelta time.Duration, explain []string) (promql.QueryOpts, error) {
+	return types.NewMimirQueryOpts(stats == "all", lookbackDelta, nil, types.ParseExplainValues(explain)), nil
 }

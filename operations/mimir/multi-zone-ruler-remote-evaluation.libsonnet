@@ -60,15 +60,15 @@
     $.newRulerQuerierZoneContainer('c', $.ruler_querier_zone_c_args, $.ruler_querier_zone_c_env_map),
 
   ruler_querier_zone_a_deployment: if !isZoneAEnabled then null else
-    $.newRulerQuerierZoneDeployment('a', $.ruler_querier_zone_a_container, $.ruler_querier_zone_a_node_affinity_matchers) +
+    $.newRulerQuerierZoneDeployment('a', $.ruler_querier_zone_a_container, $.ruler_querier_zone_a_node_affinity_matchers, $.ruler_querier_annotations) +
     (if !isRulerQuerierAutoscalingZoneAEnabled then {} else $.removeReplicasFromSpec),
 
   ruler_querier_zone_b_deployment: if !isZoneBEnabled then null else
-    $.newRulerQuerierZoneDeployment('b', $.ruler_querier_zone_b_container, $.ruler_querier_zone_b_node_affinity_matchers) +
+    $.newRulerQuerierZoneDeployment('b', $.ruler_querier_zone_b_container, $.ruler_querier_zone_b_node_affinity_matchers, $.ruler_querier_annotations) +
     (if !isRulerQuerierAutoscalingZoneBEnabled then {} else $.removeReplicasFromSpec),
 
   ruler_querier_zone_c_deployment: if !isZoneCEnabled then null else
-    $.newRulerQuerierZoneDeployment('c', $.ruler_querier_zone_c_container, $.ruler_querier_zone_c_node_affinity_matchers) +
+    $.newRulerQuerierZoneDeployment('c', $.ruler_querier_zone_c_container, $.ruler_querier_zone_c_node_affinity_matchers, $.ruler_querier_annotations) +
     (if !isRulerQuerierAutoscalingZoneCEnabled then {} else $.removeReplicasFromSpec),
 
   ruler_querier_zone_a_service: if !isZoneAEnabled then null else
@@ -94,10 +94,10 @@
     container.withArgs($.util.mapToFlags(args)) +
     (if std.length(extraEnvVarMap) > 0 then container.withEnvMixin(std.prune(extraEnvVarMap)) else {}),
 
-  newRulerQuerierZoneDeployment(zone, container, nodeAffinityMatchers=[])::
+  newRulerQuerierZoneDeployment(zone, container, nodeAffinityMatchers=[], annotations={})::
     local name = 'ruler-querier-zone-%s' % zone;
 
-    $.newQuerierDeployment(name, container, nodeAffinityMatchers) +
+    $.newQuerierDeployment(name, container, nodeAffinityMatchers, annotations) +
     deployment.mixin.spec.withReplicas(2) +
     deployment.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
 
@@ -160,15 +160,15 @@
     $.newRulerQueryFrontendZoneContainer('c', $.ruler_query_frontend_zone_c_args, $.ruler_query_frontend_zone_c_env_map),
 
   ruler_query_frontend_zone_a_deployment: if !isZoneAEnabled then null else
-    $.newRulerQueryFrontendZoneDeployment('a', $.ruler_query_frontend_zone_a_container, $.ruler_query_frontend_zone_a_node_affinity_matchers) +
+    $.newRulerQueryFrontendZoneDeployment('a', $.ruler_query_frontend_zone_a_container, $.ruler_query_frontend_zone_a_node_affinity_matchers, $.ruler_query_frontend_annotations) +
     (if !isRulerQueryFrontendAutoscalingZoneAEnabled then {} else $.removeReplicasFromSpec),
 
   ruler_query_frontend_zone_b_deployment: if !isZoneBEnabled then null else
-    $.newRulerQueryFrontendZoneDeployment('b', $.ruler_query_frontend_zone_b_container, $.ruler_query_frontend_zone_b_node_affinity_matchers) +
+    $.newRulerQueryFrontendZoneDeployment('b', $.ruler_query_frontend_zone_b_container, $.ruler_query_frontend_zone_b_node_affinity_matchers, $.ruler_query_frontend_annotations) +
     (if !isRulerQueryFrontendAutoscalingZoneBEnabled then {} else $.removeReplicasFromSpec),
 
   ruler_query_frontend_zone_c_deployment: if !isZoneCEnabled then null else
-    $.newRulerQueryFrontendZoneDeployment('c', $.ruler_query_frontend_zone_c_container, $.ruler_query_frontend_zone_c_node_affinity_matchers) +
+    $.newRulerQueryFrontendZoneDeployment('c', $.ruler_query_frontend_zone_c_container, $.ruler_query_frontend_zone_c_node_affinity_matchers, $.ruler_query_frontend_annotations) +
     (if !isRulerQueryFrontendAutoscalingZoneCEnabled then {} else $.removeReplicasFromSpec),
 
   ruler_query_frontend_zone_a_service: if !isZoneAEnabled then null else
@@ -203,10 +203,10 @@
     container.withArgs($.util.mapToFlags(args)) +
     (if std.length(extraEnvVarMap) > 0 then container.withEnvMixin(std.prune(extraEnvVarMap)) else {}),
 
-  newRulerQueryFrontendZoneDeployment(zone, container, nodeAffinityMatchers=[])::
+  newRulerQueryFrontendZoneDeployment(zone, container, nodeAffinityMatchers=[], annotations={})::
     local name = 'ruler-query-frontend-zone-%s' % zone;
 
-    $.newQueryFrontendDeployment(name, container, nodeAffinityMatchers) +
+    $.newQueryFrontendDeployment(name, container, nodeAffinityMatchers, annotations) +
     deployment.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
 
   newRulerQueryFrontendZoneService(deployment)::
@@ -272,13 +272,13 @@
     $.newRulerQuerySchedulerZoneContainer('c', $.ruler_query_scheduler_zone_c_args, $.ruler_query_scheduler_zone_c_env_map),
 
   ruler_query_scheduler_zone_a_deployment: if !isZoneAEnabled then null else
-    $.newRulerQuerySchedulerZoneDeployment('a', $.ruler_query_scheduler_zone_a_container, $.ruler_query_scheduler_zone_a_node_affinity_matchers),
+    $.newRulerQuerySchedulerZoneDeployment('a', $.ruler_query_scheduler_zone_a_container, $.ruler_query_scheduler_zone_a_node_affinity_matchers, $.ruler_query_scheduler_annotations),
 
   ruler_query_scheduler_zone_b_deployment: if !isZoneBEnabled then null else
-    $.newRulerQuerySchedulerZoneDeployment('b', $.ruler_query_scheduler_zone_b_container, $.ruler_query_scheduler_zone_b_node_affinity_matchers),
+    $.newRulerQuerySchedulerZoneDeployment('b', $.ruler_query_scheduler_zone_b_container, $.ruler_query_scheduler_zone_b_node_affinity_matchers, $.ruler_query_scheduler_annotations),
 
   ruler_query_scheduler_zone_c_deployment: if !isZoneCEnabled then null else
-    $.newRulerQuerySchedulerZoneDeployment('c', $.ruler_query_scheduler_zone_c_container, $.ruler_query_scheduler_zone_c_node_affinity_matchers),
+    $.newRulerQuerySchedulerZoneDeployment('c', $.ruler_query_scheduler_zone_c_container, $.ruler_query_scheduler_zone_c_node_affinity_matchers, $.ruler_query_scheduler_annotations),
 
   ruler_query_scheduler_zone_a_service: if !isZoneAEnabled then null else
     $.util.serviceFor($.ruler_query_scheduler_zone_a_deployment, $._config.service_ignored_labels),
@@ -303,10 +303,10 @@
     container.withArgs($.util.mapToFlags(args)) +
     (if std.length(extraEnvVarMap) > 0 then container.withEnvMixin(std.prune(extraEnvVarMap)) else {}),
 
-  newRulerQuerySchedulerZoneDeployment(zone, container, nodeAffinityMatchers=[])::
+  newRulerQuerySchedulerZoneDeployment(zone, container, nodeAffinityMatchers=[], annotations={})::
     local name = 'ruler-query-scheduler-zone-%s' % zone;
 
-    $.newQuerySchedulerDeployment(name, container, nodeAffinityMatchers) +
+    $.newQuerySchedulerDeployment(name, container, nodeAffinityMatchers, annotations) +
     deployment.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
 
   rulerQuerySchedulerClientZoneArgs(zone):: {

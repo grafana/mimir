@@ -25,6 +25,8 @@ type ingesterMetrics struct {
 	ingestedExemplarsFail prometheus.Counter
 	ingestedMetadataFail  prometheus.Counter
 
+	seriesWithFloatsAndHistograms *prometheus.CounterVec
+
 	queries              prometheus.Counter
 	queriedSamples       prometheus.Histogram
 	queriedExemplars     prometheus.Histogram
@@ -50,6 +52,8 @@ type ingesterMetrics struct {
 
 	// Owned series
 	ownedSeriesPerUser *prometheus.GaugeVec
+
+	labelValueBytesOverThreshold *prometheus.GaugeVec
 
 	// Global limit metrics
 	maxUsersGauge                prometheus.GaugeFunc
@@ -153,6 +157,10 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_ingested_samples_failures_total",
 			Help: "The total number of samples that errored on ingestion per user.",
 		}, []string{"user"}),
+		seriesWithFloatsAndHistograms: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_series_with_floats_and_histograms_total",
+			Help: "The total number of series in write requests that have both float samples and histograms per user.",
+		}, []string{"user"}),
 		ingestedExemplarsFail: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_exemplars_failures_total",
 			Help: "The total number of exemplars that errored on ingestion.",
@@ -218,6 +226,10 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_owned_series",
 			Help: "Number of currently owned series per user.",
 		}, []string{"user"}),
+		labelValueBytesOverThreshold: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_label_value_bytes_over_threshold",
+			Help: "Set to 1 for each (user, label name) pair whose distinct label values currently reach the local label value bytes metric threshold on this ingester.",
+		}, []string{"user", "label"}),
 		attributedActiveSeriesFailuresPerUser: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_attributed_active_series_failure",
 			Help: "The total number of failed active series decrement per user",
@@ -445,11 +457,13 @@ func newIngesterMetrics(
 func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 	m.ingestedSamples.DeleteLabelValues(userID)
 	m.ingestedSamplesFail.DeleteLabelValues(userID)
+	m.seriesWithFloatsAndHistograms.DeleteLabelValues(userID)
 	m.memMetadataCreatedTotal.DeleteLabelValues(userID)
 	m.memMetadataRemovedTotal.DeleteLabelValues(userID)
 
 	filter := prometheus.Labels{"user": userID}
 	m.discarded.DeletePartialMatch(filter)
+	m.labelValueBytesOverThreshold.DeletePartialMatch(filter)
 
 	m.discardedMetadataPerUserMetadataLimit.DeleteLabelValues(userID)
 	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValues(userID)

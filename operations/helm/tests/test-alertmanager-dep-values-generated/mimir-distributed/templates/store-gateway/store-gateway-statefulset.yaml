@@ -14,9 +14,9 @@ metadata:
     rollout-group: store-gateway
     zone: zone-a
     grafana.com/prepare-downscale: "true"
-    grafana.com/min-time-between-zones-downscale: 30m
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/min-time-between-zones-downscale: 30m
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
   namespace: "citestns"
@@ -154,12 +154,11 @@ metadata:
     rollout-group: store-gateway
     zone: zone-b
     grafana.com/prepare-downscale: "true"
-    grafana.com/min-time-between-zones-downscale: 30m
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/min-time-between-zones-downscale: 30m
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
-    grafana.com/rollout-downscale-leader: test-alertmanager-dep-values-mimir-store-gateway-zone-a
   namespace: "citestns"
 spec:
   podManagementPolicy: OrderedReady
@@ -295,12 +294,11 @@ metadata:
     rollout-group: store-gateway
     zone: zone-c
     grafana.com/prepare-downscale: "true"
-    grafana.com/min-time-between-zones-downscale: 30m
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/min-time-between-zones-downscale: 30m
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
-    grafana.com/rollout-downscale-leader: test-alertmanager-dep-values-mimir-store-gateway-zone-b
   namespace: "citestns"
 spec:
   podManagementPolicy: OrderedReady

@@ -175,6 +175,21 @@ batches the streamed metric names, fetches their metadata via
 `FetchMetricMetadata` on the opened querier, and joins by name. The handler
 stays tenant-federation-agnostic, but the fetcher it obtains is federation-aware.
 
+Metadata is keyed by metric family name (e.g. `http_request_duration_seconds`),
+but the search returns series names, which for classic histograms and summaries
+are the `_bucket`/`_count`/`_sum` sub-series. So for each name with a suffix that
+a metric type allows (`_total`, `_bucket`, `_sum`, `_count`, `_gsum`, `_gcount`,
+`_info`), the enricher also fetches the name without that suffix. The exception
+is a name such as `x_total_total` or `x_info_info`, where the name without the
+suffix still ends with that same suffix: Prometheus doesn't treat it as a series
+of the `x_total` or `x_info` family, so it isn't fetched. The join
+uses the exact name first, then the family name if the family's type allows
+the suffix. This follows Prometheus `metadataForMetric`/`typeAllowsSuffix` in
+`web/api/v1/search.go`.
+
+The enricher does not fetch metadata for the extra result the handler reads
+past `limit` to detect `has_more`, because that result is not emitted.
+
 `FetchMetricMetadata` is implemented by:
 
 - `distributorQuerier` — via the ingester `MetricsMetadata` fan-out (the same
@@ -193,12 +208,16 @@ The store-gateway has no metric metadata and is not consulted for it.
 
 ### Known limitations
 
-- **Classic histograms and summaries are not enriched.** Metadata is keyed by
-  metric family name (e.g. `http_request_duration_seconds`), but the search
-  returns the actual `__name__` series values, which for classic
-  histograms/summaries are the `_bucket`/`_count`/`_sum` sub-series. Those names
-  don't match the family key, so the join misses. Native histograms and plain
-  counters/gauges enrich fine.
+- **One metadata record per family.** The fetch asks each ingester for one
+  record per family. When a family has metadata of more than one type (e.g. a
+  counter on one target and a gauge on another), only one is used. If that type
+  doesn't allow the suffix, a suffixed name such as `requests_total` isn't
+  enriched. Prometheus keeps one record per type and doesn't have this
+  limitation.
+- **Federated metadata is joined by name across tenants.** With tenant
+  federation, a family's metadata from one tenant can enrich a suffixed name
+  from another tenant, in the same way as exact names (first tenant by sorted ID
+  wins).
 
 ## Per-source notes
 

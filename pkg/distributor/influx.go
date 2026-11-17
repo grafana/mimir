@@ -116,8 +116,13 @@ func InfluxHandler(
 
 			if st, ok := grpcutil.ErrorToStatus(err); ok {
 				// This code is needed for a correct handling of errors returned by the supplier function.
-				// These errors are created by using the httpgrpc package.
-				httpCode = int(st.Code())
+				// These errors are created by using the httpgrpc package. Plain gRPC
+				// errors might carry non-HTTP codes and are mapped to ServiceUnavailable (503).
+				if util.IsHTTPStatusCode(st.Code()) {
+					httpCode = int(st.Code())
+				} else {
+					httpCode = http.StatusServiceUnavailable
+				}
 				errorMsg = st.Message()
 			} else {
 				errorMsg = err.Error()

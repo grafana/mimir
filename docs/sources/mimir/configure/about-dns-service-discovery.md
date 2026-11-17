@@ -23,6 +23,13 @@ The following clients support service discovery via DNS:
 - [Alertmanager URL configured in the ruler](../configuration-parameters/#ruler)
   - `-ruler.alertmanager-url`
 
+## Memcached DNS requirements
+
+Memcached service discovery requires DNS connectivity over TCP.
+This applies to the `dns+`, `dnssrv+`, and `dnssrvnoa+` discovery modes.
+Ensure that Mimir can reach the DNS servers configured in `/etc/resolv.conf` over TCP on port `53`, including through any firewall, network policy, or service mesh in the DNS request path.
+A successful DNS lookup over UDP doesn't confirm that DNS over TCP is reachable.
+
 ## Supported discovery modes
 
 DNS service discovery supports different discovery modes.

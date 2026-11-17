@@ -21,6 +21,7 @@ import (
 
 //node:generate
 type AggregateExpression struct {
+	NodeIdentifier
 	*AggregateExpressionDetails
 	Inner planning.Node `node:"child,label=expression"`
 	Param planning.Node `node:"child,nilable,label=parameter"`

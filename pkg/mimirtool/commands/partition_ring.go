@@ -38,6 +38,7 @@ type AddPartitionCommand struct {
 	ringKey                string
 	partitionIDs           string
 	partitionState         string
+	derivedTokens          bool
 	verbose                bool
 	logger                 log.Logger
 	stdin                  io.Reader // For testing; defaults to os.Stdin if nil.
@@ -110,6 +111,8 @@ func (c *PartitionRingCommand) Register(app *kingpin.Application, _ EnvVarNames,
 	addPartitionCmd.Flag("partition.state", "The state of the partition to add. Must be one of: pending, active, inactive.").
 		Required().
 		StringVar(&addCmd.partitionState)
+	addPartitionCmd.Flag("partition.derived-tokens", "Add the partitions with tokens derived from the partition ID instead of storing the tokens in the ring. Experimental. Only supported by the ingester partition ring for now. The partition IDs must be lower than the -ingester.partition-ring.max-derived-token-partitions value set on the components that read the partition ring. Otherwise, these components fail until the partitions are removed from the ring.").
+		BoolVar(&addCmd.derivedTokens)
 
 	// Register remove-partition subcommand.
 	removeCmd := &RemovePartitionCommand{}
@@ -260,7 +263,7 @@ About to add partition(s) %v with state '%s' to the ring.`, partitionIDs, state.
 	fmt.Fprintln(os.Stderr, "Successfully joined memberlist cluster.")
 
 	// Perform the CAS operation to add the partitions.
-	if err := addPartitions(ctx, kvClient, c.ringKey, partitionIDs, state); err != nil {
+	if err := addPartitions(ctx, kvClient, c.ringKey, partitionIDs, state, c.derivedTokens); err != nil {
 		return err
 	}
 
@@ -569,7 +572,7 @@ func initMemberlistKV(ctx context.Context, joinAddrs []string, clusterLabel stri
 	return kvClient, cleanup, nil
 }
 
-func addPartitions(ctx context.Context, kvClient kv.Client, ringKey string, partitionIDs []int32, state ring.PartitionState) error {
+func addPartitions(ctx context.Context, kvClient kv.Client, ringKey string, partitionIDs []int32, state ring.PartitionState, derivedTokens bool) error {
 	return kvClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 
@@ -583,7 +586,11 @@ func addPartitions(ctx context.Context, kvClient kv.Client, ringKey string, part
 		// Second pass: add all partitions.
 		now := time.Now()
 		for _, partitionID := range partitionIDs {
-			ringDesc.AddPartition(partitionID, state, now)
+			if derivedTokens {
+				ringDesc.AddPartitionWithDerivedTokens(partitionID, state, now)
+			} else {
+				ringDesc.AddPartition(partitionID, state, now)
+			}
 		}
 
 		return ringDesc, true, nil

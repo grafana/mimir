@@ -103,7 +103,7 @@ func (b *BucketRuleStore) ListAllUsers(ctx context.Context, opts ...rulestore.Op
 
 	options := rulestore.CollectOptions(opts...)
 	if options.DisableCache {
-		ctx = bucketcache.WithCacheLookupEnabled(ctx, false)
+		ctx = bucketcache.WithSkipCacheLookup(ctx)
 	}
 
 	var users []string
@@ -128,7 +128,7 @@ func (b *BucketRuleStore) ListRuleGroupsForUserAndNamespace(ctx context.Context,
 
 	options := rulestore.CollectOptions(opts...)
 	if options.DisableCache {
-		ctx = bucketcache.WithCacheLookupEnabled(ctx, false)
+		ctx = bucketcache.WithSkipCacheLookup(ctx)
 	}
 
 	// The prefix to list objects depends on whether the namespace has been

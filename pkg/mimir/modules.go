@@ -410,7 +410,13 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 		return nil, errors.Wrap(err, "creating KV store for ingester partitions ring watcher")
 	}
 
-	t.IngesterPartitionRingWatchers, err = ingest.NewPartitionRingWatchers(t.Cfg.Compartments.Enabled, t.Cfg.Compartments.Read.NumCompartments, ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+	// The ingester config validation checks that the value fits in an int32.
+	tokenTable, err := ring.NewPartitionTokenTable(int32(t.Cfg.Ingester.IngesterPartitionRing.MaxDerivedTokenPartitions), util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+	if err != nil {
+		return nil, errors.Wrap(err, "creating ingester partition token table")
+	}
+
+	t.IngesterPartitionRingWatchers, err = ingest.NewPartitionRingWatchers(t.Cfg.Compartments.Enabled, t.Cfg.Compartments.Read.NumCompartments, ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, tokenTable, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
 	if err != nil {
 		return nil, errors.Wrap(err, "creating ingester partition rings watcher")
 	}
@@ -1009,6 +1015,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", t.Cfg.Frontend.QueryEngine))
 	}
 
+	middlewareCfg.CardinalityEstimationCacheClient = t.QueryFrontendCardinalityCacheClient
 	tripperware, err := querymiddleware.NewTripperware(
 		middlewareCfg,
 		util_log.Logger,
@@ -1021,6 +1028,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		opts.CommonOpts,
 		t.QueryFrontendOffsetsReader,
 		middlewareCfg.EnableRemoteExecution,
+		t.Cfg.Frontend.FrontendV2.QueueReservationEnabled,
 		t.QueryFrontendStreamingEngine,
 		t.Registerer,
 
@@ -1170,6 +1178,11 @@ func (t *Mimir) initQueryFrontendCacheClient() (services.Service, error) {
 	}
 	t.QueryFrontendCacheClient = cache.NewCompression(cfg.ResultsCache.Compression, t.QueryFrontendCacheClient, util_log.Logger)
 
+	t.QueryFrontendCardinalityCacheClient, err = querymiddleware.NewCardinalityEstimationCache(cfg.CardinalityEstimationCache, t.QueryFrontendCacheClient, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, err
+	}
+
 	return nil, nil
 }
 
@@ -1255,7 +1268,8 @@ func (t *Mimir) createQueryFrontendPromQLEngineOptions() streamingpromql.EngineO
 	opts.RangeQuerySplittingAndCaching.CacheEnabled = middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.CacheResults
 	opts.RangeQuerySplittingAndCaching.MinCacheExtent = querymiddleware.DefaultMinCacheExtent
 	opts.RangeQuerySplittingAndCaching.CacheClient = t.QueryFrontendCacheClient
-	opts.CardinalityEstimation.ConfigureCache(t.QueryFrontendCacheClient, t.Cfg.Querier.EngineConfig.MimirQueryEngine.CachePrefixGenerator)
+	opts.CardinalityEstimation.ConfigureCache(t.QueryFrontendCardinalityCacheClient, t.Cfg.Querier.EngineConfig.MimirQueryEngine.CachePrefixGenerator)
+	opts.CardinalityEstimation.Metrics = streamingpromql.NewCardinalityEstimationMetrics(reg)
 
 	// We purposefully pass a nil client for the intermediate results cache. The intermediate cache is only
 	// used by operators executed in queriers.
@@ -1330,7 +1344,11 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		if err != nil {
 			return nil, err
 		}
-		remoteQuerier := ruler.NewRemoteQuerier(queryFrontendClient, t.Cfg.Querier.EngineConfig.Timeout, t.Cfg.Ruler.QueryFrontend.MaxRetriesRate, t.Cfg.Ruler.QueryFrontend.QueryResultResponseFormat, queryFrontendURL, util_log.Logger, ruler.WithOrgIDMiddleware)
+		middlewares := []ruler.Middleware{ruler.WithOrgIDMiddleware}
+		if t.Cfg.Ruler.QueryFrontend.EnableRuleDetailHeaders {
+			middlewares = append(middlewares, ruler.WithRuleDetailMiddleware)
+		}
+		remoteQuerier := ruler.NewRemoteQuerier(queryFrontendClient, t.Cfg.Querier.EngineConfig.Timeout, t.Cfg.Ruler.QueryFrontend.MaxRetriesRate, t.Cfg.Ruler.QueryFrontend.QueryResultResponseFormat, queryFrontendURL, util_log.Logger, middlewares...)
 
 		embeddedQueryable = prom_remote.NewSampleAndChunkQueryableClient(
 			remoteQuerier,
@@ -1363,6 +1381,11 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 		queryable = querier.NewErrorTranslateQueryableWithFn(queryable, ruler.WrapQueryableErrors)
 
+		// ALERTS_FOR_STATE series are stored in the tenant owning the rule group. Query them
+		// without tenant federation: the federated queryable adds the __tenant_id__ label, so
+		// restored series would never match the alert labels.
+		embeddedQueryable = queryable
+
 		if t.Cfg.Ruler.TenantFederation.Enabled {
 			if !t.Cfg.TenantFederation.Enabled {
 				return nil, errors.New("-" + ruler.TenantFederationFlag + "=true requires -tenant-federation.enabled=true")
@@ -1377,11 +1400,9 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			regularQueryFunc := ruler.EngineQueryFunc(eng, queryable)
 			federatedQueryFunc := ruler.EngineQueryFunc(eng, federatedQueryable)
 
-			embeddedQueryable = federatedQueryable
 			queryFunc = ruler.TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc)
 
 		} else {
-			embeddedQueryable = queryable
 			queryFunc = ruler.EngineQueryFunc(eng, queryable)
 		}
 	}
@@ -1486,7 +1507,6 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 
 func (t *Mimir) initCompactor() (serv services.Service, err error) {
 	t.Cfg.Compactor.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
-	t.Cfg.Compactor.SparseIndexHeadersConfig = t.Cfg.BlocksStorage.BucketStore.IndexHeader
 	t.Cfg.Compactor.SparseIndexHeadersSamplingRate = t.Cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling
 	t.Cfg.Compactor.Compartments = t.Cfg.Compartments
 

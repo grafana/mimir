@@ -28,6 +28,13 @@ func TestConfig_Validate(t *testing.T) {
 			cfg:         Config{Enabled: true, Read: ReadConfig{NumCompartments: -1}, Write: WriteConfig{NumCompartments: 3}},
 			expectedErr: ErrInvalidNumReadCompartments,
 		},
+		"enabled with the maximum number of read compartments passes": {
+			cfg: Config{Enabled: true, Read: ReadConfig{NumCompartments: MaxReadCompartments}, Write: WriteConfig{NumCompartments: 3}},
+		},
+		"enabled with too many read compartments is rejected": {
+			cfg:         Config{Enabled: true, Read: ReadConfig{NumCompartments: MaxReadCompartments + 1}, Write: WriteConfig{NumCompartments: 3}},
+			expectedErr: ErrTooManyReadCompartments,
+		},
 		"enabled with zero write compartments is rejected": {
 			cfg:         Config{Enabled: true, Read: ReadConfig{NumCompartments: 2}, Write: WriteConfig{NumCompartments: 0}},
 			expectedErr: ErrInvalidNumWriteCompartments,

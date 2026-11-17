@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -19,6 +20,7 @@ import (
 
 //node:generate
 type VectorSelector struct {
+	NodeIdentifier
 	*VectorSelectorDetails `node:"hints=SkipHistogramBuckets"`
 }
 
@@ -94,7 +96,20 @@ func MaterializeVectorSelector(_ context.Context, v *VectorSelector, _ *planning
 		Subsets:                  subsets,
 	}
 
-	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, v.ReturnSampleTimestamps, v.ReturnSampleTimestampsPreserveHistograms)), nil
+	// Only collect per-node stats if we've been asked to explain the cost of the query,
+	// otherwise pass a node ID of 0 which disables collecting per-node stats.
+	var planningNodeId int64
+	if slices.Contains(params.QueryParameters.Explain, types.EXPLAIN_VALUE_COST) {
+		planningNodeId = v.GetNodeId()
+	}
+
+	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(
+		selector,
+		params.MemoryConsumptionTracker,
+		v.ReturnSampleTimestamps,
+		v.ReturnSampleTimestampsPreserveHistograms,
+		planningNodeId,
+	)), nil
 }
 
 func (v *VectorSelector) ResultType() (parser.ValueType, error) {

@@ -47,6 +47,27 @@ func (a Agent) cloneWithState(state AgentState) Agent {
 	return a
 }
 
+// routeOutcome is how a strategy resolved one initial lookup. The zero value
+// means the lookup was not classified, as for a custom strategy: a successful
+// route is not counted, and a miss is counted as "other".
+type routeOutcome int8
+
+const (
+	routeUnclassified routeOutcome = iota
+	routeLeader
+	routeStandIn
+	routeMissEmptyPool
+	routeMissUnknownTopic
+	routeMissNoLeader
+	routeMissOutOfRange
+)
+
+// routeClassifier is implemented by strategies that report the outcome from the
+// same snapshot that produced the candidates.
+type routeClassifier interface {
+	candidatesWithRoute(topic string, partition int32, maxCandidates int) ([]Agent, routeOutcome)
+}
+
 // PartitionAssignmentStrategy maps a partition to an ordered list of
 // candidate agents. The first candidate is the primary (used for normal
 // routing); the rest are deterministic alternates used for hedging.
@@ -96,6 +117,19 @@ func (l *LazyPartitionAssignmentStrategy) Candidates(topic string, partition int
 	return l.resolve().Candidates(topic, partition, maxCandidates)
 }
 
+func (l *LazyPartitionAssignmentStrategy) candidatesWithRoute(topic string, partition int32, maxCandidates int) ([]Agent, routeOutcome) {
+	return candidatesOf(l.resolve(), topic, partition, maxCandidates)
+}
+
+// candidatesOf looks up candidates with the strategy's classification when it
+// reports one.
+func candidatesOf(s PartitionAssignmentStrategy, topic string, partition int32, maxCandidates int) ([]Agent, routeOutcome) {
+	if rc, ok := s.(routeClassifier); ok {
+		return rc.candidatesWithRoute(topic, partition, maxCandidates)
+	}
+	return s.Candidates(topic, partition, maxCandidates), routeUnclassified
+}
+
 // DefaultPartitionAssignmentStrategy is an immutable snapshot of the agent
 // pool. The leader map is precomputed in the constructor so the produce hot
 // path reads it lock-free; Candidates is computed lazily over the same agent
@@ -107,12 +141,43 @@ func (l *LazyPartitionAssignmentStrategy) Candidates(topic string, partition int
 type DefaultPartitionAssignmentStrategy struct {
 	agents  []int32 // sorted ascending, snapshot at construction
 	leaders map[topicPartition]int32
+
+	// knownTopics is every topic with at least one entry in leaders, plus every
+	// topic whose partitions this refresh listed and then excluded entirely.
+	// Candidates uses it to tell "this topic is known, one partition's
+	// leader is just missing" (safe to fall back to another agent) apart
+	// from "this topic is unknown to Metadata" (falling back would hide a
+	// topic that still needs an on-demand refresh).
+	//
+	// A topic Metadata has never returned, and a topic-level error, stay out.
+	// A partition whose Leader was below 0 stays out of the fallback too,
+	// even when this topic is known through some other partition.
+	knownTopics map[string]struct{}
+	noLeader    map[topicPartition]struct{}
+
+	// partitionCounts is one past the highest partition index Metadata
+	// reported for each known topic. Candidates uses it to reject a
+	// partition that doesn't exist instead of guessing a fallback agent
+	// for it — no agent owns a partition that was never created.
+	partitionCounts map[string]int32
 }
 
-func newDefaultPartitionAssignmentStrategy(agents []int32, leaders map[topicPartition]int32) *DefaultPartitionAssignmentStrategy {
+func newDefaultPartitionAssignmentStrategy(agents []int32, leaders map[topicPartition]int32, topicsWithNoLiveLeader map[string]struct{}, noLeader map[topicPartition]struct{}, partitionCounts map[string]int32) *DefaultPartitionAssignmentStrategy {
+	// Built from empty, not sized off leaders: there are far fewer
+	// distinct topics than partitions.
+	knownTopics := make(map[string]struct{})
+	for topic := range topicsWithNoLiveLeader {
+		knownTopics[topic] = struct{}{}
+	}
+	for tp := range leaders {
+		knownTopics[tp.topic] = struct{}{}
+	}
 	return &DefaultPartitionAssignmentStrategy{
-		agents:  agents,
-		leaders: leaders,
+		agents:          agents,
+		leaders:         leaders,
+		knownTopics:     knownTopics,
+		noLeader:        noLeader,
+		partitionCounts: partitionCounts,
 	}
 }
 
@@ -120,19 +185,66 @@ func newDefaultPartitionAssignmentStrategy(agents []int32, leaders map[topicPart
 // the partition leader first, then deterministic hash-walked alternates. Every
 // entry is reported as AgentStateHealthy; this strategy has no health signal of
 // its own.
+//
+// If a partition has no known leader but its topic is otherwise known,
+// this falls back to a deterministic pick from the live agent set instead
+// of returning no candidates. Any live agent can serve any partition, so
+// this is a safe guess while the real leader is still unclear. A topic
+// whose partitions this refresh listed and then excluded entirely counts
+// as known. A topic Metadata has never returned is left alone, so it still
+// gets an on-demand refresh. A partition whose Leader was below 0 returns
+// nil: WarpStream named no agent, so this does not pick one. A partition
+// index at or beyond the topic's last-reported count (or negative) also
+// returns nil: no agent owns a partition that doesn't exist. A later
+// refresh that grows the count (e.g. WarpStream's partition auto-scaler)
+// makes it routable again.
+//
+// Caveat: two clients that refreshed at different times can pick
+// different fallback agents for the same partition — a real leader
+// doesn't have that problem. The extra cost from that (more segment
+// streams per partition) is unmeasured; not assumed to be small.
 func (s *DefaultPartitionAssignmentStrategy) Candidates(topic string, partition int32, maxCandidates int) []Agent {
+	agents, _ := s.candidatesWithRoute(topic, partition, maxCandidates)
+	return agents
+}
+
+func (s *DefaultPartitionAssignmentStrategy) candidatesWithRoute(topic string, partition int32, maxCandidates int) ([]Agent, routeOutcome) {
 	if maxCandidates <= 0 {
-		return nil
+		return nil, routeUnclassified
 	}
-	leader, ok := s.leaders[topicPartition{topic: topic, partition: partition}]
+
+	var h uint64
+	tp := topicPartition{topic: topic, partition: partition}
+	leader, ok := s.leaders[tp]
+	route := routeLeader
 	if !ok {
-		return nil
+		if _, unnamed := s.noLeader[tp]; unnamed {
+			return nil, routeMissNoLeader
+		}
+		if len(s.agents) == 0 {
+			return nil, routeMissEmptyPool
+		}
+		if _, topicKnown := s.knownTopics[topic]; !topicKnown {
+			// A topic with no named leaders is in partitionCounts but not in
+			// knownTopics. Use the count only to pick the label. Adding the
+			// topic to knownTopics would route its holes to a stand-in.
+			if n, listed := s.partitionCounts[topic]; listed && (partition < 0 || partition >= n) {
+				return nil, routeMissOutOfRange
+			}
+			return nil, routeMissUnknownTopic
+		}
+		if partition < 0 || partition >= s.partitionCounts[topic] {
+			return nil, routeMissOutOfRange
+		}
+		h = hashTopicPartition(topic, partition)
+		leader = s.agents[h%uint64(len(s.agents))]
+		route = routeStandIn
 	}
 
 	out := make([]Agent, 0, maxCandidates)
 	out = append(out, Agent{NodeID: leader, State: AgentStateHealthy})
 	if maxCandidates == 1 {
-		return out
+		return out, route
 	}
 
 	// Walk the non-leader agents in deterministic hash order: start at
@@ -141,15 +253,19 @@ func (s *DefaultPartitionAssignmentStrategy) Candidates(topic string, partition 
 	// acceptable here because n (agent count) is small.
 	nonLeaderCount := len(s.agents) - 1
 	if nonLeaderCount <= 0 {
-		return out
+		return out, route
 	}
-	h := hashTopicPartition(topic, partition)
+	// The one-candidate return above never reaches this hash. A fallback
+	// pick already stored it.
+	if ok {
+		h = hashTopicPartition(topic, partition)
+	}
 	start := int(h % uint64(nonLeaderCount))
 	for offset := 0; offset < nonLeaderCount && len(out) < maxCandidates; offset++ {
 		idx := (start + offset) % nonLeaderCount
 		out = append(out, Agent{NodeID: nthNonLeader(s.agents, leader, idx), State: AgentStateHealthy})
 	}
-	return out
+	return out, route
 }
 
 // nthNonLeader returns the idx-th element of agents skipping leader. idx is

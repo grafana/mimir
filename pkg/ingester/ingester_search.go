@@ -138,13 +138,25 @@ func buildSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit 
 
 // protoToParams converts a wire SearchFilter into a validated
 // streaminglabelvalues.Params via NewParams. A nil input returns (nil, nil).
+// An unknown FuzzAlg is an error. A sender that is newer than this server can
+// send a value that this server does not know, and a silent fallback to
+// another algorithm would return wrong results.
 func protoToParams(wf *client.SearchFilter) (*streaminglabelvalues.Params, error) {
 	if wf == nil {
 		return nil, nil
 	}
-	alg := streaminglabelvalues.FuzzAlgSubsequence
-	if wf.FuzzAlg == client.FUZZ_ALG_JARO_WINKLER {
+	var alg streaminglabelvalues.FuzzAlg
+	switch wf.FuzzAlg {
+	case client.FUZZ_ALG_SUBSEQUENCE:
+		alg = streaminglabelvalues.FuzzAlgSubsequence
+	case client.FUZZ_ALG_JARO_WINKLER:
 		alg = streaminglabelvalues.FuzzAlgJaroWinkler
+	case client.FUZZ_ALG_SUBSTRING_LEFT:
+		alg = streaminglabelvalues.FuzzAlgSubstringLeft
+	case client.FUZZ_ALG_SUBSTRING:
+		alg = streaminglabelvalues.FuzzAlgSubstring
+	default:
+		return nil, fmt.Errorf("unknown fuzz algorithm %d", wf.FuzzAlg)
 	}
 	return streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
 }
