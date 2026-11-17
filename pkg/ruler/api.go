@@ -688,7 +688,7 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 	level.Debug(logger).Log("msg", "retrieved rules for rule groups from rule store", "userID", userID, "num_groups", len(rgs), "num_rules", numRules)
 
 	formatted := rgs.Formatted()
-	marshalAndSend(formatted, w, logger, ProtectedNamespacesHeaderFromSet(protectedNamespaces))
+	marshalNamespacesAndSend(formatted, a.ruler.cfg.ListRulesEncodeConcurrency, w, logger, ProtectedNamespacesHeaderFromSet(protectedNamespaces))
 }
 
 func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {
