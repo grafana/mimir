@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/go-kit/log"
@@ -83,6 +84,11 @@ func (e *errorCachingHandler) Do(ctx context.Context, request MetricsQueryReques
 
 	// Check if caching has disabled via an option on the request
 	if !e.shouldCacheReq(request) {
+		return e.next.Do(ctx, request)
+	}
+
+	// Errors are results too: skip the cache if it's off for any of the tenants.
+	if slices.ContainsFunc(tenantIDs, e.limits.NativeMetadataResultsCacheDisabled) {
 		return e.next.Do(ctx, request)
 	}
 

@@ -158,6 +158,10 @@ func (l staticLimits) GetMaxOutOfOrderTimeWindow(context.Context) (time.Duration
 	return l.oooWindow, nil
 }
 
+func (l staticLimits) GetNativeMetadataResultsCacheDisabled(context.Context) (bool, error) {
+	return false, nil
+}
+
 // TestMaterializer_computeRanges verifies that the split ranges are computed correctly at materialize time, including
 // the fallback reasons that depend on runtime state (the out-of-order window and current time).
 func TestMaterializer_computeRanges(t *testing.T) {

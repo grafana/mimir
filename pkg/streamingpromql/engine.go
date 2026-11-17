@@ -371,6 +371,8 @@ type QueryLimitsProvider interface {
 	GetMaxCacheFreshness(ctx context.Context) (time.Duration, error)
 	// AllowCachingUnalignedQueries returns true if unaligned queries should be cached for the tenant(s) in the context.
 	AllowCachingUnalignedQueries(ctx context.Context) (bool, error)
+	// GetNativeMetadataResultsCacheDisabled returns true if results caches are neither read nor written for the tenant(s) in the context.
+	GetNativeMetadataResultsCacheDisabled(ctx context.Context) (bool, error)
 }
 
 // NewStaticQueryLimitsProvider returns a QueryLimitsProvider that always returns the provided limits.
@@ -390,6 +392,7 @@ type StaticQueryLimitsProvider struct {
 	MinOutOfOrderResultsCacheTTL          time.Duration
 	MaxCacheFreshness                     time.Duration
 	CacheUnalignedQueries                 bool
+	NativeMetadataResultsCacheDisabled    bool
 }
 
 func (p StaticQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ context.Context) (uint64, error) {
@@ -418,6 +421,10 @@ func (p StaticQueryLimitsProvider) GetMaxCacheFreshness(_ context.Context) (time
 
 func (p StaticQueryLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (bool, error) {
 	return p.CacheUnalignedQueries, nil
+}
+
+func (p StaticQueryLimitsProvider) GetNativeMetadataResultsCacheDisabled(_ context.Context) (bool, error) {
+	return p.NativeMetadataResultsCacheDisabled, nil
 }
 
 type NoopQueryTracker struct{}

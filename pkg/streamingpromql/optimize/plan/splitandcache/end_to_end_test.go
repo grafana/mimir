@@ -173,6 +173,56 @@ func TestEndToEnd(t *testing.T) {
 	}
 }
 
+func TestEndToEnd_NativeMetadataResultsCacheDisabled(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1h
+			metric 1+1x48
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	opts := streamingpromql.NewTestEngineOpts()
+	opts.RangeQuerySplittingAndCaching.SplitEnabled = true
+	opts.RangeQuerySplittingAndCaching.SplitInterval = 24 * time.Hour
+	opts.RangeQuerySplittingAndCaching.CacheEnabled = true
+	opts.RangeQuerySplittingAndCaching.CacheMetrics = splitandcache.NewResultsCacheMetrics("query_range", opts.CommonOpts.Reg)
+	cache := newRequestCountingCache()
+	opts.RangeQuerySplittingAndCaching.CacheClient = cache
+	opts.Limits = resultsCacheDisabledForTenant{StaticQueryLimitsProvider: streamingpromql.NewStaticQueryLimitsProvider(), tenantID: "experiment"}
+
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(opts.CommonOpts.Reg), planner)
+	require.NoError(t, err)
+
+	runQuery := func(tenantID string) {
+		ctx := user.InjectOrgID(t.Context(), tenantID)
+		q, err := engine.NewRangeQuery(ctx, storage, nil, "metric", timestamp.Time(0), timestamp.Time(0).Add(48*time.Hour), 4*time.Hour)
+		require.NoError(t, err)
+		t.Cleanup(q.Close)
+		require.NoError(t, q.Exec(ctx).Err)
+	}
+
+	runQuery("experiment")
+	require.Zero(t, cache.getCount, "expected the tenant with the results cache off not to read the cache")
+	require.Empty(t, cache.GetItems(), "expected the tenant with the results cache off not to write the cache")
+
+	// Another tenant's same query reads and writes the cache, so the query is cacheable.
+	runQuery("other")
+	require.Equal(t, 1, cache.getCount)
+	require.NotEmpty(t, cache.GetItems())
+}
+
+// resultsCacheDisabledForTenant turns the results caches off for one tenant only.
+type resultsCacheDisabledForTenant struct {
+	streamingpromql.StaticQueryLimitsProvider
+	tenantID string
+}
+
+func (l resultsCacheDisabledForTenant) GetNativeMetadataResultsCacheDisabled(ctx context.Context) (bool, error) {
+	tenantID, err := user.ExtractOrgID(ctx)
+	return tenantID == l.tenantID, err
+}
+
 type requestCountingCache struct {
 	*cache.MockCache
 	getCount int

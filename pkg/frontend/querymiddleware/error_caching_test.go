@@ -25,7 +25,10 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 	keyGen := NewDefaultCacheKeyGenerator(newTestCodec(), time.Second)
 
 	runHandler := func(ctx context.Context, inner MetricsQueryHandler, c cache.Cache, req MetricsQueryRequest) (Response, error) {
-		limits := &mockLimits{resultsCacheTTLForErrors: time.Minute}
+		limits := multiTenantMockLimits{byTenant: map[string]mockLimits{
+			"1234":       {resultsCacheTTLForErrors: time.Minute},
+			"experiment": {resultsCacheTTLForErrors: time.Minute, nativeMetadataResultsCacheDisabled: true},
+		}}
 		middleware := newErrorCachingMiddleware(c, limits, resultsCacheEnabledByOption, keyGen, test.NewTestingLogger(t), prometheus.NewPedanticRegistry())
 		handler := middleware.Wrap(inner)
 		return handler.Do(ctx, req)
@@ -90,6 +93,25 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 
 				require.NoError(t, err)
 				require.Equal(t, innerRes, res)
+				require.Equal(t, 0, c.CountFetchCalls())
+				require.Equal(t, 0, c.CountStoreCalls())
+			})
+
+			t.Run("disabled for the tenant", func(t *testing.T) {
+				c := cache.NewInstrumentedMockCache()
+
+				// The error is cacheable, and tenant 1234 caches such errors (see "api error cachable"), but this
+				// tenant has the results cache off.
+				innerErr := apierror.New(apierror.TypeExec, "found duplicate series for the match group")
+				inner := &mockHandler{}
+				inner.On("Do", mock.Anything, mock.Anything).Return((*PrometheusResponse)(nil), innerErr)
+
+				ctx := user.InjectOrgID(t.Context(), "experiment")
+				req := tc.newQueryRequest(requestoptions.Options{})
+				res, err := runHandler(ctx, inner, c, req)
+
+				require.Error(t, err)
+				require.Nil(t, res)
 				require.Equal(t, 0, c.CountFetchCalls())
 				require.Equal(t, 0, c.CountStoreCalls())
 			})

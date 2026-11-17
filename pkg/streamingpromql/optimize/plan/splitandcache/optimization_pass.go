@@ -175,6 +175,15 @@ func (o *OptimizationPass) applyCaching(ctx context.Context, node planning.Node,
 		return node, nil
 	}
 
+	// Without a Cache node, the query neither reads nor writes the cache.
+	if disabled, err := o.limits.GetNativeMetadataResultsCacheDisabled(ctx); err != nil {
+		spanLogger.DebugLog("msg", "retrieving 'native metadata results cache disabled' tenant limit failed", "err", err)
+		return nil, err
+	} else if disabled {
+		spanLogger.DebugLog("msg", "range query caching disabled for the tenant")
+		return node, nil
+	}
+
 	o.cacheAttemptCounter.Inc()
 
 	if !isStepAligned(timeRange) {

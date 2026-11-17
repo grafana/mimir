@@ -3007,6 +3007,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of retries for a single request; beyond this, the downstream error is returned. (default 5)
   -query-frontend.max-total-query-length duration
     	Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received instant, range or remote read query.
+  -query-frontend.native-metadata-results-cache-disabled
+    	[experimental] Neither read nor write the results caches for the tenant's queries: the query-frontend's results cache, of query results and errors, and the query engine's intermediate results cache. A TTL of 0 isn't the same, since entries are still written with it. The label names and values and cardinality query caches are already off when their TTLs are 0, the default.
   -query-frontend.not-running-timeout duration
     	Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up) (default 2s)
   -query-frontend.parallelize-shardable-queries

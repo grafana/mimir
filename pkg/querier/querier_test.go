@@ -1999,6 +1999,58 @@ func TestTenantQueryLimitsProvider_EnableDelayedNameRemoval(t *testing.T) {
 	}
 }
 
+func TestTenantQueryLimitsProvider_NativeMetadataResultsCacheDisabled(t *testing.T) {
+	tenantLimits := &staticTenantLimits{
+		limits: map[string]*validation.Limits{
+			"experiment": {
+				NativeMetadataResultsCacheDisabled: true,
+			},
+			"other": {
+				// Not set, should default to false.
+			},
+		},
+	}
+
+	overrides := validation.NewOverrides(defaultLimitsConfig(), tenantLimits)
+	provider := NewTenantQueryLimitsProvider(overrides)
+
+	testCases := map[string]struct {
+		ctx              context.Context
+		expectedDisabled bool
+		expectedError    error
+	}{
+		"no tenant ID provided": {
+			ctx:           t.Context(),
+			expectedError: user.ErrNoOrgID,
+		},
+		"single tenant ID provided, results caches off": {
+			ctx:              user.InjectOrgID(t.Context(), "experiment"),
+			expectedDisabled: true,
+		},
+		"single tenant ID provided, results caches on": {
+			ctx:              user.InjectOrgID(t.Context(), "other"),
+			expectedDisabled: false,
+		},
+		"multiple tenant IDs provided, one with the results caches off": {
+			ctx:              user.InjectOrgID(t.Context(), "other|experiment"),
+			expectedDisabled: true,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			actualDisabled, actualErr := provider.GetNativeMetadataResultsCacheDisabled(testCase.ctx)
+
+			if testCase.expectedError == nil {
+				require.NoError(t, actualErr)
+				require.Equal(t, testCase.expectedDisabled, actualDisabled)
+			} else {
+				require.ErrorIs(t, actualErr, testCase.expectedError)
+			}
+		})
+	}
+}
+
 type staticTenantLimits struct {
 	limits map[string]*validation.Limits
 }

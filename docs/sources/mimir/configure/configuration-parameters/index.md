@@ -4937,6 +4937,14 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.native-metadata-grouped-lookup-max-series
 [native_metadata_grouped_lookup_max_series: <int> | default = 1000000]
 
+# (experimental) Neither read nor write the results caches for the tenant's
+# queries: the query-frontend's results cache, of query results and errors, and
+# the query engine's intermediate results cache. A TTL of 0 isn't the same,
+# since entries are still written with it. The label names and values and
+# cardinality query caches are already off when their TTLs are 0, the default.
+# CLI flag: -query-frontend.native-metadata-results-cache-disabled
+[native_metadata_results_cache_disabled: <boolean> | default = false]
+
 # (experimental) Encoding used for float chunks written for this tenant by the
 # ingester and block-builder, and by the compactor when it re-encodes
 # overlapping chunks. Supported values are: xor, xor2.

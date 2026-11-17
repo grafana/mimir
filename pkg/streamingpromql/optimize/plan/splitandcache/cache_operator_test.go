@@ -1331,6 +1331,10 @@ func (m *mockLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (
 	return false, nil
 }
 
+func (m *mockLimitsProvider) GetNativeMetadataResultsCacheDisabled(ctx context.Context) (bool, error) {
+	return false, nil
+}
+
 func TestCacheOperator_CacheKey(t *testing.T) {
 	generateCacheKey := func(tenantID string, desiredTimeRange types.QueryTimeRange, node planning.Node, params *planning.QueryParameters) []byte {
 		// Use the tenant prefix generator: as the org ID is not part of computeCacheKey, the

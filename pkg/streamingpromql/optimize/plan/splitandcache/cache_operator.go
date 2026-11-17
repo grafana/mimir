@@ -1348,6 +1348,7 @@ type LimitsProvider interface {
 	GetMaxCacheFreshness(ctx context.Context) (time.Duration, error)
 	GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error)
 	AllowCachingUnalignedQueries(ctx context.Context) (bool, error)
+	GetNativeMetadataResultsCacheDisabled(ctx context.Context) (bool, error)
 }
 
 // addToMemoryConsumptionEstimate estimates the memory consumption of this extent and adds it to the given memory consumption tracker.

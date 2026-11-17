@@ -750,6 +750,10 @@ func (m multiTenantMockLimits) ResultsCacheForUnalignedQueryEnabled(userID strin
 	return m.byTenant[userID].resultsCacheForUnalignedQueryEnabled
 }
 
+func (m multiTenantMockLimits) NativeMetadataResultsCacheDisabled(userID string) bool {
+	return m.byTenant[userID].nativeMetadataResultsCacheDisabled
+}
+
 func (m multiTenantMockLimits) EnabledPromQLExperimentalFunctions(userID string) []string {
 	return m.byTenant[userID].enabledPromQLExperimentalFunctions
 }
@@ -825,6 +829,7 @@ type mockLimits struct {
 	resultsCacheTTLForLabelsQuery         time.Duration
 	resultsCacheTTLForErrors              time.Duration
 	resultsCacheForUnalignedQueryEnabled  bool
+	nativeMetadataResultsCacheDisabled    bool
 	enabledPromQLExperimentalFunctions    []string
 	enabledPromQLBinopFillModifiers       []string
 	prom2RangeCompat                      bool
@@ -928,6 +933,10 @@ func (m mockLimits) ResultsCacheForUnalignedQueryEnabled(string) bool {
 	return m.resultsCacheForUnalignedQueryEnabled
 }
 
+func (m mockLimits) NativeMetadataResultsCacheDisabled(string) bool {
+	return m.nativeMetadataResultsCacheDisabled
+}
+
 func (m mockLimits) EnabledPromQLExperimentalFunctions(string) []string {
 	return m.enabledPromQLExperimentalFunctions
 }
@@ -1007,6 +1016,10 @@ func (m mockQueryLimitsProvider) GetMaxCacheFreshness(_ context.Context) (time.D
 
 func (m mockQueryLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (bool, error) {
 	return m.m.resultsCacheForUnalignedQueryEnabled, nil
+}
+
+func (m mockQueryLimitsProvider) GetNativeMetadataResultsCacheDisabled(ctx context.Context) (bool, error) {
+	return m.m.nativeMetadataResultsCacheDisabled, nil
 }
 
 type mockHandler struct {

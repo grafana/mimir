@@ -682,6 +682,72 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 	`), splitAndCacheMetricNames...))
 }
 
+func TestSplitAndCacheMiddleware_ResultsCache_NativeMetadataResultsCacheDisabled(t *testing.T) {
+	limits := multiTenantMockLimits{byTenant: map[string]mockLimits{
+		"experiment": {resultsCacheTTL: resultsCacheTTL, nativeMetadataResultsCacheDisabled: true},
+		"other":      {resultsCacheTTL: resultsCacheTTL},
+	}}
+
+	testCases := map[string]struct {
+		orgID           string
+		expectCacheUsed bool
+	}{
+		"tenant with the results cache off": {
+			orgID: "experiment",
+		},
+		// The request is cacheable, so the other cases skip the cache for the setting alone.
+		"tenant with the results cache on": {
+			orgID:           "other",
+			expectCacheUsed: true,
+		},
+		"query across tenants, one with the results cache off": {
+			orgID: "experiment|other",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			cacheBackend := cache.NewInstrumentedMockCache()
+			mw := newSplitAndCacheMiddleware(
+				true,
+				true,
+				24*time.Hour,
+				limits,
+				newMockQueryLimitsProvider(&mockLimits{}),
+				newTestCodec(),
+				cacheBackend,
+				DefaultCacheKeyGenerator{interval: day},
+				PrometheusResponseExtractor{},
+				resultsCacheAlwaysEnabled,
+				log.NewNopLogger(),
+				prometheus.NewPedanticRegistry(),
+				limiter.NewInflightMemoryConsumptionTracker(nil, nil), // Passing in a nil registry so these metrics are not reported in this test
+			)
+			rc := mw.Wrap(HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
+				return &PrometheusResponse{Status: "success", Data: &PrometheusData{ResultType: model.ValMatrix.String()}}, nil
+			}))
+
+			req := &PrometheusRangeQueryRequest{
+				path:      "/api/v1/query_range",
+				start:     parseTimeRFC3339(t, "2021-10-15T10:00:00Z").Unix() * 1000,
+				end:       parseTimeRFC3339(t, "2021-10-15T12:00:00Z").Unix() * 1000,
+				step:      120 * 1000,
+				queryExpr: parseQuery(t, `{__name__=~".+"}`),
+			}
+			_, err := rc.Do(user.InjectOrgID(t.Context(), testCase.orgID), req)
+			require.NoError(t, err)
+
+			// The range is within one split interval, so a cache that's used is read once and written once.
+			expectedCalls := 0
+			if testCase.expectCacheUsed {
+				expectedCalls = 1
+			}
+			assert.Equal(t, expectedCalls, cacheBackend.CountFetchCalls())
+			assert.Equal(t, expectedCalls, cacheBackend.CountStoreCalls())
+		})
+	}
+}
+
 func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAligned(t *testing.T) {
 	cacheBackend := cache.NewInstrumentedMockCache()
 	reg := prometheus.NewPedanticRegistry()

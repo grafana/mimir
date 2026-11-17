@@ -8,6 +8,7 @@ package querymiddleware
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"time"
 
@@ -128,7 +129,8 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	memoryTracker := s.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, req.GetQuery())
 	defer s.memoryConsumptionTrackerFactory.Deregister(memoryTracker)
 
-	isCacheEnabled := s.cacheEnabled && (s.shouldCacheReq == nil || s.shouldCacheReq(req))
+	// A tenant with the results cache off turns it off for queries across tenants too.
+	isCacheEnabled := s.cacheEnabled && (s.shouldCacheReq == nil || s.shouldCacheReq(req)) && !slices.ContainsFunc(tenantIDs, s.limits.NativeMetadataResultsCacheDisabled)
 	maxCacheFreshness := validation.MaxDurationPerTenant(tenantIDs, s.limits.MaxCacheFreshness)
 	maxCacheTime := int64(model.Now().Add(-maxCacheFreshness))
 	cacheUnalignedRequests := validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.ResultsCacheForUnalignedQueryEnabled)

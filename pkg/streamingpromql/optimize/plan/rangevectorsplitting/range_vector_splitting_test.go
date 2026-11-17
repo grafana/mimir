@@ -268,6 +268,51 @@ func TestQuerySplitting_InstantQueryWith5hRange_CacheDisabledByRequest(t *testin
 	verifyCacheStats(t, testCache, 0, 0, 0)
 }
 
+// TestQuerySplitting_InstantQueryWith5hRange_CacheDisabledForTenant runs the same query as
+// TestQuerySplitting_InstantQueryWith5hRange_CacheDisabledByRequest, but for a tenant with the results caches off,
+// and then for another tenant, whose query still reads and writes the cache.
+func TestQuerySplitting_InstantQueryWith5hRange_CacheDisabledForTenant(t *testing.T) {
+	opts := defaultSplittingOpts()
+	opts.Limits = resultsCacheDisabledForTenant{StaticQueryLimitsProvider: streamingpromql.NewStaticQueryLimitsProvider(), tenantID: "experiment"}
+	testCache, mimirEngine := setupEngineAndCacheWithOpts(t, opts)
+
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			some_metric{env="1"} 0+1x60
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	expr := "sum_over_time(some_metric[5h])"
+	ts := timestamp.Time(0).Add(6 * time.Hour)
+	expected := expectedScalarResult(ts, 645, "env", "1")
+
+	runQuery := func(tenantID string) {
+		ctx := user.InjectOrgID(t.Context(), tenantID)
+		q, err := mimirEngine.NewInstantQuery(ctx, promStorage, nil, expr, ts)
+		require.NoError(t, err)
+		t.Cleanup(q.Close)
+		require.Equal(t, expected, q.Exec(ctx))
+	}
+
+	runQuery("experiment")
+	verifyCacheStats(t, testCache, 0, 0, 0)
+
+	// The cacheable blocks (2h-1ms, 4h-1ms] and (4h-1ms, 6h-1ms] miss, and are written.
+	runQuery("other")
+	verifyCacheStats(t, testCache, 2, 0, 2)
+}
+
+// resultsCacheDisabledForTenant turns the results caches off for one tenant only.
+type resultsCacheDisabledForTenant struct {
+	streamingpromql.StaticQueryLimitsProvider
+	tenantID string
+}
+
+func (l resultsCacheDisabledForTenant) GetNativeMetadataResultsCacheDisabled(ctx context.Context) (bool, error) {
+	tenantID, err := user.ExtractOrgID(ctx)
+	return tenantID == l.tenantID, err
+}
+
 func TestQuerySplitting_MultipleSeriesWithGaps_UsesCache(t *testing.T) {
 	testCache, mimirEngine := setupEngineAndCache(t)
 

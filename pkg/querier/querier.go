@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -855,6 +856,16 @@ func (p *TenantQueryLimitsProvider) AllowCachingUnalignedQueries(ctx context.Con
 	}
 
 	return validation.AllTrueBooleansPerTenant(tenantIDs, p.limits.ResultsCacheForUnalignedQueryEnabled), nil
+}
+
+func (p *TenantQueryLimitsProvider) GetNativeMetadataResultsCacheDisabled(ctx context.Context) (bool, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	// A tenant with the results caches off turns them off for queries across tenants too.
+	return slices.ContainsFunc(tenantIDs, p.limits.NativeMetadataResultsCacheDisabled), nil
 }
 
 type RequestMetrics struct {

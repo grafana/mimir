@@ -93,6 +93,7 @@ func containsSubquery(n planning.Node) bool {
 // limitsProvider provides the tenant limits needed to compute split ranges at materialize time.
 type limitsProvider interface {
 	GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error)
+	GetNativeMetadataResultsCacheDisabled(ctx context.Context) (bool, error)
 }
 
 type Materializer struct {
@@ -285,7 +286,13 @@ func (m Materializer) computeRanges(ctx context.Context, inner planning.SplitNod
 		return nil, "no_cacheable_blocks_after_ooo_filter", nil
 	}
 
-	if cacheDisabled {
+	// A tenant with the results caches off splits as a request with them off does, reading and writing no entries.
+	resultsCacheDisabled, err := m.limits.GetNativeMetadataResultsCacheDisabled(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+
+	if cacheDisabled || resultsCacheDisabled {
 		for i := range ranges {
 			ranges[i].Cacheable = false
 		}
