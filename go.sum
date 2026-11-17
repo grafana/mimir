@@ -1206,8 +1206,6 @@ github.com/grafana/memberlist v0.3.1-0.20260921102813-8c522db348af h1:lrJdCKFFud
 github.com/grafana/memberlist v0.3.1-0.20260921102813-8c522db348af/go.mod h1:hBsKPfoN6LPaWuxns4g43DDXMoktHb1q9R7aR+C7mPg=
 github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d h1:k4NIVPYPP0sLJoGNzGwoQs2MpnWTvTcgbWPCzfdX66c=
 github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d/go.mod h1:vRYWnXvI6aWGpsdY/mOT/cbeVRBlPWtBNDb7kGR3uKM=
-github.com/grafana/mimir-prometheus v1.8.2-0.20261116173000-acc619d1422f h1:SZvDKub5TNkZ41tZvGMk1vDhxfuI2fEcob3eEvb2EMI=
-github.com/grafana/mimir-prometheus v1.8.2-0.20261116173000-acc619d1422f/go.mod h1:s6HVD9z76QCo8XtfSBoTnucCeiFAzpVSBxqPmOBFK04=
 github.com/grafana/otel-profiling-go v0.7.0 h1:Q6CBLSgAnYmNQNNrj4ipG0S/K/K8iazA9E4kYRzZf0I=
 github.com/grafana/otel-profiling-go v0.7.0/go.mod h1:Gt7LHg3HEfBoU8ZVArhqYaiA65EjcBe3nd3+arX6eMY=
 github.com/grafana/pyroscope-go/godeltaprof v0.1.12 h1:X6OemT2WcLtxdmNukEQuIp0c+efWVI/tBTd0oeWeDHI=
@@ -1345,6 +1343,8 @@ github.com/julienschmidt/httprouter v1.3.0 h1:U0609e9tgbseu3rBINet9P48AI/D3oJs4d
 github.com/julienschmidt/httprouter v1.3.0/go.mod h1:JR6WtHb+2LUe8TCKY3cZOxFyyO8IZAc4RVcycCCAKdM=
 github.com/jung-kurt/gofpdf v1.0.0/go.mod h1:7Id9E/uU8ce6rXgefFLlgrJj/GYY22cpxn+r32jIOes=
 github.com/jung-kurt/gofpdf v1.0.3-0.20190309125859-24315acbbda5/go.mod h1:7Id9E/uU8ce6rXgefFLlgrJj/GYY22cpxn+r32jIOes=
+github.com/karlskewes/mimir-prometheus v1.8.2-0.20261117201352-03b6ba4b2904 h1:3h1o2tUu6+gMeqr0ckC8VlguzrZJpp3atSOcTEFtdc4=
+github.com/karlskewes/mimir-prometheus v1.8.2-0.20261117201352-03b6ba4b2904/go.mod h1:s6HVD9z76QCo8XtfSBoTnucCeiFAzpVSBxqPmOBFK04=
 github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51/go.mod h1:CzGEWj7cYgsdH8dAjBGEr58BoE7ScuLd+fwFZ44+/x8=
 github.com/keybase/go-keychain v0.0.1 h1:way+bWYa6lDppZoZcgMbYsvC7GxljxrskdNInRtuthU=
 github.com/keybase/go-keychain v0.0.1/go.mod h1:PdEILRW3i9D8JcdM+FmY6RwkHGnhHxXwkPPMeUgOK1k=
