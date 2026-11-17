@@ -233,9 +233,14 @@ func (h *nativeInfoHarness) pushRemoteWrite(t testing.TB, series ...mimirpb.Prea
 // queryContext is the tenant's, with native target_info or the join, and strong read consistency, so that queries see
 // every push.
 func (h *nativeInfoHarness) queryContext(native bool) context.Context {
-	ctx := user.InjectOrgID(context.Background(), h.tenant)
-	ctx = querierapi.ContextWithReadConsistencyLevel(ctx, querierapi.ReadConsistencyStrong)
-	return querier.ContextWithNativeTargetInfo(ctx, native)
+	ctx := querierapi.ContextWithReadConsistencyLevel(h.eventualQueryContext(native), querierapi.ReadConsistencyStrong)
+	return ctx
+}
+
+// eventualQueryContext is queryContext's without strong read consistency, whose wait for the ingesters to catch up
+// would dominate a benchmark's time once they have.
+func (h *nativeInfoHarness) eventualQueryContext(native bool) context.Context {
+	return querier.ContextWithNativeTargetInfo(user.InjectOrgID(context.Background(), h.tenant), native)
 }
 
 // rangeQuery evaluates the query over [start, end] by step, with native target_info or the join.
