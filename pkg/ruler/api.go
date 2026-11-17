@@ -430,6 +430,18 @@ func marshalAndSend(output interface{}, w http.ResponseWriter, logger log.Logger
 	}
 }
 
+// marshalNamespacesAndSend writes the same bytes as marshalAndSend(formatted, ...).
+// If concurrency is more than 1 and formatted has 2 or more namespaces, it encodes each namespace with a separate yaml.Marshal call.
+// At most concurrency of these calls run at the same time.
+// Otherwise it calls marshalAndSend.
+func marshalNamespacesAndSend[V any](formatted map[string]V, concurrency int, w http.ResponseWriter, logger log.Logger, headers ...http.Header) {
+}
+
+// yamlKeyLess reports whether yaml.v3 writes string map key a before string map key b.
+func yamlKeyLess(a, b string) bool {
+	return false
+}
+
 func respondAccepted(w http.ResponseWriter, logger log.Logger, headers ...http.Header) {
 	b, err := json.Marshal(&response{
 		Status: "success",

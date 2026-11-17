@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -2382,4 +2384,117 @@ func requestFor(t *testing.T, method string, url string, body io.Reader, userID 
 	ctx := user.InjectOrgID(req.Context(), userID)
 
 	return req.WithContext(ctx)
+}
+
+// yamlTestNamespaces are namespace names that exercise the yaml.v3 map key order and quoting.
+// Do not add a name with a digit run above the int64 range or with a non-ASCII digit.
+// yaml.v3 has no stable order for such names, so TestYAMLKeyLess would fail at random.
+var yamlTestNamespaces = []string{
+	"ns-9", "ns-10", "ns-010", "ns-1", "ns-01", "ns-19", "ns-101", "ns-1a", "a", "B", "b", "a1", "a01", "a001", "a10b", "a9b",
+	"1", "2", "10", "true", "null", "~", "", " lead", "trail ", "x-1-2", "x-1-10", "z", "_", "-",
+	"ns 1", "ns:1", "ns#1", "\u00e9", "\u00fc", "\u65e5\u672c",
+}
+
+func TestYAMLKeyLess(t *testing.T) {
+	keys := make(map[string]int, len(yamlTestNamespaces))
+	for i, k := range yamlTestNamespaces {
+		keys[k] = i
+	}
+	d, err := yaml.Marshal(keys)
+	require.NoError(t, err)
+	var doc yaml.Node
+	require.NoError(t, yaml.Unmarshal(d, &doc))
+	var want []string
+	for i := 0; i < len(doc.Content[0].Content); i += 2 {
+		want = append(want, doc.Content[0].Content[i].Value)
+	}
+
+	got := slices.Clone(yamlTestNamespaces)
+	sort.Slice(got, func(i, j int) bool { return yamlKeyLess(got[i], got[j]) })
+	require.Equal(t, want, got)
+}
+
+func TestMarshalNamespacesAndSend(t *testing.T) {
+	all := map[string][]rulefmt.RuleGroup{}
+	for i, ns := range yamlTestNamespaces {
+		all[ns] = []rulefmt.RuleGroup{{
+			Name:     fmt.Sprintf("group-%d", i),
+			Interval: model.Duration(time.Minute),
+			Rules: []rulefmt.Rule{
+				{Record: fmt.Sprintf("job:up:sum_%d", i), Expr: `sum by (job) (up{job="api"})`},
+				{
+					Alert:       fmt.Sprintf("Down%d", i),
+					Expr:        "sum by (job) (up)\n  == 0",
+					For:         model.Duration(5 * time.Minute),
+					Labels:      map[string]string{"severity": "critical", "team": "a"},
+					Annotations: map[string]string{"summary": "{{ $labels.job }} is down: {{ $value }}"},
+				},
+			},
+		}}
+	}
+	headers := ProtectedNamespacesHeaderFromSet(map[string]struct{}{"ns-1": {}})
+
+	for _, tc := range []struct {
+		name      string
+		formatted map[string][]rulefmt.RuleGroup
+	}{
+		{name: "no namespaces", formatted: map[string][]rulefmt.RuleGroup{}},
+		{name: "one namespace", formatted: map[string][]rulefmt.RuleGroup{"ns-1": all["ns-1"]}},
+		{name: "all namespaces", formatted: all},
+	} {
+		want := httptest.NewRecorder()
+		marshalAndSend(tc.formatted, want, log.NewNopLogger(), headers)
+		require.Equal(t, http.StatusOK, want.Code)
+
+		for _, concurrency := range []int{1, 2, 8, len(yamlTestNamespaces) + 1, -1, 0} {
+			t.Run(fmt.Sprintf("%s/concurrency=%d", tc.name, concurrency), func(t *testing.T) {
+				got := httptest.NewRecorder()
+				marshalNamespacesAndSend(tc.formatted, concurrency, got, log.NewNopLogger(), headers)
+				require.Equal(t, http.StatusOK, got.Code)
+				require.Equal(t, "application/yaml", got.Header().Get("Content-Type"))
+				require.Equal(t, []string{"ns-1"}, got.Header().Values(ProtectedNamespacesHeader))
+				require.Equal(t, want.Body.String(), got.Body.String())
+			})
+		}
+	}
+}
+
+// writeCountingRecorder counts the Write calls on the response.
+// The count shows which encode path ListRules used.
+// If failAfter is more than 0, each Write after the first failAfter writes fails.
+type writeCountingRecorder struct {
+	*httptest.ResponseRecorder
+	writes    int
+	failAfter int
+}
+
+func (w *writeCountingRecorder) Write(b []byte) (int, error) {
+	w.writes++
+	if w.failAfter > 0 && w.writes > w.failAfter {
+		return 0, errors.New("write failed")
+	}
+	return w.ResponseRecorder.Write(b)
+}
+
+func TestMarshalNamespacesAndSend_StopsAtFirstWriteError(t *testing.T) {
+	formatted := map[string][]rulefmt.RuleGroup{"a": nil, "b": nil, "c": nil}
+	w := &writeCountingRecorder{ResponseRecorder: httptest.NewRecorder(), failAfter: 1}
+	marshalNamespacesAndSend(formatted, 2, w, log.NewNopLogger())
+	require.Equal(t, 2, w.writes)
+	require.Equal(t, "a: []\n", w.Body.String())
+}
+
+// panicOnMarshal panics when yaml.v3 encodes it.
+type panicOnMarshal struct{}
+
+func (panicOnMarshal) MarshalYAML() (interface{}, error) {
+	panic("test panic")
+}
+
+func TestMarshalNamespacesAndSend_RecoversPanic(t *testing.T) {
+	formatted := map[string]panicOnMarshal{"a": {}, "b": {}}
+	w := httptest.NewRecorder()
+	marshalNamespacesAndSend(formatted, 2, w, log.NewNopLogger())
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	require.Contains(t, w.Body.String(), "test panic")
 }
