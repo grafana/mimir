@@ -4,14 +4,17 @@ package querier
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 
 	"github.com/axiomhq/hyperloglog"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // Every group carries one count per bucket, or one count without a step.
@@ -175,4 +178,17 @@ func TestEstimateMerger(t *testing.T) {
 			assert.ElementsMatch(t, tc.estimated, got)
 		})
 	}
+}
+
+// A deduplicating group is its own hash set, so many small groups must reach the memory limit at what the sets hold.
+func TestEstimateMerger_ChargesHashGroupsAsSets(t *testing.T) {
+	// 1,000 one-hash groups take 1,000 * (GroupBytes + 5 + HashBytes) = 221,000 bytes; 64 per group would be 93,000.
+	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 150_000, prometheus.NewCounter(prometheus.CounterOpts{Name: "rejected"}), "test")
+	m := newEstimateMerger(limiter.AddMemoryTrackerToContext(context.Background(), tracker), true)
+	var err error
+	for i := 0; i < 1000 && err == nil; i++ {
+		err = m.add("store-gateway", fmt.Sprintf("m%04d", i), nil, []uint64{uint64(i)}, nil)
+	}
+	require.Error(t, err)
+	assert.LessOrEqual(t, tracker.CurrentEstimatedMemoryConsumptionBytes(), uint64(150_000))
 }
