@@ -74,7 +74,7 @@ func TestTrackerStore_Snapshot_PublishedFormat(t *testing.T) {
 	}
 }
 
-func TestTrackerStore_LoadSnapshot_ReadsBothVersions(t *testing.T) {
+func TestTrackerStore_LoadSnapshot_ReadsEveryShardCount(t *testing.T) {
 	// Every combination of "format the snapshot was written in" and "count the loading store is
 	// configured with" a rollout can produce. All of them load every series: a snapshot written
 	// with a different count is re-sharded.
@@ -84,24 +84,6 @@ func TestTrackerStore_LoadSnapshot_ReadsBothVersions(t *testing.T) {
 		snapshotNumShards int
 		storeNumShards    int
 	}{
-		{
-			name:              "v1 snapshot into a store with the legacy count",
-			version:           snapshotEncodingVersionV1,
-			snapshotNumShards: legacySnapshotNumShards,
-			storeNumShards:    legacySnapshotNumShards,
-		},
-		{
-			name:              "v1 snapshot into a store with more shards",
-			version:           snapshotEncodingVersionV1,
-			snapshotNumShards: legacySnapshotNumShards,
-			storeNumShards:    32,
-		},
-		{
-			name:              "v1 snapshot into a store with one shard",
-			version:           snapshotEncodingVersionV1,
-			snapshotNumShards: legacySnapshotNumShards,
-			storeNumShards:    1,
-		},
 		{
 			name:              "v2 snapshot into a store with the same count",
 			version:           snapshotEncodingVersion,
@@ -149,9 +131,9 @@ func TestTrackerStore_LoadSnapshot_ReadsBothVersions(t *testing.T) {
 }
 
 func TestTrackerStore_Snapshot_ShardCountMigration(t *testing.T) {
-	// The rollout of a new shard count: a store with the default count publishes its snapshots, and a
+	// The rollout of a new shard count: a store with the legacy count publishes v1 snapshots, and a
 	// store with another count loads them and publishes its own. The next step loads those, until
-	// the last one goes back to the default count, as a rollback of the change would.
+	// the last one goes back to the legacy count, as a rollback of the change would.
 	// No step may lose a series, or put one in a shard where tracking it again wouldn't find it.
 	series := make([]uint64, 0, 4*tenantshard.MaxNumShards)
 	for i := 0; i < 4*tenantshard.MaxNumShards; i++ {
@@ -223,9 +205,9 @@ func TestTrackerStore_LoadSnapshot_Invalid(t *testing.T) {
 			expectedErr: "invalid snapshot format, shard 7 out of bounds",
 		},
 		{
-			name:        "v1 shard index out of bounds",
-			data:        encodeSnapshot(snapshotEncodingVersionV1, legacySnapshotNumShards, legacySnapshotNumShards, snapshotTestNow, nil),
-			expectedErr: "invalid snapshot format, shard 16 out of bounds",
+			name:        "v1 snapshot",
+			data:        encodeSnapshot(1, 0, 0, snapshotTestNow, nil),
+			expectedErr: "unexpected snapshot version 1",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -327,9 +309,7 @@ func trackSnapshotTestSeries(t *testing.T, store *trackerStore, shard uint8, num
 func encodeSnapshot(version byte, numShards int, shard uint8, now time.Time, tenants map[string]map[uint64]clock.Minutes) []byte {
 	buf := encoding.Encbuf{}
 	buf.PutByte(version)
-	if version >= snapshotEncodingVersionV2 {
-		buf.PutUvarint64(uint64(numShards))
-	}
+	buf.PutUvarint64(uint64(numShards))
 	buf.PutByte(shard)
 	buf.PutBE64(uint64(now.Unix()))
 	buf.PutUvarint64(uint64(len(tenants)))
