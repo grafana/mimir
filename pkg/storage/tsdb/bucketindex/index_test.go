@@ -6,13 +6,11 @@
 package bucketindex
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
@@ -337,36 +335,6 @@ func TestBlockFromThanosMeta(t *testing.T) {
 			assert.Equal(t, testData.expected, *BlockFromThanosMeta(testData.meta))
 		})
 	}
-}
-
-func TestBlock_EmptyCompactorShardsRoundTrip(t *testing.T) {
-	meta := block.Meta{
-		BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(1, nil), MinTime: 10, MaxTime: 20},
-		Thanos: block.ThanosMeta{
-			Labels:               map[string]string{block.CompactorShardIDExternalLabel: "1_of_4"},
-			EmptyCompactorShards: []uint64{1, 3},
-		},
-	}
-
-	encoded, err := json.Marshal(&Index{Version: IndexVersion2, Blocks: Blocks{BlockFromThanosMeta(meta)}})
-	require.NoError(t, err)
-	assert.Contains(t, string(encoded), `"empty_compactor_shards":[1,3]`)
-
-	var decoded Index
-	require.NoError(t, json.Unmarshal(encoded, &decoded))
-	require.Len(t, decoded.Blocks, 1)
-	assert.Equal(t, []uint64{1, 3}, decoded.Blocks[0].EmptyCompactorShards)
-	assert.Equal(t, []uint64{1, 3}, decoded.Blocks[0].ThanosMeta().Thanos.EmptyCompactorShards)
-
-	// A block written before the field existed has no record and encodes without the field.
-	meta.Thanos.EmptyCompactorShards = nil
-	encoded, err = json.Marshal(BlockFromThanosMeta(meta))
-	require.NoError(t, err)
-	assert.NotContains(t, string(encoded), "empty_compactor_shards")
-
-	var old Block
-	require.NoError(t, json.Unmarshal(encoded, &old))
-	assert.Nil(t, old.EmptyCompactorShards)
 }
 
 func TestBlock_Within(t *testing.T) {

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -119,10 +118,6 @@ type Block struct {
 
 	// Labels contains the external labels from the block's metadata.
 	Labels map[string]string `json:"labels,omitempty"`
-
-	// EmptyCompactorShards is copied from the block's metadata: the split-compactor shards (0-based)
-	// that the compactor wrote no block for, because they hold no series.
-	EmptyCompactorShards []uint64 `json:"empty_compactor_shards,omitempty"`
 }
 
 // Within returns whether the block contains samples within the provided range.
@@ -170,8 +165,6 @@ func (m *Block) ThanosMeta() *block.Meta {
 			SegmentFiles: m.thanosMetaSegmentFiles(),
 			Source:       block.SourceType(m.Source),
 			Labels:       maps.Clone(m.Labels),
-
-			EmptyCompactorShards: slices.Clone(m.EmptyCompactorShards),
 		},
 	}
 }
@@ -213,8 +206,6 @@ func BlockFromThanosMeta(meta block.Meta) *Block {
 		OutOfOrder:       meta.Compaction.FromOutOfOrder(),
 		NumSeries:        meta.Stats.NumSeries,
 		Labels:           maps.Clone(meta.Thanos.Labels),
-
-		EmptyCompactorShards: slices.Clone(meta.Thanos.EmptyCompactorShards),
 	}
 }
 

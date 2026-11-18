@@ -93,19 +93,6 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTable(t *testing.T) {
 		assert.True(t, res.LowerBound)
 	})
 
-	t.Run("a shard the compactor recorded as empty is not missing", func(t *testing.T) {
-		oneShard := map[BlocksStoreClient][][]ulid.ULID{
-			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: countsFor(b1, map[string]int64{"up": 3})}: {{b1}},
-		}
-		blocks := bucketindex.Blocks{{ID: b1, MinTime: minT, MaxTime: maxT, CompactorShardID: "1_of_2", EmptyCompactorShards: []uint64{1}}}
-		res, err := estimate(newQueryable(blocks, oneShard))
-		require.NoError(t, err)
-		assert.Equal(t, map[string][]int64{"up": {3}}, res.Counts)
-		assert.Empty(t, res.MissingBlocks)
-		assert.Empty(t, res.MissingShards)
-		assert.False(t, res.LowerBound)
-	})
-
 	t.Run("forwards the groups limit and reports a refusal as 422", func(t *testing.T) {
 		var got *storegatewaypb.SeriesCountsRequest
 		refusing := map[BlocksStoreClient][][]ulid.ULID{
@@ -314,33 +301,6 @@ func TestMissingShards(t *testing.T) {
 	// shard 2 is still in its 2-unit sources. Both are counted.
 	assert.Empty(t, missingShards(bucketindex.Blocks{block(0, 24, "1_of_2"), block(0, 2, "1_of_2"), block(0, 2, "2_of_2"), block(2, 4, "2_of_2")}))
 	assert.Empty(t, missingShards(bucketindex.Blocks{block(0, 24, "1_of_2"), block(0, 24, "2_of_2"), block(0, 2, "1_of_2")}), "a source still listed beside its merged shard")
-
-	withEmpty := func(b *bucketindex.Block, empty ...uint64) *bucketindex.Block {
-		b.EmptyCompactorShards = empty
-		return b
-	}
-	assert.Empty(t, missingShards(bucketindex.Blocks{withEmpty(block(0, 100, "1_of_2"), 1)}), "the only block records the other shard as empty")
-	assert.Empty(t, missingShards(bucketindex.Blocks{withEmpty(block(0, 100, "2_of_4"), 0, 2), withEmpty(block(0, 100, "4_of_4"), 0, 2)}))
-	assert.Equal(t,
-		[]missingShard{{Shard: "3_of_4", MinTime: 0, MaxTime: 100}},
-		missingShards(bucketindex.Blocks{withEmpty(block(0, 100, "2_of_4"), 0, 2), withEmpty(block(0, 100, "4_of_4"), 0)}),
-		"a shard is empty only if every block of the range records it",
-	)
-	assert.Equal(t,
-		[]missingShard{{Shard: "1_of_4", MinTime: 0, MaxTime: 100}, {Shard: "3_of_4", MinTime: 0, MaxTime: 100}},
-		missingShards(bucketindex.Blocks{block(0, 100, "2_of_4"), withEmpty(block(0, 100, "4_of_4"), 0, 2)}),
-		"a block with no record, as from an older compactor, records no shard as empty",
-	)
-	assert.Equal(t,
-		[]missingShard{{Shard: "2_of_2", MinTime: 100, MaxTime: 200}},
-		missingShards(bucketindex.Blocks{withEmpty(block(0, 100, "1_of_2"), 1), block(100, 200, "1_of_2")}),
-		"a record covers its own block range only",
-	)
-	assert.Equal(t,
-		[]missingShard{{Shard: "2_of_3", MinTime: 0, MaxTime: 100}},
-		missingShards(bucketindex.Blocks{withEmpty(block(0, 100, "1_of_3"), 2, 7)}),
-		"a shard not recorded is still missing, and an index past the shard count is ignored",
-	)
 }
 
 func TestCheckDisjointShards(t *testing.T) {

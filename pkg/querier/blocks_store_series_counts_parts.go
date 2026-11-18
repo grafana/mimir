@@ -116,7 +116,7 @@ func checkDisjointShards(blocks bucketindex.Blocks) error {
 	return nil
 }
 
-// missingShard is a split-compactor shard that no listed block holds for the block range [MinTime, MaxTime). The compactor uploads no block for a shard with no series. It records that shard on the blocks it does upload, so a shard is missing only if no block holds it and the range's blocks do not all record it as empty.
+// missingShard is a split-compactor shard that no listed block holds for the block range [MinTime, MaxTime). The compactor uploads no block for a shard with no series, so a missing shard is either empty or a block not counted, which the answer can't tell apart.
 type missingShard struct {
 	Shard   string `json:"shard"`
 	MinTime int64  `json:"start"`
@@ -147,10 +147,8 @@ func missingShards(blocks bucketindex.Blocks) []missingShard {
 			continue
 		}
 		seen := map[uint64]bool{}
-		// A block's record covers only the blocks it was compacted from, so a shard is empty for the range only if every block records it.
-		var empty []uint64
 		var count uint64
-		for i, b := range byRange[r] {
+		for _, b := range byRange[r] {
 			index, of, err := sharding.ParseShardIDLabelValue(b.CompactorShardID)
 			if err != nil || (count != 0 && of != count) || of > maxCheckedShardCount {
 				count = 0
@@ -158,16 +156,9 @@ func missingShards(blocks bucketindex.Blocks) []missingShard {
 			}
 			count = of
 			seen[index] = true
-			if i == 0 {
-				empty = slices.Clone(b.EmptyCompactorShards)
-				continue
-			}
-			empty = slices.DeleteFunc(empty, func(shard uint64) bool {
-				return !slices.Contains(b.EmptyCompactorShards, shard)
-			})
 		}
 		for i := uint64(0); i < count; i++ {
-			if !seen[i] && !slices.Contains(empty, i) {
+			if !seen[i] {
 				out = append(out, missingShard{Shard: sharding.FormatShardIDLabelValue(i, count), MinTime: r.minT, MaxTime: r.maxT})
 			}
 		}

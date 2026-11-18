@@ -438,8 +438,6 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 							Labels: map[string]string{
 								block.CompactorShardIDExternalLabel: "1_of_2",
 							},
-							// The shard with no block is recorded on the block of the other shard.
-							EmptyCompactorShards: []uint64{1},
 						},
 					},
 				}
@@ -684,7 +682,6 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 				assert.Equal(t, e.MaxTime, actual[i].MaxTime)
 				assert.Equal(t, e.Compaction.Sources, actual[i].Compaction.Sources)
 				assert.Equal(t, e.Thanos.Labels, actual[i].Thanos.Labels)
-				assert.Equal(t, e.Thanos.EmptyCompactorShards, actual[i].Thanos.EmptyCompactorShards)
 			}
 		})
 	}

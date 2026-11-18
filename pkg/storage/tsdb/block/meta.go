@@ -125,11 +125,6 @@ type ThanosMeta struct {
 	// Useful to avoid API call to get size of each file, as well as for debugging purposes.
 	// Optional, added in v0.17.0.
 	Files []File `json:"files,omitempty"`
-
-	// EmptyCompactorShards lists the split-compactor shards (0-based, out of the shard count in this
-	// block's shard ID label) that hold no series of the blocks this block was compacted from, so no
-	// block was written for them. Optional.
-	EmptyCompactorShards []uint64 `json:"empty_compactor_shards,omitempty"`
 }
 
 type Matchers []*labels.Matcher
