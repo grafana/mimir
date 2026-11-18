@@ -50,6 +50,7 @@ const (
 	queryTypeRange                        = "query_range"
 	queryTypeRemoteRead                   = "remote_read"
 	queryTypeCardinality                  = "cardinality"
+	queryTypeCardinalityEstimate          = "cardinality_estimate"
 	queryTypeLabels                       = "label_names_and_values"
 	queryTypeActiveSeries                 = "active_series"
 	queryTypeActiveNativeHistogramMetrics = "active_native_histogram_metrics"
@@ -376,7 +377,6 @@ func newQueryTripperware(
 		// Look up cache as first thing after validation.
 		if cfg.CacheResults {
 			cardinality = newCardinalityQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, cardinality, log, registerer)
-			cardinalityEstimate = newCardinalityEstimateCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, cardinalityEstimate, log, registerer)
 			labels = newLabelsQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, labels, log, registerer)
 		}
 

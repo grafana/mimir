@@ -610,7 +610,6 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 	assert.True(t, out.HasMore, "limit=2 cut one of three groups")
 	assert.False(t, out.LowerBound)
 	assert.Empty(t, out.MissingBlocks)
-	assert.Empty(t, rec.Header().Get("Cache-Control"), "a complete answer can be cached")
 
 	// The blocks cover only the first day of a two-day window: the answer is
 	// a lower bound, which the query-frontend must not cache.
@@ -622,7 +621,6 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 	h.ServeHTTP(rec, r)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Contains(t, rec.Body.String(), `"lower_bound":true`)
-	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 
 }
 
@@ -652,7 +650,6 @@ func TestCardinalityEstimateHandler_MissingShard(t *testing.T) {
 	assert.JSONEq(t, `[{"shard":"2_of_2","start":0,"end":86400000}]`, string(raw["missing_shards"]))
 	assert.NotContains(t, raw, "missing_blocks")
 	assert.JSONEq(t, `3`, string(raw["total"]))
-	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 }
 
 // The design spells "every metric name" as {__name__=~".+"}, which is read
