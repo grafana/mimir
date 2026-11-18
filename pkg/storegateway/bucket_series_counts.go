@@ -156,11 +156,20 @@ func (m *countMemory) take(b uint64, what string) error {
 	if b == 0 {
 		return nil
 	}
-	if n := m.held.Add(b); m.limit > 0 && n > m.limit {
-		m.held.Sub(b)
+	if m.limit == 0 {
+		m.held.Add(b)
+		return nil
+	}
+	for {
+		held := m.held.Load()
+		if held+b <= m.limit {
+			if m.held.CompareAndSwap(held, held+b) {
+				return nil
+			}
+			continue
+		}
 		return cardinality.Refusalf(cardinality.LimitMemory, "the request would hold more than %d bytes in the store-gateway while counting, the tenant's cardinality estimate memory limit, with %s", m.limit, what)
 	}
-	return nil
 }
 
 func (m *countMemory) release(b uint64) {
@@ -189,6 +198,12 @@ func (c *seriesCountsState) measureLazyMatchers(ctx context.Context, o *countBlo
 		c.tableBytes.Add(labelStats.OffsetsTableBytes)
 	}
 	return nil
+}
+
+// offsetsHeldBytes is what a label's postings offsets, read into memory, are charged: each entry
+// holds its value and its range, about twice its size in the table.
+func offsetsHeldBytes(tableBytes int64) uint64 {
+	return 2 * uint64(max(0, tableBytes))
 }
 
 // seriesEntryPlanningBytes is a typical series entry size, used to choose between series entries and group-by postings.
@@ -546,8 +561,13 @@ func (s *BucketStore) resolveCountPostings(ctx context.Context, c *seriesCountsS
 			if tableBytes >= o.seriesCount*seriesEntryPlanningBytes {
 				return nil
 			}
+			held := offsetsHeldBytes(tableBytes)
+			if err := c.mem.take(held, fmt.Sprintf("the %s postings offsets of block %s", c.opts.GroupBy, o.b.meta.ULID)); err != nil {
+				return err
+			}
 			offsets, err := o.b.indexHeaderReader.LabelValuesOffsets(pctx, c.opts.GroupBy, "", nil)
 			if err != nil {
+				c.mem.release(held)
 				return status.Errorf(codes.Internal, "block %s: %s offsets: %v", o.b.meta.ULID, c.opts.GroupBy, err)
 			}
 			c.tableBytes.Add(tableBytes)
@@ -557,11 +577,14 @@ func (s *BucketStore) resolveCountPostings(ctx context.Context, c *seriesCountsS
 					cost += off.Off.End - off.Off.Start
 				}
 			}
-			if tableBytes+cost < o.seriesCount*seriesEntryPlanningBytes {
-				o.groupOffsets = offsets
-				if o.groupOffsets == nil {
-					o.groupOffsets = []streamindex.PostingListOffset{}
-				}
+			if tableBytes+cost >= o.seriesCount*seriesEntryPlanningBytes {
+				c.mem.release(held)
+				return nil
+			}
+			o.held += held
+			o.groupOffsets = offsets
+			if o.groupOffsets == nil {
+				o.groupOffsets = []streamindex.PostingListOffset{}
 			}
 			return nil
 		})
@@ -819,6 +842,16 @@ func (s *BucketStore) countPerBlock(ctx context.Context, c *seriesCountsState, l
 			if err != nil {
 				return status.Errorf(codes.Internal, "block %s: %s offsets table: %v", o.b.meta.ULID, c.opts.GroupBy, err)
 			}
+			// Refused from the index-header's samples before the offsets are read.
+			if n := int64(labelStats.CountLowerBound); c.maxGroups > 0 && n > c.maxGroups {
+				return cardinality.MaxGroupsRefusal(fmt.Sprintf("block %s holds at least", o.b.meta.ULID), n, c.opts.GroupBy, c.maxGroups)
+			}
+			offsetsHeld := offsetsHeldBytes(labelStats.OffsetsTableBytes)
+			if err := c.mem.take(offsetsHeld, fmt.Sprintf("the %s postings offsets of block %s", c.opts.GroupBy, o.b.meta.ULID)); err != nil {
+				return err
+			}
+			// The offsets and the counts built from them are given back once the block's groups are charged.
+			defer c.mem.release(offsetsHeld)
 			offsets, err := o.b.indexHeaderReader.LabelValuesOffsets(gctx, c.opts.GroupBy, "", nil)
 			if err != nil {
 				return status.Errorf(codes.Internal, "block %s: %s offsets: %v", o.b.meta.ULID, c.opts.GroupBy, err)

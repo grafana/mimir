@@ -35,7 +35,7 @@ service StoreGateway {
   rpc SearchLabelValues(thanos.SearchLabelValuesRequest) returns (stream thanos.SearchResultBatch);
 
   // SeriesCounts counts the series in the given blocks that match the matchers and have a chunk in the window,
-  // grouped by one label. A block inside the window with no matchers, hashes or query shard is counted from
+  // grouped by one label. A block inside the window with no matchers or hashes is counted from
   // its postings offsets table alone when that table is cheaper than reading its series entries; otherwise it reads
   // postings and series entries. The groups are streamed in value
   // order, in batches; the first message carries every other field, and a response always has one. Experimental.
@@ -53,8 +53,8 @@ message SeriesCountsRequest {
   ];
   // Blocks to count, as ULID strings. Blocks this store-gateway does not hold are left out of the response's block_ids.
   repeated string block_ids = 2;
-  // The most groups the answer may have. With no matchers and no query shard, a request is refused with
-  // ResourceExhausted before any postings offsets table is walked when one block inside the window holds more
+  // The most groups the answer may have. With no matchers, or with per_block, a request is refused with
+  // ResourceExhausted before any postings offsets table is walked when one block (inside the window, unless per_block) holds more
   // distinct values of group_by than this, from the index-header's samples; and after counting when the groups are
   // more. 0 means no limit.
   int64 max_groups = 3;
@@ -83,7 +83,7 @@ message SeriesCountsResponse {
   // the index-header's samples. With index-header version 2 the table is read from object storage.
   int64 postings_offsets_table_bytes = 9;
   // Blocks counted from the postings offsets table alone, reading no postings and no series entries: blocks
-  // inside the window with no matchers, hashes or query shard whose table is cheaper than their series
+  // inside the window with no matchers or hashes whose table is cheaper than their series
   // entries.
   int64 blocks_from_offsets_table = 11;
 }

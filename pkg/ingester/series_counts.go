@@ -316,7 +316,7 @@ func (w *seriesCountsWalk) countFromPostingsOnly(ctx context.Context, sources []
 		src.blockMinT < req.StartMs || src.blockMaxT >= req.EndMs {
 		return false, nil
 	}
-	return true, countFromPostings(ctx, src.idx, w.counter.GroupBy(), req.MaxGroups, resp)
+	return true, countFromPostings(ctx, src.idx, w.counter.GroupBy(), req.MaxGroups, w.hold, resp)
 }
 
 // boundGroups refuses a request whose local blocks inside the window already hold more groups than
@@ -570,9 +570,10 @@ func expandPostingsUpTo(ctx context.Context, p index.Postings, max int64) (refs 
 }
 
 // countFromPostings sets resp's groups to one count per value of groupBy, the length of its
-// postings list in idx, and counts the series without the label under the empty value. idx must
+// postings list in idx, and counts the series without the label under the empty value. Each group is
+// held with hold before it is kept. idx must
 // not change while it reads: a block's index, not the head's.
-func countFromPostings(ctx context.Context, idx tsdb.IndexReader, groupBy string, maxGroups int64, resp *client.SeriesCountsResponse) error {
+func countFromPostings(ctx context.Context, idx tsdb.IndexReader, groupBy string, maxGroups int64, hold func(uint64) error, resp *client.SeriesCountsResponse) error {
 	countPostings := func(name, value string) (int64, error) {
 		p, err := idx.Postings(ctx, name, value)
 		if err != nil {
@@ -616,6 +617,9 @@ func countFromPostings(ctx context.Context, idx tsdb.IndexReader, groupBy string
 		}
 		if n == 0 {
 			continue
+		}
+		if err := hold(uint64(countedGroupBytes + len(v))); err != nil {
+			return err
 		}
 		withLabel += n
 		groups = append(groups, &cardinalitypb.SeriesCountGroup{Value: v, Counts: []int64{n}})

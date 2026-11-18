@@ -498,8 +498,8 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 		assert.NotContains(t, raw, old)
 	}
 	// What the estimate cost is in the log line and the metrics, not in the
-	// response, which the query-frontend caches.
-	for _, cost := range []string{"elapsed_ms", "index_bytes", "postings_fetched_bytes", "series_fetched_bytes", "postings_offsets_table_bytes", "series_counted", "hash_bytes", "sketch_bytes", "blocks_from_postings", "retries", "store_gateways", "blocks"} {
+	// response.
+	for _, cost := range []string{"elapsed_ms", "index_bytes", "postings_fetched_bytes", "series_fetched_bytes", "postings_offsets_table_bytes", "series_counted", "hash_bytes", "blocks_from_postings", "retries", "store_gateways", "blocks"} {
 		assert.NotContains(t, raw, cost)
 	}
 	line := logs.String()
@@ -518,7 +518,7 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 	assert.Empty(t, out.MissingBlocks)
 
 	// The blocks cover only the first day of a two-day window: the answer is
-	// a lower bound, which the query-frontend must not cache.
+	// a lower bound.
 	q.compartments[0].finder.(*blocksFinderMock).On("GetBlocks", mock.Anything, "user-1", int64(0), 2*dayMs-1).Return(blocks, &bucketindex.Metadata{}, nil)
 	q.compartments[0].stores.(*blocksStoreSetMock).mockedResponses = append(q.compartments[0].stores.(*blocksStoreSetMock).mockedResponses, clients)
 	r = httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=172800&match[]={job="x"}`, nil)

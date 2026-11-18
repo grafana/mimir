@@ -447,11 +447,11 @@ func (e *CardinalityEstimator) blocksBounds(ctx context.Context, tenantID string
 				continue
 			}
 			counts := perBlock[id]
-			// The range's three tables hold a group per value.
+			// The range's tables, while folding and in the answer, hold up to six entries per value.
 			var b uint64
 			for v := range counts {
 				if _, ok := bb.rng.single[v]; !ok {
-					b += 3 * uint64(estimateGroupBytes+len(v))
+					b += 6 * uint64(estimateGroupBytes+len(v))
 				}
 			}
 			if tracker != nil && b > 0 {

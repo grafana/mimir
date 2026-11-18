@@ -198,7 +198,7 @@ func TestCardinalityEstimateHandler_WriteFailureNotWrittenIntoBody(t *testing.T)
 	var logs bytes.Buffer
 	q.logger = log.NewLogfmtLogger(&logs)
 	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour)), CardinalityEstimateConfig{}, false)
-	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400&step=1d&match[]={job="x"}`, nil)
+	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400&match[]={job="x"}`, nil)
 	r = r.WithContext(user.InjectOrgID(context.Background(), "user-1"))
 	rec := httptest.NewRecorder()
 	w := &failingAfterFirstWrite{ResponseWriter: rec}

@@ -660,7 +660,7 @@ func TestCardinalityEstimator_EstimateMemoryLimit(t *testing.T) {
 	t.Run("the default limits bound an estimate", func(t *testing.T) {
 		var defaults validation.Limits
 		flagext.DefaultValues(&defaults)
-		assert.Equal(t, uint64(256<<20), defaults.CardinalityEstimateMaxMemoryBytes, "about 8M hashes at the 32 bytes each is budgeted")
+		assert.Equal(t, uint64(256<<20), defaults.CardinalityEstimateMaxMemoryBytes, "256 MiB in the querier, each store-gateway call and each ingester walk")
 		assert.Zero(t, defaults.MaxEstimatedMemoryConsumptionPerQuery)
 		assert.Equal(t, uint64(256<<20), estimateMemoryLimit(defaults.CardinalityEstimateMaxMemoryBytes, defaults.MaxEstimatedMemoryConsumptionPerQuery))
 	})

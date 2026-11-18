@@ -37,8 +37,8 @@ type SeriesCountsRequest struct {
 	cardinalitypb.CountQuery `protobuf:"bytes,1,opt,name=query,proto3,embedded=query" json:"query"`
 	// Blocks to count, as ULID strings. Blocks this store-gateway does not hold are left out of the response's block_ids.
 	BlockIds []string `protobuf:"bytes,2,rep,name=block_ids,json=blockIds,proto3" json:"block_ids,omitempty"`
-	// The most groups the answer may have. With no matchers and no query shard, a request is refused with
-	// ResourceExhausted before any postings offsets table is walked when one block inside the window holds more
+	// The most groups the answer may have. With no matchers, or with per_block, a request is refused with
+	// ResourceExhausted before any postings offsets table is walked when one block (inside the window, unless per_block) holds more
 	// distinct values of group_by than this, from the index-header's samples; and after counting when the groups are
 	// more. 0 means no limit.
 	MaxGroups int64 `protobuf:"varint,3,opt,name=max_groups,json=maxGroups,proto3" json:"max_groups,omitempty"`
@@ -120,7 +120,7 @@ type SeriesCountsResponse struct {
 	// the index-header's samples. With index-header version 2 the table is read from object storage.
 	PostingsOffsetsTableBytes int64 `protobuf:"varint,9,opt,name=postings_offsets_table_bytes,json=postingsOffsetsTableBytes,proto3" json:"postings_offsets_table_bytes,omitempty"`
 	// Blocks counted from the postings offsets table alone, reading no postings and no series entries: blocks
-	// inside the window with no matchers, hashes or query shard whose table is cheaper than their series
+	// inside the window with no matchers or hashes whose table is cheaper than their series
 	// entries.
 	BlocksFromOffsetsTable int64 `protobuf:"varint,11,opt,name=blocks_from_offsets_table,json=blocksFromOffsetsTable,proto3" json:"blocks_from_offsets_table,omitempty"`
 }
@@ -439,7 +439,7 @@ type StoreGatewayClient interface {
 	// SearchLabelValues streams label values for the given label name matching the search filter.
 	SearchLabelValues(ctx context.Context, in *storepb.SearchLabelValuesRequest, opts ...grpc.CallOption) (StoreGateway_SearchLabelValuesClient, error)
 	// SeriesCounts counts the series in the given blocks that match the matchers and have a chunk in the window,
-	// grouped by one label. A block inside the window with no matchers, hashes or query shard is counted from
+	// grouped by one label. A block inside the window with no matchers or hashes is counted from
 	// its postings offsets table alone when that table is cheaper than reading its series entries; otherwise it reads
 	// postings and series entries. The groups are streamed in value
 	// order, in batches; the first message carries every other field, and a response always has one. Experimental.
@@ -619,7 +619,7 @@ type StoreGatewayServer interface {
 	// SearchLabelValues streams label values for the given label name matching the search filter.
 	SearchLabelValues(*storepb.SearchLabelValuesRequest, StoreGateway_SearchLabelValuesServer) error
 	// SeriesCounts counts the series in the given blocks that match the matchers and have a chunk in the window,
-	// grouped by one label. A block inside the window with no matchers, hashes or query shard is counted from
+	// grouped by one label. A block inside the window with no matchers or hashes is counted from
 	// its postings offsets table alone when that table is cheaper than reading its series entries; otherwise it reads
 	// postings and series entries. The groups are streamed in value
 	// order, in batches; the first message carries every other field, and a response always has one. Experimental.
