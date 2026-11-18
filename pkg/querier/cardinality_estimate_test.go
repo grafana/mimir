@@ -67,8 +67,6 @@ func (ingestersWithinLimit) MaxQueryLookback(string) time.Duration { return 0 }
 
 func (ingestersWithinLimit) CompactorBlocksRetentionPeriod(string) time.Duration { return 0 }
 
-func (ingestersWithinLimit) CardinalityEstimateMaxIndexBytes(string) int64 { return 0 }
-
 func (ingestersWithinLimit) CardinalityEstimateMaxMemoryBytes(string) uint64 { return 0 }
 
 func (ingestersWithinLimit) CardinalityEstimateMaxGroups(string) int64 { return 0 }
@@ -83,15 +81,6 @@ type maxGroupsLimit struct {
 func (l maxGroupsLimit) CardinalityEstimateMaxGroups(string) int64 { return l.groups }
 
 func (ingestersWithinLimit) MaxLabelNameLength(string) int { return 1024 }
-
-// indexBytesLimit is ingestersWithinLimit with a limit on index bytes per
-// estimate.
-type indexBytesLimit struct {
-	ingestersWithinLimit
-	bytes int64
-}
-
-func (l indexBytesLimit) CardinalityEstimateMaxIndexBytes(string) int64 { return l.bytes }
 
 func (ingestersWithinLimit) MaxEstimatedMemoryConsumptionPerQuery(string) uint64 { return 0 }
 
@@ -142,7 +131,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1}}, {Value: "errors_total", Counts: []int64{1}}}, SeriesCounted: 2, MinTimeMs: 97 * hour},
 		}}}
 		job := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "a")}
-		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: job, MinT: 98 * hour, MaxT: 100 * hour, GroupBy: "__name__", MaxIndexBytes: 1000})
+		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: job, MinT: 98 * hour, MaxT: 100 * hour, GroupBy: "__name__"})
 		require.NoError(t, err)
 		assert.Equal(t, SourceHead, res.Source)
 		assert.Equal(t, ReadHeadChunkMetas, res.Read)
@@ -150,7 +139,6 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.Equal(t, map[string][]int64{"up": {3}, "errors_total": {1}}, res.Counts)
 		require.NotNil(t, ing.gotSeriesCounts)
 		assert.Equal(t, "__name__", ing.gotSeriesCounts.GroupBy)
-		assert.Equal(t, int64(1000), ing.gotSeriesCounts.MaxIndexBytes)
 		assert.Equal(t, []cardinalitypb.LabelMatcher{{Type: labels.MatchEqual, Name: "job", Value: "a"}}, ing.gotSeriesCounts.Matchers)
 	})
 
@@ -227,14 +215,6 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.False(t, res.LowerBound)
 	})
 
-	t.Run("a head walk over max_index_bytes is refused", func(t *testing.T) {
-		ing := &ingestersMock{seriesCountsErr: cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would walk 9 head series, about 4608 bytes at 512 bytes each, more than max_index_bytes 1000")}
-		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour, MaxIndexBytes: 1000})
-		require.ErrorContains(t, err, "more than max_index_bytes 1000")
-		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
-		assert.Equal(t, refusedByMaxIndexBytes, estimateRefusalLimit(err))
-	})
-
 	t.Run("the ingesters are sent the max_groups cap and their refusal on it is 422", func(t *testing.T) {
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
 			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 99 * hour},
@@ -287,7 +267,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		}}}
 		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
 		e.now = func() time.Time { return now }
-		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour, MaxIndexBytes: 1000})
+		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour})
 		require.NoError(t, err)
 		assert.Equal(t, SourceBlocksAndHead, res.Source)
 		assert.True(t, res.Dedup)
@@ -295,9 +275,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.False(t, res.LowerBound, "the block ends where the ingesters' data starts")
 		require.NotNil(t, gotBlocks)
 		assert.True(t, gotBlocks.Hashes)
-		assert.Equal(t, int64(500), gotBlocks.MaxIndexBytes, "max_index_bytes is split between the two sources")
 		assert.True(t, ing.gotSeriesCounts.Hashes)
-		assert.Equal(t, int64(500), ing.gotSeriesCounts.MaxIndexBytes)
 	})
 
 	t.Run("a gap between the blocks and the ingesters is a lower bound", func(t *testing.T) {
@@ -400,21 +378,6 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.Equal(t, http.StatusInternalServerError, estimateHTTPStatus(err))
 	})
 
-	t.Run("an ingester over its max_hashes share is refused", func(t *testing.T) {
-		ing := &ingestersMock{seriesCountsErr: cardinality.MaxHashesRefusal(42, 10)}
-		e := newEstimator(nil, ing)
-		e.limits = estimateMemoryLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), estimate: 10 * cardinality.HashBudgetBytes}
-		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99*hour + hour/2, MaxT: 100 * hour})
-		require.Error(t, err)
-		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
-		assert.Equal(t, refusedByMaxHashes, estimateRefusalLimit(err))
-		require.NotNil(t, ing.gotSeriesCounts)
-		assert.Equal(t, int64(10), ing.gotSeriesCounts.MaxHashes, "the whole limit, which the distributor splits across the ingesters")
-		n, ok := estimateHashesNeeded(res, err)
-		require.True(t, ok)
-		assert.Equal(t, int64(42), n, "the log line says what the walk would have hashed")
-	})
-
 	t.Run("an ingester failure leaves the transport error's address out of the error text", func(t *testing.T) {
 		ing := &ingestersMock{seriesCountsErr: status.Error(codes.Unavailable, "connection error: dial tcp 10.9.9.9:9095: connect: connection refused")}
 		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour})
@@ -504,7 +467,7 @@ func TestCardinalityEstimator_BlocksAndHeadAskedConcurrently(t *testing.T) {
 
 	t.Run("a store-gateway's refusal ends the ingesters' call and is the error returned", func(t *testing.T) {
 		_, err := estimate(func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
-			return nil, cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "more than max_index_bytes 10")
+			return nil, cardinality.Refusalf(cardinality.LimitMaxGroups, "more than max_groups 10")
 		}, func(ctx context.Context, _ *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error) {
 			select {
 			case <-ctx.Done():
@@ -528,11 +491,11 @@ func TestCardinalityEstimator_BlocksAndHeadAskedConcurrently(t *testing.T) {
 			return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds}, nil
 		}, func(context.Context, *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error) {
 			defer close(ingestersAnswered)
-			return distributor.SeriesCountsResult{}, cardinality.Refusalf(cardinality.LimitMaxHashes, "more than max_hashes 10")
+			return distributor.SeriesCountsResult{}, cardinality.Refusalf(cardinality.LimitMaxGroups, "more than max_groups 10")
 		})
 		require.Error(t, err)
 		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err), err)
-		assert.Equal(t, refusedByMaxHashes, estimateRefusalLimit(err))
+		assert.Equal(t, refusedByMaxGroups, estimateRefusalLimit(err))
 	})
 }
 
@@ -642,47 +605,6 @@ func TestCardinalityEstimator_MemoryLimit(t *testing.T) {
 	}
 }
 
-func TestCardinalityEstimator_TenantIndexBytesLimit(t *testing.T) {
-	const hour = int64(time.Hour / time.Millisecond)
-	now := time.UnixMilli(100 * hour)
-	b1 := ulid.MustNew(1, nil)
-	day := bucketindex.Blocks{{ID: b1, MinTime: 52 * hour, MaxTime: 76 * hour}}
-
-	for name, tc := range map[string]struct {
-		asked, limit, want int64
-	}{
-		"a request without max_index_bytes gets the tenant's limit": {asked: 0, limit: 1000, want: 1000},
-		"a larger request is cut to the tenant's limit":             {asked: 5000, limit: 1000, want: 1000},
-		"a smaller request is kept":                                 {asked: 600, limit: 1000, want: 600},
-		"without a tenant limit the request is unbounded":           {asked: 0, limit: 0, want: 0},
-	} {
-		t.Run(name, func(t *testing.T) {
-			finder := &blocksFinderMock{}
-			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(day, &bucketindex.Metadata{}, nil)
-			var got *storegatewaypb.SeriesCountsRequest
-			gw := gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1}}}})
-			q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
-			}}}}, queryStoreAfter: 12 * time.Hour}
-			ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
-				{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}, MinTimeMs: 87 * hour},
-			}}}
-			e := NewCardinalityEstimator(q, ing, indexBytesLimit{ingestersWithinLimit(13 * time.Hour), tc.limit})
-			e.now = func() time.Time { return now }
-
-			// The window reaches both sources, which share the bound evenly.
-			req := &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour, MaxIndexBytes: tc.asked}
-			_, err := e.Estimate(context.Background(), "user-1", req)
-			require.NoError(t, err)
-			assert.Equal(t, tc.want, req.MaxIndexBytes)
-			require.NotNil(t, got)
-			require.NotNil(t, ing.gotSeriesCounts)
-			assert.Equal(t, tc.want/2, got.MaxIndexBytes, "the store-gateway's share")
-			assert.Equal(t, tc.want/2, ing.gotSeriesCounts.MaxIndexBytes, "the ingesters' share")
-		})
-	}
-}
-
 // estimateMemoryLimits is ingestersWithinLimit with both memory limits.
 type estimateMemoryLimits struct {
 	ingestersWithinLimit
@@ -742,61 +664,6 @@ func TestCardinalityEstimator_EstimateMemoryLimit(t *testing.T) {
 		assert.Zero(t, defaults.MaxEstimatedMemoryConsumptionPerQuery)
 		assert.Equal(t, uint64(256<<20), estimateMemoryLimit(defaults.CardinalityEstimateMaxMemoryBytes, defaults.MaxEstimatedMemoryConsumptionPerQuery))
 	})
-}
-
-// The hashes a deduplicating estimate may hold, and so the shares its
-// sources get, follow the tenant's memory limit for an estimate, or the
-// per-query limit when that is lower; with neither there is no limit.
-func TestEstimateHashBudget(t *testing.T) {
-	// A hash is budgeted 32 bytes: the 24 it holds merged and the 8 it holds in its source's answer until then.
-	assert.Equal(t, int64(256<<20/32), estimateHashBudget(256<<20, 0))
-	assert.Equal(t, int64(1<<30/32), estimateHashBudget(1<<30, 0), "a raised tenant limit")
-	assert.Equal(t, int64(64<<20/32), estimateHashBudget(256<<20, 64<<20), "the per-query limit when lower")
-	assert.Equal(t, int64(256<<20/32), estimateHashBudget(0, 256<<20), "the per-query limit alone")
-	assert.Zero(t, estimateHashBudget(0, 0), "no limit")
-
-	const hour = int64(time.Hour / time.Millisecond)
-	for name, tc := range map[string]struct {
-		estimate, query uint64
-		want            int64
-	}{
-		"raised":   {estimate: 3200, want: 100},
-		"lowered":  {estimate: 3200, query: 640, want: 20},
-		"no limit": {want: 0},
-	} {
-		t.Run(name, func(t *testing.T) {
-			ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{}}
-			e := NewCardinalityEstimator(&BlocksStoreQueryable{queryStoreAfter: 12 * time.Hour}, ing, estimateMemoryLimits{ingestersWithinLimit(13 * time.Hour), tc.estimate, tc.query})
-			e.now = func() time.Time { return time.UnixMilli(100 * hour) }
-			_, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour})
-			require.NoError(t, err)
-			require.NotNil(t, ing.gotSeriesCounts)
-			assert.Equal(t, tc.want, ing.gotSeriesCounts.MaxHashes)
-		})
-	}
-}
-
-// Blocks plus head share one budget, as they share max_index_bytes.
-func TestCardinalityEstimator_HashBudgetSplits(t *testing.T) {
-	assert.Equal(t, int64(1), estimateHashBudget(10, 0), "a limit under one hash still allows one")
-	const hour = int64(time.Hour / time.Millisecond)
-	day := bucketindex.Blocks{{ID: ulid.MustNew(1, nil), MinTime: 0, MaxTime: 96 * hour}}
-	var gotGateway *storegatewaypb.SeriesCountsRequest
-	gw := gatewayAnswering("1.1.1.1", &gotGateway, storegatewaypb.SeriesCountsResponse{})
-	finder := &blocksFinderMock{}
-	finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(day, &bucketindex.Metadata{}, nil)
-	q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][][]ulid.ULID{gw: {{day[0].ID}}},
-	}}}}, queryStoreAfter: 12 * time.Hour}
-	ing := &ingestersMock{}
-	e := NewCardinalityEstimator(q, ing, estimateMemoryLimits{ingestersWithinLimit(13 * time.Hour), 100 * cardinality.HashBudgetBytes, 0})
-	e.now = func() time.Time { return time.UnixMilli(100 * hour) }
-	_, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 80 * hour, MaxT: 100 * hour})
-	require.NoError(t, err)
-	require.NotNil(t, gotGateway)
-	require.NotNil(t, ing.gotSeriesCounts)
-	assert.Equal(t, int64(50), gotGateway.MaxHashes, "the blocks' half")
-	assert.Equal(t, int64(50), ing.gotSeriesCounts.MaxHashes, "the ingesters' half")
 }
 
 // Ingester answers over the memory limit, as the distributor charges them, are a refusal by memory.

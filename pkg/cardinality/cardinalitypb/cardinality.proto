@@ -22,12 +22,7 @@ message CountQuery {
   // sources that share series.
   bool hashes = 7;
   reserved 8;
-  // Fail with ResourceExhausted rather than read more than this many index bytes. Each source's request says how it
-  // prices them. 0 means no limit.
-  int64 max_index_bytes = 9;
-  // With hashes, the most label-set hashes the source may hold for the request, refused with ResourceExhausted
-  // before the series are read when the source can already tell, and while they are read otherwise. 0 means no limit.
-  int64 max_hashes = 10;
+  reserved 9, 10;
 }
 
 message LabelMatcher {

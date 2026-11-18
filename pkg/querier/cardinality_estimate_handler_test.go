@@ -249,19 +249,14 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 		// limit is the limit that refused the request, if any.
 		limit string
 	}{
-		"a store-gateway refusing on max_index_bytes is 422": {
-			blocks: oneDay, clients: gatewayFailing(cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about 5000 index bytes, more than max_index_bytes 1000")),
-			query: `start=0&end=86400&match[]={job="x"}&max_index_bytes=1000`, status: http.StatusUnprocessableEntity, body: "max_index_bytes",
-			limit: refusedByMaxIndexBytes,
-		},
 		"a store-gateway refusing on max_groups is 422": {
 			blocks: oneDay, clients: gatewayFailing(cardinality.Refusalf(cardinality.LimitMaxGroups, "the blocks hold 5 distinct values of pod, more than max_groups 2")),
 			query: `start=0&end=86400&match[]={job="x"}`, status: http.StatusUnprocessableEntity, body: "max_groups 2",
 			limit: refusedByMaxGroups,
 		},
-		"an older store-gateway is 422 and not a split of max_index_bytes": {
+		"an older store-gateway is 422": {
 			blocks: oneDay, clients: gatewayFailing(status.Error(codes.Unimplemented, "unknown method SeriesCounts")),
-			query: `start=0&end=86400&match[]={job="x"}&max_index_bytes=1000`, status: http.StatusUnprocessableEntity, body: "a store-gateway does not support cardinality estimates yet", absent: "split into",
+			query: `start=0&end=86400&match[]={job="x"}`, status: http.StatusUnprocessableEntity, body: "a store-gateway does not support cardinality estimates yet",
 		},
 		"a store-gateway rejecting the request is 400": {
 			blocks: oneDay, clients: gatewayFailing(status.Error(codes.InvalidArgument, "step_ms doesn't divide the window")),
@@ -293,7 +288,7 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 			assert.Contains(t, errBody["error"], tc.body)
 			assert.NotContains(t, rec.Body.String(), "1.1.1.1", "an error names the kind of component, not its address")
 			refusals := 0.0
-			for _, limit := range []string{refusedByMaxHashes, refusedByMaxIndexBytes, refusedByMemory, refusedByMaxGroups} {
+			for _, limit := range []string{refusedByMemory, refusedByMaxGroups} {
 				n := testutil.ToFloat64(q.metrics.estimateRefusals.WithLabelValues(limit))
 				refusals += n
 				if limit == tc.limit {
@@ -462,61 +457,29 @@ func TestCardinalityEstimateHandler_MinCountAndStreamedCounts(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(rec.Body.String(), `"groups":`), "the streamed body is one JSON object")
 }
 
-// A deduplicating estimate sends each store-gateway a share of the hashes
-// the tenant's memory limit allows as max_hashes; a source over its share
-// refuses with 422, and the log line, the refusals counter and the
-// dedup-hashes histogram record what was asked.
-func TestCardinalityEstimateHandler_MaxHashes(t *testing.T) {
+// A deduplicating estimate records the distinct hashes it held in the
+// dedup-hashes histogram.
+func TestCardinalityEstimateHandler_DedupHashes(t *testing.T) {
 	b1, b2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
 	days := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}}
-	run := func(t *testing.T, clients map[BlocksStoreClient][][]ulid.ULID) (*BlocksStoreQueryable, *httptest.ResponseRecorder, string) {
-		q := seriesCountsQueryable(0, 2*dayMs, days, clients)
-		q.compartments[0].finder.(*blocksFinderMock).On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(days, &bucketindex.Metadata{}, nil)
-		var logs bytes.Buffer
-		q.logger = log.NewLogfmtLogger(&logs)
-		q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, prometheus.NewPedanticRegistry())
-		// 100 hashes at the 32 bytes each is budgeted.
-		limits := estimateMemoryLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), estimate: 100 * cardinality.HashBudgetBytes}
-		h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, limits), CardinalityEstimateConfig{}, false)
-		r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=172800&match[]={job="x"}&max_index_bytes=100000`, nil)
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, r.WithContext(user.InjectOrgID(r.Context(), "user-1")))
-		return q, rec, logs.String()
+	clients := map[BlocksStoreClient][][]ulid.ULID{
+		gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2, 3}}}, SeriesCounted: 3}): {{b1}},
+		gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{3, 4}}}, SeriesCounted: 2}):    {{b2}},
 	}
+	q := seriesCountsQueryable(0, 2*dayMs, days, clients)
+	q.compartments[0].finder.(*blocksFinderMock).On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(days, &bucketindex.Metadata{}, nil)
+	q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, prometheus.NewPedanticRegistry())
+	limits := estimateMemoryLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour)}
+	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, limits), CardinalityEstimateConfig{}, false)
+	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=172800&match[]={job="x"}`, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r.WithContext(user.InjectOrgID(r.Context(), "user-1")))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
-	t.Run("each call gets a share, and the held hashes are recorded", func(t *testing.T) {
-		var got1, got2 *storegatewaypb.SeriesCountsRequest
-		q, rec, line := run(t, map[BlocksStoreClient][][]ulid.ULID{
-			gatewayAnswering("1.1.1.1", &got1, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2, 3}}}, SeriesCounted: 3}): {{b1}},
-			gatewayAnswering("2.2.2.2", &got2, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{3, 4}}}, SeriesCounted: 2}):    {{b2}},
-		})
-		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-		require.NotNil(t, got1)
-		require.NotNil(t, got2)
-		assert.Equal(t, int64(50), got1.MaxHashes)
-		assert.Equal(t, int64(50), got2.MaxHashes)
-		assert.Contains(t, line, "hashes_needed=5")
-		hist := &dto.Metric{}
-		require.NoError(t, q.metrics.estimateDedupHashes.Write(hist))
-		assert.Equal(t, uint64(1), hist.GetHistogram().GetSampleCount())
-		assert.Equal(t, 4.0, hist.GetHistogram().GetSampleSum(), "four distinct hashes held")
-	})
-
-	t.Run("a store-gateway over its share is a max_hashes refusal", func(t *testing.T) {
-		refusing := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
-			return nil, cardinality.MaxHashesRefusal(70, 50)
-		}}
-		q, rec, line := run(t, map[BlocksStoreClient][][]ulid.ULID{
-			refusing: {{b1}},
-			gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{}): {{b2}},
-		})
-		assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
-		assert.Contains(t, rec.Body.String(), "the 100 hashes the tenant's cardinality estimate memory limit allows, split into 50 for each of 2 store-gateway calls")
-		assert.NotContains(t, rec.Body.String(), "max_index_bytes 100000, split")
-		assert.Contains(t, line, "hashes_needed=70")
-		assert.Contains(t, line, "refused_by=max_hashes")
-		assert.Equal(t, 1.0, testutil.ToFloat64(q.metrics.estimateRefusals.WithLabelValues(refusedByMaxHashes)))
-	})
+	hist := &dto.Metric{}
+	require.NoError(t, q.metrics.estimateDedupHashes.Write(hist))
+	assert.Equal(t, uint64(1), hist.GetHistogram().GetSampleCount())
+	assert.Equal(t, 4.0, hist.GetHistogram().GetSampleSum(), "four distinct hashes held")
 }
 
 // estimateDisabled is ingestersWithinLimit with the endpoint disabled for
@@ -556,7 +519,7 @@ func TestObserveEstimate_RequestsFlagsAndRetries(t *testing.T) {
 
 	q.observeEstimate(ctx, req, answered, &estimateResponse{}, time.Second, nil)
 	q.observeEstimate(ctx, req, flagged, &estimateResponse{}, time.Second, nil)
-	q.observeEstimate(ctx, req, CardinalityEstimateResult{Source: SourceBlocks}, nil, time.Second, refusedByLimit(refusedByMaxIndexBytes, "over max_index_bytes"))
+	q.observeEstimate(ctx, req, CardinalityEstimateResult{Source: SourceBlocks}, nil, time.Second, refusedByLimit(refusedByMaxGroups, "over max_groups"))
 	q.observeEstimate(ctx, req, CardinalityEstimateResult{Source: SourceHead}, nil, time.Second, badEstimateRequest("bad window"))
 	q.observeEstimate(ctx, req, CardinalityEstimateResult{}, nil, time.Second, errors.New("store-gateway down"))
 	q.observeRefusedRequest(time.Millisecond, badEstimateRequest("bad parameters"))
@@ -908,4 +871,16 @@ func TestCardinalityEstimateHandler_LabelBasedAccessControlReachesTheIngesters(t
 			}
 		})
 	}
+}
+
+// A store-gateway's or an ingester's memory refusal is counted with the refusals; the querier's own
+// is counted by its memory tracker.
+func TestObserveEstimate_CountsASourceMemoryRefusal(t *testing.T) {
+	q := &BlocksStoreQueryable{metrics: newBlocksStoreQueryableMetrics(compartments.Config{}, prometheus.NewPedanticRegistry())}
+	req := CardinalityEstimateRequest{MinT: 0, MaxT: dayMs}
+	source := cardinality.Refusalf(cardinality.LimitMemory, "the request would hold more than 100 bytes in the store-gateway")
+	q.observeEstimate(context.Background(), req, CardinalityEstimateResult{}, nil, time.Second, classifyStoreGatewayError("1.1.1.1", source))
+	assert.Equal(t, 1.0, testutil.ToFloat64(q.metrics.estimateRefusals.WithLabelValues(refusedByMemory)))
+	q.observeEstimate(context.Background(), req, CardinalityEstimateResult{}, nil, time.Second, refusedByLimit(refusedByMemory, "the groups this estimate holds in the querier"))
+	assert.Equal(t, 1.0, testutil.ToFloat64(q.metrics.estimateRefusals.WithLabelValues(refusedByMemory)), "the querier's own is not counted twice")
 }

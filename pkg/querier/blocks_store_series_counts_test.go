@@ -184,30 +184,6 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		assert.Equal(t, int64(48), res.HashBytes, "six hashes of 8 bytes")
 	})
 
-	t.Run("max_index_bytes is split across the store-gateway calls", func(t *testing.T) {
-		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"}, {ID: b2, MinTime: 0, MaxTime: dayMs, CompactorShardID: "2_of_2"}}
-		var got1, got2 *storegatewaypb.SeriesCountsRequest
-		clients := map[BlocksStoreClient][][]ulid.ULID{
-			gatewayAnswering("1.1.1.1", &got1, storegatewaypb.SeriesCountsResponse{}): {{b1}},
-			gatewayAnswering("2.2.2.2", &got2, storegatewaypb.SeriesCountsResponse{}): {{b2}},
-		}
-		_, err := seriesCountsQueryable(0, dayMs, blocks, clients).seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
-		require.NoError(t, err)
-		assert.Equal(t, int64(500), got1.MaxIndexBytes)
-		assert.Equal(t, int64(500), got2.MaxIndexBytes)
-	})
-
-	t.Run("a store-gateway over max_index_bytes fails the request", func(t *testing.T) {
-		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
-		over := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
-			return nil, cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about 5000 index bytes, more than max_index_bytes 1000")
-		}}
-		_, err := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{over: {{b1}}}).seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
-		require.ErrorContains(t, err, "max_index_bytes 1000, split into 1000 bytes for each of 1 store-gateway calls: store-gateway: the request would read about 5000 index bytes, more than max_index_bytes 1000")
-		assert.Equal(t, "1.1.1.1", estimateSourceAddr(err))
-		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
-	})
-
 	t.Run("fails if a block is not counted", func(t *testing.T) {
 		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 		clients := map[BlocksStoreClient][][]ulid.ULID{
@@ -231,7 +207,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 			map[BlocksStoreClient][][]ulid.ULID{down: {{b1}}, up: {{b2}}},
 			map[BlocksStoreClient][][]ulid.ULID{replica: {{b1}}},
 		}}
-		res, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
+		res, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"up": {7}}, res.Counts, "b1 counted once, by the replica")
 		assert.False(t, res.LowerBound)
@@ -239,32 +215,9 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		assert.Equal(t, 3, res.StoreGateways)
 		require.NotNil(t, gotRetry)
 		assert.Equal(t, []string{b1.String()}, gotRetry.BlockIds)
-		assert.Equal(t, int64(850), gotRetry.MaxIndexBytes, "the retry gets what the answered call left of max_index_bytes, postings offsets table included")
 	})
 
-	t.Run("a failed call's share of max_index_bytes is given to its retry", func(t *testing.T) {
-		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
-		down := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
-			return nil, status.Error(codes.Internal, "failed after reading the index")
-		}}
-		var gotRetry *storegatewaypb.SeriesCountsRequest
-		replica := gatewayAnswering("3.3.3.3", &gotRetry, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{5}}}})
-		q := seriesCountsQueryable(0, dayMs, blocks, nil)
-		q.dynamicReplication = storegateway.NewNopDynamicReplication(3)
-		q.compartments[0].stores = &blocksStoreSetMock{mockedResponses: []interface{}{
-			map[BlocksStoreClient][][]ulid.ULID{down: {{b1}}},
-			map[BlocksStoreClient][][]ulid.ULID{replica: {{b1}}},
-		}}
-		res, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
-		require.NoError(t, err)
-		assert.Equal(t, map[string][]int64{"up": {5}}, res.Counts)
-		assert.False(t, res.LowerBound)
-		assert.Equal(t, 1, res.Retries)
-		require.NotNil(t, gotRetry)
-		assert.Equal(t, int64(1000), gotRetry.MaxIndexBytes, "the only call of the first attempt failed, so its retry gets all of max_index_bytes")
-	})
-
-	t.Run("a busy store-gateway is retried on another one with its share of max_index_bytes", func(t *testing.T) {
+	t.Run("a busy store-gateway is retried on another one", func(t *testing.T) {
 		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 		busy := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
 			return nil, cardinality.Busyf("the store-gateway runs as many counts as it is allowed to")
@@ -277,13 +230,12 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 			map[BlocksStoreClient][][]ulid.ULID{busy: {{b1}}},
 			map[BlocksStoreClient][][]ulid.ULID{replica: {{b1}}},
 		}}
-		res, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
+		res, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"up": {5}}, res.Counts)
 		assert.False(t, res.LowerBound)
 		assert.Equal(t, 1, res.Retries)
 		require.NotNil(t, gotRetry)
-		assert.Equal(t, int64(1000), gotRetry.MaxIndexBytes)
 	})
 
 	t.Run("a store-gateway with the estimate disabled for the tenant fails the request", func(t *testing.T) {
@@ -328,51 +280,6 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		assert.Equal(t, 1, res.Retries)
 		require.NotNil(t, gotRetry)
 		assert.Equal(t, []string{b1.String()}, gotRetry.BlockIds, "only the block left out is retried")
-	})
-
-	t.Run("a retry's max_hashes share is what the hashes already held leave", func(t *testing.T) {
-		// Two block ranges, so the store-gateways send hashes.
-		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}}
-		down := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
-			return nil, status.Error(codes.Unavailable, "connection refused")
-		}}
-		hashes := make([]uint64, 30)
-		for i := range hashes {
-			hashes[i] = uint64(i + 1)
-		}
-		var gotFirst, gotRetry *storegatewaypb.SeriesCountsRequest
-		up := gatewayAnswering("2.2.2.2", &gotFirst, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: hashes}}})
-		replica := gatewayAnswering("3.3.3.3", &gotRetry, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{100, 101}}}})
-		q := seriesCountsQueryable(0, 2*dayMs, blocks, nil)
-		q.dynamicReplication = storegateway.NewNopDynamicReplication(3)
-		q.compartments[0].stores = &blocksStoreSetMock{mockedResponses: []interface{}{
-			map[BlocksStoreClient][][]ulid.ULID{down: {{b1}}, up: {{b2}}},
-			map[BlocksStoreClient][][]ulid.ULID{replica: {{b1}}},
-		}}
-		res, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, MaxHashes: 100})
-		require.NoError(t, err)
-		assert.True(t, res.Dedup)
-		assert.Equal(t, map[string][]int64{"up": {32}}, res.Counts)
-		require.NotNil(t, gotFirst)
-		assert.Equal(t, int64(50), gotFirst.MaxHashes, "the first attempt splits the budget across its two calls")
-		require.NotNil(t, gotRetry)
-		assert.Equal(t, int64(70), gotRetry.MaxHashes, "the retry gets what the 30 hashes held leave of the budget")
-
-		// A retry with the budget already held is refused on max_hashes.
-		full := make([]uint64, 100)
-		for i := range full {
-			full[i] = uint64(i + 1)
-		}
-		q = seriesCountsQueryable(0, 2*dayMs, blocks, nil)
-		q.dynamicReplication = storegateway.NewNopDynamicReplication(3)
-		q.compartments[0].stores = &blocksStoreSetMock{mockedResponses: []interface{}{
-			map[BlocksStoreClient][][]ulid.ULID{down: {{b1}}, gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: full}}}): {{b2}}},
-			map[BlocksStoreClient][][]ulid.ULID{replica: {{b1}}},
-		}}
-		_, err = q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, MaxHashes: 100})
-		require.Error(t, err)
-		assert.Equal(t, refusedByMaxHashes, estimateRefusalLimit(err))
-		assert.Contains(t, err.Error(), "the 100 hashes the tenant's cardinality estimate memory limit allows are held before every block was counted")
 	})
 
 	t.Run("a block no replica counts makes the counts a lower bound", func(t *testing.T) {
@@ -513,11 +420,10 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 		req, opts, err := parseCardinalityEstimateRequest(r, defaultMaxGroupByLength)
 		return req, opts.limit, err
 	}
-	req, limit, err := parse(`start=0&end=86400&match[]={__name__="up"}&group_by=pod&max_index_bytes=100&limit=5`)
+	req, limit, err := parse(`start=0&end=86400&match[]={__name__="up"}&group_by=pod&limit=5`)
 	require.NoError(t, err)
 	assert.Equal(t, int64(86400000), req.MaxT)
 	assert.Equal(t, "pod", req.GroupBy)
-	assert.Equal(t, int64(100), req.MaxIndexBytes)
 	assert.Equal(t, 5, limit)
 	require.Len(t, req.Matchers, 1)
 
@@ -547,7 +453,6 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 		"start=10&end=5",
 		"start=0&end=10&match[]=up{&",
 		"start=0&end=10&match[]=a&match[]=b",
-		"start=0&end=10&max_index_bytes=-1",
 		"start=0&end=10&limit=x",
 	} {
 		_, _, err := parse(bad)
@@ -715,13 +620,6 @@ func TestBlocksStoreQueryable_CardinalityEstimate_PicksTheRead(t *testing.T) {
 			assert.Equal(t, tc.counts, res.Counts)
 		})
 	}
-}
-
-func TestSplitIndexBytes(t *testing.T) {
-	assert.Equal(t, int64(0), splitIndexBytes(0, 4), "unlimited stays unlimited")
-	assert.Equal(t, int64(1000), splitIndexBytes(1000, 1))
-	assert.Equal(t, int64(333), splitIndexBytes(1000, 3))
-	assert.Equal(t, int64(1), splitIndexBytes(3, 8), "a positive limit never becomes unlimited")
 }
 
 // As on the Series path, a store-gateway failing with any gRPC code has its blocks retried on another

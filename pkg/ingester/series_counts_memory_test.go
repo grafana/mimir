@@ -21,8 +21,8 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 )
 
-// A count walk holds the refs of the series it resolved and, over several sources, each series
-// gathered by hash. The tenant's memory limit bounds both.
+// A count walk holds the refs of the series it resolved, over several sources each series gathered
+// by hash, and the groups and hashes it counts. The tenant's memory limit bounds all of them.
 func TestIngester_SeriesCounts_TenantMemoryLimit(t *testing.T) {
 	const minute = int64(time.Minute / time.Millisecond)
 	const hour = 60 * minute
@@ -69,6 +69,8 @@ func TestIngester_SeriesCounts_TenantMemoryLimit(t *testing.T) {
 		return &client.SeriesCountsRequest{StartMs: 0, EndMs: 4 * hour}
 	}
 	held := uint64(refs*seriesRefBytes + gathered*gatheredSeriesBytes)
+	// Groups a and b, each with a one-byte value.
+	groups := uint64(2 * (countedGroupBytes + 1))
 
 	t.Run("no limit", func(t *testing.T) {
 		got, err := counts(t, 0, whole())
@@ -76,9 +78,13 @@ func TestIngester_SeriesCounts_TenantMemoryLimit(t *testing.T) {
 		assert.Equal(t, map[string]int{"a": 1, "b": 1}, got)
 	})
 	t.Run("what the walk holds fits", func(t *testing.T) {
-		got, err := counts(t, held, whole())
+		got, err := counts(t, held+groups, whole())
 		require.NoError(t, err)
 		assert.Equal(t, map[string]int{"a": 1, "b": 1}, got)
+	})
+	t.Run("the last group counted does not fit", func(t *testing.T) {
+		_, err := counts(t, held+groups-1, whole())
+		requireRefusedByMemory(t, err)
 	})
 	t.Run("the last series gathered does not fit", func(t *testing.T) {
 		_, err := counts(t, held-1, whole())
@@ -88,12 +94,21 @@ func TestIngester_SeriesCounts_TenantMemoryLimit(t *testing.T) {
 		_, err := counts(t, refs*seriesRefBytes-1, whole())
 		requireRefusedByMemory(t, err)
 	})
-	t.Run("a walk over the head alone holds only refs", func(t *testing.T) {
+	t.Run("a walk over the head alone holds refs and what it counts", func(t *testing.T) {
 		req := &client.SeriesCountsRequest{StartMs: 2 * hour, EndMs: 4 * hour}
-		got, err := counts(t, 2*seriesRefBytes, req)
+		fit := uint64(2*seriesRefBytes + countedGroupBytes + 1)
+		got, err := counts(t, fit, req)
 		require.NoError(t, err)
 		assert.Equal(t, map[string]int{"a": 1}, got)
-		_, err = counts(t, 2*seriesRefBytes-1, req)
+		_, err = counts(t, fit-1, req)
+		requireRefusedByMemory(t, err)
+	})
+	t.Run("asked for hashes, each hash and its group are held", func(t *testing.T) {
+		req := &client.SeriesCountsRequest{StartMs: 2 * hour, EndMs: 4 * hour, Hashes: true}
+		fit := uint64(2*seriesRefBytes + cardinality.GroupBytes + 1 + 2*cardinality.HashBytes)
+		_, err := counts(t, fit, req)
+		require.NoError(t, err)
+		_, err = counts(t, fit-1, req)
 		requireRefusedByMemory(t, err)
 	})
 }

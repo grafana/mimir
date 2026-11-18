@@ -651,6 +651,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 		WithIndexCache(u.indexCache),
 		WithQueryGate(u.queryGate),
 		WithCountGate(u.countGate),
+		WithCountMaxMemoryBytes(func() uint64 { return u.limits.CardinalityEstimateMaxMemoryBytes(userID) }),
 		WithLazyLoadingGate(u.lazyLoadingGate),
 	}
 

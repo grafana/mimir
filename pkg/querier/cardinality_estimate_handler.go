@@ -68,7 +68,7 @@ type estimateResponse struct {
 }
 
 // NewCardinalityEstimateHandler serves series counts from the store-gateways or the ingesters without loading chunks (see CardinalityEstimator.Estimate).
-// It takes start, end, match[], group_by (default __name__), max_index_bytes, min_count and limit.
+// It takes start, end, match[], group_by (default __name__), min_count and limit.
 // The table is sorted largest first.
 // start is moved up to -querier.max-query-lookback and -compactor.blocks-retention-period, and a window wholly before them is answered with no groups.
 // Errors: 400 when the endpoint is disabled or the request can't be answered as asked, 422 when a limit refused it, 503 past -querier.timeout or when every source asked was at its limit of concurrent counts, 500 otherwise, each with a Prometheus API error body.
@@ -276,11 +276,6 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 	}
 	if strings.ContainsFunc(req.GroupBy, unicode.IsControl) {
 		return req, opts, errors.New("group_by must not hold control characters")
-	}
-	if v := r.FormValue("max_index_bytes"); v != "" {
-		if req.MaxIndexBytes, err = strconv.ParseInt(v, 10, 64); err != nil || req.MaxIndexBytes < 0 {
-			return req, opts, errors.New("max_index_bytes must be a non-negative integer")
-		}
 	}
 	if v := r.FormValue("min_count"); v != "" {
 		if opts.minCount, err = strconv.ParseInt(v, 10, 64); err != nil || opts.minCount < 0 {

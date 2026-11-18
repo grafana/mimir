@@ -104,7 +104,7 @@ func TestSendAndReceiveSeriesCountsResponse(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Close()
 
-	want := &SeriesCountsResponse{SeriesCounted: 200, MinTimeMs: 1, IndexBytes: 5}
+	want := &SeriesCountsResponse{SeriesCounted: 200, MinTimeMs: 1}
 	for g := range 30 {
 		hashes := make([]uint64, 5_000)
 		for h := range hashes {

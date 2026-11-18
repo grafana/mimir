@@ -12,30 +12,19 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func TestHashesNeeded(t *testing.T) {
-	n, ok := HashesNeeded(fmt.Errorf("store-gateway: %w", MaxHashesRefusal(1234, 1000)))
-	assert.True(t, ok)
-	assert.Equal(t, int64(1234), n)
-	_, ok = HashesNeeded(Refusalf(LimitMaxIndexBytes, "the request would read about 5000 index bytes, more than max_index_bytes 1000"))
-	assert.False(t, ok)
-	_, ok = HashesNeeded(status.Error(codes.ResourceExhausted, "the request would hash 5 matching series, more than max_hashes 1"))
-	assert.False(t, ok, "the series come from the status detail, not the text")
-}
-
 // A refusal names its limit in a status detail, which survives wrapping and
 // does not depend on the message's words.
 func TestRefusedBy(t *testing.T) {
-	for _, limit := range []string{LimitMaxIndexBytes, LimitMaxHashes, LimitMaxGroups} {
+	for _, limit := range []string{LimitMaxGroups, LimitMemory} {
 		err := Refusalf(limit, "some message")
 		assert.Equal(t, codes.ResourceExhausted, status.Code(err))
 		assert.Equal(t, "some message", status.Convert(err).Message(), "the caller-visible message is unchanged")
 		assert.Equal(t, limit, RefusedBy(err))
 		assert.Equal(t, limit, RefusedBy(fmt.Errorf("wrapped: %w", err)))
 	}
-	assert.Equal(t, LimitMaxHashes, RefusedBy(MaxHashesRefusal(5, 1)))
 	assert.Empty(t, RefusedBy(status.Error(codes.ResourceExhausted, "grpc: received message larger than max (200000000 vs. 104857600)")), "gRPC's own ResourceExhausted is not a refusal")
-	assert.Empty(t, RefusedBy(status.Error(codes.ResourceExhausted, "more than max_index_bytes 1000")), "the words alone are not a refusal")
-	assert.Empty(t, RefusedBy(errors.New("max_hashes")))
+	assert.Empty(t, RefusedBy(status.Error(codes.ResourceExhausted, "more than max_groups 1000")), "the words alone are not a refusal")
+	assert.Empty(t, RefusedBy(errors.New("max_groups")))
 	assert.Empty(t, RefusedBy(nil))
 }
 
@@ -56,7 +45,7 @@ func TestIsBusy(t *testing.T) {
 	assert.True(t, IsBusy(fmt.Errorf("wrapped: %w", err)))
 	assert.Empty(t, RefusedBy(err))
 	assert.False(t, IsBusy(status.Error(codes.Unavailable, "too many counts running")), "the words alone are not busy")
-	assert.False(t, IsBusy(Refusalf(LimitMaxIndexBytes, "some message")))
+	assert.False(t, IsBusy(Refusalf(LimitMemory, "some message")))
 	assert.False(t, IsBusy(errors.New("busy")))
 	assert.False(t, IsBusy(nil))
 }

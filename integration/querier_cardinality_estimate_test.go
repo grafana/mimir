@@ -243,13 +243,6 @@ func TestCardinalityEstimate(t *testing.T) {
 				assert.Equal(t, promqlCount(t, `{__name__="a_total"}`, "job", start, end), countsOf(got))
 			}
 		})
-
-		t.Run("a request over max_index_bytes is refused with 422", func(t *testing.T) {
-			start, end := day, day.Add(24*time.Hour)
-			status, body := estimateRaw(t, start, end, url.Values{"match[]": {`{__name__="a_total"}`}, "group_by": {"job"}, "max_index_bytes": {"1"}})
-			assert.Equal(t, http.StatusUnprocessableEntity, status, string(body))
-			assert.Contains(t, string(body), "max_index_bytes")
-		})
 	}
 
 	t.Run("blocks only, index-header version 1", func(t *testing.T) {

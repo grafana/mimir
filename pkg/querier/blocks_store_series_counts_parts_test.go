@@ -223,7 +223,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_KeepsMarkedSourcesOfRecentBloc
 	})
 }
 
-func TestBlocksStoreQueryable_CardinalityEstimate_NameTableIndexBytes(t *testing.T) {
+func TestBlocksStoreQueryable_CardinalityEstimate_NameTableSumsAndMaxGroups(t *testing.T) {
 	b1, b2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
 	shards := bucketindex.Blocks{
 		{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"},
@@ -242,38 +242,26 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTableIndexBytes(t *testing
 			}, nil
 		}}
 	}
-	t.Run("max_index_bytes is split across the store-gateway calls", func(t *testing.T) {
+	t.Run("the name tables both store-gateways walked are summed", func(t *testing.T) {
 		var got []*storegatewaypb.SeriesCountsRequest
 		clients := map[BlocksStoreClient][][]ulid.ULID{gateway("1.1.1.1", 40, &got): {{b1}}, gateway("2.2.2.2", 60, &got): {{b2}}}
-		req := CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__", MaxIndexBytes: 1000}
+		req := CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__"}
 		res, err := seriesCountsQueryable(0, dayMs, shards, clients).cardinalityEstimate(context.Background(), "user-1", &req)
 		require.NoError(t, err)
 		assert.Equal(t, ReadIndexHeader, res.Read)
 		assert.Equal(t, map[string][]int64{"a": {2}, "b": {2}}, res.Counts)
 		assert.Equal(t, int64(100), res.PostingsOffsetsTableBytes, "the tables both store-gateways walked")
-		require.Len(t, got, 2)
-		for _, r := range got {
-			assert.Equal(t, int64(500), r.MaxIndexBytes)
-		}
+		assert.Len(t, got, 2)
 	})
 
-	refusing := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCountsStream: func(*storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error) {
-		return nil, cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about 900 bytes of the __name__ postings offsets table over 1 blocks, more than max_index_bytes 500")
-	}}
+	req := CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__"}
 	var got []*storegatewaypb.SeriesCountsRequest
-	clients := map[BlocksStoreClient][][]ulid.ULID{refusing: {{b1}}, gateway("2.2.2.2", 60, &got): {{b2}}}
-	req := CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__", MaxIndexBytes: 1000}
-	_, err := seriesCountsQueryable(0, dayMs, shards, clients).cardinalityEstimate(context.Background(), "user-1", &req)
-	require.ErrorContains(t, err, "max_index_bytes 1000, split into 500 bytes for each of 2 store-gateway calls")
-	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
-
 	overNames := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCountsStream: func(*storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error) {
 		return nil, cardinality.Refusalf(cardinality.LimitMaxGroups, "the blocks hold 12 distinct values of __name__, more than max_groups 10")
 	}}
-	clients = map[BlocksStoreClient][][]ulid.ULID{overNames: {{b1}}, gateway("2.2.2.2", 60, &got): {{b2}}}
-	_, err = seriesCountsQueryable(0, dayMs, shards, clients).cardinalityEstimate(context.Background(), "user-1", &req)
+	clients := map[BlocksStoreClient][][]ulid.ULID{overNames: {{b1}}, gateway("2.2.2.2", 60, &got): {{b2}}}
+	_, err := seriesCountsQueryable(0, dayMs, shards, clients).cardinalityEstimate(context.Background(), "user-1", &req)
 	require.ErrorContains(t, err, "more than max_groups 10")
-	assert.NotContains(t, err.Error(), "split into", "a max_groups refusal isn't blamed on max_index_bytes")
 	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 }
 

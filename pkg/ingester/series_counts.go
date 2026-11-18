@@ -35,8 +35,8 @@ import (
 // SeriesCounts counts the series matching the request's matchers that have a
 // chunk in its window, grouped by one label, in the head (out-of-order chunks
 // included) and the local blocks overlapping the window. A series in several
-// sources counts once. A request over max_index_bytes, max_hashes or
-// max_groups is refused. Experimental.
+// sources counts once. A request over max_groups, or that would hold more than
+// the tenant's cardinality estimate memory limit, is refused. Experimental.
 func (i *Ingester) SeriesCounts(req *client.SeriesCountsRequest, stream client.Ingester_SeriesCountsServer) error {
 	if err := i.checkSeriesCountsEnabled(stream.Context()); err != nil {
 		return err
@@ -68,11 +68,9 @@ type seriesCountsMetrics struct {
 
 // Refusal reasons of the count refusals counter.
 const (
-	seriesCountsRefusedByMaxIndexBytes = cardinality.LimitMaxIndexBytes
-	seriesCountsRefusedByMaxHashes     = cardinality.LimitMaxHashes
-	seriesCountsRefusedByMaxGroups     = cardinality.LimitMaxGroups
-	seriesCountsRefusedByMemory        = cardinality.LimitMemory
-	seriesCountsRefusedByGate          = "gate"
+	seriesCountsRefusedByMaxGroups = cardinality.LimitMaxGroups
+	seriesCountsRefusedByMemory    = cardinality.LimitMemory
+	seriesCountsRefusedByGate      = "gate"
 )
 
 func newSeriesCountsMetrics(reg prometheus.Registerer) *seriesCountsMetrics {
@@ -91,7 +89,7 @@ func newSeriesCountsMetrics(reg prometheus.Registerer) *seriesCountsMetrics {
 		}, []string{"sources"}),
 		refusals: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_cardinality_estimate_refusals_total",
-			Help: "Cardinality estimate count requests the ingester refused, by limit: max_index_bytes, max_hashes, max_groups, memory, or gate when -ingester.cardinality-estimate-max-concurrent walks were running.",
+			Help: "Cardinality estimate count requests the ingester refused, by limit: max_groups, memory, or gate when -ingester.cardinality-estimate-max-concurrent walks were running.",
 		}, []string{"limit"}),
 	}
 }
@@ -144,19 +142,14 @@ func (i *Ingester) startSeriesCounts(ctx context.Context) (func(), error) {
 // out-of-order head compaction wrote during it.
 const seriesCountsLateBlocksTries = 3
 
-// ingesterSeriesCostBytes is what a series counts for against max_index_bytes in the ingester.
-const ingesterSeriesCostBytes = 64
-
-// ingesterMultiSourceSeriesCostBytes replaces ingesterSeriesCostBytes when the walk covers several
-// sources, since each series is then held until counted. Estimated from the structs, not measured.
-const ingesterMultiSourceSeriesCostBytes = 100
-
 // What a walk holds for each series, measured by BenchmarkSeriesCountsWalk_HeldBytes.
 const (
 	// seriesRefBytes is one resolved series ref.
 	seriesRefBytes = 8
 	// gatheredSeriesBytes is one series gathered by hash, map entry included. Measured at 56.
 	gatheredSeriesBytes = 56
+	// countedGroupBytes is one group of counts, before its value.
+	countedGroupBytes = 64
 )
 
 // seriesCounts answers a SeriesCounts request, with errors carrying their gRPC status. It also returns
@@ -238,10 +231,6 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		}
 		return resp, 0, nil
 	}
-	maxSeries, seriesCost, err := w.price(sources)
-	if err != nil {
-		return nil, 0, err
-	}
 	if err := w.boundGroups(ctx, sources); err != nil {
 		return nil, 0, err
 	}
@@ -255,14 +244,11 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		}
 	}()
 	postingsSpan.SetAttributes(attribute.Int("sources", len(sources)))
-	total, err := w.resolvePostings(pctx, sources, maxSeries, seriesCost)
+	total, err := w.resolvePostings(pctx, sources)
 	if err != nil {
 		return nil, 0, err
 	}
 	postingsSpan.SetAttributes(attribute.Int64("series_matched_summed_over_sources", total))
-	if err := w.checkHashesLowerBound(sources); err != nil {
-		return nil, 0, err
-	}
 	postingsSpan.End()
 
 	walking = true
@@ -287,7 +273,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 			break
 		}
 		level.Debug(util_log.WithContext(wctx, i.logger)).Log("msg", "series counts walks the blocks an out-of-order head compaction wrote during the walk", "blocks", len(late))
-		if err := w.walkLate(wctx, sources, late, maxSeries, seriesCost); err != nil {
+		if err := w.walkLate(wctx, sources, late); err != nil {
 			return nil, 0, err
 		}
 	}
@@ -296,9 +282,6 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	}
 	resp.Groups = w.counter.Groups()
 	resp.SeriesCounted = w.counter.Counted()
-	for _, src := range sources {
-		resp.IndexBytes += int64(len(src.refs)) * seriesCost
-	}
 	walkSpan.SetAttributes(attribute.Int("sources", len(sources)), attribute.Int64("series_walked", w.walked), attribute.Int64("series_counted", resp.SeriesCounted))
 	level.Debug(util_log.WithContext(wctx, i.logger)).Log("msg", "series counts", "series_walked", w.walked, "series_counted", resp.SeriesCounted, "head_min_time_ms", head.MinTime(), "head_max_time_ms", head.MaxTime())
 	return resp, w.walked, nil
@@ -310,8 +293,6 @@ type seriesCountsWalk struct {
 	counterOpts cardinality.CounterOptions
 	counter     *cardinality.SeriesCounter
 	matchers    []*labels.Matcher
-	// maxIndexBytes is the request's index-bytes limit, bounded by the tenant's.
-	maxIndexBytes int64
 	// walked is the series walked so far, counted or not.
 	walked int64
 	// byHash holds the group-by value of each series in the window by label-set hash until finish
@@ -319,9 +300,8 @@ type seriesCountsWalk struct {
 	byHash map[uint64]string
 	// values interns the group-by values of byHash.
 	values map[string]string
-	// maxMemoryBytes is the tenant's memory limit, 0 for none. It bounds heldBytes, the series refs
-	// and the series gathered by hash that the walk holds. The hashes and groups counted have their
-	// own limits.
+	// maxMemoryBytes is the tenant's memory limit, 0 for none. It bounds heldBytes: the series refs,
+	// the series gathered by hash, and the groups and hashes counted that the walk holds.
 	maxMemoryBytes uint64
 	heldBytes      uint64
 }
@@ -330,12 +310,12 @@ type seriesCountsWalk struct {
 func (w *seriesCountsWalk) hold(b uint64) error {
 	w.heldBytes += b
 	if w.maxMemoryBytes > 0 && w.heldBytes > w.maxMemoryBytes {
-		return cardinality.Refusalf(cardinality.LimitMemory, "the request would hold more than %d bytes of series in the ingester while counting, the tenant's cardinality estimate memory limit", w.maxMemoryBytes)
+		return cardinality.Refusalf(cardinality.LimitMemory, "the request would hold more than %d bytes of series, groups and hashes in the ingester while counting, the tenant's cardinality estimate memory limit", w.maxMemoryBytes)
 	}
 	return nil
 }
 
-// newSeriesCountsWalk validates req. Its limits are the caller's to set: the querier bounds them by the tenant's.
+// newSeriesCountsWalk validates req. max_groups is the caller's to set: the querier bounds it by the tenant's.
 func (i *Ingester) newSeriesCountsWalk(userID string, req *client.SeriesCountsRequest) (*seriesCountsWalk, error) {
 	counterOpts, counter, matchers, err := cardinality.CounterForQuery(&req.CountQuery, req.MaxGroups)
 	if err != nil {
@@ -346,7 +326,6 @@ func (i *Ingester) newSeriesCountsWalk(userID string, req *client.SeriesCountsRe
 		counterOpts:    counterOpts,
 		counter:        counter,
 		matchers:       matchers,
-		maxIndexBytes:  req.MaxIndexBytes,
 		maxMemoryBytes: i.limits.CardinalityEstimateMaxMemoryBytes(userID),
 	}, nil
 }
@@ -362,29 +341,6 @@ func (w *seriesCountsWalk) countFromPostingsOnly(ctx context.Context, sources []
 		return false, nil
 	}
 	return true, countFromPostings(ctx, src.idx, w.counter.GroupBy(), req.MaxGroups, resp)
-}
-
-// price returns how many series the request may walk under max_index_bytes and what each costs.
-// With no matchers it refuses a request over the limit without reading postings.
-func (w *seriesCountsWalk) price(sources []*countSource) (maxSeries, seriesCost int64, _ error) {
-	seriesCost = int64(ingesterSeriesCostBytes)
-	if len(sources) > 1 {
-		seriesCost = ingesterMultiSourceSeriesCostBytes
-	}
-	maxSeries = int64(math.MaxInt64)
-	if w.maxIndexBytes > 0 {
-		maxSeries = w.maxIndexBytes / seriesCost
-	}
-	if w.maxIndexBytes > 0 && len(w.matchers) == 0 {
-		var all int64
-		for _, src := range sources {
-			all += src.numSeries
-		}
-		if all > maxSeries {
-			return 0, 0, cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would walk %d series in %d head and local blocks, about %d bytes at %d bytes each, more than max_index_bytes %d", all, len(sources), all*seriesCost, seriesCost, w.maxIndexBytes)
-		}
-	}
-	return maxSeries, seriesCost, nil
 }
 
 // boundGroups refuses a request whose local blocks inside the window already hold more groups than
@@ -409,10 +365,10 @@ func (w *seriesCountsWalk) boundGroups(ctx context.Context, sources []*countSour
 	return nil
 }
 
-// resolvePostings resolves every source's postings before any series is walked, so max_index_bytes
+// resolvePostings resolves every source's postings before any series is walked, so the memory limit
 // is checked against the whole request. It returns the series matched, summed over the sources.
 // A source resolved before keeps its series.
-func (w *seriesCountsWalk) resolvePostings(ctx context.Context, sources []*countSource, maxSeries, seriesCost int64) (int64, error) {
+func (w *seriesCountsWalk) resolvePostings(ctx context.Context, sources []*countSource) (int64, error) {
 	var total int64
 	for _, src := range sources {
 		if src.resolved {
@@ -432,22 +388,17 @@ func (w *seriesCountsWalk) resolvePostings(ctx context.Context, sources []*count
 		if err != nil {
 			return 0, err
 		}
-		// The refs are bounded before they are read, by whichever limit is reached first.
-		allowed, byMemory := maxSeries-total, false
+		// The refs are bounded by the memory limit before they are read.
+		allowed := int64(math.MaxInt64)
 		if w.maxMemoryBytes > 0 {
-			if fit := int64(max(w.maxMemoryBytes, w.heldBytes)-w.heldBytes) / seriesRefBytes; fit < allowed {
-				allowed, byMemory = fit, true
-			}
+			allowed = int64(max(w.maxMemoryBytes, w.heldBytes)-w.heldBytes) / seriesRefBytes
 		}
 		refs, exceeded, err := expandPostingsUpTo(ctx, postings, allowed)
 		if err != nil {
 			return 0, err
 		}
-		if exceeded && byMemory {
-			return 0, w.hold(uint64(allowed+1) * seriesRefBytes)
-		}
 		if exceeded {
-			return 0, cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would walk more than %d series in %d head and local blocks, at %d bytes each more than max_index_bytes %d", maxSeries, len(sources), seriesCost, w.maxIndexBytes)
+			return 0, w.hold(uint64(allowed+1) * seriesRefBytes)
 		}
 		if err := w.hold(uint64(len(refs)) * seriesRefBytes); err != nil {
 			return 0, err
@@ -456,25 +407,6 @@ func (w *seriesCountsWalk) resolvePostings(ctx context.Context, sources []*count
 		total += int64(len(refs))
 	}
 	return total, nil
-}
-
-// checkHashesLowerBound refuses a request for hashes when one local block inside the window already
-// matches more series than max_hashes. The head is left out, since it can hold series with no chunk.
-func (w *seriesCountsWalk) checkHashesLowerBound(sources []*countSource) error {
-	req := w.req
-	if !req.Hashes || req.MaxHashes <= 0 {
-		return nil
-	}
-	var largest int64
-	for _, src := range sources {
-		if src.block && src.blockMinT >= req.StartMs && src.blockMaxT < req.EndMs {
-			largest = max(largest, int64(len(src.refs)))
-		}
-	}
-	if largest > req.MaxHashes {
-		return cardinality.MaxHashesRefusal(largest, req.MaxHashes)
-	}
-	return nil
 }
 
 // walk counts the sources' resolved series. With several sources the buckets of each series are
@@ -492,10 +424,9 @@ func (w *seriesCountsWalk) gatherByHash() {
 }
 
 // walkLate adds the late sources, blocks written while all's other sources were walked, to the walk.
-// Their series count against what the others left of maxSeries, the request's price before the walk.
 // A walk that counted its one source directly starts again, so the series are gathered by hash.
-func (w *seriesCountsWalk) walkLate(ctx context.Context, all, late []*countSource, maxSeries, seriesCost int64) error {
-	if _, err := w.resolvePostings(ctx, all, maxSeries, seriesCost); err != nil {
+func (w *seriesCountsWalk) walkLate(ctx context.Context, all, late []*countSource) error {
+	if _, err := w.resolvePostings(ctx, all); err != nil {
 		return err
 	}
 	if w.byHash != nil {
@@ -538,11 +469,10 @@ func (w *seriesCountsWalk) walkSources(ctx context.Context, sources []*countSour
 			}
 			w.walked++
 			if byHash == nil {
-				counter.Add(builder.Labels(), ranges)
-				if err := checkCountedHashes(req, counter); err != nil {
-					return err
-				}
-				if err := checkGroupCount(req.MaxGroups, counter.GroupBy(), counter.GroupCount()); err != nil {
+				lset := builder.Labels()
+				groups, hashes := counter.GroupCount(), counter.HashesHeld()
+				counter.Add(lset, ranges)
+				if err := w.holdCounted(groups, hashes, lset.Get(counter.GroupBy())); err != nil {
 					return err
 				}
 				continue
@@ -577,20 +507,35 @@ func (w *seriesCountsWalk) walkSources(ctx context.Context, sources []*countSour
 // finish counts the series gathered by hash.
 func (w *seriesCountsWalk) finish() error {
 	for h, v := range w.byHash {
+		groups, hashes := w.counter.GroupCount(), w.counter.HashesHeld()
 		w.counter.AddGroupInWindow(v, h)
-		if err := checkCountedHashes(w.req, w.counter); err != nil {
+		if err := w.holdCounted(groups, hashes, v); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// checkCountedHashes refuses a request for hashes once the counter holds more than max_hashes.
-func checkCountedHashes(req *client.SeriesCountsRequest, counter *cardinality.SeriesCounter) error {
-	if !req.Hashes || req.MaxHashes <= 0 || counter.Counted() <= req.MaxHashes {
+// holdCounted checks max_groups and holds what the counter added since it held groupsBefore groups
+// and hashesBefore hashes, value being the last group-by value added.
+func (w *seriesCountsWalk) holdCounted(groupsBefore int, hashesBefore int64, value string) error {
+	groups := w.counter.GroupCount()
+	if err := checkGroupCount(w.req.MaxGroups, w.counter.GroupBy(), groups); err != nil {
+		return err
+	}
+	var b uint64
+	if groups > groupsBefore {
+		if w.req.Hashes {
+			b += uint64(cardinality.GroupBytes + len(value))
+		} else {
+			b += uint64(countedGroupBytes + len(value))
+		}
+	}
+	b += uint64(w.counter.HashesHeld()-hashesBefore) * cardinality.HashBytes
+	if b == 0 {
 		return nil
 	}
-	return cardinality.MaxHashesRefusal(counter.Counted(), req.MaxHashes)
+	return w.hold(b)
 }
 
 // checkGroupCount refuses a request once groups, the distinct values of groupBy, are more than maxGroups.

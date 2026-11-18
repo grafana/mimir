@@ -27,12 +27,6 @@ type estimateCall struct {
 	attempt int
 }
 
-// seriesCountsCallResult is what a call reports back to runSeriesCountsCalls.
-type seriesCountsCallResult struct {
-	counted    []ulid.ULID
-	indexBytes int64
-}
-
 // estimateCoverage says which blocks a cardinality estimate counted.
 type estimateCoverage struct {
 	// Missing holds the blocks no store-gateway counted after every attempt.
@@ -46,20 +40,14 @@ type estimateCoverage struct {
 	Failure error
 }
 
-// errSeriesCountsBudgetSpent is returned by runSeriesCountsCalls when a retry is needed but max_index_bytes is spent.
-var errSeriesCountsBudgetSpent = errors.New("max_index_bytes is spent before every block was counted")
-
 // runSeriesCountsCalls sends every block in parts to a store-gateway that holds it, through do, and retries the uncounted blocks on store-gateways not yet tried, as the Series path does. A store-gateway whose call fails counts as not having counted its blocks; a context error, a refusal and a bad request fail the request.
 //
-// maxIndexBytes, when positive, is split evenly across the calls of each attempt from what the answered calls of earlier attempts left unread. A failed call's share is given to the retry of its blocks, so a request reads at most maxIndexBytes per attempt.
-//
-// do must merge a call's result only when it returns no error, so a retried call is not counted twice.
+// do returns the blocks the call counted, and must merge a call's result only when it returns no error, so a retried call is not counted twice.
 func (q *BlocksStoreQueryable) runSeriesCountsCalls(
 	ctx context.Context,
 	tenantID string,
 	parts []estimatePart,
-	maxIndexBytes int64,
-	do func(ctx context.Context, c estimateCall, maxIndexBytes int64, calls int) (seriesCountsCallResult, error),
+	do func(ctx context.Context, c estimateCall) ([]ulid.ULID, error),
 ) (estimateCoverage, error) {
 	logger := util_log.WithContext(ctx, q.seriesCountsLogger())
 	maxAttempts := 1
@@ -72,7 +60,6 @@ func (q *BlocksStoreQueryable) runSeriesCountsCalls(
 		gateways  = map[string]struct{}{}
 		attempted = map[ulid.ULID][]string{}
 		counted   = map[ulid.ULID]bool{}
-		read      int64
 		remaining = make([]bucketindex.Blocks, len(parts))
 	)
 	for i, p := range parts {
@@ -108,23 +95,14 @@ func (q *BlocksStoreQueryable) runSeriesCountsCalls(
 			cov.Retries++
 		}
 
-		perCall := int64(0)
-		if maxIndexBytes > 0 {
-			left := maxIndexBytes - read
-			if left <= 0 {
-				return estimateCoverage{}, refusedByLimit(refusedByMaxIndexBytes, "%w (max_index_bytes %d)", errSeriesCountsBudgetSpent, maxIndexBytes)
-			}
-			perCall = splitIndexBytes(left, len(calls))
-		}
-
-		results := make([]seriesCountsCallResult, len(calls))
+		results := make([][]ulid.ULID, len(calls))
 		var failureMtx sync.Mutex
 		g, gCtx := errgroup.WithContext(ctx)
 		for i, c := range calls {
 			gateways[c.client.RemoteAddress()] = struct{}{}
 			g.Go(func() error {
 				callCtx := grpcContextWithBucketStoreRequestMeta(gCtx, tenantID, c.part.indexMeta)
-				res, err := do(callCtx, c, perCall, len(calls))
+				res, err := do(callCtx, c)
 				if err != nil {
 					if shouldRetrySeriesCounts(gCtx, err) {
 						// Its blocks are retried on another store-gateway while one is left.
@@ -151,8 +129,7 @@ func (q *BlocksStoreQueryable) runSeriesCountsCalls(
 				attempted[id] = append(attempted[id], addr)
 				asked[id] = struct{}{}
 			}
-			read += results[i].indexBytes
-			for _, id := range results[i].counted {
+			for _, id := range results[i] {
 				// A block the call was not asked for is not taken as counted: another call may hold it.
 				if _, ok := asked[id]; ok {
 					counted[id] = true

@@ -15,10 +15,6 @@ type CardinalityEstimateRequest struct {
 	Matchers   []*labels.Matcher
 	MinT, MaxT int64
 	GroupBy    string
-	// MaxIndexBytes caps the index bytes the whole request reads, 0 for none.
-	MaxIndexBytes int64
-	// MaxHashes caps the label-set hashes a deduplicating request may hold, 0 for none.
-	MaxHashes int64
 	// MaxGroups caps the distinct group_by values in the answer, 0 for none.
 	MaxGroups int64
 }
@@ -52,7 +48,7 @@ type CardinalityEstimateResult struct {
 	SeriesCounted        int64
 	PostingsFetchedBytes int64
 	SeriesFetchedBytes   int64
-	// IndexBytes is measured the way the store-gateways charge max_index_bytes.
+	// IndexBytes is the postings and series bytes the store-gateways read, cached or not.
 	IndexBytes int64
 	// PostingsOffsetsTableBytes is the postings offsets table the store-gateways walked.
 	PostingsOffsetsTableBytes int64

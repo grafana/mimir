@@ -4,6 +4,7 @@ package querier
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -11,7 +12,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/grafana/mimir/pkg/cardinality"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -23,8 +23,8 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 		attribute.String("group_by", req.GroupBy),
 		attribute.Int64("peak_memory_bytes", int64(res.PeakMemoryBytes)),
 	}
-	if n, ok := estimateHashesNeeded(res, err); ok {
-		attrs = append(attrs, attribute.Int64("hashes_needed", n))
+	if res.Dedup {
+		attrs = append(attrs, attribute.Int64("dedup_hashes", res.DedupHashes))
 	}
 	if out == nil {
 		attrs = append(attrs, attribute.String("cost", "unknown"))
@@ -35,8 +35,9 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 	trace.SpanFromContext(ctx).SetAttributes(attrs...)
 
 	limit := estimateRefusalLimit(err)
-	// The memory tracker counts the memory limit's refusals itself.
-	if limit != "" && limit != refusedByMemory && q.metrics != nil {
+	// The querier's memory tracker counts its own memory refusals; a source's are counted here.
+	var fromSource sourceRefusal
+	if limit != "" && (limit != refusedByMemory || errors.As(err, &fromSource)) && q.metrics != nil {
 		q.metrics.estimateRefusals.WithLabelValues(limit).Inc()
 	}
 	if q.metrics != nil {
@@ -128,17 +129,6 @@ func estimateResultAttributes(res CardinalityEstimateResult) []attribute.KeyValu
 		attribute.Int64("blocks_from_postings", res.BlocksFromPostings),
 		attribute.Int64("hash_bytes", res.HashBytes),
 	}
-}
-
-// estimateHashesNeeded is how many series a request that deduplicates asks its sources to hash, to size the hashes limit. Refused, it is a lower bound.
-func estimateHashesNeeded(res CardinalityEstimateResult, err error) (int64, bool) {
-	switch {
-	case err != nil:
-		return cardinality.HashesNeeded(err)
-	case res.Dedup:
-		return res.SeriesCounted, true
-	}
-	return 0, false
 }
 
 // estimateRequestStatus is the status label of a request that ended with err.

@@ -117,8 +117,9 @@ type BucketStore struct {
 	countGate gate.Gate
 	// countBlockConcurrency is how many blocks one count request reads at once.
 	countBlockConcurrency int
-	// countPostingsPlansMaxBytes is defaultCountPostingsPlansMaxBytes, lowered by tests.
-	countPostingsPlansMaxBytes int64
+	// countMaxMemoryBytes returns the tenant's cardinality estimate memory limit, which bounds what one
+	// count request holds. Nil for none.
+	countMaxMemoryBytes func() uint64
 
 	// chunksLimiterFactory creates a new limiter used to limit the number of chunks fetched by each Series() call.
 	chunksLimiterFactory ChunksLimiterFactory
@@ -205,6 +206,14 @@ func WithCountGate(countGate gate.Gate) BucketStoreOption {
 	}
 }
 
+// WithCountMaxMemoryBytes sets the function returning the tenant's cardinality estimate memory limit,
+// which bounds what one count request holds.
+func WithCountMaxMemoryBytes(limit func() uint64) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.countMaxMemoryBytes = limit
+	}
+}
+
 // WithLazyLoadingGate sets a lazyLoadingGate to use instead of a gate.NewNoop().
 func WithLazyLoadingGate(lazyLoadingGate gate.Gate) BucketStoreOption {
 	return func(s *BucketStore) {
@@ -242,7 +251,6 @@ func NewBucketStore(
 		lazyLoadingGate:             gate.NewNoop(),
 		countGate:                   gate.NewNoop(),
 		countBlockConcurrency:       max(1, bucketStoreConfig.CardinalityEstimateBlockConcurrency),
-		countPostingsPlansMaxBytes:  defaultCountPostingsPlansMaxBytes,
 		chunksLimiterFactory:        chunksLimiterFactory,
 		seriesLimiterFactory:        seriesLimiterFactory,
 		partitioners:                partitioners,

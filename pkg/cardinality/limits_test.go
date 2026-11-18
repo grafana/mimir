@@ -23,9 +23,3 @@ func TestBoundByLimit(t *testing.T) {
 		})
 	}
 }
-
-func TestHashBudget(t *testing.T) {
-	assert.Equal(t, int64(256<<20/32), HashBudget(256<<20), "a hash is budgeted the 24 bytes it holds merged and the 8 it holds in the answer until then")
-	assert.Equal(t, int64(1), HashBudget(1), "a set limit allows at least one hash")
-	assert.Zero(t, HashBudget(0), "no limit")
-}
