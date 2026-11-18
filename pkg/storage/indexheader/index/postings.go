@@ -229,8 +229,8 @@ func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, p
 			sectionEndOffset = e.tableOffset(offsetsEnd + 1)
 		} else {
 			// The label's last value is always sampled, so end the section after its entry, not at the end of the table.
-			last := e.SparseTableOffsets[len(e.SparseTableOffsets)-1]
-			sectionEndOffset = last.Offset + maxPostingsOffsetEntrySize(name, last.Value)
+			last := e.numOffsets() - 1
+			sectionEndOffset = e.tableOffset(last) + maxPostingsOffsetEntrySize(name, e.value(last))
 		}
 		// For the BucketDecbufFactory, we only read the section we care about to optimize
 		// the size of cached GetRange bucket ops.
@@ -360,18 +360,17 @@ type LabelValuesStats struct {
 // SparseSampleFactor values and the last, so k >= 2 samples stand for at least (k-2)*SparseSampleFactor + 2 values.
 func (t *PostingsOffsetsTableV2) LabelValuesStats(name string) LabelValuesStats {
 	e, ok := t.SparsePostingsOffsets[name]
-	if !ok || len(e.SparseTableOffsets) == 0 {
+	if !ok || e.numOffsets() == 0 {
 		return LabelValuesStats{}
 	}
-	k := len(e.SparseTableOffsets)
+	k := e.numOffsets()
 	count := k
 	if k > 1 {
 		count = (k-2)*max(1, t.SparseSampleFactor) + 2
 	}
-	first, last := e.SparseTableOffsets[0], e.SparseTableOffsets[k-1]
 	return LabelValuesStats{
 		CountLowerBound:   count,
-		OffsetsTableBytes: int64(last.Offset - first.Offset + maxPostingsOffsetEntrySize(name, last.Value)),
+		OffsetsTableBytes: int64(e.tableOffset(k-1) - e.tableOffset(0) + maxPostingsOffsetEntrySize(name, e.value(k-1))),
 	}
 }
 
