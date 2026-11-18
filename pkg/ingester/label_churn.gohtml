@@ -17,30 +17,29 @@
     <h2>What you see</h2>
     <p>
         This page shows the label names whose new values created the most new series for tenant {{ .Tenant }} in this ingester.
-        A new value is a label value that did not exist in the in-memory head of the ingester at the start of the time window.
+        A new value is a label value that did not exist in the in-memory head of the ingester at the start of the queried time window.
     </p>
 
     <h2>How the ingester collects the data</h2>
     <ul>
         <li>Every minute, the ingester records the newest series of each tenant.</li>
-        <li>A label value is new when its first series is newer than the record at the start of the time window.</li>
+        <li>A label value is new when its first series is newer than the record at the start of the queried time window.</li>
         <li>The score of a label is the number of series that have a new value of that label.</li>
-        <li>For each new value, the ingester reads up to {{ .SampledSeriesPerValue }} random series. The metric names of these series are the example metric names.</li>
-        <li>When the head removes old series, old values can look new. Thus the time window starts after the last removal of series from the head. The start can be later than the lookback.</li>
+        <li>For each new value, the ingester reads up to {{ .SampledSeriesPerValue }} random series. The metric names of these series are the example metric names, they can be useful to find the metric names high-churn labels are associated with.</li>
+        <li>When the head removes old series, old label values can look new. The start of the queried time window can be adjusted automatically to be later than the specified lookback, to ensure it is later than the last removal of series.</li>
     </ul>
 
     <h2>How to read the data</h2>
     <ul>
-        <li>A high score shows a label whose values change frequently and create new series. Examples are pod names, IDs and timestamps.</li>
-        <li>One new series can have new values of more than one label. Thus the scores overlap, and their sum is not the number of new series.</li>
+        <li>A high score shows a label whose values change frequently and create new series. Common examples are pod names, IDs and timestamps.</li>
+        <li>One new series can have new values of more than one label. Thus the scores overlap, and their sum is not the total number of new series.</li>
         <li>The data includes only the series of the tenant in this ingester. Other ingesters can have other series of the tenant.</li>
-        <li>The example metric names come from a sample. Their counts show which metrics get the new values, not the exact number of series.</li>
+        <li>The number after each example metric name is the number of sampled series with that metric name, to provide an approximate weight of which metrics are more affected.</li>
     </ul>
 
     <h2>What the data is useful for</h2>
     <p>
-        Use the data to find the labels and metrics that cause series churn, a high number of active series, or series limits.
-        Then you can drop, relabel or aggregate these labels where the metrics come from.
+        Use the data to find the labels that cause series churn, and which metrics they're associated with.
     </p>
 </div>
 
