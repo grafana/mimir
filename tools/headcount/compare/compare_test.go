@@ -266,7 +266,7 @@ func pairsCount(m *metrics, query, outcome, class string) float64 {
 	return counterSum(m.pairs, map[string]string{"query": query, "outcome": outcome, "class": class})
 }
 
-// counterSum sums the series of c whose labels have the given values.
+// counterSum sums the series of c whose labels have the given values: a counter's value, or a histogram's sample count.
 func counterSum(c prometheus.Collector, want map[string]string) float64 {
 	ch := make(chan prometheus.Metric)
 	go func() { c.Collect(ch); close(ch) }()
@@ -283,7 +283,7 @@ func counterSum(c prometheus.Collector, want map[string]string) float64 {
 			}
 		}
 		if matched == len(want) {
-			total += pb.GetCounter().GetValue()
+			total += pb.GetCounter().GetValue() + float64(pb.GetHistogram().GetSampleCount())
 		}
 	}
 	return total
@@ -1032,3 +1032,53 @@ func TestPickTargetsPaced(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// TestRunEstimateOnly: with -estimate-only, drawn and scenario pairs send their estimate and no truth, and an answered estimate counts as compared.
+func TestRunEstimateOnly(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	truths := 0
+	f.truthHook = func(string, time.Duration, map[string]int64) int {
+		truths++
+		return 0
+	}
+	m := newMetrics(prometheus.NewRegistry(), time.Minute)
+	cfg := config{
+		address: srv.URL, tenant: "test-tenant", pairsPerRound: 2, timeout: time.Minute,
+		queries:       []string{queryMetricTotal, queryMetricByLabel},
+		windowLengths: []string{"1h"},
+		windows:       windowConfig{queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
+		targets:       targetConfig{names: 3, labels: 3, matcherLabel: "job"},
+		classify:      classifyConfig{sketchSigmas: 3}, seed: 1, fallbackNames: 5,
+		estimateOnly: true,
+		scenarioPath: writeScenarios(t, `
+- {name: api_by_pod, selector: '{__name__="up", job="api"}', group_by: pod}
+`),
+	}
+	require.NoError(t, cfg.validate())
+	now := func() time.Time { return time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC) }
+	sum, err := run(context.Background(), cfg, m, log.NewNopLogger(), now)
+	require.NoError(t, err)
+	assert.Zero(t, truths, "no PromQL truth is sent")
+	assert.False(t, sum.mismatched)
+	assert.Equal(t, 3, sum.compared)
+	assert.Equal(t, 3.0, counterSum(m.pairs, map[string]string{"order": orderEstimateOnly, "outcome": outcomeAnswered}))
+	assert.Equal(t, 1.0, counterSum(m.pairs, map[string]string{"query": "scenario:api_by_pod", "outcome": outcomeAnswered}))
+	assert.Equal(t, 3, testutil.CollectAndCount(m.duration), "one latency per estimate")
+	assert.Equal(t, 3.0, counterSum(m.duration, map[string]string{"side": sideEstimate, "position": positionAlone, "reference": referenceNone}))
+
+	// A refused estimate is a refusal, and a round of refusals compares nothing.
+	m = newMetrics(prometheus.NewRegistry(), time.Minute)
+	f.estimateMatchHook = func(sel string) (int, string) {
+		if strings.Contains(sel, `job="api"`) {
+			return http.StatusUnprocessableEntity, "the query exceeded the index bytes limit"
+		}
+		return 0, ""
+	}
+	cfg.queries, cfg.pairsPerRound = []string{queryMetricTotal}, 1
+	require.NoError(t, cfg.validate())
+	sum, err = run(context.Background(), cfg, m, log.NewNopLogger(), now)
+	require.NoError(t, err)
+	assert.Equal(t, 1, sum.compared, "the drawn pair answered")
+	assert.Equal(t, 1.0, counterSum(m.refusals, map[string]string{"query": "scenario:api_by_pod", "side": sideEstimate}))
+	assert.Equal(t, 1.0, counterSum(m.pairs, map[string]string{"query": "scenario:api_by_pod", "order": orderEstimateOnly, "outcome": outcomeRefusal}))
+}

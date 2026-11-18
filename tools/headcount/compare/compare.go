@@ -21,6 +21,7 @@ const (
 	outcomeFlagged   = "flagged"   // a mismatch in the direction the answer's own flags allow, of a size they don't bound
 	outcomeMismatch  = "mismatch"  // a mismatch no class explains: file a Bug issue
 	outcomeRefusal   = "refusal"   // one side refused or failed
+	outcomeAnswered  = "answered"  // with -estimate-only, the estimate answered; nothing was compared
 )
 
 // Classes. A tolerated mismatch names the class that explains it; a refusal names why.

@@ -2,7 +2,7 @@
 
 // Command compare checks the cardinality estimate route against PromQL on the same window, through one query-frontend.
 //
-// Each round it picks the tenant's largest metric names and highest-cardinality labels, fills each query shape with them on block, ingester, boundary and recent windows, and runs a few pairs: the estimate, and the truth count by (<label>) (last_over_time(<selector>[<window>])). It diffs the two tables group by group, reruns a mismatching pair once, and puts every difference in a class or reports it as a mismatch to file a Bug issue for. With -burst, it also sends estimates at once every -burst-interval to fill the count limits. Results are Prometheus metrics on -listen and one log line per pair.
+// Each round it picks the tenant's largest metric names and highest-cardinality labels, fills each query shape with them on block, ingester, boundary and recent windows, and runs a few pairs: the estimate, and the truth count by (<label>) (last_over_time(<selector>[<window>])). It diffs the two tables group by group, reruns a mismatching pair once, and puts every difference in a class or reports it as a mismatch to file a Bug issue for. With -burst, it also sends estimates at once every -burst-interval to fill the count limits. With -estimate-only, it sends only the estimates, to measure their latency and cost without PromQL load. Results are Prometheus metrics on -listen and one log line per pair.
 //
 // Both requests load the cell's read path: keep -pairs-per-round and -request-gap at the rate agreed with the cell's owners.
 package main
@@ -45,6 +45,7 @@ type config struct {
 	burst                   int
 	burstInterval           time.Duration
 	scenarioPath            string
+	estimateOnly            bool
 	scenarios               []scenario
 }
 
@@ -52,7 +53,7 @@ func (c *config) register(f *flag.FlagSet) {
 	f.StringVar(&c.address, "address", "", "base URL of the query-frontend, such as http://localhost:8080 through a port-forward (required)")
 	f.StringVar(&c.tenant, "tenant", "", "tenant ID sent as X-Scope-OrgID (required)")
 	f.StringVar(&c.listen, "listen", "", "address to serve /metrics on; empty serves nothing")
-	f.DurationVar(&c.interval, "interval", 0, "time between rounds; 0 runs one round and exits with 1 if a pair mismatched, or 3 if no pair passed or was tolerated")
+	f.DurationVar(&c.interval, "interval", 0, "time between rounds; 0 runs one round and exits with 1 if a pair mismatched, or 3 if no pair passed, was tolerated or, with -estimate-only, answered")
 	f.DurationVar(&c.gap, "request-gap", 2*time.Second, "pause between consecutive requests")
 	f.DurationVar(&c.timeout, "timeout", 2*time.Minute, "timeout of each request")
 	f.IntVar(&c.pairsPerRound, "pairs-per-round", 4, "pairs compared each round, drawn at random from every query on every window")
@@ -75,6 +76,7 @@ func (c *config) register(f *flag.FlagSet) {
 	f.Uint64Var(&c.seed, "seed", 0, "seed for drawing targets and pairs; 0 uses the time")
 	f.IntVar(&c.burst, "burst", 0, "estimates sent at once, without their truth, to fill the count limits of the store-gateways and ingesters; 0 sends no burst")
 	f.DurationVar(&c.burstInterval, "burst-interval", time.Hour, "time between bursts; the first round sends one")
+	f.BoolVar(&c.estimateOnly, "estimate-only", false, "send only the estimate of each pair, without its PromQL truth, to measure the estimate's latency and cost apart from PromQL's; nothing is compared")
 	f.StringVar(&c.scenarioPath, "scenario", "", "YAML file of hand-written pairs, each run every round next to the drawn ones; see the README")
 }
 
@@ -166,19 +168,19 @@ func main() {
 	case sum.mismatched:
 		os.Exit(1)
 	case cfg.interval == 0 && sum.compared == 0:
-		level.Error(logger).Log("msg", "no pair passed or was tolerated; see the refusals")
+		level.Error(logger).Log("msg", "no pair passed, was tolerated or answered; see the refusals")
 		os.Exit(exitNothingCompared)
 	}
 }
 
-// exitNothingCompared is the one-shot exit code when no pair passed or was tolerated, so a round that was all refusals doesn't pass.
+// exitNothingCompared is the one-shot exit code when no pair passed, was tolerated or answered, so a round that was all refusals doesn't pass.
 const exitNothingCompared = 3
 
 // summary is what the rounds found.
 type summary struct {
 	// mismatched is set when a pair mismatched.
 	mismatched bool
-	// compared counts the pairs that passed or were tolerated.
+	// compared counts the pairs that passed or were tolerated, and with -estimate-only the estimates that answered.
 	compared int
 }
 
@@ -240,10 +242,16 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 					return sum, nil
 				}
 				r.sleep(ctx)
-				switch r.run(ctx, p).Outcome {
+				var outcome string
+				if cfg.estimateOnly {
+					outcome = r.estimateOnly(ctx, p)
+				} else {
+					outcome = r.run(ctx, p).Outcome
+				}
+				switch outcome {
 				case outcomeMismatch:
 					sum.mismatched = true
-				case outcomePass, outcomeTolerated:
+				case outcomePass, outcomeTolerated, outcomeAnswered:
 					sum.compared++
 				}
 			}
