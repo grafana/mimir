@@ -100,6 +100,7 @@ The following features are currently experimental:
   - Configure metric and label name validation scheme
     - `-validation.name-validation-scheme`
   - Health check grace period for connections to other replicas (`-ruler.client.health-check-grace-period`)
+  - Encode the namespaces of the list rule groups API response at the same time (`-ruler.list-rules-encode-concurrency`)
 - Distributor
   - Influx ingestion
     - `/api/v1/push/influx/write` endpoint

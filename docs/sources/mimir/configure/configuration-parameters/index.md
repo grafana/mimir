@@ -3294,6 +3294,12 @@ tenant_federation:
 # false.
 # CLI flag: -ruler.rule-evaluation-write-enabled
 [rule_evaluation_write_enabled: <boolean> | default = true]
+
+# (experimental) Maximum number of namespaces that the list rule groups API
+# encodes at the same time. A value of 1 or less encodes all namespaces in one
+# pass.
+# CLI flag: -ruler.list-rules-encode-concurrency
+[list_rules_encode_concurrency: <int> | default = 0]
 ```
 
 ### ruler_storage
