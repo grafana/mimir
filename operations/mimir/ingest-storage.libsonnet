@@ -58,6 +58,18 @@
     if maxDerivedTokenPartitions <= 0 || std.all([replicas <= maxDerivedTokenPartitions for replicas in maxReplicas]) then null
     else '%s must not have more max replicas than ingest_storage_partition_ring_max_derived_token_partitions (%d)' % [name, maxDerivedTokenPartitions],
 
+  local partitionIngesterStatefulSetFields =
+    ['ingester_partition_zone_a_statefulset', 'ingester_partition_zone_b_statefulset', 'ingester_partition_zone_c_statefulset'] +
+    if !$._config.ingest_storage_enabled then [] else
+      ['ingester_statefulset', 'ingester_zone_a_statefulset', 'ingester_zone_b_statefulset', 'ingester_zone_c_statefulset'],
+  local partitionIngesterStatefulSets = [std.get($, field) for field in partitionIngesterStatefulSetFields],
+  local statefulSetsMaxDerivedTokenPartitionsError = $.validateMaxDerivedTokenPartitions(
+    'ingester StatefulSets',
+    [sts.spec.replicas for sts in partitionIngesterStatefulSets if sts != null && std.objectHas(sts.spec, 'replicas')],
+    $._config.ingest_storage_partition_ring_max_derived_token_partitions,
+  ),
+  assert statefulSetsMaxDerivedTokenPartitionsError == null : statefulSetsMaxDerivedTokenPartitionsError,
+
   // The generic ingest storage config that should be applied to every component.
   ingest_storage_args::
     // The Kafka client config should only be applied to distributors, ingesters and rulers, but it's currently required
