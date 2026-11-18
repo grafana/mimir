@@ -507,6 +507,9 @@ func NewKV(cfg KVConfig, logger log.Logger, dnsProvider DNSProvider, registerer 
 		maxCasRetries:    maxCasRetries,
 	}
 
+	// Must be set before registering metrics.
+	mlkv.NamedService = services.NewBasicService(mlkv.starting, mlkv.running, mlkv.stopping).WithName("memberlist_kv")
+
 	mlkv.createAndRegisterMetrics()
 
 	for _, c := range cfg.Codecs {
@@ -517,8 +520,6 @@ func NewKV(cfg KVConfig, logger log.Logger, dnsProvider DNSProvider, registerer 
 	if cfg.PropagationDelayTracker.Enabled {
 		mlkv.codecs[PropagationDelayTrackerCodecID] = GetPropagationDelayTrackerCodec()
 	}
-
-	mlkv.NamedService = services.NewBasicService(mlkv.starting, mlkv.running, mlkv.stopping).WithName("memberlist_kv")
 
 	return mlkv
 }
