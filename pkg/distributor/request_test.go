@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -32,6 +33,35 @@ func TestRequest_CleanUpOrder(t *testing.T) {
 	r.CleanUp()
 
 	assert.Equal(t, []int{2, 1}, cleanupOrder)
+}
+
+func TestRequest_ReleaseWriteRequestPreservesCompletionCleanup(t *testing.T) {
+	parsed, released, completed := 0, 0, 0
+	r := newRequest(func() (*mimirpb.WriteRequest, func(), int, error) {
+		parsed++
+		return &mimirpb.WriteRequest{}, func() { released++ }, 123, nil
+	})
+	r.AddCleanup(func() { completed++ })
+	_, err := r.WriteRequest()
+	require.NoError(t, err)
+	r.releaseWriteRequest()
+	r.releaseWriteRequest()
+	require.Equal(t, 1, released)
+	require.Zero(t, completed)
+	require.Nil(t, r.request)
+	require.Nil(t, r.getRequest)
+	require.Nil(t, r.requestCleanup)
+	require.Equal(t, 123, r.UncompressedBodySize())
+	_, err = r.WriteRequest()
+	require.EqualError(t, err, "decoded write request has been released")
+	require.Equal(t, 1, parsed)
+	r.CleanUp()
+	r.CleanUp()
+	require.Equal(t, 1, released)
+	require.Equal(t, 1, completed)
+	for _, cleanup := range r.cleanupsArr {
+		require.Nil(t, cleanup)
+	}
 }
 
 // TestRequest_CleanUpDoubleCalling tests that calling CleanUp twice doesn't invoke the functions again.
