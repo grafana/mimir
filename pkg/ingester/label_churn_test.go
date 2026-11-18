@@ -99,15 +99,10 @@ func TestIngester_LabelChurn(t *testing.T) {
 	router := mux.NewRouter()
 	router.HandleFunc("/ingester/tsdb/{tenant}/label_churn", i.LabelChurnPageHandler)
 	router.HandleFunc("/ingester/tsdb/{tenant}/label_churn.json", i.LabelChurnHandler)
-	serveLabelChurnWithAccept := func(path, accept string) *httptest.ResponseRecorder {
-		request := httptest.NewRequest(http.MethodGet, path, nil)
-		request.Header.Set("Accept", accept)
-		recorder := httptest.NewRecorder()
-		router.ServeHTTP(recorder, request)
-		return recorder
-	}
 	serveLabelChurn := func(path string) *httptest.ResponseRecorder {
-		return serveLabelChurnWithAccept(path, "")
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		return recorder
 	}
 
 	response, err := db.labelChurn(ctx, since, 0)
@@ -124,17 +119,13 @@ func TestIngester_LabelChurn(t *testing.T) {
 	})
 
 	t.Run("the handler returns the scores as JSON", func(t *testing.T) {
-		for _, recorder := range []*httptest.ResponseRecorder{
-			serveLabelChurn("/ingester/tsdb/test/label_churn.json?lookback=30m&limit=1"),
-			serveLabelChurnWithAccept("/ingester/tsdb/test/label_churn?lookback=30m&limit=1", "application/json"),
-		} {
-			require.Equal(t, http.StatusOK, recorder.Code)
-			require.Equal(t, "application/json", recorder.Header().Get("Content-Type"))
+		recorder := serveLabelChurn("/ingester/tsdb/test/label_churn.json?lookback=30m&limit=1")
+		require.Equal(t, http.StatusOK, recorder.Code)
+		require.Equal(t, "application/json", recorder.Header().Get("Content-Type"))
 
-			var handlerResponse labelChurnResponse
-			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &handlerResponse))
-			require.Equal(t, []labelChurnScore{podScore}, handlerResponse.Scores)
-		}
+		var handlerResponse labelChurnResponse
+		require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &handlerResponse))
+		require.Equal(t, []labelChurnScore{podScore}, handlerResponse.Scores)
 	})
 
 	t.Run("the handler rejects invalid requests", func(t *testing.T) {

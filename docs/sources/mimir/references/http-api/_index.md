@@ -557,7 +557,6 @@ GET /ingester/tsdb/{tenant}/label_churn
 
 Displays a web page with the label names whose new values created the most new series for the tenant on given ingester, in the lookback window.
 The page explains how the ingester collects the scores and how to read them, and links to the same scores as JSON.
-When the request has the `Accept: application/json` header, the page returns the same JSON as the [label churn endpoint](#ingester-tenant-label-churn).
 It accepts the same `lookback` and `limit` parameters as the [label churn endpoint](#ingester-tenant-label-churn).
 
 This page is an [experimental feature](../../configure/about-versioning/#experimental-features).
