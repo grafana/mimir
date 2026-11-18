@@ -32,10 +32,9 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type SeriesCountsRequest struct {
-	// What to count. max_index_bytes is measured as index_bytes plus postings_offsets_table_bytes in the response,
-	// plus, with step_ms, the per-bucket counts held: 8 bytes per group per bucket. It is checked before any series
-	// entry is read, from the matching postings times an estimated series size and the groups the blocks are known to
-	// hold, and again while reading. max_hashes is refused before any series entry is read when the blocks of one time
+	// What to count. max_index_bytes is measured as index_bytes plus postings_offsets_table_bytes in the response.
+	// It is checked before any series entry is read, from the matching postings times an estimated series size, and
+	// again while reading. max_hashes is refused before any series entry is read when the blocks of one time
 	// range that sit inside the window match more series than it, counted from their postings over distinct shards, or
 	// about that share of it with a query shard; and during the walk once the distinct series hashed pass it.
 	cardinalitypb.CountQuery `protobuf:"bytes,1,opt,name=query,proto3,embedded=query" json:"query"`
@@ -114,7 +113,7 @@ type SeriesCountsResponse struct {
 	// bounds index_bytes plus these.
 	PostingsOffsetsTableBytes int64 `protobuf:"varint,9,opt,name=postings_offsets_table_bytes,json=postingsOffsetsTableBytes,proto3" json:"postings_offsets_table_bytes,omitempty"`
 	// Blocks counted from the postings offsets table alone, reading no postings and no series entries: blocks
-	// inside the window with no matchers, step_ms, hashes or query shard whose table is cheaper than their series
+	// inside the window with no matchers, hashes or query shard whose table is cheaper than their series
 	// entries.
 	BlocksFromOffsetsTable int64 `protobuf:"varint,11,opt,name=blocks_from_offsets_table,json=blocksFromOffsetsTable,proto3" json:"blocks_from_offsets_table,omitempty"`
 }
@@ -428,7 +427,7 @@ type StoreGatewayClient interface {
 	// SearchLabelValues streams label values for the given label name matching the search filter.
 	SearchLabelValues(ctx context.Context, in *storepb.SearchLabelValuesRequest, opts ...grpc.CallOption) (StoreGateway_SearchLabelValuesClient, error)
 	// SeriesCounts counts the series in the given blocks that match the matchers and have a chunk in the window,
-	// grouped by one label. A block inside the window with no matchers, step_ms, hashes or query shard is counted from
+	// grouped by one label. A block inside the window with no matchers, hashes or query shard is counted from
 	// its postings offsets table alone when that table is cheaper than reading its series entries; otherwise it reads
 	// postings and series entries. The groups are streamed in value
 	// order, in batches; the first message carries every other field, and a response always has one. Experimental.
@@ -608,7 +607,7 @@ type StoreGatewayServer interface {
 	// SearchLabelValues streams label values for the given label name matching the search filter.
 	SearchLabelValues(*storepb.SearchLabelValuesRequest, StoreGateway_SearchLabelValuesServer) error
 	// SeriesCounts counts the series in the given blocks that match the matchers and have a chunk in the window,
-	// grouped by one label. A block inside the window with no matchers, step_ms, hashes or query shard is counted from
+	// grouped by one label. A block inside the window with no matchers, hashes or query shard is counted from
 	// its postings offsets table alone when that table is cheaper than reading its series entries; otherwise it reads
 	// postings and series entries. The groups are streamed in value
 	// order, in batches; the first message carries every other field, and a response always has one. Experimental.

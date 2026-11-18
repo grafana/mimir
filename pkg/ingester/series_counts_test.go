@@ -78,9 +78,12 @@ func TestIngester_SeriesCounts_NativeHistograms(t *testing.T) {
 	assert.Equal(t, map[string][]int64{"h": {2}, "f": {1}}, countsOf(resp))
 	assert.Equal(t, int64(3), walked)
 
-	resp, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 0, EndMs: 2 * hour, StepMs: hour, GroupBy: "kind"})
+	resp, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 0, EndMs: hour, GroupBy: "kind"})
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]int64{"int": {1, 0}, "float": {1, 1}, "": {1, 0}}, countsOf(resp), "a histogram series' chunk ends at its last sample")
+	assert.Equal(t, map[string][]int64{"int": {1}, "float": {1}, "": {1}}, countsOf(resp))
+	resp, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: hour, EndMs: 2 * hour, GroupBy: "kind"})
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]int64{"float": {1}}, countsOf(resp), "a histogram series' chunk ends at its last sample")
 
 	// The window starts after every chunk's first sample, so each open
 	// chunk's end is read from its last sample: the integer histogram's at
@@ -151,23 +154,14 @@ func TestIngester_SeriesCounts(t *testing.T) {
 		assert.Equal(t, map[string][]int64{"a": {1}, "b": {1}}, countsOf(resp), "a{pod=1} has samples only before 1h")
 	})
 
-	t.Run("per-hour buckets, grouped by pod, with matchers", func(t *testing.T) {
+	t.Run("grouped by pod, with matchers", func(t *testing.T) {
 		resp, walked, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{
 			Matchers: []cardinalitypb.LabelMatcher{{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: "a"}},
-			StartMs:  0, EndMs: 2 * hour, StepMs: hour, GroupBy: "pod",
+			StartMs:  0, EndMs: hour, GroupBy: "pod",
 		})
 		require.NoError(t, err)
-		assert.Equal(t, map[string][]int64{"1": {1, 0}, "2": {0, 1}}, countsOf(resp))
+		assert.Equal(t, map[string][]int64{"1": {1}}, countsOf(resp))
 		assert.Equal(t, int64(2), walked)
-	})
-
-	t.Run("buckets wider than the step look back from each bucket's end", func(t *testing.T) {
-		resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{
-			StartMs: 0, EndMs: 2 * hour, StepMs: 30 * minute, WindowMs: hour, GroupBy: "pod",
-		})
-		require.NoError(t, err)
-		// Buckets [0, 1h), [30m, 90m) and [1h, 2h): pod 1 has samples at 10m, 20m and 70m, pod 2 at 70m and 80m.
-		assert.Equal(t, map[string][]int64{"1": {2, 1, 1}, "2": {0, 1, 1}}, countsOf(resp))
 	})
 
 	t.Run("hashes match the label-set hashes other sources send", func(t *testing.T) {
@@ -238,14 +232,14 @@ func TestIngester_SeriesCounts(t *testing.T) {
 	})
 
 	t.Run("an invalid request is InvalidArgument", func(t *testing.T) {
-		_, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 0, EndMs: 2 * hour, StepMs: 7 * minute})
+		_, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 2 * hour, EndMs: hour})
 		st, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok, err)
 		assert.Equal(t, codes.InvalidArgument, st.Code())
 	})
 
 	t.Run("a tenant with no data is empty", func(t *testing.T) {
-		resp, _, err := i.seriesCounts(user.InjectOrgID(context.Background(), "other"), &client.SeriesCountsRequest{StartMs: 0, EndMs: hour, StepMs: 30 * minute, WindowMs: hour})
+		resp, _, err := i.seriesCounts(user.InjectOrgID(context.Background(), "other"), &client.SeriesCountsRequest{StartMs: 0, EndMs: hour})
 		require.NoError(t, err)
 		assert.Empty(t, resp.Groups)
 		assert.Zero(t, resp.MinTimeMs, "nothing held for the tenant")
@@ -317,10 +311,10 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 		assert.Equal(t, 10*minute, resp.MinTimeMs)
 	})
 
-	t.Run("buckets take each series' chunks from every source", func(t *testing.T) {
-		resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 0, EndMs: 4 * hour, StepMs: 2 * hour})
+	t.Run("a window over the block takes each series from every source", func(t *testing.T) {
+		resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 0, EndMs: 2 * hour})
 		require.NoError(t, err)
-		assert.Equal(t, map[string][]int64{"a": {1, 2}, "b": {1, 0}}, countsOf(resp))
+		assert.Equal(t, map[string][]int64{"a": {1}, "b": {1}}, countsOf(resp))
 	})
 
 	t.Run("a window after the block reads only the head", func(t *testing.T) {
@@ -476,9 +470,8 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 	})
 }
 
-// A series with many chunks across a local block and the head counts once
-// per bucket it touches, whatever the number of chunks, and the gather holds
-// no chunk.
+// A series with many chunks across a local block and the head counts once,
+// whatever the number of chunks, and the gather holds no chunk.
 func TestIngester_SeriesCounts_ManyChunksPerSeries(t *testing.T) {
 	const minute = int64(time.Minute / time.Millisecond)
 	const hour = 60 * minute
@@ -534,22 +527,20 @@ func TestIngester_SeriesCounts_ManyChunksPerSeries(t *testing.T) {
 		}
 		return out
 	}
-	// Buckets of 2h over [0, 10h): the block's samples are in the first,
-	// a{pod=1} is in every bucket, a{pod=2} in the second and the last.
-	resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 0, EndMs: 10 * hour, StepMs: 2 * hour})
+	// The block's samples are in [0, 2h), a{pod=1} is in every 2h range,
+	// a{pod=2} in [2h, 4h) and [8h, 10h).
+	resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 2 * hour, EndMs: 4 * hour})
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]int64{"a": {1, 2, 1, 1, 2}, "b": {1, 0, 0, 0, 0}}, countsOf(resp))
-	assert.Equal(t, int64(3), resp.SeriesCounted)
-	// Buckets of 4h every 2h, the last ending at 10h: [0, 4h), [2h, 6h),
-	// [4h, 8h) and [6h, 10h).
-	resp, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 0, EndMs: 10 * hour, StepMs: 2 * hour, WindowMs: 4 * hour})
+	assert.Equal(t, map[string][]int64{"a": {2}}, countsOf(resp))
+	resp, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 6 * hour, EndMs: 8 * hour})
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]int64{"a": {2, 2, 1, 2}, "b": {1, 0, 0, 0}}, countsOf(resp))
+	assert.Equal(t, map[string][]int64{"a": {1}}, countsOf(resp))
 	// One count over the window, by count and by hash, and a window the
 	// series' chunks are all outside.
 	resp, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 0, EndMs: 10 * hour})
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]int64{"a": {2}, "b": {1}}, countsOf(resp))
+	assert.Equal(t, int64(3), resp.SeriesCounted)
 	resp, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 0, EndMs: 10 * hour, Hashes: true})
 	require.NoError(t, err)
 	require.Len(t, resp.Groups, 2)
@@ -583,8 +574,8 @@ func TestIngester_SeriesCounts_OutOfOrderHead(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 10*minute, i.getTSDB("test").db.Head().MinOOOTime())
 
-	counts := func(t *testing.T, start, end, step int64) map[string][]int64 {
-		resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: start, EndMs: end, StepMs: step})
+	counts := func(t *testing.T, start, end int64) map[string][]int64 {
+		resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: start, EndMs: end})
 		require.NoError(t, err)
 		out := map[string][]int64{}
 		for _, g := range resp.Groups {
@@ -592,10 +583,9 @@ func TestIngester_SeriesCounts_OutOfOrderHead(t *testing.T) {
 		}
 		return out
 	}
-	assert.Equal(t, map[string][]int64{"a": {1}}, counts(t, 20*minute, 40*minute, 0), "a's only sample in the window is out of order")
-	assert.Equal(t, map[string][]int64{"b": {1}}, counts(t, 0, 20*minute, 0), "a window before the in-order head")
-	assert.Equal(t, map[string][]int64{"a": {1}, "b": {1}}, counts(t, 0, 120*minute, 0), "in order and out of order, once each")
-	assert.Equal(t, map[string][]int64{"a": {0, 1, 1, 0}, "b": {1, 0, 1, 0}}, counts(t, 0, 120*minute, 30*minute), "per bucket")
+	assert.Equal(t, map[string][]int64{"a": {1}}, counts(t, 20*minute, 40*minute), "a's only sample in the window is out of order")
+	assert.Equal(t, map[string][]int64{"b": {1}}, counts(t, 0, 20*minute), "a window before the in-order head")
+	assert.Equal(t, map[string][]int64{"a": {1}, "b": {1}}, counts(t, 0, 120*minute), "in order and out of order, once each")
 
 	resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 0, EndMs: 120 * minute})
 	require.NoError(t, err)
@@ -793,8 +783,8 @@ func TestAppendSeriesRanges_OpenChunkRemovedKeepsTheChunksCollected(t *testing.T
 		builder, oooBuilder labels.ScratchBuilder
 		metas, oooMetas     []chunks.Meta
 	)
-	// With a step the open chunk's end is read.
-	req := &client.SeriesCountsRequest{StartMs: 100, EndMs: 200, StepMs: 50}
+	// The window starts after the open chunk's first sample, so its end is read.
+	req := &client.SeriesCountsRequest{StartMs: 170, EndMs: 200}
 	src := &countSource{idx: closedAndOpenChunkIndex{}, chunkr: failingChunkReader{err: storage.ErrNotFound}}
 	ranges, found, err := appendSeriesRanges(nil, src, 1, req, &builder, &metas, &oooBuilder, &oooMetas)
 	require.NoError(t, err)

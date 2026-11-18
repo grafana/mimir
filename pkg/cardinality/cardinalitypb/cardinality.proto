@@ -15,16 +15,11 @@ message CountQuery {
   // Window in milliseconds, [start_ms, end_ms). A series counts if one of its chunks overlaps it.
   int64 start_ms = 2;
   int64 end_ms = 3;
-  // If set, a bucket starts every step_ms from start_ms and each group gets one count per bucket.
-  int64 step_ms = 4;
-  // With step_ms, each bucket's width: bucket i covers [start_ms + i*step_ms, start_ms + i*step_ms + window_ms), and
-  // the last one ends at end_ms. 0 means step_ms, adjacent buckets. A window wider than the step makes the buckets
-  // overlap, so a bucket counts the series with a sample in the window before its end.
-  int64 window_ms = 5;
+  reserved 4, 5;
   // Label to group by. Empty means __name__.
   string group_by = 6;
   // If set, each group carries its series' label-set hashes instead of a count, so the caller can union them across
-  // sources that share series. Not allowed with step_ms.
+  // sources that share series.
   bool hashes = 7;
   reserved 8;
   // Fail with ResourceExhausted rather than read more than this many index bytes. Each source's request says how it
@@ -47,7 +42,7 @@ message LabelMatcher {
 // unions the parts of a value.
 message SeriesCountGroup {
   string value = 1;
-  // One count per bucket, or a single count when there is no step.
+  // The group's count, as the one entry.
   repeated int64 counts = 2;
   // The label-set hashes of the group's series, sorted within each part, when the request asked for hashes.
   repeated uint64 hashes = 3;

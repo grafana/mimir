@@ -15,18 +15,18 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// Every group carries one count per bucket, or one count without a step.
+// Every group of counts carries one count.
 func TestEstimateMerger_FailsOnMalformedGroups(t *testing.T) {
 	m := newEstimateMerger(context.Background(), false)
 	err := m.add("store-gateway", "up", nil, nil)
-	require.Error(t, err, "a group with no counts and no step")
-	assert.Contains(t, err.Error(), `a store-gateway returned 0 buckets for "up" instead of 1`)
+	require.Error(t, err, "a group with no counts")
+	assert.Contains(t, err.Error(), `a store-gateway returned 0 counts for "up" instead of one`)
 	assert.Equal(t, http.StatusInternalServerError, estimateHTTPStatus(err))
 	assert.Empty(t, m.counts, "nothing is stored for the group")
 
 	err = m.add("ingester", "up", []int64{1, 2}, nil)
-	require.Error(t, err, "two counts without a step")
-	assert.Contains(t, err.Error(), `an ingester returned 2 buckets for "up" instead of 1`)
+	require.Error(t, err, "two counts")
+	assert.Contains(t, err.Error(), `an ingester returned 2 counts for "up" instead of one`)
 }
 
 func TestEstimateMerger(t *testing.T) {
@@ -37,32 +37,21 @@ func TestEstimateMerger(t *testing.T) {
 	}
 	for name, tc := range map[string]struct {
 		dedup     bool
-		buckets   int
 		adds      []add
 		wantCount map[string][]int64
 		wantErr   string
 	}{
 		"counts of sources that share no series are added up": {
-			buckets: 2,
 			adds: []add{
-				{source: "store-gateway", value: "up", counts: []int64{1, 2}},
-				{source: "store-gateway", value: "up", counts: []int64{3, 4}},
-				{source: "store-gateway", value: "x", counts: []int64{5, 6}},
-			},
-			wantCount: map[string][]int64{"up": {4, 6}, "x": {5, 6}},
-		},
-		"sources that disagree on the number of buckets fail": {
-			buckets: 2,
-			adds: []add{
-				{source: "store-gateway", value: "up", counts: []int64{1, 2}},
+				{source: "store-gateway", value: "up", counts: []int64{1}},
 				{source: "store-gateway", value: "up", counts: []int64{3}},
+				{source: "store-gateway", value: "x", counts: []int64{5}},
 			},
-			wantErr: "a store-gateway returned 1 buckets for \"up\" instead of 2",
+			wantCount: map[string][]int64{"up": {4}, "x": {5}},
 		},
-		"one count per group fails against the asked buckets": {
-			buckets: 3,
-			adds:    []add{{source: "store-gateway", value: "up", counts: []int64{6}}},
-			wantErr: "a store-gateway returned 1 buckets for \"up\" instead of 3",
+		"a group of counts with two counts fails": {
+			adds:    []add{{source: "store-gateway", value: "up", counts: []int64{1, 2}}},
+			wantErr: "a store-gateway returned 2 counts for \"up\" instead of one",
 		},
 		"hashes are unioned, so a series in two sources counts once": {
 			dedup: true,
@@ -85,7 +74,6 @@ func TestEstimateMerger(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			m := newEstimateMerger(context.Background(), tc.dedup)
-			m.buckets = tc.buckets
 			var err error
 			for _, a := range tc.adds {
 				if err = m.add(a.source, a.value, a.counts, a.hashes); err != nil {

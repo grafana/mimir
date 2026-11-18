@@ -60,9 +60,6 @@ var ErrSeriesCountsOverMemoryLimit = errors.New("the ingester replies held pass 
 // seriesCountsGroupBytes is what a group of an answer is charged on top of its value, counts and hashes.
 const seriesCountsGroupBytes = 64
 
-// ErrSeriesCountsNeedOneIngesterPerZone is returned for per-bucket counts when counts can't be added up.
-var ErrSeriesCountsNeedOneIngesterPerZone = errors.New("per-bucket series counts need ingesters whose counts can be added up: a single ingester or, with ingest storage, one ingester per zone over partitions and a shard size unchanged since before the window; otherwise several of them can hold the same series")
-
 // logSeriesCountsFailure logs which ingester a call failed on, unless the request was cancelled or reached quorum.
 func logSeriesCountsFailure(ctx context.Context, logger log.Logger, addr string, err error) {
 	if ctx.Err() != nil {
@@ -77,8 +74,7 @@ func logSeriesCountsFailure(ctx context.Context, logger log.Logger, addr string,
 // storage, one ingester per zone, the partitions have been stable since before
 // the window and no ingester saw the tenant's shard size change. Otherwise it asks
 // for hashes, which the caller unions, with a second request when only the
-// answers show the shard size change. Per-bucket counts can't be hashed, so
-// they are refused with ErrSeriesCountsNeedOneIngesterPerZone.
+// answers show the shard size change.
 //
 // The answers held are charged to the context's memory consumption tracker, if any, as they
 // arrive. The caller gives the charge back with the result's Release.
@@ -96,9 +92,6 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 	}()
 	hashed := req.Hashes
 	if !d.seriesCountsAddUp(replicationSets, partitionsStable) && !req.Hashes {
-		if req.StepMs > 0 {
-			return SeriesCountsResult{}, ErrSeriesCountsNeedOneIngesterPerZone
-		}
 		hashed = true
 		d.seriesCountsSwitchedToHashes.WithLabelValues("replication_sets").Inc()
 	}
@@ -131,9 +124,6 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 			for _, a := range answers {
 				charge.sub(a.charged)
 			}
-		}
-		if req.StepMs > 0 {
-			return SeriesCountsResult{}, ErrSeriesCountsNeedOneIngesterPerZone
 		}
 		hashed = true
 		d.seriesCountsSwitchedToHashes.WithLabelValues("shard_size_changed").Inc()
@@ -302,20 +292,12 @@ func (d *Distributor) seriesCountsCall(ctx context.Context, desc *ring.InstanceD
 			charge.sub(answer.charged)
 		}
 	}()
-	// A group without one count per bucket is malformed.
-	if want := seriesCountsBuckets(req); want > 0 {
+	// A group of counts without one count is malformed.
+	if !req.Hashes {
 		for _, g := range resp.Groups {
-			if len(g.Counts) != want {
-				level.Warn(spanlogger.FromContext(ctx, d.log)).Log("msg", "ingester returned the wrong number of buckets in a series counts answer", "ingester", desc.Addr, "step_ms", req.StepMs, "buckets", want, "got", len(g.Counts))
-				return seriesCountsAnswer{}, fmt.Errorf("an ingester returned %d buckets for %q instead of the %d asked for with step_ms", len(g.Counts), g.Value, want)
-			}
-		}
-	} else if !req.Hashes {
-		// A group with no counts is malformed.
-		for _, g := range resp.Groups {
-			if len(g.Counts) == 0 {
-				level.Warn(spanlogger.FromContext(ctx, d.log)).Log("msg", "ingester returned a group with no counts in a series counts answer", "ingester", desc.Addr, "group", g.Value)
-				return seriesCountsAnswer{}, fmt.Errorf("an ingester returned no counts for %q", g.Value)
+			if len(g.Counts) != 1 {
+				level.Warn(spanlogger.FromContext(ctx, d.log)).Log("msg", "ingester returned a group without one count in a series counts answer", "ingester", desc.Addr, "group", g.Value, "counts", len(g.Counts))
+				return seriesCountsAnswer{}, fmt.Errorf("an ingester returned %d counts for %q instead of one", len(g.Counts), g.Value)
 			}
 		}
 	}
@@ -345,18 +327,6 @@ func isSeriesCountsRefusal(err error) bool {
 		}
 	}
 	return false
-}
-
-// seriesCountsBuckets is how many counts each group of an answer to req carries, 0 for hashes or no step.
-func seriesCountsBuckets(req *ingester_client.SeriesCountsRequest) int {
-	if req.StepMs <= 0 || req.Hashes {
-		return 0
-	}
-	n, err := cardinality.Buckets(req.StartMs, req.EndMs, req.StepMs, req.WindowMs)
-	if err != nil {
-		return 0
-	}
-	return n
 }
 
 // shardSizeUnchanged reports whether every ingester that counted something has
@@ -517,7 +487,7 @@ func answersByZone(answers []seriesCountsAnswer) map[string][]*ingester_client.S
 }
 
 // maxOverZones adds up each zone's responses and keeps the largest zone's count
-// per group and bucket, since a zone can only miss series. min_time_ms is the
+// per group, since a zone can only miss series. min_time_ms is the
 // latest start reported, ignoring ingesters that report 0 (nothing held).
 func maxOverZones(byZone map[string][]*ingester_client.SeriesCountsResponse) *ingester_client.SeriesCountsResponse {
 	merged := map[string][]int64{}

@@ -141,7 +141,7 @@ type replicatedIngesters struct {
 
 func (r *replicatedIngesters) SeriesCounts(ctx context.Context, _ []*labels.Matcher, req *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error) {
 	sent := *req
-	sent.Hashes = !r.counts && sent.StepMs == 0
+	sent.Hashes = !r.counts
 	r.got = nil
 	for _, i := range r.ingesters {
 		stream := &seriesCountsServerStream{ctx: ctx}

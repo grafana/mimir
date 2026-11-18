@@ -104,8 +104,6 @@ type seriesCountsState struct {
 	// opts is what is counted, as the counter validated it.
 	opts    cardinality.CounterOptions
 	counter *cardinality.SeriesCounter
-	// ranges is scratch for one series' chunk ranges.
-	ranges []cardinality.ChunkRange
 	// maxIndexBytes caps postings, series and offsets table bytes read, 0 for none.
 	maxIndexBytes int64
 	// tableBytes is the postings offsets table read so far, for the group-by label and the labels of
@@ -113,8 +111,6 @@ type seriesCountsState struct {
 	tableBytes atomic.Int64
 	// walkedTableBytes is the part of tableBytes whose walk finished, for metrics.
 	walkedTableBytes atomic.Int64
-	// groupBytes is the memory of the per-bucket counts held with step_ms, bounded by max_index_bytes.
-	groupBytes atomic.Int64
 	// maxHashes caps the memory of the hashes and their groups, as the hashes that memory would hold, 0 for none.
 	maxHashes int64
 	// maxGroups caps the distinct group-by values, 0 for none.
@@ -156,15 +152,7 @@ func indexBytes(stats *safeQueryStats) int64 {
 
 // limitedBytes is what max_index_bytes bounds.
 func (c *seriesCountsState) limitedBytes(stats *safeQueryStats) int64 {
-	return indexBytes(stats) + c.tableBytes.Load() + c.groupBytes.Load()
-}
-
-// groupCountsBytes is the memory of the per-bucket counts of n groups, charged only with step_ms.
-func (c *seriesCountsState) groupCountsBytes(n int64) int64 {
-	if c.counter.Buckets() <= 1 {
-		return 0
-	}
-	return n * int64(c.counter.Buckets()) * 8
+	return indexBytes(stats) + c.tableBytes.Load()
 }
 
 // checkTable refuses before label's postings offsets table is walked in a block if it would pass max_index_bytes.
@@ -214,11 +202,11 @@ func (c *seriesCountsState) checkPostings(read, postings, blocks int64) error {
 }
 
 // checkPlan refuses before any series entry is read if the planned read would pass max_index_bytes.
-func (c *seriesCountsState) checkPlan(read int64, series int, seriesBytes, postings, counts int64) error {
+func (c *seriesCountsState) checkPlan(read int64, series int, seriesBytes, postings int64) error {
 	if c.maxIndexBytes == 0 {
 		return nil
 	}
-	estimate := read + seriesBytes + postings + counts
+	estimate := read + seriesBytes + postings
 	if estimate <= c.maxIndexBytes {
 		return nil
 	}
@@ -226,8 +214,8 @@ func (c *seriesCountsState) checkPlan(read int64, series int, seriesBytes, posti
 	if series > 0 {
 		avg = seriesBytes / int64(series)
 	}
-	return cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about %d index bytes (%d of postings and postings offsets table read, then %d series at an estimated %d bytes each and %d bytes of postings, holding %d bytes of counts), more than max_index_bytes %d",
-		estimate, read, series, avg, postings, counts, c.maxIndexBytes)
+	return cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about %d index bytes (%d of postings and postings offsets table read, then %d series at an estimated %d bytes each and %d bytes of postings), more than max_index_bytes %d",
+		estimate, read, series, avg, postings, c.maxIndexBytes)
 }
 
 // allPostingsBytes is the size of the all-postings list of a block with n series.
@@ -257,7 +245,7 @@ const seriesEntryPlanningBytes = 128
 
 // postingsOnly reports whether a block's counts can come from postings alone.
 func (c *seriesCountsState) postingsOnly(m *block.Meta, shard *sharding.ShardSelector, pending []*labels.Matcher) bool {
-	return c.opts.Step == 0 && !c.opts.Hashes && shard == nil && len(pending) == 0 && m.MinTime >= c.opts.MinT && m.MaxTime <= c.opts.MaxT
+	return !c.opts.Hashes && shard == nil && len(pending) == 0 && m.MinTime >= c.opts.MinT && m.MaxTime <= c.opts.MaxT
 }
 
 // addCounts adds counts per group value, and without as the empty value.
@@ -265,7 +253,6 @@ func (c *seriesCountsState) addCounts(counts map[string]int64, without int64) er
 	if without > 0 {
 		counts[""] += without
 	}
-	before := c.counter.GroupCount()
 	for v, n := range counts {
 		if err := c.counter.AddCount(v, n); err != nil {
 			return err
@@ -274,7 +261,6 @@ func (c *seriesCountsState) addCounts(counts map[string]int64, without int64) er
 			return err
 		}
 	}
-	c.chargeNewGroups(before)
 	return nil
 }
 
@@ -299,26 +285,17 @@ func (c *seriesCountsState) checkHashes() error {
 	return cardinality.MaxHashesHeldRefusal(hashes, groups, c.maxHashes)
 }
 
-// chargeNewGroups charges the counts of groups added since before to groupBytes.
-func (c *seriesCountsState) chargeNewGroups(before int) {
-	if added := c.counter.GroupCount() - before; added > 0 {
-		c.groupBytes.Add(c.groupCountsBytes(int64(added)))
-	}
-}
-
-// checkRead refuses once what was read, plus the counts held, passes max_index_bytes.
+// checkRead refuses once what was read passes max_index_bytes.
 func (c *seriesCountsState) checkRead(read int64) error {
 	if c.maxIndexBytes == 0 || read <= c.maxIndexBytes {
 		return nil
 	}
-	return cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request read %d index bytes, %d of them counts held, after %d series, more than max_index_bytes %d", read, c.groupBytes.Load(), c.counter.Counted(), c.maxIndexBytes)
+	return cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request read %d index bytes after %d series, more than max_index_bytes %d", read, c.counter.Counted(), c.maxIndexBytes)
 }
 
 // strategy picks the cheapest series iterator for one block.
 func (c *seriesCountsState) strategy(m *block.Meta) seriesIteratorStrategy {
 	switch {
-	case c.opts.Step > 0:
-		return defaultStrategy
 	case m.MinTime >= c.opts.MinT && m.MaxTime <= c.opts.MaxT:
 		return noChunkRefs
 	default:
@@ -326,26 +303,14 @@ func (c *seriesCountsState) strategy(m *block.Meta) seriesIteratorStrategy {
 	}
 }
 
-// add counts one series and refuses a group past max_groups. Without a step the iterator already
-// kept only series in the window.
+// add counts one series and refuses a group past max_groups. The iterator already kept only series
+// in the window.
 func (c *seriesCountsState) add(s seriesChunkRefs) error {
-	v := s.lset.Get(c.opts.GroupBy)
 	var hash uint64
 	if c.opts.Hashes {
 		hash = labels.StableHash(s.lset)
 	}
-	before := c.counter.GroupCount()
-	if c.opts.Step == 0 {
-		c.counter.AddGroupInWindow(v, hash)
-	} else {
-		c.ranges = c.ranges[:0]
-		for _, r := range s.refs {
-			// Chunk times are inclusive.
-			c.ranges = append(c.ranges, cardinality.ChunkRange{MinTime: r.minTime, MaxTime: r.maxTime})
-		}
-		c.counter.AddGroup(v, hash, c.ranges)
-	}
-	c.chargeNewGroups(before)
+	c.counter.AddGroupInWindow(s.lset.Get(c.opts.GroupBy), hash)
 	return c.checkGroups()
 }
 
@@ -420,8 +385,7 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 		return nil, err
 	}
 	planSpan.SetAttributes(attribute.Int("blocks_loaded", len(loaded)))
-	groupsLowerBound, err := c.boundGroups(planCtx, loaded)
-	if err != nil {
+	if err := c.boundGroups(planCtx, loaded); err != nil {
 		return nil, err
 	}
 	if c.maxIndexBytes > 0 {
@@ -449,7 +413,7 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 			return nil, cardinality.MaxHashesRefusal(matching, c.maxHashes)
 		}
 	}
-	series, matched, err := c.checkWalk(loaded, groupsLowerBound)
+	series, matched, err := c.checkWalk(loaded)
 	postingsSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("series_matched_summed_over_blocks", matched), attribute.Int("series_entries_to_read", series))
 	if err != nil {
 		return nil, err
@@ -536,7 +500,7 @@ func (c *seriesCountsState) checkBeforeLoad(blocks []countBlock) error {
 			return cardinality.MaxHashesRefusal(matching, c.maxHashes)
 		}
 	}
-	_, _, err := c.checkWalk(walked, 0)
+	_, _, err := c.checkWalk(walked)
 	return err
 }
 
@@ -593,30 +557,26 @@ func (s *BucketStore) loadCountBlocks(ctx context.Context, c *seriesCountsState,
 	return counted, nil
 }
 
-// boundGroups refuses when one block alone is known to hold more groups than max_groups, and returns
-// the largest block's lower bound on the groups. It applies only with no matchers and no query shard,
-// to blocks inside the window.
-func (c *seriesCountsState) boundGroups(ctx context.Context, loaded []countBlock) (int64, error) {
+// boundGroups refuses when one block alone is known to hold more groups than max_groups. It applies
+// only with no matchers and no query shard, to blocks inside the window.
+func (c *seriesCountsState) boundGroups(ctx context.Context, loaded []countBlock) error {
 	maxGroups := c.maxGroups
-	if (maxGroups <= 0 && c.maxIndexBytes <= 0) || len(c.matchers) > 0 || c.shard != nil {
-		return 0, nil
+	if maxGroups <= 0 || len(c.matchers) > 0 || c.shard != nil {
+		return nil
 	}
-	var lowerBound int64
 	for _, o := range loaded {
 		if o.b.meta.MinTime < c.opts.MinT || o.b.meta.MaxTime > c.opts.MaxT {
 			continue
 		}
 		stats, err := o.b.indexHeaderReader.LabelValuesStats(ctx, c.opts.GroupBy)
 		if err != nil {
-			return 0, status.Errorf(codes.Internal, "block %s: %v", o.b.meta.ULID, err)
+			return status.Errorf(codes.Internal, "block %s: %v", o.b.meta.ULID, err)
 		}
-		n := int64(stats.CountLowerBound)
-		if maxGroups > 0 && n > maxGroups {
-			return 0, cardinality.MaxGroupsRefusal(fmt.Sprintf("block %s holds at least", o.b.meta.ULID), n, c.opts.GroupBy, maxGroups)
+		if n := int64(stats.CountLowerBound); n > maxGroups {
+			return cardinality.MaxGroupsRefusal(fmt.Sprintf("block %s holds at least", o.b.meta.ULID), n, c.opts.GroupBy, maxGroups)
 		}
-		lowerBound = max(lowerBound, n)
 	}
-	return lowerBound, nil
+	return nil
 }
 
 // priceCountPostings prices every block's postings from the postings offsets table before any is fetched,
@@ -781,7 +741,7 @@ func (c *seriesCountsState) hashesLowerBound(loaded []countBlock) int64 {
 
 // checkWalk prices what is still to read before the walk and refuses a request over max_index_bytes.
 // It returns the series entries to read and the series matched.
-func (c *seriesCountsState) checkWalk(loaded []countBlock, groupsLowerBound int64) (series int, matched int64, _ error) {
+func (c *seriesCountsState) checkWalk(loaded []countBlock) (series int, matched int64, _ error) {
 	var (
 		seriesBytes int64
 		postings    int64
@@ -798,11 +758,7 @@ func (c *seriesCountsState) checkWalk(loaded []countBlock, groupsLowerBound int6
 		series += int(o.seriesCount)
 		seriesBytes += o.seriesCount * seriesEntryEstimate(o.b.meta)
 	}
-	var counts int64
-	if !c.opts.Hashes {
-		counts = c.groupCountsBytes(groupsLowerBound)
-	}
-	return series, matched, c.checkPlan(c.limitedBytes(c.stats), series, seriesBytes, postings, counts)
+	return series, matched, c.checkPlan(c.limitedBytes(c.stats), series, seriesBytes, postings)
 }
 
 // walkCountBlocks counts the blocks and returns the response with the block IDs counted.

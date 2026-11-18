@@ -6,7 +6,6 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
@@ -15,10 +14,7 @@ import (
 type CardinalityEstimateRequest struct {
 	Matchers   []*labels.Matcher
 	MinT, MaxT int64
-	Step       int64
-	// Window is each bucket's width, 0 for Step.
-	Window  int64
-	GroupBy string
+	GroupBy    string
 	// MaxIndexBytes caps the index bytes the whole request reads, 0 for none.
 	MaxIndexBytes int64
 	// MaxHashes caps the label-set hashes a deduplicating request may hold, 0 for none.
@@ -27,27 +23,7 @@ type CardinalityEstimateRequest struct {
 	MaxGroups int64
 }
 
-// windowMs is the window_ms to send: 0 when the buckets are step wide.
-func (r CardinalityEstimateRequest) windowMs() int64 {
-	if r.Step == 0 || r.Window == r.Step {
-		return 0
-	}
-	return r.Window
-}
-
-// expectedBuckets is how many counts each group carries, 0 without a step.
-func (r CardinalityEstimateRequest) expectedBuckets() (int, error) {
-	if r.Step <= 0 {
-		return 0, nil
-	}
-	n, err := cardinality.Buckets(r.MinT, r.MaxT, r.Step, r.Window)
-	if err != nil {
-		return 0, badEstimateRequest("step: %v", err)
-	}
-	return n, nil
-}
-
-// CardinalityEstimateResult holds one count per bucket for each group.
+// CardinalityEstimateResult holds the count of each group, as its one entry.
 type CardinalityEstimateResult struct {
 	// Read is how the sources were read, one of the Read values.
 	Read string

@@ -36,18 +36,15 @@ import (
 // cardinalityEstimate is the part of the /api/v1/cardinality/estimate
 // response the tests check.
 type cardinalityEstimate struct {
-	Read        string  `json:"read"`
-	Source      string  `json:"source"`
-	Dedup       bool    `json:"dedup"`
-	LowerBound  bool    `json:"lower_bound"`
-	CoverageGap bool    `json:"coverage_gap"`
-	Total       int64   `json:"total"`
-	Totals      []int64 `json:"totals"`
-	WindowMS    int64   `json:"window_ms"`
+	Read        string `json:"read"`
+	Source      string `json:"source"`
+	Dedup       bool   `json:"dedup"`
+	LowerBound  bool   `json:"lower_bound"`
+	CoverageGap bool   `json:"coverage_gap"`
+	Total       int64  `json:"total"`
 	Counts      []struct {
-		Value  string  `json:"value"`
-		Count  int64   `json:"count"`
-		Counts []int64 `json:"counts"`
+		Value string `json:"value"`
+		Count int64  `json:"count"`
 	} `json:"groups"`
 }
 
@@ -269,58 +266,26 @@ func TestCardinalityEstimate(t *testing.T) {
 			assert.Equal(t, int64(4), got.Total)
 		})
 
-		t.Run("by job with per-bucket counts", func(t *testing.T) {
-			start, end := day, day.Add(24*time.Hour)
-			got := estimate(t, start, end, url.Values{"match[]": {`{__name__="a_total"}`}, "group_by": {"job"}, "step": {"12h"}})
-			assert.Equal(t, "full_index", got.Read)
-			buckets := map[string][]int64{}
-			for _, g := range got.Counts {
-				buckets[g.Value] = g.Counts
+		t.Run("by job over each half of the day", func(t *testing.T) {
+			// x has samples in both halves, y in the first and z in the second.
+			for _, half := range []struct {
+				start time.Time
+				want  map[string]int64
+			}{
+				{day, map[string]int64{"x": 1, "y": 1}},
+				{day.Add(12 * time.Hour), map[string]int64{"x": 1, "z": 1}},
+			} {
+				start, end := half.start, half.start.Add(12*time.Hour)
+				got := estimate(t, start, end, url.Values{"match[]": {`{__name__="a_total"}`}, "group_by": {"job"}})
+				assert.Equal(t, "full_index", got.Read)
+				assert.Equal(t, half.want, countsOf(got))
+				assert.Equal(t, promqlCount(t, `{__name__="a_total"}`, "job", start, end), countsOf(got))
 			}
-			for i, bucketStart := range []time.Time{start, start.Add(12 * time.Hour)} {
-				want := promqlCount(t, `{__name__="a_total"}`, "job", bucketStart, bucketStart.Add(12*time.Hour))
-				for job := range buckets {
-					assert.Equal(t, want[job], buckets[job][i], "job %s, bucket %d", job, i)
-				}
-				for job, n := range want {
-					require.Contains(t, buckets, job)
-					assert.Equal(t, n, buckets[job][i], "job %s, bucket %d", job, i)
-				}
-			}
-			assert.Equal(t, []int64{1, 1}, buckets["x"], "x has samples in both halves")
-			// x and y in the first half, x and z in the second.
-			assert.Equal(t, []int64{2, 2}, got.Totals)
-		})
-
-		t.Run("by job, buckets every 6h each looking back 12h", func(t *testing.T) {
-			// Buckets end at 12h, 18h and 24h into the day, each counting the 12h before it.
-			start, end := day.Add(6*time.Hour), day.Add(24*time.Hour)
-			got := estimate(t, start, end, url.Values{"match[]": {`{__name__="a_total"}`}, "group_by": {"job"}, "step": {"6h"}, "window": {"12h"}})
-			assert.Equal(t, int64(12*time.Hour/time.Millisecond), got.WindowMS)
-			buckets := map[string][]int64{}
-			for _, g := range got.Counts {
-				buckets[g.Value] = g.Counts
-			}
-			for i, bucketEnd := range []time.Time{day.Add(12 * time.Hour), day.Add(18 * time.Hour), day.Add(24 * time.Hour)} {
-				want := promqlCount(t, `{__name__="a_total"}`, "job", bucketEnd.Add(-12*time.Hour), bucketEnd)
-				for job := range buckets {
-					assert.Equal(t, want[job], buckets[job][i], "job %s, bucket %d", job, i)
-				}
-				for job, n := range want {
-					require.Contains(t, buckets, job)
-					assert.Equal(t, n, buckets[job][i], "job %s, bucket %d", job, i)
-				}
-			}
-			// x runs to 13h, so the overlapping buckets all hold it; y, from 1h to 5h, is only in the first, and
-			// z, from 20h, only in the last.
-			assert.Equal(t, []int64{1, 1, 1}, buckets["x"])
-			assert.Equal(t, []int64{1, 0, 0}, buckets["y"])
-			assert.Equal(t, []int64{0, 0, 1}, buckets["z"])
 		})
 
 		t.Run("a request over max_index_bytes is refused with 422", func(t *testing.T) {
 			start, end := day, day.Add(24*time.Hour)
-			status, body := estimateRaw(t, start, end, url.Values{"match[]": {`{__name__="a_total"}`}, "group_by": {"job"}, "step": {"12h"}, "max_index_bytes": {"1"}}, bypassCache)
+			status, body := estimateRaw(t, start, end, url.Values{"match[]": {`{__name__="a_total"}`}, "group_by": {"job"}, "max_index_bytes": {"1"}}, bypassCache)
 			assert.Equal(t, http.StatusUnprocessableEntity, status, string(body))
 			assert.Contains(t, string(body), "max_index_bytes")
 		})
@@ -434,34 +399,19 @@ func TestCardinalityEstimate(t *testing.T) {
 		assert.Equal(t, exact, countsOf(got))
 	})
 
-	t.Run("blocks and head across the cut: per-bucket counts", func(t *testing.T) {
-		// Two buckets: the first holds the recent block's samples, the second
-		// the pushed ones, and the cut is inside the window. The window starts
-		// at the block's first sample, so the blocks cover it up to the
+	t.Run("blocks and head across the cut: each half of the window", func(t *testing.T) {
+		// The first half holds the recent block's samples, the second the
+		// pushed ones, and the cut is inside the window. The window starts at
+		// the block's first sample, so the blocks cover it up to the
 		// ingesters' range.
 		start := recentMin
-		step := (time.Since(start)/2 + 2*time.Second).Truncate(time.Millisecond)
-		end := start.Add(2 * step)
-		got := estimate(t, start, end, url.Values{"match[]": {`{__name__="c_total"}`}, "group_by": {"job"}, "step": {formatDuration(step)}})
-		assert.Equal(t, "blocks+head", got.Source)
-		assert.False(t, got.LowerBound)
-		buckets := map[string][]int64{}
-		for _, g := range got.Counts {
-			buckets[g.Value] = g.Counts
+		half := (time.Since(start)/2 + 2*time.Second).Truncate(time.Millisecond)
+		for i, from := range []time.Time{start, start.Add(half)} {
+			got := estimate(t, from, from.Add(half), url.Values{"match[]": {`{__name__="c_total"}`}, "group_by": {"job"}})
+			assert.False(t, got.LowerBound, "half %d", i)
+			assert.Equal(t, promqlCount(t, `{__name__="c_total"}`, "job", from, from.Add(half)), countsOf(got), "half %d", i)
+			assert.Equal(t, int64(1), countsOf(got)["both"], "half %d: in the block and in the ingesters", i)
 		}
-		for i, bucketStart := range []time.Time{start, start.Add(step)} {
-			want := promqlCount(t, `{__name__="c_total"}`, "job", bucketStart, bucketStart.Add(step))
-			for job := range buckets {
-				assert.Equal(t, want[job], buckets[job][i], "job %s, bucket %d", job, i)
-			}
-			for job, n := range want {
-				require.Contains(t, buckets, job)
-				assert.Equal(t, n, buckets[job][i], "job %s, bucket %d", job, i)
-			}
-		}
-		assert.Equal(t, []int64{1, 1}, buckets["both"], "in the block and in the ingesters")
-		assert.Equal(t, []int64{1, 0}, buckets["old"])
-		assert.Equal(t, []int64{0, 1}, buckets["new"])
 	})
 
 	// Last, so the cases above run while the partitions become stable.
@@ -469,8 +419,7 @@ func TestCardinalityEstimate(t *testing.T) {
 		// Stable once the creation grace period and the minute for the
 		// change to reach every distributor have passed, since both the
 		// partitions turned ACTIVE and the ingesters recorded the tenant's
-		// shard size. Whole seconds, so the one-bucket step divides the
-		// window exactly.
+		// shard size.
 		start := partitionsActive
 		if shardSizeRecorded.After(start) {
 			start = shardSizeRecorded
@@ -492,7 +441,7 @@ func TestCardinalityEstimate(t *testing.T) {
 		require.Equal(t, http.StatusOK, res.StatusCode)
 
 		end := time.Now().Truncate(time.Second).Add(2 * time.Second)
-		got := estimate(t, start, end, url.Values{"match[]": {`{__name__="d_total"}`}, "step": {formatDuration(end.Sub(start))}})
+		got := estimate(t, start, end, url.Values{"match[]": {`{__name__="d_total"}`}})
 		assert.Equal(t, "head", got.Source)
 		assert.False(t, got.Dedup, "the partitions' counts add up")
 		assert.Equal(t, map[string]int64{"d_total": 20}, countsOf(got))

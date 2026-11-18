@@ -96,17 +96,6 @@ func TestIngester_SeriesCounts_TenantMemoryLimit(t *testing.T) {
 		_, err = counts(t, 2*seriesRefBytes-1, req)
 		requireRefusedByMemory(t, err)
 	})
-	t.Run("a gathered series holds a word for every 64 buckets", func(t *testing.T) {
-		// 240 buckets are 4 words, 3 more than gatheredSeriesBytes covers.
-		req := whole()
-		req.StepMs = minute
-		perBucket := held + gathered*3*8
-		got, err := counts(t, perBucket, req)
-		require.NoError(t, err)
-		assert.Equal(t, map[string]int{"a": 240, "b": 240}, got)
-		_, err = counts(t, perBucket-1, req)
-		requireRefusedByMemory(t, err)
-	})
 }
 
 // heapBytesPer returns the heap bytes build keeps live per item, building n of them.
@@ -126,14 +115,14 @@ func heapBytesPer(n int, build func(n int) any) float64 {
 func BenchmarkSeriesCountsWalk_HeldBytes(b *testing.B) {
 	const n = 1_000_000
 	for name, build := range map[string]func(n int) any{
-		// As walkSources gathers a series, with one word of buckets.
+		// As walkSources gathers a series.
 		"gathered series": func(n int) any {
-			byHash := map[uint64]*gatheredSeries{}
+			byHash := map[uint64]string{}
 			value := "value"
 			for i := range n {
 				// Spread the keys as hashes are.
 				h := uint64(i) * 0x9E3779B97F4A7C15
-				byHash[h] = &gatheredSeries{value: value, buckets: make(cardinality.SeriesBuckets, 1)}
+				byHash[h] = value
 			}
 			return byHash
 		},

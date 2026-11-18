@@ -26,9 +26,6 @@ type estimateMerger struct {
 
 	hashBytes int64
 
-	// buckets, when positive, is how many counts every group must carry.
-	buckets int
-
 	// tracker, when set, bounds the memory the groups and hashes hold.
 	tracker *limiter.MemoryConsumptionTracker
 }
@@ -42,16 +39,6 @@ func newEstimateMerger(ctx context.Context, dedup bool) *estimateMerger {
 		counts:  map[string][]int64{},
 		hashes:  map[string]map[uint64]struct{}{},
 	}
-}
-
-// chargeEstimateGroup charges one new group to tracker, which may be nil.
-func chargeEstimateGroup(tracker *limiter.MemoryConsumptionTracker, value string, buckets int) error {
-	return (&estimateMerger{tracker: tracker}).charge(estimateGroupCharge(value, buckets))
-}
-
-// estimateGroupCharge is the memory a group is charged.
-func estimateGroupCharge(value string, buckets int) uint64 {
-	return uint64(estimateGroupBytes + len(value) + 8*buckets)
 }
 
 // charge adds b bytes to the request's memory consumption.
@@ -88,9 +75,9 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 		}
 		return m.charge(uint64(added * estimateHashBytes))
 	}
-	// A group without one count per bucket is malformed: the table and the response index counts by bucket.
-	if want := max(1, m.buckets); len(counts) != want {
-		return fmt.Errorf("%s returned %d buckets for %q instead of %d", aSource(source), len(counts), value, want)
+	// A group of counts carries one.
+	if len(counts) != 1 {
+		return fmt.Errorf("%s returned %d counts for %q instead of one", aSource(source), len(counts), value)
 	}
 	sum := m.counts[value]
 	if sum == nil {
@@ -100,9 +87,7 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 		sum = make([]int64, len(counts))
 		m.counts[value] = sum
 	}
-	for i, n := range counts {
-		sum[i] += n
-	}
+	sum[0] += counts[0]
 	return nil
 }
 

@@ -259,19 +259,6 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 		assert.Equal(t, map[string][]int64{"up": {1}, "errors_total": {1}}, countsByGroup(resp))
 	})
 
-	t.Run("hourly buckets", func(t *testing.T) {
-		resp, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, Matchers: up, StartMs: 0, EndMs: 4 * hourMs, StepMs: hourMs})
-		require.NoError(t, err)
-		assert.Equal(t, map[string][]int64{"up": {2, 1, 1, 1}}, countsByGroup(resp))
-	})
-
-	t.Run("hourly buckets two hours wide", func(t *testing.T) {
-		resp, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, Matchers: up, StartMs: 0, EndMs: 4 * hourMs, StepMs: hourMs, WindowMs: 2 * hourMs})
-		require.NoError(t, err)
-		// Buckets [0, 2h), [1h, 3h) and [2h, 4h): p1 is in hour 0, p2 in hours 1 and 2, p3 in hours 0 and 3.
-		assert.Equal(t, map[string][]int64{"up": {3, 1, 2}}, countsByGroup(resp))
-	})
-
 	t.Run("group by another label", func(t *testing.T) {
 		resp, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, Matchers: up, StartMs: 0, EndMs: 4 * hourMs, GroupBy: "pod"})
 		require.NoError(t, err)
@@ -346,15 +333,8 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 
 	for name, req := range map[string]*storegatewaypb.SeriesCountsRequest{
 		"empty window":             {StartMs: 10, EndMs: 10},
-		"step doesn't divide":      {StartMs: 0, EndMs: 4 * hourMs, StepMs: 3 * hourMs},
-		"hashes with step":         {StartMs: 0, EndMs: 4 * hourMs, StepMs: hourMs, Hashes: true},
-		"too many buckets":         {StartMs: 0, EndMs: 4 * hourMs, StepMs: 1},
 		"bad block ID":             {StartMs: 0, EndMs: 4 * hourMs, BlockIds: []string{"x"}},
-		"negative step":            {StartMs: 0, EndMs: 4 * hourMs, StepMs: -1},
 		"negative max_index_bytes": {StartMs: 0, EndMs: 4 * hourMs, MaxIndexBytes: -1},
-		"window without step":      {StartMs: 0, EndMs: 4 * hourMs, WindowMs: hourMs},
-		"window shorter than step": {StartMs: 0, EndMs: 4 * hourMs, StepMs: hourMs, WindowMs: hourMs / 2},
-		"window doesn't fit":       {StartMs: 0, EndMs: 4 * hourMs, StepMs: hourMs, WindowMs: 5 * hourMs},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := store.countSeries(ctx, req)
@@ -398,9 +378,9 @@ func TestBucketStore_SeriesCountsNativeHistograms(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, map[string][]int64{"h": {2}, "f": {1}}, countsByGroup(resp), "the whole block, from postings")
 
-			resp, err = store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{id}, Matchers: h, StartMs: 0, EndMs: 3 * hourMs, StepMs: hourMs, GroupBy: "kind"})
+			resp, err = store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{id}, Matchers: h, StartMs: 0, EndMs: hourMs, GroupBy: "kind"})
 			require.NoError(t, err)
-			assert.Equal(t, map[string][]int64{"int": {1, 0, 0}, "float": {0, 0, 1}}, countsByGroup(resp), "per hour, from the chunk metas")
+			assert.Equal(t, map[string][]int64{"int": {1}}, countsByGroup(resp), "hour 0, from the chunk metas")
 
 			resp, err = store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{id}, StartMs: hourMs, EndMs: 3 * hourMs, GroupBy: "kind"})
 			require.NoError(t, err)
@@ -412,13 +392,9 @@ func TestBucketStore_SeriesCountsNativeHistograms(t *testing.T) {
 func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
 	c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: 0, EndMs: hourMs, MaxIndexBytes: 2000})
 	require.NoError(t, err)
-	require.NoError(t, c.checkPlan(900, 2, 2*512, 0, 0), "900 + 2 x 512 is under the limit")
-	err = c.checkPlan(1000, 2, 2*512, 0, 0)
+	require.NoError(t, c.checkPlan(900, 2, 2*512, 0), "900 + 2 x 512 is under the limit")
+	err = c.checkPlan(1000, 2, 2*512, 0)
 	assert.Equal(t, codes.ResourceExhausted, status.Code(err), "1000 + 2 x 512 is over the limit")
-	require.NoError(t, c.checkPlan(900, 2, 2*512, 0, 76), "the counts fit")
-	err = c.checkPlan(900, 2, 2*512, 0, 77)
-	assert.Equal(t, codes.ResourceExhausted, status.Code(err), "the counts the groups will hold are over the limit")
-	assert.Contains(t, err.Error(), "holding 77 bytes of counts")
 	require.NoError(t, c.checkTable("pod", 1000, 1000))
 	assert.Equal(t, codes.ResourceExhausted, status.Code(c.checkTable("pod", 1000, 1001)), "postings plus the offsets table are over the limit")
 	require.NoError(t, c.checkRead(2000))
@@ -426,7 +402,7 @@ func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
 
 	unlimited, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: 0, EndMs: hourMs})
 	require.NoError(t, err)
-	require.NoError(t, unlimited.checkPlan(1<<40, 1<<20, 1<<29, 0, 1<<40))
+	require.NoError(t, unlimited.checkPlan(1<<40, 1<<20, 1<<29, 0))
 	require.NoError(t, unlimited.checkRead(1<<40))
 	require.NoError(t, unlimited.checkTable("pod", 1<<40, 1<<40))
 }
@@ -491,107 +467,6 @@ func TestSeriesCounts_CheckReadWhileAnotherBlockAdds(t *testing.T) {
 	}()
 	wg.Wait()
 	assert.Equal(t, int64(1001), c.counter.Counted())
-}
-
-// The counts a request holds, 8 bytes per group per bucket, count against
-// max_index_bytes with the index read: during the walk as groups are added,
-// and before it from the groups a block is known to hold.
-func TestBucketStore_SeriesCountsBoundsGroupMemory(t *testing.T) {
-	t.Run("the walk charges each new group's counts", func(t *testing.T) {
-		stats := newSafeQueryStats()
-		c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: 0, EndMs: 4 * hourMs, StepMs: hourMs, GroupBy: "pod", MaxIndexBytes: 1000 + 3*4*8 - 1})
-		require.NoError(t, err)
-		require.Equal(t, 4, c.counter.Buckets())
-		for _, pod := range []string{"p1", "p2", "p3"} {
-			require.NoError(t, c.add(seriesChunkRefs{lset: labels.FromStrings("__name__", "up", "pod", pod), refs: []seriesChunkRef{{minTime: 0, maxTime: 10}}}))
-		}
-		require.NoError(t, c.add(seriesChunkRefs{lset: labels.FromStrings("__name__", "up", "pod", "p1"), refs: []seriesChunkRef{{minTime: 0, maxTime: 10}}}))
-		require.Equal(t, 3, c.counter.GroupCount())
-		err = c.checkRead(c.limitedBytes(stats) + 1000)
-		require.Equal(t, codes.ResourceExhausted, status.Code(err), "three groups of four buckets are 96 bytes, one over what is left")
-		assert.Contains(t, err.Error(), "96 of them counts held")
-
-		c.maxIndexBytes++
-		require.NoError(t, c.checkRead(c.limitedBytes(stats)+1000), "an existing group adds nothing")
-	})
-
-	for name, opts := range countIndexHeaderVersions {
-		t.Run(name+", the groups a block is known to hold are priced before the walk", func(t *testing.T) {
-			store, b1, _ := prepareSeriesCountsStore(t, opts...)
-			ctx := t.Context()
-			var est, bound int64
-			store.blockSet.forEach(func(b *bucketBlock) {
-				if b.meta.ULID == b1 {
-					est = seriesEntryEstimate(b.meta)
-					b.ensureIndexHeaderLoaded(ctx, newSafeQueryStats())
-					stats, err := b.indexHeaderReader.LabelValuesStats(ctx, "pod")
-					require.NoError(t, err)
-					bound = int64(stats.CountLowerBound)
-				}
-			})
-			require.Positive(t, est)
-			require.Positive(t, bound, "the index-header's samples bound the pods from below")
-			// Hourly buckets over the block: four series are walked at est
-			// bytes each after their 4-byte postings, and the pods the block is
-			// known to hold make that many groups of four counts.
-			counts := bound * 4 * 8
-			req := func(limit int64) *storegatewaypb.SeriesCountsRequest {
-				return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, StartMs: 0, EndMs: 4 * hourMs, StepMs: hourMs, GroupBy: "pod", MaxIndexBytes: limit}
-			}
-			seriesRead := func() float64 {
-				return testutil.ToFloat64(store.metrics.cardinalityEstimateFetchedBytes.WithLabelValues("series"))
-			}
-			before := seriesRead()
-			_, err := store.countSeries(ctx, req(4*est+4*4+counts-1))
-			require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-			assert.Contains(t, err.Error(), fmt.Sprintf("holding %d bytes of counts", counts))
-			assert.Equal(t, before, seriesRead(), "refused before any series entry was read")
-
-			resp, err := store.countSeries(ctx, req(4*est+4*4+counts))
-			require.NoError(t, err)
-			assert.Equal(t, map[string][]int64{"p1": {1, 0, 1, 0}, "p2": {0, 1, 1, 0}, "p3": {1, 0, 0, 1}}, countsByGroup(resp), "up and errors_total on p1 in hours 0 and 2")
-		})
-	}
-}
-
-// With many buckets, the store-gateway counter agrees with the definition
-// of a bucket count for every bucket: a series counts in a bucket when one of
-// its chunks overlaps it.
-func TestSeriesCounts_ManyBucketsAgainstBruteForce(t *testing.T) {
-	rnd := rand.New(rand.NewSource(1))
-	const minT, step = int64(1000), int64(10)
-	for _, window := range []int64{0, 3 * step} {
-		buckets := cardinality.MaxCounterBuckets
-		w := max(window, step)
-		maxT := minT + w + int64(buckets-1)*step
-		c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: minT, EndMs: maxT, StepMs: step, WindowMs: window})
-		require.NoError(t, err)
-		require.Equal(t, buckets, c.counter.Buckets())
-
-		lset := labels.FromStrings("__name__", "a")
-		want := make([]int64, buckets)
-		span := maxT - minT
-		for range 200 {
-			var refs []seriesChunkRef
-			for range 1 + rnd.Intn(3) {
-				from := minT - span/10 + rnd.Int63n(span+span/5)
-				refs = append(refs, seriesChunkRef{minTime: from, maxTime: from + rnd.Int63n(span/4)})
-			}
-			require.NoError(t, c.add(seriesChunkRefs{lset: lset, refs: refs}))
-			for i := range buckets {
-				start := minT + int64(i)*step
-				for _, r := range refs {
-					if r.maxTime >= start && r.minTime < start+w {
-						want[i]++
-						break
-					}
-				}
-			}
-		}
-		groups := c.counter.Groups()
-		require.Len(t, groups, 1, "window %d", window)
-		assert.Equal(t, want, groups[0].Counts, "window %d", window)
-	}
 }
 
 // A group's key is a copy of the group-by value: the value is a slice of the

@@ -43,54 +43,25 @@ func TestSeriesCounter(t *testing.T) {
 		assert.Equal(t, []*cardinalitypb.SeriesCountGroup{{Value: "1", Counts: []int64{2}}, {Value: "2", Counts: []int64{1}}}, groups)
 	})
 
-	t.Run("buckets count a series once each, from its chunks", func(t *testing.T) {
-		c, err := NewSeriesCounter(CounterOptions{MinT: 0, MaxT: 40, Step: 10})
-		require.NoError(t, err)
-		c.Add(a1, []ChunkRange{{MinTime: 0, MaxTime: 4}, {MinTime: 5, MaxTime: 12}, {MinTime: 35, MaxTime: 50}})
-		c.Add(a2, []ChunkRange{{MinTime: 20, MaxTime: 29}})
-		groups := c.Groups()
-		assert.Equal(t, []*cardinalitypb.SeriesCountGroup{{Value: "a", Counts: []int64{1, 1, 1, 1}}}, groups)
-	})
-
-	t.Run("buckets gathered across sources count the same as the chunks", func(t *testing.T) {
-		chunks := [][]ChunkRange{
-			{{MinTime: 0, MaxTime: 4}, {MinTime: 5, MaxTime: 12}},
-			{{MinTime: 35, MaxTime: 50}},
-			{{MinTime: -10, MaxTime: -1}}, // outside the window
-		}
-		for _, step := range []int64{0, 10} {
-			fromChunks, err := NewSeriesCounter(CounterOptions{MinT: 0, MaxT: 40, Step: step})
-			require.NoError(t, err)
-			gathered, err := NewSeriesCounter(CounterOptions{MinT: 0, MaxT: 40, Step: step})
-			require.NoError(t, err)
-			var all []ChunkRange
-			var touched SeriesBuckets
-			for _, c := range chunks {
-				all = append(all, c...)
-				touched = gathered.MarkBuckets(touched, c)
-			}
-			assert.True(t, fromChunks.Add(a1, all))
-			assert.True(t, gathered.AddGroupBuckets("a", 0, touched))
-			assert.False(t, gathered.AddGroupBuckets("a", 0, gathered.MarkBuckets(nil, chunks[2])), "no chunk in the window")
-			assert.Nil(t, gathered.MarkBuckets(nil, chunks[2]), "nothing allocated for a series with no chunk in the window")
-			want := fromChunks.Groups()
-			got := gathered.Groups()
-			assert.Equal(t, want, got, "step %d", step)
-			assert.Equal(t, fromChunks.Counted(), gathered.Counted())
-		}
-		c, err := NewSeriesCounter(CounterOptions{MinT: 0, MaxT: 40, Step: 10})
+	t.Run("a chunk overlaps the window when it ends at or after its start and starts before its end", func(t *testing.T) {
+		c, err := NewSeriesCounter(CounterOptions{MinT: 0, MaxT: 40})
 		require.NoError(t, err)
 		assert.True(t, c.InWindow([]ChunkRange{{MinTime: 39, MaxTime: 60}}))
 		assert.False(t, c.InWindow([]ChunkRange{{MinTime: 40, MaxTime: 60}}), "the window end is excluded")
-		assert.Len(t, c.MarkBuckets(nil, []ChunkRange{{MinTime: 0, MaxTime: 1}}), 1, "one word for up to 64 buckets")
-		wide, err := NewSeriesCounter(CounterOptions{MinT: 0, MaxT: 1000, Step: 10})
+		assert.True(t, c.InWindow([]ChunkRange{{MinTime: -10, MaxTime: -1}, {MinTime: -5, MaxTime: 0}}), "one chunk in the window is enough")
+	})
+
+	t.Run("counts added in bulk", func(t *testing.T) {
+		c, err := NewSeriesCounter(CounterOptions{MinT: 0, MaxT: 10})
 		require.NoError(t, err)
-		touched := wide.MarkBuckets(nil, []ChunkRange{{MinTime: 995, MaxTime: 999}})
-		assert.Len(t, touched, 2)
-		assert.True(t, wide.AddGroupBuckets("a", 0, touched))
-		groups := wide.Groups()
-		assert.Equal(t, int64(1), groups[0].Counts[99])
-		assert.Equal(t, int64(0), groups[0].Counts[98])
+		require.NoError(t, c.AddCount("a", 3))
+		require.NoError(t, c.AddCount("a", 2))
+		require.NoError(t, c.AddCount("b", 0))
+		assert.Equal(t, []*cardinalitypb.SeriesCountGroup{{Value: "a", Counts: []int64{5}}}, c.Groups())
+		assert.Equal(t, int64(5), c.Counted())
+		hashes, err := NewSeriesCounter(CounterOptions{MinT: 0, MaxT: 10, Hashes: true})
+		require.NoError(t, err)
+		assert.Error(t, hashes.AddCount("a", 1))
 	})
 
 	t.Run("hashes", func(t *testing.T) {
@@ -128,11 +99,8 @@ func TestSeriesCounter(t *testing.T) {
 
 	t.Run("invalid options", func(t *testing.T) {
 		for name, opts := range map[string]CounterOptions{
-			"empty window":        {MinT: 10, MaxT: 10},
-			"negative step":       {MinT: 0, MaxT: 10, Step: -1},
-			"step doesn't divide": {MinT: 0, MaxT: 10, Step: 3},
-			"too many buckets":    {MinT: 0, MaxT: 2000, Step: 1},
-			"hashes with a step":  {MinT: 0, MaxT: 10, Step: 5, Hashes: true},
+			"empty window":    {MinT: 10, MaxT: 10},
+			"reversed window": {MinT: 10, MaxT: 5},
 		} {
 			_, err := NewSeriesCounter(opts)
 			assert.Error(t, err, name)

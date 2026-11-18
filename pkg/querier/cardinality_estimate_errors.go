@@ -47,9 +47,6 @@ const (
 func (e estimateError) Error() string { return e.err.Error() }
 func (e estimateError) Unwrap() error { return e.err }
 
-// errStepNeedsOneSource is wrapped by refusals of per-bucket counts over sources that may share series.
-var errStepNeedsOneSource = errors.New("per-bucket counts need each bucket held by sources that share no series")
-
 // errCountsNotSupported is wrapped by the refusal of a source that doesn't know the count RPCs. It is not a limit.
 var errCountsNotSupported = errors.New("does not support cardinality estimates")
 

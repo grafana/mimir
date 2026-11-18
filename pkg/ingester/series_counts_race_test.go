@@ -169,7 +169,6 @@ func TestIngester_SeriesCounts_OutOfOrderHeadCompactionDuringTheWalk(t *testing.
 	for name, req := range map[string]*client.SeriesCountsRequest{
 		"counts":      {StartMs: 0, EndMs: 20 * minute},
 		"with hashes": {StartMs: 0, EndMs: 20 * minute, Hashes: true},
-		"per bucket":  {StartMs: 0, EndMs: 20 * minute, StepMs: 20 * minute},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Run("compaction between the head read and the block list", func(t *testing.T) {

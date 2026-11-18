@@ -113,66 +113,39 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 	b1, b2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
 	up := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}
 
-	t.Run("adds up shards of one range, per bucket", func(t *testing.T) {
+	t.Run("adds up shards of one range", func(t *testing.T) {
 		shards := bucketindex.Blocks{
 			{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"},
 			{ID: b2, MinTime: 0, MaxTime: dayMs, CompactorShardID: "2_of_2"},
 		}
 		var got *storegatewaypb.SeriesCountsRequest
 		clients := map[BlocksStoreClient][][]ulid.ULID{
-			gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1, 2}}}, SeriesFetchedBytes: 10}): {{b1}},
-			gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{3, 0}}}, SeriesFetchedBytes: 5}):   {{b2}},
+			gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, SeriesFetchedBytes: 10}): {{b1}},
+			gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}, SeriesFetchedBytes: 5}):   {{b2}},
 		}
 		q := seriesCountsQueryable(0, 2*60*60*1000, shards, clients)
-		res, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{Matchers: up, MinT: 0, MaxT: 2 * 60 * 60 * 1000, Step: 60 * 60 * 1000, GroupBy: "__name__"})
+		res, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{Matchers: up, MinT: 0, MaxT: 2 * 60 * 60 * 1000, GroupBy: "__name__"})
 		require.NoError(t, err)
 		assert.False(t, res.Dedup)
-		assert.Equal(t, map[string][]int64{"up": {4, 2}}, res.Counts)
+		assert.Equal(t, map[string][]int64{"up": {4}}, res.Counts)
 		assert.Equal(t, int64(15), res.SeriesFetchedBytes)
 		assert.Equal(t, 2, res.StoreGateways)
 		require.NotNil(t, got)
 		assert.False(t, got.Hashes)
-		assert.Equal(t, int64(60*60*1000), got.StepMs)
 		require.Len(t, got.Matchers, 1)
 		assert.Equal(t, "up", got.Matchers[0].Value)
 	})
 
-	t.Run("sends a window wider than the step", func(t *testing.T) {
+	t.Run("fails on a store-gateway answer without one count per group", func(t *testing.T) {
 		shards := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 		const hour = 60 * 60 * 1000
-		req := CardinalityEstimateRequest{Matchers: up, MinT: 0, MaxT: 3 * hour, Step: hour, Window: 2 * hour, GroupBy: "__name__"}
-		var got *storegatewaypb.SeriesCountsRequest
-		honours := gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1, 2}}}})
-		res, err := seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{honours: {{b1}}}).seriesCountsInWindow(context.Background(), "user-1", req)
-		require.NoError(t, err)
-		assert.Equal(t, map[string][]int64{"up": {1, 2}}, res.Counts)
-		require.NotNil(t, got)
-		assert.Equal(t, int64(2*hour), got.WindowMs)
-
-		req.Window = hour
-		got = nil
-		_, err = seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{gatewayAnswering("3.3.3.3", &got, storegatewaypb.SeriesCountsResponse{}): {{b1}}}).seriesCountsInWindow(context.Background(), "user-1", req)
-		require.NoError(t, err)
-		assert.Zero(t, got.WindowMs, "a window equal to the step is sent as none")
-	})
-
-	t.Run("fails on a store-gateway answer without one count per bucket", func(t *testing.T) {
-		shards := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
-		const hour = 60 * 60 * 1000
-		// Three buckets of one hour, answered with one count per group.
-		req := CardinalityEstimateRequest{Matchers: up, MinT: 0, MaxT: 3 * hour, Step: hour, GroupBy: "__name__"}
-		ignores := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{6}}}})
-		_, err := seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{ignores: {{b1}}}).seriesCountsInWindow(context.Background(), "user-1", req)
-		require.ErrorContains(t, err, "a store-gateway returned 1 buckets for \"up\" instead of 3")
+		req := CardinalityEstimateRequest{Matchers: up, MinT: 0, MaxT: 3 * hour, GroupBy: "__name__"}
+		malformed := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{6, 1}}}})
+		_, err := seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{malformed: {{b1}}}).seriesCountsInWindow(context.Background(), "user-1", req)
+		require.ErrorContains(t, err, "a store-gateway returned 2 counts for \"up\" instead of one")
 		assert.NotContains(t, err.Error(), "2.2.2.2")
 		assert.Equal(t, "2.2.2.2", estimateSourceAddr(err))
 		assert.Equal(t, http.StatusInternalServerError, estimateHTTPStatus(err))
-
-		// Without a step one count per group is right.
-		req.Step = 0
-		res, err := seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{ignores: {{b1}}}).seriesCountsInWindow(context.Background(), "user-1", req)
-		require.NoError(t, err)
-		assert.Equal(t, map[string][]int64{"up": {6}}, res.Counts)
 	})
 
 	t.Run("unions hashes across block ranges", func(t *testing.T) {
@@ -190,12 +163,6 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		assert.True(t, res.Dedup)
 		assert.Equal(t, map[string][]int64{"up": {3}, "x": {1}}, res.Counts, "series 2 is in both days")
 		assert.True(t, got.Hashes)
-	})
-
-	t.Run("refuses buckets across block ranges", func(t *testing.T) {
-		days := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}}
-		_, err := seriesCountsQueryable(0, 2*dayMs, days, nil).seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, Step: dayMs})
-		require.ErrorIs(t, err, errStepNeedsOneSource, "the estimator answers it bucket by bucket instead")
 	})
 
 	t.Run("a group sent in parts is unioned with the parts of another store-gateway", func(t *testing.T) {
@@ -546,11 +513,10 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 		req, opts, err := parseCardinalityEstimateRequest(r, defaultMaxGroupByLength)
 		return req, opts.limit, err
 	}
-	req, limit, err := parse(`start=0&end=86400&match[]={__name__="up"}&group_by=pod&step=1h&max_index_bytes=100&limit=5`)
+	req, limit, err := parse(`start=0&end=86400&match[]={__name__="up"}&group_by=pod&max_index_bytes=100&limit=5`)
 	require.NoError(t, err)
 	assert.Equal(t, int64(86400000), req.MaxT)
 	assert.Equal(t, "pod", req.GroupBy)
-	assert.Equal(t, int64(3600000), req.Step)
 	assert.Equal(t, int64(100), req.MaxIndexBytes)
 	assert.Equal(t, 5, limit)
 	require.Len(t, req.Matchers, 1)
@@ -559,16 +525,6 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "__name__", req.GroupBy)
 	assert.Empty(t, req.Matchers)
-
-	// The buckets still end every step from start+step; the window read starts one window before the first end.
-	req, _, err = parse("start=7200&end=14400&step=1h&window=2h")
-	require.NoError(t, err)
-	assert.Equal(t, int64(3600000), req.MinT)
-	assert.Equal(t, int64(14400000), req.MaxT)
-	assert.Equal(t, int64(7200000), req.Window)
-	n, err := cardinality.Buckets(req.MinT, req.MaxT, req.Step, req.Window)
-	require.NoError(t, err)
-	assert.Equal(t, 2, n, "the same buckets as step=1h alone")
 
 	// Every series has a name, so a matcher on any name is no matcher.
 	req, _, err = parse(`start=0&end=10&match[]={__name__=~".%2B"}`)
@@ -587,18 +543,10 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 	assert.Len(t, req.Matchers, 1, "a regex that matches only some names stays")
 
 	for _, bad := range []string{
-		"start=0&end=7200&window=1h",
-		"start=0&end=7200&step=1h&window=30m",
-		"start=0&end=7200&step=1h&window=0s",
-		"start=0&end=5400&step=1h&window=2h",
-		"start=0&end=7200&step=1h&window=2h",
 		"start=x&end=10",
 		"start=10&end=5",
 		"start=0&end=10&match[]=up{&",
 		"start=0&end=10&match[]=a&match[]=b",
-		"start=0&end=10&step=0s",
-		"start=0&end=9000&step=1h", // the step doesn't divide the window, with no window parameter
-		"start=0&end=3600&step=2h", // a step longer than the window
 		"start=0&end=10&max_index_bytes=-1",
 		"start=0&end=10&limit=x",
 	} {
@@ -726,54 +674,6 @@ func TestCardinalityEstimateHandler_EveryNameIsNoMatcher(t *testing.T) {
 	h.ServeHTTP(rec, r)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Contains(t, rec.Body.String(), `"read":"index_header"`)
-}
-
-// Per-bucket answers carry a missing shard once, whichever read answered
-// each bucket: the name table for a bucket that is the whole block range,
-// series entries for one inside it.
-func TestCardinalityEstimator_PerBucketMissingShard(t *testing.T) {
-	const hour = int64(time.Hour / time.Millisecond)
-	day1, day2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
-	all := bucketindex.Blocks{
-		{ID: day1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"},
-		{ID: day2, MinTime: dayMs, MaxTime: 2 * dayMs},
-	}
-	gateway := &storeGatewayClientMock{
-		remoteAddr: "1.1.1.1",
-		// A window of a whole block with no matchers is counted from the
-		// offsets table, anything else from series entries.
-		mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
-			if len(req.Matchers) == 0 && req.EndMs-req.StartMs == dayMs {
-				return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, BlocksFromOffsetsTable: int64(len(req.BlockIds)), Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}}, nil
-			}
-			return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}}, nil
-		},
-	}
-	for name, step := range map[string]int64{"name table": 24 * hour, "series entries": 12 * hour} {
-		t.Run(name, func(t *testing.T) {
-			finder := &blocksFinderMock{}
-			finder.On("GetBlocks", mock.Anything, "user-1", int64(0), 2*dayMs-1).Return(all, &bucketindex.Metadata{}, nil)
-			for lo := int64(0); lo < 2*dayMs; lo += step {
-				blocks := all[:1]
-				if lo >= dayMs {
-					blocks = all[1:]
-				}
-				finder.On("GetBlocks", mock.Anything, "user-1", lo, lo+step-1).Return(blocks, &bucketindex.Metadata{}, nil)
-			}
-			clients := map[BlocksStoreClient][][]ulid.ULID{gateway: {{day1, day2}}}
-			stores := &blocksStoreSetMock{}
-			for range 4 {
-				stores.mockedResponses = append(stores.mockedResponses, clients)
-			}
-			q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: stores}}}
-			req := CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, Step: step}
-			res, err := NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour)).Estimate(context.Background(), "user-1", &req)
-			require.NoError(t, err)
-			assert.Equal(t, ReadPerBucket, res.Read)
-			assert.True(t, res.LowerBound)
-			assert.Equal(t, []missingShard{{Shard: "2_of_2", MinTime: 0, MaxTime: dayMs}}, res.MissingShards)
-		})
-	}
 }
 
 func TestBlocksStoreQueryable_CardinalityEstimate_PicksTheRead(t *testing.T) {

@@ -5,12 +5,10 @@ package querier
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"time"
 
 	"github.com/grafana/dskit/grpcutil"
-	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
@@ -45,8 +43,6 @@ const (
 	ReadHeadChunkMetas = "head_chunk_metas"
 	// ReadFullIndexAndHeadChunkMetas: blocks from their full index, the head from its chunk metas.
 	ReadFullIndexAndHeadChunkMetas = "full_index+head_chunk_metas"
-	// ReadPerBucket: each bucket answered as its own window.
-	ReadPerBucket = "per_bucket"
 )
 
 // estimateIngesters is the part of the distributor the estimate uses.
@@ -97,17 +93,12 @@ func (e *CardinalityEstimator) maxGroupByLength(tenantID string) int {
 	return defaultMaxGroupByLength
 }
 
-// clampToLookback moves req.MinT up to the oldest time the tenant's queries may read. With a step, whole buckets are dropped so the ones left keep their boundaries. It reports false when none of the window is left.
+// clampToLookback moves req.MinT up to the oldest time the tenant's queries may read. It reports false when none of the window is left.
 func (e *CardinalityEstimator) clampToLookback(spanLog *spanlogger.SpanLogger, tenantID string, req *CardinalityEstimateRequest) bool {
 	now := util.TimeToMillis(e.now())
 	minT := clampMinTime(spanLog, req.MinT, now, -e.limits.MaxQueryLookback(tenantID), "max query lookback")
 	minT = clampMinTime(spanLog, minT, now, -e.limits.CompactorBlocksRetentionPeriod(tenantID), "blocks retention period")
-	width := int64(1)
-	if req.Step > 0 {
-		minT = req.MinT + (minT-req.MinT+req.Step-1)/req.Step*req.Step
-		width = max(req.Step, req.Window)
-	}
-	if minT+width > req.MaxT {
+	if minT >= req.MaxT {
 		return false
 	}
 	req.MinT = minT
@@ -159,9 +150,6 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 		source = SourceBlocksAndHead
 		res, err = e.blocksAndHeadCounts(ctx, tenantID, req, storeMaxT, heldFrom)
 	}
-	if req.Step > 0 && errors.Is(err, errStepNeedsOneSource) {
-		return e.perBucket(ctx, tenantID, req)
-	}
 	// A failed estimate still says which sources it asked, for the metrics.
 	if err != nil && res.Source == "" {
 		res.Source = source
@@ -180,122 +168,6 @@ func estimateMemoryLimit(estimate, query uint64) uint64 {
 		return query
 	}
 	return estimate
-}
-
-// perBucket answers a per-bucket count whose window crosses sources that may share series, by answering each step-wide bucket as its own window.
-func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
-	n, err := cardinality.Buckets(req.MinT, req.MaxT, req.Step, req.Window)
-	if err != nil {
-		return CardinalityEstimateResult{}, badEstimateRequest("%v", err)
-	}
-	width := req.Window
-	if width == 0 {
-		width = req.Step
-	}
-	out := CardinalityEstimateResult{Read: ReadPerBucket, Counts: map[string][]int64{}}
-	sources := map[string]bool{}
-	seenBlocks := map[ulid.ULID]bool{}
-	seenMissing := map[ulid.ULID]bool{}
-	seenShards := map[missingShard]bool{}
-	// Each bucket's groups and hashes are charged to the memory tracker and given back once its counts are in the table.
-	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
-	held := func() uint64 {
-		if tracker == nil {
-			return 0
-		}
-		return tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.CardinalityEstimateGroups)
-	}
-	for i := range n {
-		sub := *req
-		sub.MinT = req.MinT + int64(i)*req.Step
-		sub.MaxT = sub.MinT + width
-		sub.Step, sub.Window = 0, 0
-		if req.MaxIndexBytes > 0 {
-			sub.MaxIndexBytes = max(1, req.MaxIndexBytes/int64(n))
-		}
-		before := held()
-		// A bucket may hold the hash budget less what the tracker holds. A spent budget is the max_hashes refusal.
-		if req.MaxHashes > 0 {
-			heldHashes := int64((before + cardinality.HashBudgetBytes - 1) / cardinality.HashBudgetBytes)
-			if heldHashes >= req.MaxHashes {
-				return CardinalityEstimateResult{}, refusedByLimit(refusedByMaxHashes, "bucket [%d, %d): the %d hashes the tenant's cardinality estimate memory limit allows are held by the per-bucket table before this bucket was counted", sub.MinT, sub.MaxT, req.MaxHashes)
-			}
-			sub.MaxHashes = req.MaxHashes - heldHashes
-		}
-		res, err := e.Estimate(ctx, tenantID, &sub)
-		if err != nil {
-			return CardinalityEstimateResult{}, fmt.Errorf("bucket [%d, %d): %w", sub.MinT, sub.MaxT, err)
-		}
-		tableCharge := uint64(0)
-		for v, c := range res.Counts {
-			counts := out.Counts[v]
-			if counts == nil {
-				if err := chargeEstimateGroup(tracker, v, n); err != nil {
-					return CardinalityEstimateResult{}, fmt.Errorf("bucket [%d, %d): %w", sub.MinT, sub.MaxT, err)
-				}
-				tableCharge += estimateGroupCharge(v, n)
-				counts = make([]int64, n)
-				out.Counts[v] = counts
-			}
-			counts[i] = c[0]
-		}
-		sources[res.Source] = true
-		for _, id := range res.Blocks {
-			if !seenBlocks[id] {
-				seenBlocks[id] = true
-				out.Blocks = append(out.Blocks, id)
-			}
-		}
-		for _, id := range res.MissingBlocks {
-			if !seenMissing[id] {
-				seenMissing[id] = true
-				out.MissingBlocks = append(out.MissingBlocks, id)
-			}
-		}
-		if res.missingReason != nil {
-			out.missingReason = res.missingReason
-		}
-		for _, s := range res.MissingShards {
-			if !seenShards[s] {
-				seenShards[s] = true
-				out.MissingShards = append(out.MissingShards, s)
-			}
-		}
-		out.LowerBound = out.LowerBound || res.LowerBound
-		out.CoverageGap = out.CoverageGap || res.CoverageGap
-		out.Dedup = out.Dedup || res.Dedup
-		out.HeadMinTime = max(out.HeadMinTime, res.HeadMinTime)
-		out.DedupHashes = max(out.DedupHashes, res.DedupHashes)
-		out.StoreGateways = max(out.StoreGateways, res.StoreGateways)
-		out.Retries += res.Retries
-		out.SeriesCounted += res.SeriesCounted
-		out.PostingsFetchedBytes += res.PostingsFetchedBytes
-		out.SeriesFetchedBytes += res.SeriesFetchedBytes
-		out.IndexBytes += res.IndexBytes
-		out.PostingsOffsetsTableBytes += res.PostingsOffsetsTableBytes
-		out.BlocksFromPostings += res.BlocksFromPostings
-		out.HashBytes += res.HashBytes
-		// Give back what the bucket's estimate holds beyond the table's groups.
-		if after := held(); after > before+tableCharge {
-			tracker.DecreaseMemoryConsumption(after-before-tableCharge, limiter.CardinalityEstimateGroups)
-		}
-	}
-	out.Source = unionSource(sources)
-	return out, nil
-}
-
-// unionSource is the source of an answer made of parts counted from sources.
-func unionSource(sources map[string]bool) string {
-	blocks := sources[SourceBlocks] || sources[SourceBlocksAndHead]
-	head := sources[SourceHead] || sources[SourceBlocksAndHead]
-	switch {
-	case blocks && head:
-		return SourceBlocksAndHead
-	case head:
-		return SourceHead
-	default:
-		return SourceBlocks
-	}
 }
 
 // blocksOnly answers a window that ends before the ingesters' range from the blocks. Partial coverage makes the counts a lower bound.
@@ -320,11 +192,8 @@ func (e *CardinalityEstimator) blocksOnly(ctx context.Context, tenantID string, 
 	return res, nil
 }
 
-// blocksAndHeadCounts answers a window that reaches into the ingesters' range and starts before query-store-after. The querier unions both sources' label-set hashes, so a series in a block and an ingester counts once. Per-bucket counts are refused, since hashes don't carry buckets.
+// blocksAndHeadCounts answers a window that reaches into the ingesters' range and starts before query-store-after. The querier unions both sources' label-set hashes, so a series in a block and an ingester counts once.
 func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID string, req *CardinalityEstimateRequest, storeMaxT, heldFrom int64) (CardinalityEstimateResult, error) {
-	if req.Step > 0 {
-		return CardinalityEstimateResult{}, badEstimateRequest("%w: the window is held partly by blocks and partly by the ingesters", errStepNeedsOneSource)
-	}
 	half := req.MaxIndexBytes
 	if half > 0 {
 		half = max(1, half/2)
@@ -413,16 +282,10 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 // headCounts counts series per value of req.GroupBy in the ingesters' heads and local blocks over the window, from the series' chunk metas.
 // A window that starts before heldFrom and before the oldest data the ingesters report may miss series, so the counts are then a lower bound.
 func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityEstimateRequest, heldFrom int64) (CardinalityEstimateResult, error) {
-	buckets, err := req.expectedBuckets()
-	if err != nil {
-		return CardinalityEstimateResult{}, err
-	}
 	sr, err := e.ingesters.SeriesCounts(ctx, req.Matchers, &client.SeriesCountsRequest{
 		Matchers:      cardinalitypb.ToLabelMatchers(req.Matchers),
 		StartMs:       req.MinT,
 		EndMs:         req.MaxT,
-		StepMs:        req.Step,
-		WindowMs:      req.windowMs(),
 		GroupBy:       req.GroupBy,
 		MaxIndexBytes: req.MaxIndexBytes,
 		MaxHashes:     req.MaxHashes,
@@ -436,7 +299,6 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 	defer sr.Release()
 	res := CardinalityEstimateResult{Source: SourceHead, Read: ReadHeadChunkMetas, Counts: map[string][]int64{}, Dedup: sr.Hashed}
 	m := newEstimateMerger(ctx, sr.Hashed)
-	m.buckets = buckets
 	var headMinT int64
 	for _, resp := range sr.Responses {
 		for _, g := range resp.Groups {
@@ -463,10 +325,6 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 
 // classifyIngesterError turns an ingester's gRPC status, as the distributor passes it on, into an estimate error.
 func classifyIngesterError(err error) error {
-	if errors.Is(err, distributor.ErrSeriesCountsNeedOneIngesterPerZone) {
-		// Estimate answers the buckets one by one.
-		return badEstimateRequest("%w: ingesters: %v", errStepNeedsOneSource, err)
-	}
 	if errors.Is(err, distributor.ErrSeriesCountsOverMemoryLimit) {
 		return refusedByLimit(refusedByMemory, "the ingester replies this estimate holds in the querier: %w", err)
 	}
