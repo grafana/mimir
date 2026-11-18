@@ -861,12 +861,18 @@ func (am *MultitenantAlertmanager) setConfig(cfg *alertspb.AlertConfigDesc) (*Al
 		return nil, fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
 	}
 
-	if validationErr := validateAlertmanagerConfig(amCfg, am.cfg); validationErr != nil {
-		if slices.Contains(am.cfg.TenantsExemptFromConfigValidationForExistingConfig, cfg.User) {
-			level.Warn(am.logger).Log("msg", "configuration failed validation during loading, this configuration should never have been accepted or the stored configuration is no longer considered valid, but the tenant is explicitly allowed to load invalid config", "user", cfg.User, "err", validationErr)
-		} else {
-			level.Warn(am.logger).Log("msg", "configuration failed validation during loading, this configuration should never have been accepted or the stored configuration is no longer considered valid", "user", cfg.User, "err", validationErr)
-			return nil, fmt.Errorf("configuration for %v failed validation: %w", cfg.User, validationErr)
+	// A blank config loads the fallback, which the operator supplies.
+	// The config API rejects a blank config.
+	// So this branch holds no tenant content.
+	// The checks below are for tenant config only.
+	if cfg.RawConfig != "" {
+		if validationErr := validateAlertmanagerConfig(amCfg, am.cfg); validationErr != nil {
+			if slices.Contains(am.cfg.TenantsExemptFromConfigValidationForExistingConfig, cfg.User) {
+				level.Warn(am.logger).Log("msg", "configuration failed validation during loading, this configuration should never have been accepted or the stored configuration is no longer considered valid, but the tenant is explicitly allowed to load invalid config", "user", cfg.User, "err", validationErr)
+			} else {
+				level.Warn(am.logger).Log("msg", "configuration failed validation during loading, this configuration should never have been accepted or the stored configuration is no longer considered valid", "user", cfg.User, "err", validationErr)
+				return nil, fmt.Errorf("configuration for %v failed validation: %w", cfg.User, validationErr)
+			}
 		}
 	}
 
