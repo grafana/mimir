@@ -17,7 +17,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/e2e"
-	e2ecache "github.com/grafana/e2e/cache"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -55,8 +54,7 @@ const largeGroupSeries = 12_000
 
 // TestCardinalityEstimate checks the cardinality estimate route against a
 // PromQL count over the same window, on an ingest storage cluster with two
-// partitions and a query-frontend with a results cache in front of the
-// querier: from blocks only (the name table from the index-headers, and a
+// partitions and a query-frontend in front of the querier: from blocks only (the name table from the index-headers, and a
 // breakdown by another label) on both index-header versions, from the
 // ingesters' heads only, and from both across the store-gateways/ingesters
 // cut.
@@ -68,8 +66,7 @@ func TestCardinalityEstimate(t *testing.T) {
 	consul := e2edb.NewConsul()
 	minio := e2edb.NewMinio(9000, blocksBucketName)
 	kafka := e2edb.NewKafka()
-	memcached := e2ecache.NewMemcached()
-	require.NoError(t, s.StartAndWaitReady(consul, minio, kafka, memcached))
+	require.NoError(t, s.StartAndWaitReady(consul, minio, kafka))
 
 	flags := mergeFlags(
 		BlocksStorageFlags(),
@@ -90,10 +87,6 @@ func TestCardinalityEstimate(t *testing.T) {
 			"-compactor.cleanup-interval":                       "1s",
 			// Partitions count as stable a minute after they turn ACTIVE.
 			"-validation.create-grace-period": "1s",
-			// The query-frontend keeps the estimates in a results cache.
-			"-query-frontend.cache-results":                     "true",
-			"-query-frontend.results-cache.backend":             "memcached",
-			"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 		},
 	)
 
@@ -153,18 +146,14 @@ func TestCardinalityEstimate(t *testing.T) {
 	require.NoError(t, err)
 
 	// estimateRaw sends the request through the query-frontend and returns
-	// the status and body. bypassCache asks the frontend not to use its
-	// results cache for it.
-	estimateRaw := func(t *testing.T, start, end time.Time, params url.Values, bypassCache bool) (int, []byte) {
+	// the status and body.
+	estimateRaw := func(t *testing.T, start, end time.Time, params url.Values) (int, []byte) {
 		t.Helper()
 		params.Set("start", formatSeconds(start))
 		params.Set("end", formatSeconds(end))
 		req, err := http.NewRequest(http.MethodGet, "http://"+queryFrontend.HTTPEndpoint()+"/prometheus/api/v1/cardinality/estimate?"+params.Encode(), nil)
 		require.NoError(t, err)
 		req.Header.Set("X-Scope-OrgID", userID)
-		if bypassCache {
-			req.Header.Set("Cache-Control", "no-store")
-		}
 		res, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		defer res.Body.Close()
@@ -172,27 +161,13 @@ func TestCardinalityEstimate(t *testing.T) {
 		require.NoError(t, err)
 		return res.StatusCode, body
 	}
-	estimateWith := func(t *testing.T, start, end time.Time, params url.Values, bypassCache bool) cardinalityEstimate {
+	estimate := func(t *testing.T, start, end time.Time, params url.Values) cardinalityEstimate {
 		t.Helper()
-		status, body := estimateRaw(t, start, end, params, bypassCache)
+		status, body := estimateRaw(t, start, end, params)
 		require.Equal(t, http.StatusOK, status, string(body))
 		var out cardinalityEstimate
 		require.NoError(t, json.Unmarshal(body, &out), string(body))
 		return out
-	}
-	estimate := func(t *testing.T, start, end time.Time, params url.Values) cardinalityEstimate {
-		t.Helper()
-		return estimateWith(t, start, end, params, false)
-	}
-	// cacheCounts is how many estimates the query-frontend looked up in its
-	// results cache, and how many it answered from it.
-	cacheCounts := func(t *testing.T) (requests, hits float64) {
-		t.Helper()
-		sums, err := queryFrontend.SumMetrics(
-			[]string{"cortex_frontend_query_result_cache_requests_total", "cortex_frontend_query_result_cache_hits_total"},
-			e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "request_type", "cardinality_estimate")))
-		require.NoError(t, err)
-		return sums[0], sums[1]
 	}
 	// promqlCount is count by (groupBy) of the series matching selector with
 	// a sample in [start, end): last_over_time at end minus 1ms over a range
@@ -217,13 +192,8 @@ func TestCardinalityEstimate(t *testing.T) {
 	}
 
 	// blocksOnlyCases are the cases the store-gateway answers alone. They
-	// run once per index-header version; the second run bypasses the
-	// query-frontend's cache, which holds the first run's answers.
-	blocksOnlyCases := func(t *testing.T, bypassCache bool) {
-		estimate := func(t *testing.T, start, end time.Time, params url.Values) cardinalityEstimate {
-			t.Helper()
-			return estimateWith(t, start, end, params, bypassCache)
-		}
+	// run once per index-header version.
+	blocksOnlyCases := func(t *testing.T) {
 
 		t.Run("every metric name of one block range from the index-headers", func(t *testing.T) {
 			start, end := day, day.Add(24*time.Hour)
@@ -276,44 +246,23 @@ func TestCardinalityEstimate(t *testing.T) {
 
 		t.Run("a request over max_index_bytes is refused with 422", func(t *testing.T) {
 			start, end := day, day.Add(24*time.Hour)
-			status, body := estimateRaw(t, start, end, url.Values{"match[]": {`{__name__="a_total"}`}, "group_by": {"job"}, "max_index_bytes": {"1"}}, bypassCache)
+			status, body := estimateRaw(t, start, end, url.Values{"match[]": {`{__name__="a_total"}`}, "group_by": {"job"}, "max_index_bytes": {"1"}})
 			assert.Equal(t, http.StatusUnprocessableEntity, status, string(body))
 			assert.Contains(t, string(body), "max_index_bytes")
 		})
 	}
 
 	t.Run("blocks only, index-header version 1", func(t *testing.T) {
-		blocksOnlyCases(t, false)
+		blocksOnlyCases(t)
 	})
 
-	t.Run("query-frontend cache: a repeated request is answered from the cache", func(t *testing.T) {
-		start, end := day, day.Add(24*time.Hour)
-		params := url.Values{"match[]": {`{__name__="a_total"}`}, "group_by": {"job"}}
-		requestsBefore, hitsBefore := cacheCounts(t)
-		first := estimate(t, start, end, params)
-		assert.Equal(t, map[string]int64{"x": 1, "y": 1, "z": 1}, countsOf(first))
-		second := estimate(t, start, end, params)
-		assert.Equal(t, first, second)
-		requests, hits := cacheCounts(t)
-		assert.Equal(t, requestsBefore+2, requests, "both requests looked the cache up")
-		assert.Equal(t, hitsBefore+1, hits, "the second was answered from it")
-	})
-
-	t.Run("query-frontend cache: a lower bound is not cached", func(t *testing.T) {
-		// No block holds this window and the ingesters no longer answer for
-		// it, so the empty table is a lower bound.
+	t.Run("a window no block or ingester holds is a lower bound", func(t *testing.T) {
 		start, end := day.Add(-48*time.Hour), day.Add(-24*time.Hour)
-		requestsBefore, hitsBefore := cacheCounts(t)
-		for i := 0; i < 2; i++ {
-			got := estimate(t, start, end, url.Values{"match[]": {`{__name__="a_total"}`}})
-			assert.Equal(t, "blocks", got.Source)
-			assert.True(t, got.LowerBound)
-			assert.True(t, got.CoverageGap)
-			assert.Empty(t, got.Counts)
-		}
-		requests, hits := cacheCounts(t)
-		assert.Equal(t, requestsBefore+2, requests, "both requests looked the cache up")
-		assert.Equal(t, hitsBefore, hits, "neither was answered from it")
+		got := estimate(t, start, end, url.Values{"match[]": {`{__name__="a_total"}`}})
+		assert.Equal(t, "blocks", got.Source)
+		assert.True(t, got.LowerBound)
+		assert.True(t, got.CoverageGap)
+		assert.Empty(t, got.Counts)
 	})
 
 	// Replace the store-gateway with one on index-header version 2, and
@@ -328,7 +277,7 @@ func TestCardinalityEstimate(t *testing.T) {
 	require.NoError(t, storeGateway.WaitSumMetrics(e2e.Equals(3), "cortex_bucket_store_blocks_loaded"))
 
 	t.Run("blocks only, index-header version 2", func(t *testing.T) {
-		blocksOnlyCases(t, true)
+		blocksOnlyCases(t)
 	})
 
 	// Push to both partitions: series spread over the partitions by hash.

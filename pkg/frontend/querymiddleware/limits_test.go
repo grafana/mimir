@@ -738,10 +738,6 @@ func (m multiTenantMockLimits) ResultsCacheTTLForCardinalityQuery(userID string)
 	return m.byTenant[userID].resultsCacheTTLForCardinalityQuery
 }
 
-func (m multiTenantMockLimits) CardinalityEstimateEnabled(userID string) bool {
-	return !m.byTenant[userID].cardinalityEstimateDisabled
-}
-
 func (m multiTenantMockLimits) ResultsCacheTTLForLabelsQuery(userID string) time.Duration {
 	return m.byTenant[userID].resultsCacheTTLForLabelsQuery
 }
@@ -826,7 +822,6 @@ type mockLimits struct {
 	resultsCacheTTL                       time.Duration
 	resultsCacheOutOfOrderWindowTTL       time.Duration
 	resultsCacheTTLForCardinalityQuery    time.Duration
-	cardinalityEstimateDisabled           bool
 	resultsCacheTTLForLabelsQuery         time.Duration
 	resultsCacheTTLForErrors              time.Duration
 	resultsCacheForUnalignedQueryEnabled  bool
@@ -915,10 +910,6 @@ func (m mockLimits) ResultsCacheTTLForErrors(string) time.Duration {
 
 func (m mockLimits) ResultsCacheTTLForCardinalityQuery(string) time.Duration {
 	return m.resultsCacheTTLForCardinalityQuery
-}
-
-func (m mockLimits) CardinalityEstimateEnabled(string) bool {
-	return !m.cardinalityEstimateDisabled
 }
 
 func (m mockLimits) BlockedQueries(string) []validation.BlockedQuery {

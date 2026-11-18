@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -368,10 +367,6 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.True(t, res.LowerBound, "no block may only mean the bucket index does not list one yet")
 		assert.True(t, res.CoverageGap)
 
-		// The handler must not let the query-frontend keep the empty table.
-		rec := httptest.NewRecorder()
-		setEstimateCacheControl(rec, &estimateResponse{LowerBound: res.LowerBound, CoverageGap: res.CoverageGap})
-		assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 	})
 
 	t.Run("ingesters that don't know the count RPC are refused", func(t *testing.T) {

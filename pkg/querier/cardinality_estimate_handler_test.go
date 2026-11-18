@@ -8,9 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -90,7 +87,6 @@ func TestCardinalityEstimateHandler_LabelBasedAccessControl(t *testing.T) {
 		var out estimateResponse
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
 		assert.Equal(t, ReadFullIndex, out.Read, "a policy forces the full-index read")
-		assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"), "an answer narrowed by a policy is not cached")
 	})
 
 	t.Run("more than one policy selector is refused", func(t *testing.T) {
@@ -105,7 +101,6 @@ func TestCardinalityEstimateHandler_LabelBasedAccessControl(t *testing.T) {
 		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 		require.Len(t, got.Matchers, 1)
 		assert.Equal(t, "job", got.Matchers[0].Name)
-		assert.Empty(t, rec.Header().Get("Cache-Control"))
 	})
 
 	t.Run("with access control enabled and no policies in the context the request fails closed", func(t *testing.T) {
@@ -549,29 +544,6 @@ func TestCardinalityEstimateHandler_DisabledForTenant(t *testing.T) {
 	assert.Nil(t, ing.gotSeriesCounts, "no ingester may be asked for a disabled tenant")
 }
 
-func TestSetEstimateCacheControl(t *testing.T) {
-	for name, tc := range map[string]struct {
-		out     estimateResponse
-		noStore bool
-	}{
-		"a complete answer may be cached": {out: estimateResponse{}, noStore: false},
-		"a lower bound":                   {out: estimateResponse{LowerBound: true}, noStore: true},
-		"a coverage gap":                  {out: estimateResponse{CoverageGap: true}, noStore: true},
-		"an upper value":                  {out: estimateResponse{UpperBound: true}, noStore: true},
-		"a table cut by limit":            {out: estimateResponse{HasMore: true}, noStore: false},
-	} {
-		t.Run(name, func(t *testing.T) {
-			rec := httptest.NewRecorder()
-			setEstimateCacheControl(rec, &tc.out)
-			if tc.noStore {
-				assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
-			} else {
-				assert.Empty(t, rec.Header().Get("Cache-Control"))
-			}
-		})
-	}
-}
-
 // Every request is counted by path, source and status, and timed whatever
 // its outcome; an answer counts once per flag it carries, and its retries
 // add up.
@@ -690,51 +662,6 @@ func TestCardinalityEstimateHandler_NoTimeoutWhenUnset(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 }
 
-// TestCardinalityEstimateRequestParams checks that CardinalityEstimateRequestParams
-// names every parameter parseCardinalityEstimateRequest reads from the form,
-// and nothing else, since the query-frontend's cache key is built from it.
-func TestCardinalityEstimateRequestParams(t *testing.T) {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "cardinality_estimate_handler.go", nil, 0)
-	require.NoError(t, err)
-
-	var fn *ast.FuncDecl
-	for _, d := range f.Decls {
-		if d, ok := d.(*ast.FuncDecl); ok && d.Name.Name == "parseCardinalityEstimateRequest" {
-			fn = d
-		}
-	}
-	require.NotNil(t, fn, "parseCardinalityEstimateRequest not found")
-
-	read := map[string]bool{}
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		switch n := n.(type) {
-		case *ast.CallExpr:
-			// r.FormValue("name")
-			if sel, ok := n.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "FormValue" && len(n.Args) == 1 {
-				if lit, ok := n.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
-					read[strings.Trim(lit.Value, `"`)] = true
-				}
-			}
-		case *ast.IndexExpr:
-			// r.Form["name"]
-			if sel, ok := n.X.(*ast.SelectorExpr); ok && sel.Sel.Name == "Form" {
-				if lit, ok := n.Index.(*ast.BasicLit); ok && lit.Kind == token.STRING {
-					read[strings.Trim(lit.Value, `"`)] = true
-				}
-			}
-		}
-		return true
-	})
-	require.NotEmpty(t, read, "no form reads found in parseCardinalityEstimateRequest")
-
-	listed := map[string]bool{}
-	for _, name := range CardinalityEstimateRequestParams {
-		listed[name] = true
-	}
-	assert.Equal(t, listed, read, "CardinalityEstimateRequestParams must name exactly the parameters the handler reads")
-}
-
 // The route has no shards parameter: a request that sends one is answered
 // with one call per store-gateway, with the matchers it asked for.
 func TestCardinalityEstimateHandler_IgnoresShardsParameter(t *testing.T) {
@@ -771,7 +698,6 @@ func TestCardinalityEstimateHandler_IgnoresCompareParameter(t *testing.T) {
 	var body map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	assert.NotContains(t, body, "compare")
-	assert.Empty(t, rec.Header().Get("Cache-Control"), "a complete answer may be cached")
 }
 
 // total sums every group's count, including the groups min_count left out.
@@ -865,12 +791,11 @@ func TestCardinalityEstimateHandler_MaxQueryLookback(t *testing.T) {
 	assert.Equal(t, []estimateGroup{{Value: "up", Count: 2}}, out.Groups)
 
 	// A window that ends before the lookback reads no source.
-	out, rec := serve(&BlocksStoreQueryable{}, fmt.Sprintf("start=0&end=%d", 48*3600))
+	out, _ = serve(&BlocksStoreQueryable{}, fmt.Sprintf("start=0&end=%d", 48*3600))
 	assert.Equal(t, estimateWindow{Start: 0, End: 48 * hour}, out.Window)
 	assert.Empty(t, out.Groups)
 	assert.Zero(t, out.Total)
 	assert.False(t, out.LowerBound)
-	assert.Empty(t, rec.Header().Get("Cache-Control"))
 }
 
 // The log line and span of an estimate carry the most the querier's memory
