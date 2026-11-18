@@ -237,6 +237,7 @@
 * [FEATURE] Enable active query tracking in read path components to keep track of running queries during crashes. #16876 #16981
 * [FEATURE] Allow common (`mimirComponentAnnotations`) and per-component annotations (`<component>_annotations`) to be set on each Mimir component. #17143
 * [FEATURE] Add the optional `memcached-cardinality` cache for query-frontend cardinality estimates. Set `cache_cardinality_enabled: true` to deploy it. Requires `cache_frontend_enabled`. #17173
+* [FEATURE] Add the experimental usage-tracker. Set `usage_tracker_enabled: true` and `usage_tracker_snapshots_bucket_name` to deploy it. Requires `ingest_storage_enabled`. Set `usage_tracker_hpa_enabled: true` to autoscale it with KEDA, and `usage_tracker_deletion_protection_enabled: true` to protect its StatefulSets from deletion. With `multi_zone_write_path_enabled`, each usage-tracker zone runs in its own availability zone. #17387
 * [ENHANCEMENT] Add `multi_zone_ingester_zpdb_cross_zone_eviction_delay` config option to set `crossZoneEvictionDelay` on the ingester `ZoneAwarePodDisruptionBudget`. Defaults to `20m` when `ingest_storage_enabled` is true, and to unset otherwise. #16271
 * [ENHANCEMENT] Compactor: Allow the drain autoscaler's speed estimates to be read from recording rules. #16283
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.39.0. #16440

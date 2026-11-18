@@ -85,6 +85,7 @@
     // we enable the "abort on fast join failure" for ingesters.
     'memberlist.abort-if-fast-join-fails': true,
   },
+  usage_tracker_args+:: if !$._config.memberlist_ring_enabled then {} else $._config.memberlistConfig,
 
   local gossipRingPort = 7946,
 
@@ -98,6 +99,7 @@
   querier_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
   ruler_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
   store_gateway_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
+  usage_tracker_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
   query_scheduler_ports+:: if !querySchedulerMemberlistEnabled then [] else [gossipPort],
   query_frontend_ports+:: if !queryFrontendMemberlistEnabled then [] else [gossipPort],
 
@@ -161,6 +163,8 @@
   store_gateway_zone_c_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_c_statefulsets', if !$._config.memberlist_ring_enabled then {} else $.memberlistGossipLabelMixin),
   store_gateway_zone_a_backup_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_a_backup_statefulsets', if !$._config.memberlist_ring_enabled then {} else $.memberlistGossipLabelMixin),
   store_gateway_zone_b_backup_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_b_backup_statefulsets', if !$._config.memberlist_ring_enabled then {} else $.memberlistGossipLabelMixin),
+  usage_tracker_zone_a_statefulset: overrideSuperIfExists('usage_tracker_zone_a_statefulset', if !$._config.memberlist_ring_enabled then {} else $.memberlistGossipLabelMixin),
+  usage_tracker_zone_b_statefulset: overrideSuperIfExists('usage_tracker_zone_b_statefulset', if !$._config.memberlist_ring_enabled then {} else $.memberlistGossipLabelMixin),
 
   // Headless service (= no assigned IP, DNS returns all targets instead) pointing to gossip network members.
   gossip_ring_service:

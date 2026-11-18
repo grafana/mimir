@@ -86,6 +86,12 @@
 // per-compartment StatefulSet maps.
 (import 'pvc-auto-deletion.libsonnet') +
 
+// Experimental usage-tracker. Keep it after multi-zone, because it adds zone-specific args to the distributors and
+// rulers, and before memberlist, because memberlist adds the gossip config to the usage-tracker.
+(import 'usage-tracker.libsonnet') +
+(import 'usage-tracker-autoscaling.libsonnet') +
+(import 'multi-zone-usage-tracker.libsonnet') +
+
 // Add memberlist support. Keep it at the end because it overrides all Mimir components.
 (import 'memberlist.libsonnet') +
 (import 'multi-zone-memberlist-bridge.libsonnet')

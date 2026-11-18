@@ -14,6 +14,7 @@ rt {
     // these are not relevant to this test. They are set because we by-pass the usual mimir/mimir.libsonnet imports and these fields are expected by mimir/rollout-operator.libsonnet
     ingest_storage_ingester_autoscaling_enabled: false,
     ingester_automated_downscale_v2_enabled: false,
+    usage_tracker_enabled: false,
   },
 }
 {
