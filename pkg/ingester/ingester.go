@@ -352,10 +352,8 @@ type Ingester struct {
 	shippingService       services.Service
 	metricsUpdaterService services.Service
 	metadataPurgerService services.Service
-	// shardSizeService keeps the tenants' shard size records when ownedSeriesService doesn't run.
-	shardSizeService  services.Service
-	statisticsService services.Service
-	computeWorkerPool *workerpool.Pool
+	statisticsService     services.Service
+	computeWorkerPool     *workerpool.Pool
 
 	// Index lookup planning
 	lookupPlanMetrics lookupplan.Metrics
@@ -676,20 +674,10 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.limiter = NewLimiter(limits, limiterStrategy)
 
 	if cfg.UseIngesterOwnedSeriesForLimits || cfg.UpdateIngesterOwnedSeries {
-		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, ownedSeriesStrategy, log.With(i.logger, "component", "owned series"), registerer, i.limiter.maxSeriesPerUser, i.limits.CardinalityEstimateEnabled, i.getTSDBUsers, i.getTSDB)
+		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, ownedSeriesStrategy, log.With(i.logger, "component", "owned series"), registerer, i.limiter.maxSeriesPerUser, i.getTSDBUsers, i.getTSDB)
 
 		// We add owned series service explicitly, because ingester doesn't start it using i.subservices.
 		i.subservicesWatcher.WatchService(i.ownedSeriesService)
-	} else if cfg.IngestStorageConfig.Enabled && cfg.OwnedSeriesUpdateInterval > 0 {
-		// SeriesCounts needs each tenant's shard size record to tell whether counts add up across
-		// partitions. The owned series service keeps it; without that service, keep it here.
-		// The estimate is enabled per tenant at runtime, so the service runs for any tenant.
-		observe := func(context.Context) error {
-			i.trackShardSizes(ownedSeriesStrategy.shardSizeForUser)
-			return nil
-		}
-		i.shardSizeService = services.NewTimerService(cfg.OwnedSeriesUpdateInterval, observe, observe, nil).WithName("ingester-shard-size")
-		i.subservicesWatcher.WatchService(i.shardSizeService)
 	}
 
 	// Init compaction service, responsible to periodically run TSDB head compactions.
@@ -808,11 +796,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	// Start the following services before starting the ingest storage reader, in order to have them
 	// running while replaying the partition (if ingest storage is enabled).
-	replayServs := []services.Service{i.compactionService, i.metricsUpdaterService, i.metadataPurgerService}
-	if i.shardSizeService != nil {
-		replayServs = append(replayServs, i.shardSizeService)
-	}
-	i.subservicesForPartitionReplay, err = createManagerThenStartAndAwaitHealthy(ctx, replayServs...)
+	i.subservicesForPartitionReplay, err = createManagerThenStartAndAwaitHealthy(ctx, i.compactionService, i.metricsUpdaterService, i.metadataPurgerService)
 	if err != nil {
 		return errors.Wrap(err, "failed to start ingester subservices before partition reader")
 	}

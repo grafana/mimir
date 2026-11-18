@@ -38,7 +38,10 @@ type CardinalityEstimateResult struct {
 	Dedup  bool
 	Blocks []ulid.ULID
 	// LowerBound is set when MissingBlocks or MissingShards left out series.
-	LowerBound    bool
+	LowerBound bool
+	// UpperBound is set when head counts from more than one partition are added up, which counts a
+	// series twice if a change of the tenant's shard size put it in two partitions.
+	UpperBound    bool
 	MissingBlocks []ulid.ULID
 	MissingShards []missingShard
 	// missingReason is the last store-gateway failure, for the log line.

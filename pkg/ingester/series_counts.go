@@ -191,11 +191,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		return &client.SeriesCountsResponse{}, 0, nil
 	}
 	head := db.db.Head()
-	resp = &client.SeriesCountsResponse{MinTimeMs: oldestHeld(db), ShardSizeUnchangedSinceMs: db.shardSizeUnchangedSince()}
-	if before := req.ShardSizeUnchangedBeforeMs; before > 0 && (resp.ShardSizeUnchangedSinceMs == 0 || resp.ShardSizeUnchangedSinceMs >= before) {
-		resp.ShardSizeChanged = true
-		return resp, 0, nil
-	}
+	resp = &client.SeriesCountsResponse{MinTimeMs: oldestHeld(db)}
 	sources, err := i.countSources(db, req.StartMs, req.EndMs)
 	if err != nil {
 		return nil, 0, err

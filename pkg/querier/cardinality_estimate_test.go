@@ -383,6 +383,19 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.ErrorContains(t, err, "ingesters does not support cardinality estimates yet")
 	})
 
+	t.Run("head counts added up across partitions are an upper value", func(t *testing.T) {
+		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{UpperBound: true, Responses: []*client.SeriesCountsResponse{
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}, SeriesCounted: 2, MinTimeMs: 98 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, SeriesCounted: 1, MinTimeMs: 98 * hour},
+		}}}
+		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 98 * hour, MaxT: 100 * hour})
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"up": {3}}, res.Counts)
+		assert.True(t, res.UpperBound)
+		assert.False(t, res.LowerBound)
+		assert.False(t, res.Dedup)
+	})
+
 	t.Run("an ingester answer without one count per group fails the estimate", func(t *testing.T) {
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
 			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{3, 1}}}, SeriesCounted: 3, MinTimeMs: 98 * hour},

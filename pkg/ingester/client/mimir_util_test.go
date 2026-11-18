@@ -104,7 +104,7 @@ func TestSendAndReceiveSeriesCountsResponse(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Close()
 
-	want := &SeriesCountsResponse{SeriesCounted: 200, MinTimeMs: 1, ShardSizeUnchangedSinceMs: 5}
+	want := &SeriesCountsResponse{SeriesCounted: 200, MinTimeMs: 1, IndexBytes: 5}
 	for g := range 30 {
 		hashes := make([]uint64, 5_000)
 		for h := range hashes {
@@ -159,7 +159,7 @@ func TestSendAndReceiveSeriesCountsResponse(t *testing.T) {
 
 	// A response with no groups is still one message.
 	sent = nil
-	want = &SeriesCountsResponse{ShardSizeChanged: true}
+	want = &SeriesCountsResponse{MinTimeMs: 7}
 	stream, err = NewIngesterClient(conn).SeriesCounts(context.Background(), &SeriesCountsRequest{})
 	require.NoError(t, err)
 	got, err = ReceiveSeriesCountsResponse(stream)

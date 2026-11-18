@@ -304,10 +304,11 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 		resp, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 2 * hour, EndMs: 4 * hour})
 		require.NoError(t, err)
 		assert.Equal(t, 10*minute, resp.MinTimeMs)
-		// A request answered without counting carries it too.
-		resp, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 0, EndMs: 4 * hour, ShardSizeUnchangedBeforeMs: 1})
+		// A window no source overlaps is answered without counting, and carries it too.
+		resp, walked, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 100 * hour, EndMs: 101 * hour})
 		require.NoError(t, err)
-		assert.True(t, resp.ShardSizeChanged)
+		assert.Empty(t, resp.Groups)
+		assert.Zero(t, walked)
 		assert.Equal(t, 10*minute, resp.MinTimeMs)
 	})
 
@@ -590,45 +591,6 @@ func TestIngester_SeriesCounts_OutOfOrderHead(t *testing.T) {
 	resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 0, EndMs: 120 * minute})
 	require.NoError(t, err)
 	assert.Equal(t, 10*minute, resp.MinTimeMs, "the oldest sample held is out of order")
-}
-
-func TestIngester_SeriesCounts_ShardSizeUnchangedBefore(t *testing.T) {
-	i, r, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil, prometheus.NewRegistry())
-	require.NoError(t, err)
-	startAndWaitHealthy(t, i, r)
-	ctx := user.InjectOrgID(context.Background(), "test")
-
-	_, err = i.Push(ctx, mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "a"), 1, 1000))
-	require.NoError(t, err)
-	req := func(before int64) *client.SeriesCountsRequest {
-		return &client.SeriesCountsRequest{StartMs: 0, EndMs: 2000, ShardSizeUnchangedBeforeMs: before}
-	}
-	now := time.Now()
-
-	// Owned-series tracking is off in this ingester, so the shard size is not known.
-	resp, _, err := i.seriesCounts(ctx, req(0))
-	require.NoError(t, err)
-	require.Zero(t, resp.ShardSizeUnchangedSinceMs)
-	require.False(t, resp.ShardSizeChanged, "not asked")
-	require.Len(t, resp.Groups, 1)
-	resp, _, err = i.seriesCounts(ctx, req(now.UnixMilli()))
-	require.NoError(t, err)
-	require.True(t, resp.ShardSizeChanged, "not known")
-	require.Empty(t, resp.Groups)
-
-	i.getTSDB("test").observeShardSize(1, now.Add(-2*time.Hour), i.logger)
-	resp, _, err = i.seriesCounts(ctx, req(now.Add(-time.Hour).UnixMilli()))
-	require.NoError(t, err)
-	require.False(t, resp.ShardSizeChanged)
-	require.Equal(t, now.Add(-2*time.Hour).UnixMilli(), resp.ShardSizeUnchangedSinceMs)
-	require.Len(t, resp.Groups, 1)
-
-	resp, walked, err := i.seriesCounts(ctx, req(now.Add(-3*time.Hour).UnixMilli()))
-	require.NoError(t, err)
-	require.True(t, resp.ShardSizeChanged, "changed after the time asked")
-	require.Empty(t, resp.Groups)
-	require.Zero(t, walked, "nothing walked")
-	require.Zero(t, resp.IndexBytes, "nothing used of max_index_bytes")
 }
 
 func TestExpandPostingsUpTo(t *testing.T) {
@@ -988,9 +950,9 @@ func TestIngester_SeriesCounts_ConcurrencyLimit(t *testing.T) {
 	err = i.SeriesCounts(&client.SeriesCountsRequest{StartMs: 2000, EndMs: 0}, &seriesCountsServerMock{ctx: ctx})
 	assert.Equal(t, codes.InvalidArgument, status.Code(err), err)
 	srv := &seriesCountsServerMock{ctx: ctx}
-	require.NoError(t, i.SeriesCounts(&client.SeriesCountsRequest{StartMs: 0, EndMs: 2000, ShardSizeUnchangedBeforeMs: 1}, srv))
+	require.NoError(t, i.SeriesCounts(&client.SeriesCountsRequest{StartMs: 1 << 40, EndMs: 1<<40 + 1000}, srv), "a window no source overlaps")
 	require.Len(t, srv.sent, 1)
-	assert.True(t, srv.sent[0].ShardSizeChanged)
+	assert.Empty(t, srv.sent[0].Groups)
 	err = i.SeriesCounts(req, &seriesCountsServerMock{ctx: user.InjectOrgID(context.Background(), "no-data")})
 	assert.NoError(t, err, "a tenant with no data")
 
