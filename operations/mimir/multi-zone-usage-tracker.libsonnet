@@ -21,8 +21,8 @@
   usage_tracker_zone_a_node_affinity_matchers+:: if isZoneAEnabled then [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[0])] else [],
   usage_tracker_zone_b_node_affinity_matchers+:: if isZoneBEnabled then [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[1])] else [],
 
-  usage_tracker_zone_a_args+:: if isZoneAEnabled then $.memberlist_zone_a_args else {},
-  usage_tracker_zone_b_args+:: if isZoneBEnabled then $.memberlist_zone_b_args else {},
+  usage_tracker_zone_a_args+:: $.memberlist_zone_a_args,
+  usage_tracker_zone_b_args+:: if isZoneBEnabled then $.memberlist_zone_b_args else $.memberlist_zone_a_args,
 
   usage_tracker_zone_a_statefulset: overrideSuperIfExists('usage_tracker_zone_a_statefulset', if isZoneAEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}),
   usage_tracker_zone_b_statefulset: overrideSuperIfExists('usage_tracker_zone_b_statefulset', if isZoneBEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}),
