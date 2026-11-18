@@ -22,6 +22,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/labelaccess"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -257,6 +258,10 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 	} else if len(sel) == 1 {
 		if req.Matchers, err = promqlext.NewPromQLParser().ParseMetricSelector(sel[0]); err != nil {
 			return req, opts, fmt.Errorf("match[]: %w", err)
+		}
+		// The query shard label is internal: as a matcher it would select no series and answer 0.
+		if slices.ContainsFunc(req.Matchers, func(m *labels.Matcher) bool { return m.Name == sharding.ShardLabel }) {
+			return req, opts, fmt.Errorf("match[]: %w", cardinality.ErrQueryShard)
 		}
 		req.Matchers = slices.DeleteFunc(req.Matchers, matchesEveryName)
 		if len(req.Matchers) == 0 {

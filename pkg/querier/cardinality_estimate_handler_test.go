@@ -884,3 +884,10 @@ func TestObserveEstimate_CountsASourceMemoryRefusal(t *testing.T) {
 	q.observeEstimate(context.Background(), req, CardinalityEstimateResult{}, nil, time.Second, refusedByLimit(refusedByMemory, "the groups this estimate holds in the querier"))
 	assert.Equal(t, 1.0, testutil.ToFloat64(q.metrics.estimateRefusals.WithLabelValues(refusedByMemory)), "the querier's own is not counted twice")
 }
+
+// The internal query shard label is refused, since as an ordinary matcher it would answer 0.
+func TestCardinalityEstimateHandler_RefusesQueryShard(t *testing.T) {
+	rec := estimateRequest(t, &BlocksStoreQueryable{}, CardinalityEstimateConfig{}, false, context.Background(), `start=0&end=3600&match[]={__name__="up",__query_shard__="1_of_2"}`)
+	assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "__query_shard__")
+}

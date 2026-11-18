@@ -8,7 +8,12 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 )
+
+// ErrQueryShard refuses a count whose matchers hold the internal query shard label, which counts
+// would read as an ordinary label that no series has.
+var ErrQueryShard = errors.New("a cardinality estimate can't select a query shard (" + sharding.ShardLabel + ")")
 
 // CounterForQuery validates q and the max_groups of the request that carries it. It returns the options q counts
 // with, the group-by label filled in, a counter for them and q's matchers.
@@ -30,6 +35,11 @@ func CounterForQuery(q *cardinalitypb.CountQuery, maxGroups int64) (CounterOptio
 	matchers, err := cardinalitypb.FromLabelMatchers(q.Matchers)
 	if err != nil {
 		return opts, nil, nil, err
+	}
+	for _, m := range matchers {
+		if m.Name == sharding.ShardLabel {
+			return opts, nil, nil, ErrQueryShard
+		}
 	}
 	return opts, counter, matchers, nil
 }

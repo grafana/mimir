@@ -453,6 +453,7 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 		"start=10&end=5",
 		"start=0&end=10&match[]=up{&",
 		"start=0&end=10&match[]=a&match[]=b",
+		`start=0&end=10&match[]={__name__="up",__query_shard__="1_of_2"}`,
 		"start=0&end=10&limit=x",
 	} {
 		_, _, err := parse(bad)
