@@ -3,6 +3,7 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -49,6 +50,18 @@ type fakeFrontend struct {
 	estimateMatchHook func(selector string) (int, string)
 	// truthHook, when set, edits the counts of one PromQL query, or refuses it with a status.
 	truthHook func(query string, rangeLen time.Duration, counts map[string]int64) (status int)
+
+	// rangeLen is the length of the block ranges bounds mode answers, aligned to the epoch; 2h when 0.
+	rangeLen time.Duration
+	// boundsSlack widens every bounds group: lower is the count minus it and upper the count plus it.
+	boundsSlack int64
+	// headFrom, when > 0, is the time from which only the heads hold data: bounds mode answers the block ranges before it and a head row set for a window that reaches it.
+	headFrom int64
+	// boundsHook, when set, edits the bounds answer; n counts the bounds calls so far, from 1.
+	boundsHook  func(n int, r *boundsResponse)
+	boundsCalls int
+	// labelValuesCardinalityLimit is the most rows the label values cardinality endpoint answers, 500 when 0.
+	labelValuesCardinalityLimit int
 }
 
 // seriesSpan is one series' samples, in milliseconds, and its staleness marker's time, or 0 for none.
@@ -103,6 +116,8 @@ func (f *fakeFrontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.query(w, r)
 	case "/prometheus/api/v1/cardinality/label_names":
 		f.labelNames(w, r)
+	case "/prometheus/api/v1/cardinality/label_values":
+		f.labelValuesCardinality(w, r)
 	default:
 		label, ok := strings.CutPrefix(r.URL.Path, "/prometheus/api/v1/label/")
 		if label, ok = strings.CutSuffix(label, "/values"); !ok {
@@ -167,6 +182,10 @@ func parseMS(t *testing.T, s string) int64 {
 }
 
 func (f *fakeFrontend) estimate(w http.ResponseWriter, r *http.Request) {
+	if r.FormValue("mode") == "bounds" {
+		f.bounds(w, r)
+		return
+	}
 	f.estimates++
 	if f.estimateMatchHook != nil {
 		if status, msg := f.estimateMatchHook(r.FormValue("match[]")); status != 0 {
@@ -360,3 +379,120 @@ var testWindow = window{kind: windowBlocks, start: time.Date(2026, 1, 1, 0, 0, 0
 func metricPair(groupBy string) pair {
 	return pair{query: queryMetricByLabel, matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}, groupBy: groupBy, window: testWindow}
 }
+
+// bounds answers mode=bounds as the route does: no matchers, the window widened to block ranges of rangeLen, each answered on its own from the series with a chunk in it, and a head row set when the window reaches headFrom.
+func (f *fakeFrontend) bounds(w http.ResponseWriter, r *http.Request) {
+	f.boundsCalls++
+	if f.estimateError != nil {
+		if status, msg := f.estimateError(); status != 0 {
+			writeAPIError(w, status, msg)
+			return
+		}
+	}
+	if sel := r.Form["match[]"]; len(sel) > 0 {
+		ms, err := promParser.ParseMetricSelector(sel[0])
+		require.NoError(f.t, err)
+		if ms = slices.DeleteFunc(ms, func(m *labels.Matcher) bool {
+			return m.Name == "__name__" && m.Type == labels.MatchRegexp && m.Value == ".+"
+		}); len(ms) > 0 {
+			writeAPIError(w, http.StatusBadRequest, "match[] is not allowed in bounds mode")
+			return
+		}
+	}
+	groupBy := r.FormValue("group_by")
+	limit, _ := strconv.Atoi(r.FormValue("limit"))
+	start, end := parseMS(f.t, r.FormValue("start")), parseMS(f.t, r.FormValue("end"))
+	res := &boundsResponse{Mode: "bounds", GroupBy: groupBy, Ranges: []boundsRange{}}
+	res.Window.Start, res.Window.End = start, end
+
+	length := f.rangeLen.Milliseconds()
+	if length == 0 {
+		length = 2 * time.Hour.Milliseconds()
+	}
+	blocksEnd := end
+	if f.headFrom > 0 {
+		blocksEnd = min(end, f.headFrom)
+	}
+	for rs := start - start%length; rs < blocksEnd; rs += length {
+		rng := boundsRange{Start: rs, End: rs + length, MainSet: true, MainBlocks: 1, Groups: []boundsGroup{}}
+		counts := f.countBy(nil, groupBy, func(s labels.Labels) bool { return f.chunkOverlaps(s, rs, rs+length) })
+		for v, c := range counts {
+			g := boundsGroup{Value: v, Lower: max(c-f.boundsSlack, 0), Upper: c + f.boundsSlack}
+			rng.LowerTotal += g.Lower
+			rng.UpperTotal += g.Upper
+			rng.Groups = append(rng.Groups, g)
+		}
+		rng.GroupCount = len(rng.Groups)
+		slices.SortFunc(rng.Groups, func(a, b boundsGroup) int {
+			if a.Upper != b.Upper {
+				return int(b.Upper - a.Upper)
+			}
+			return strings.Compare(a.Value, b.Value)
+		})
+		if limit > 0 && limit < len(rng.Groups) {
+			rng.Groups, rng.HasMore = rng.Groups[:limit], true
+		}
+		res.Ranges = append(res.Ranges, rng)
+	}
+	if f.headFrom > 0 && end > f.headFrom {
+		res.NotCovered = append(res.NotCovered, struct {
+			Start int64 `json:"start"`
+			End   int64 `json:"end"`
+		}{max(start, f.headFrom), end})
+		head := &boundsHead{Groups: []boundsHeadGroup{}}
+		counts := f.countBy(nil, groupBy, func(s labels.Labels) bool { return f.chunkOverlaps(s, max(start, f.headFrom), end) })
+		for v, c := range counts {
+			head.InMemoryTotal += c
+			head.ActiveTotal += c
+			head.Groups = append(head.Groups, boundsHeadGroup{Value: v, InMemory: c, Active: c})
+		}
+		head.GroupCount = len(head.Groups)
+		slices.SortFunc(head.Groups, func(a, b boundsHeadGroup) int {
+			if a.InMemory != b.InMemory {
+				return int(b.InMemory - a.InMemory)
+			}
+			return strings.Compare(a.Value, b.Value)
+		})
+		if limit > 0 && limit < len(head.Groups) {
+			head.Groups, head.HasMore = head.Groups[:limit], true
+		}
+		res.Head = head
+	}
+	if f.boundsHook != nil {
+		f.boundsHook(f.boundsCalls, res)
+	}
+	require.NoError(f.t, json.NewEncoder(w).Encode(res))
+}
+
+// labelValuesCardinality answers the label values cardinality endpoint from every series, as the ingesters' heads would, with the tenant's cap on limit.
+func (f *fakeFrontend) labelValuesCardinality(w http.ResponseWriter, r *http.Request) {
+	label := r.FormValue("label_names[]")
+	maxLimit := cmp.Or(f.labelValuesCardinalityLimit, 500)
+	limit, err := strconv.Atoi(r.FormValue("limit"))
+	if err != nil || limit > maxLimit {
+		http.Error(w, fmt.Sprintf("'limit' param cannot be greater than '%d'", maxLimit), http.StatusBadRequest)
+		return
+	}
+	counts := f.countBy(nil, label, func(labels.Labels) bool { return true })
+	delete(counts, "")
+	item := querierapi.LabelNamesCardinality{LabelName: label, LabelValuesCount: uint64(len(counts))}
+	for v, c := range counts {
+		item.SeriesCount += uint64(c)
+		item.Cardinality = append(item.Cardinality, querierapi.LabelValuesCardinality{LabelValue: v, SeriesCount: uint64(c)})
+	}
+	slices.SortFunc(item.Cardinality, func(a, b querierapi.LabelValuesCardinality) int {
+		if a.SeriesCount != b.SeriesCount {
+			return int(b.SeriesCount) - int(a.SeriesCount)
+		}
+		return strings.Compare(a.LabelValue, b.LabelValue)
+	})
+	item.Cardinality = item.Cardinality[:min(limit, len(item.Cardinality))]
+	require.NoError(f.t, json.NewEncoder(w).Encode(querierapi.LabelValuesCardinalityResponse{SeriesCountTotal: uint64(len(f.series)), Labels: []querierapi.LabelNamesCardinality{item}}))
+}
+
+func testTargets() targetConfig {
+	return targetConfig{ranks: []int{1, 2, 3}, labels: 3, matcherLabel: "job", source: targetSourceBounds, labelValuesLimit: 500}
+}
+
+// testTargetWindows puts the block window and the recent window on the test window.
+var testTargetWindows = targetWindows{blocks: testWindow, recent: testWindow}

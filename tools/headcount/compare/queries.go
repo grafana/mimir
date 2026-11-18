@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand/v2"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -60,6 +61,11 @@ type windowConfig struct {
 	blocksMargin time.Duration
 }
 
+// blocksEnd is the end of the block windows: before the ingesters' range by blocksMargin, on a whole minute.
+func (c windowConfig) blocksEnd(now time.Time) int64 {
+	return now.Add(-c.queryIngestersWithin - c.blocksMargin).Truncate(time.Minute).UnixMilli()
+}
+
 // windows returns every window kind for every length that fits. A length too long for the ingesters gets a recent window in place of the ingester one. Edges are whole minutes.
 func (c windowConfig) windows(now time.Time) []window {
 	ms := func(t time.Time) int64 { return t.Truncate(time.Minute).UnixMilli() }
@@ -67,7 +73,7 @@ func (c windowConfig) windows(now time.Time) []window {
 	latest := now.Add(-c.lag)
 	var out []window
 	for _, l := range c.lengths {
-		end := ms(boundary.Add(-c.blocksMargin))
+		end := c.blocksEnd(now)
 		out = append(out, window{windowBlocks, end - l.Milliseconds(), end})
 
 		end = ms(latest)
@@ -110,11 +116,96 @@ type facet struct {
 	partial bool
 }
 
+// Target sources: where the metric names and label values to draw from are read.
+const (
+	targetSourceBounds      = "bounds"       // bounds mode over a window ending at the block cutoff, or the heads' row set when no block range answers
+	targetSourceHead        = "head"         // the heads' row set of bounds mode over the last hour
+	targetSourceLabelValues = "label_values" // /api/v1/cardinality/label_values, which the tenant's cardinality analysis limit caps
+)
+
+var allTargetSources = []string{targetSourceBounds, targetSourceHead, targetSourceLabelValues}
+
 type targetConfig struct {
-	names, labels int
-	matcherLabel  string
+	// ranks are the 1-based ranks, by series count, of the metric names drawn. The largest names' PromQL truths exceed the query limits, so the draw reaches into the table: ranks 5, 50, 500 and 5,000.
+	ranks        []int
+	labels       int
+	matcherLabel string
 	// facets enables picking a facet per name, which only the matcher queries need.
 	facets bool
+	source string
+	// labelValuesLimit is the most rows read from the label values endpoint: the tenant's cardinality analysis limit, 500 by default. Ranks above it are drawn from bounds mode only.
+	labelValuesLimit int
+}
+
+// targetWindows are the windows target picking reads.
+type targetWindows struct {
+	// blocks is as long as -target-window and ends at the block cutoff, where only store-gateways answer.
+	blocks window
+	// recent is the last hour the ingesters hold.
+	recent window
+}
+
+// rows are one label's values by series count, largest first.
+type rows struct {
+	values []string
+	// total is an upper value of the series the values count over window: a bounds range's upper total, or the heads' in-memory total.
+	total  int64
+	window window
+}
+
+// readRows reads up to limit values of groupBy with the most series from the configured source, calling next before each request.
+func readRows(ctx context.Context, c *client, cfg targetConfig, tw targetWindows, groupBy string, limit int, next func()) (rows, error) {
+	if cfg.source == targetSourceLabelValues {
+		next()
+		values, total, err := c.labelValuesCardinality(ctx, groupBy, min(limit, cfg.labelValuesLimit))
+		return rows{values: values, total: total, window: tw.recent}, err
+	}
+	if cfg.source != targetSourceHead {
+		next()
+		res, _, err := c.bounds(ctx, groupBy, tw.blocks.start, tw.blocks.end, limit)
+		if err != nil {
+			return rows{}, err
+		}
+		// The last range with groups is the newest one the store-gateways answered.
+		for i := len(res.Ranges) - 1; i >= 0; i-- {
+			rng := res.Ranges[i]
+			if len(rng.Groups) == 0 {
+				continue
+			}
+			out := rows{total: rng.UpperTotal, window: window{kind: windowBlocks, start: rng.Start, end: rng.End}}
+			for _, g := range rng.Groups {
+				out.values = append(out.values, g.Value)
+			}
+			return out, nil
+		}
+	}
+	next()
+	res, _, err := c.bounds(ctx, groupBy, tw.recent.start, tw.recent.end, limit)
+	if err != nil {
+		return rows{}, err
+	}
+	if res.Head == nil {
+		return rows{}, fmt.Errorf("the window [%d, %d) doesn't reach the ingesters", tw.recent.start, tw.recent.end)
+	}
+	out := rows{total: res.Head.InMemoryTotal, window: tw.recent}
+	for _, g := range res.Head.Groups {
+		out.values = append(out.values, g.Value)
+	}
+	return out, nil
+}
+
+// namesByRank returns the values at the given 1-based ranks, skipping a rank past the end, or the smallest value when none fits.
+func namesByRank(values []string, ranks []int) []string {
+	var out []string
+	for _, r := range ranks {
+		if r >= 1 && r <= len(values) && !slices.Contains(out, values[r-1]) {
+			out = append(out, values[r-1])
+		}
+	}
+	if len(out) == 0 && len(values) > 0 {
+		out = append(out, values[len(values)-1])
+	}
+	return out
 }
 
 // facetQueries are the queries that filter on a name's facet.
@@ -127,9 +218,9 @@ func allSeriesMatchers() []*labels.Matcher {
 
 var allSeries = selector(allSeriesMatchers()...)
 
-// pickTargets reads the tenant's largest metric names and highest-cardinality labels over w, calling pace before each request after the first.
+// pickTargets reads the tenant's metric names at cfg.ranks and highest-cardinality labels, calling pace before each request after the first. The names come from one source row set, not from the tenant-wide exact table, which a large tenant is refused.
 // A name whose facet can't be picked gets none, and its matcher queries are skipped.
-func pickTargets(ctx context.Context, c *client, cfg targetConfig, w window, logger log.Logger, pace func()) (*targets, error) {
+func pickTargets(ctx context.Context, c *client, cfg targetConfig, tw targetWindows, logger log.Logger, pace func()) (*targets, error) {
 	t := &targets{labels: map[string][]string{}, facets: map[string]facet{}}
 	sent := false
 	next := func() {
@@ -138,17 +229,17 @@ func pickTargets(ctx context.Context, c *client, cfg targetConfig, w window, log
 		}
 		sent = true
 	}
-	next()
-	byName, _, err := c.estimate(ctx, allSeries, model.MetricNameLabel, w.start, w.end, cfg.names)
+	byName, err := readRows(ctx, c, cfg, tw, model.MetricNameLabel, slices.Max(cfg.ranks), next)
 	if err != nil {
 		return nil, fmt.Errorf("largest metric names: %w", err)
 	}
-	t.tenantSeries = byName.Total
-	for _, g := range byName.Groups {
-		t.names = append(t.names, g.Value)
-	}
+	t.tenantSeries = byName.total
+	t.names = namesByRank(byName.values, cfg.ranks)
 	if len(t.names) == 0 {
-		return nil, fmt.Errorf("the tenant has no series in [%d, %d)", w.start, w.end)
+		return nil, fmt.Errorf("the tenant has no series in [%d, %d)", byName.window.start, byName.window.end)
+	}
+	if skipped := len(cfg.ranks) - len(t.names); skipped > 0 {
+		level.Info(logger).Log("msg", "fewer metric names than the ranks asked for", "names", len(byName.values), "ranks", fmt.Sprint(cfg.ranks))
 	}
 	for _, name := range t.names {
 		next()
@@ -160,7 +251,7 @@ func pickTargets(ctx context.Context, c *client, cfg targetConfig, w window, log
 		if !cfg.facets {
 			continue
 		}
-		if f, ok, err := pickFacet(ctx, c, name, t.labels[name], w, next); err != nil {
+		if f, ok, err := pickFacet(ctx, c, name, t.labels[name], byName.window, next); err != nil {
 			class := classifyRefusal(sideEstimate, err)
 			t.facetRefusals = append(t.facetRefusals, class)
 			level.Warn(logger).Log("msg", "picking a facet failed; skipping the matcher queries of this name", "name", name, "class", class, "err", err)
@@ -174,14 +265,13 @@ func pickTargets(ctx context.Context, c *client, cfg targetConfig, w window, log
 		return nil, fmt.Errorf("tenant label names: %w", err)
 	}
 	t.tenantLabels = withoutName(ls)
-	next()
-	byValue, _, err := c.estimate(ctx, allSeries, cfg.matcherLabel, w.start, w.end, 3)
+	byValue, err := readRows(ctx, c, cfg, tw, cfg.matcherLabel, 3, next)
 	if err != nil {
 		return nil, fmt.Errorf("largest %s values: %w", cfg.matcherLabel, err)
 	}
-	for _, g := range byValue.Groups {
-		if g.Value != "" {
-			t.matcherValues = append(t.matcherValues, g.Value)
+	for _, v := range byValue.values {
+		if v != "" {
+			t.matcherValues = append(t.matcherValues, v)
 		}
 	}
 	return t, nil

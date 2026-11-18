@@ -2,7 +2,7 @@
 
 // Command compare checks the cardinality estimate route against PromQL on the same window, through one query-frontend.
 //
-// Each round it picks the tenant's largest metric names and highest-cardinality labels, fills each query shape with them on block, ingester, boundary and recent windows, and runs a few pairs: the estimate, and the truth count by (<label>) (last_over_time(<selector>[<window>])). It diffs the two tables group by group, reruns a mismatching pair once, and puts every difference in a class or reports it as a mismatch to file a Bug issue for. With -burst, it also sends estimates at once every -burst-interval to fill the count limits. With -estimate-only, it sends only the estimates, to measure their latency and cost without PromQL load. Results are Prometheus metrics on -listen and one log line per pair.
+// Each round it picks the tenant's metric names at a few ranks and highest-cardinality labels, fills each query shape with them on block, ingester, boundary and recent windows, and runs a few pairs: the estimate, and the truth count by (<label>) (last_over_time(<selector>[<window>])). It diffs the two tables group by group, reruns a mismatching pair once, and puts every difference in a class or reports it as a mismatch to file a Bug issue for. With -burst, it also sends estimates at once every -burst-interval to fill the count limits. With -estimate-only, it sends only the estimates, to measure their latency and cost without PromQL load. Results are Prometheus metrics on -listen and one log line per pair.
 //
 // Both requests load the cell's read path: keep -pairs-per-round and -request-gap at the rate agreed with the cell's owners.
 package main
@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/signal"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -36,6 +37,8 @@ type config struct {
 	pairsPerRound           int
 	queries                 flagext.StringSliceCSV
 	windowLengths           flagext.StringSliceCSV
+	nameRanks               flagext.StringSliceCSV
+	targetWindow            time.Duration
 	windows                 windowConfig
 	targets                 targetConfig
 	pairs                   pairConfig
@@ -65,7 +68,11 @@ func (c *config) register(f *flag.FlagSet) {
 	f.DurationVar(&c.windows.queryIngestersWithin, "query-ingesters-within", 13*time.Hour, "the cell's -querier.query-ingesters-within, which places the block, ingester, boundary and recent windows")
 	f.DurationVar(&c.windows.lag, "lag", 5*time.Minute, "how far behind now ingester and boundary windows end")
 	f.DurationVar(&c.windows.blocksMargin, "blocks-margin", time.Hour, "how far before now minus -query-ingesters-within block windows end")
-	f.IntVar(&c.targets.names, "top-names", 5, "largest metric names to draw from each round")
+	c.nameRanks = []string{"5", "50", "500", "5000"}
+	f.Var(&c.nameRanks, "name-ranks", "comma-separated ranks, by series count, of the metric names to draw from each round: the 5th largest, the 50th and so on, since the largest names' PromQL truths exceed the query limits. Ranks past the end of the table are skipped")
+	f.StringVar(&c.targets.source, "target-source", targetSourceBounds, "where target names and label values are read, from "+strings.Join(allTargetSources, ", ")+": bounds mode over -target-window ending at the block cutoff (the heads' row set when no block range answers), the heads' row set of the last hour, or the label values cardinality endpoint, which the tenant's cardinality analysis limit caps")
+	f.DurationVar(&c.targetWindow, "target-window", 6*time.Hour, "length of the window bounds mode reads names from, ending at the block cutoff; the newest block range it answers is used")
+	f.IntVar(&c.targets.labelValuesLimit, "label-values-limit", 500, "most rows read from the label values cardinality endpoint: the tenant's cardinality analysis limit (-querier.cardinality-analysis-max-results, 500 by default); a higher limit is refused with 400")
 	f.IntVar(&c.targets.labels, "top-labels", 5, "highest-cardinality labels to draw from for each name")
 	f.StringVar(&c.targets.matcherLabel, "matcher-label", "job", "label whose largest values serve as the arbitrary matcher, and which the tenant-wide label table groups by")
 	f.IntVar(&c.pairs.tableLimit, "table-limit", 50, "limit on the tenant-wide tables; 0 asks for the whole table. Groups left out are checked through group_count and total")
@@ -102,10 +109,29 @@ func (c *config) validate() error {
 	for _, f := range []struct {
 		name  string
 		value int
-	}{{"-pairs-per-round", c.pairsPerRound}, {"-top-names", c.targets.names}, {"-top-labels", c.targets.labels}, {"-fallback-names", c.fallbackNames}} {
+	}{{"-pairs-per-round", c.pairsPerRound}, {"-top-labels", c.targets.labels}, {"-fallback-names", c.fallbackNames}, {"-label-values-limit", c.targets.labelValuesLimit}} {
 		if f.value <= 0 {
 			return fmt.Errorf("%s must be positive", f.name)
 		}
+	}
+	c.targets.ranks = nil
+	for _, s := range c.nameRanks {
+		r, err := strconv.Atoi(s)
+		if err != nil || r <= 0 {
+			return fmt.Errorf("-name-ranks: %q is not a positive integer", s)
+		}
+		c.targets.ranks = append(c.targets.ranks, r)
+	}
+	if len(c.targets.ranks) == 0 {
+		return errors.New("-name-ranks must not be empty")
+	}
+	slices.Sort(c.targets.ranks)
+	c.targets.ranks = slices.Compact(c.targets.ranks)
+	if !slices.Contains(allTargetSources, c.targets.source) {
+		return fmt.Errorf("unknown -target-source %q, want one of %s", c.targets.source, strings.Join(allTargetSources, ", "))
+	}
+	if c.targetWindow <= 0 {
+		return errors.New("-target-window must be positive")
 	}
 	if c.timeout <= 0 {
 		return errors.New("-timeout must be positive")
@@ -204,12 +230,14 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 	var lastBurst time.Time
 	for {
 		t := now()
-		// Targets come from the last hour the ingesters hold.
+		// Targets come from the last hour the ingesters hold, or from a window ending at the block cutoff.
 		recent := window{kind: windowIngesters, end: t.Add(-cfg.windows.lag).Truncate(time.Minute).UnixMilli()}
 		recent.start = recent.end - time.Hour.Milliseconds()
+		blocks := window{kind: windowBlocks, end: cfg.windows.blocksEnd(t)}
+		blocks.start = blocks.end - cfg.targetWindow.Milliseconds()
 		tcfg := cfg.targets
 		tcfg.facets = slices.ContainsFunc(cfg.queries, func(q string) bool { return slices.Contains(facetQueries, q) })
-		targets, err := pickTargets(ctx, r.client, tcfg, recent, logger, func() { r.sleep(ctx) })
+		targets, err := pickTargets(ctx, r.client, tcfg, targetWindows{blocks: blocks, recent: recent}, logger, func() { r.sleep(ctx) })
 		if err != nil {
 			m.rounds.WithLabelValues("failed").Inc()
 			if cfg.interval == 0 {

@@ -219,6 +219,97 @@ func (c *client) estimate(ctx context.Context, selector, groupBy string, startMS
 	return &out, latency, nil
 }
 
+// boundsGroup, boundsRange, boundsHead and boundsResponse mirror the route's bounds answer (pkg/querier/cardinality_estimate_bounds_handler.go).
+type boundsGroup struct {
+	Value string `json:"value"`
+	Lower int64  `json:"lower"`
+	Upper int64  `json:"upper"`
+}
+
+type boundsRange struct {
+	Start         int64          `json:"start"`
+	End           int64          `json:"end"`
+	MainSet       bool           `json:"main_set"`
+	MainBlocks    int            `json:"main_blocks"`
+	OtherBlocks   int            `json:"other_blocks"`
+	LowerBound    bool           `json:"lower_bound"`
+	MissingBlocks []string       `json:"missing_blocks,omitempty"`
+	MissingShards []missingShard `json:"missing_shards,omitempty"`
+	GroupCount    int            `json:"group_count"`
+	LowerTotal    int64          `json:"lower_total"`
+	UpperTotal    int64          `json:"upper_total"`
+	HasMore       bool           `json:"has_more"`
+	Groups        []boundsGroup  `json:"groups"`
+}
+
+type boundsHeadGroup struct {
+	Value    string `json:"value"`
+	InMemory int64  `json:"in_memory"`
+	Active   int64  `json:"active"`
+}
+
+type boundsHead struct {
+	Approximate   bool              `json:"approximate"`
+	GroupCount    int               `json:"group_count"`
+	InMemoryTotal int64             `json:"in_memory_total"`
+	ActiveTotal   int64             `json:"active_total"`
+	HasMore       bool              `json:"has_more"`
+	Groups        []boundsHeadGroup `json:"groups"`
+}
+
+type boundsResponse struct {
+	Mode   string `json:"mode"`
+	Window struct {
+		Start int64 `json:"start"`
+		End   int64 `json:"end"`
+	} `json:"window"`
+	GroupBy    string        `json:"group_by"`
+	Ranges     []boundsRange `json:"ranges"`
+	NotCovered []struct {
+		Start int64 `json:"start"`
+		End   int64 `json:"end"`
+	} `json:"not_covered,omitempty"`
+	Head *boundsHead `json:"head,omitempty"`
+}
+
+// bounds asks the route in bounds mode for a lower and an upper count per groupBy value of each block range the window touches, and for the heads' counts when the window reaches the ingesters. Bounds mode takes no matchers. limit cuts each row set; 0 asks for all of it.
+func (c *client) bounds(ctx context.Context, groupBy string, startMS, endMS int64, limit int) (*boundsResponse, time.Duration, error) {
+	params := url.Values{
+		"mode":     {"bounds"},
+		"group_by": {groupBy},
+		"start":    {formatTime(startMS)},
+		"end":      {formatTime(endMS)},
+	}
+	if limit > 0 {
+		params.Set("limit", strconv.Itoa(limit))
+	}
+	var out boundsResponse
+	latency, err := c.get(ctx, "/prometheus/api/v1/cardinality/estimate", params, !c.eventualEstimates, &out)
+	if err != nil {
+		return nil, latency, err
+	}
+	return &out, latency, nil
+}
+
+// labelValuesCardinality returns up to limit values of label with the most series in the ingesters' heads, largest first, and the series the ingesters hold in all.
+func (c *client) labelValuesCardinality(ctx context.Context, label string, limit int) ([]string, int64, error) {
+	params := url.Values{"label_names[]": {label}, "limit": {strconv.Itoa(limit)}}
+	var out querierapi.LabelValuesCardinalityResponse
+	if _, err := c.get(ctx, "/prometheus/api/v1/cardinality/label_values", params, false, &out); err != nil {
+		return nil, 0, err
+	}
+	var values []string
+	for _, l := range out.Labels {
+		if l.LabelName != label {
+			continue
+		}
+		for _, v := range l.Cardinality {
+			values = append(values, v.LabelValue)
+		}
+	}
+	return values, int64(out.SeriesCountTotal), nil
+}
+
 // labelValues returns up to limit values of label in the tenant's index over [startMS, endMS). Values come from the index without a time filter beyond picking the blocks and heads that overlap the range.
 func (c *client) labelValues(ctx context.Context, label string, startMS, endMS int64, limit int) ([]string, error) {
 	params := url.Values{"start": {formatTime(startMS)}, "end": {formatTime(endMS - 1)}, "limit": {strconv.Itoa(limit)}}

@@ -639,9 +639,9 @@ func TestRunOneRound(t *testing.T) {
 	m := newMetrics(reg, time.Minute)
 	cfg := config{
 		address: srv.URL, tenant: "test-tenant", pairsPerRound: 1000, timeout: time.Minute,
-		queries:   allQueries,
-		windows:   windowConfig{lengths: []time.Duration{time.Hour, 24 * time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
-		targets:   targetConfig{names: 3, labels: 3, matcherLabel: "job"},
+		queries: allQueries,
+		windows: windowConfig{lengths: []time.Duration{time.Hour, 24 * time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
+		targets: testTargets(), targetWindow: 6 * time.Hour,
 		pairs:     pairConfig{tableLimit: 2},
 		edgeSlack: time.Minute, fallbackNames: 2, seed: 1,
 	}
@@ -660,7 +660,7 @@ func TestRunOneRound(t *testing.T) {
 
 	// A broken estimate makes the round report a mismatch.
 	f.estimateHook = func(n int, r *estimateResponse) {
-		if len(r.Groups) > 0 && n > 2 { // after the two target-picking calls
+		if len(r.Groups) > 0 && n > 0 { // target picking sends no estimate
 			r.Groups[0].Count += 100
 		}
 	}
@@ -678,8 +678,8 @@ func TestRunNothingCompared(t *testing.T) {
 		address: srv.URL, tenant: "test-tenant", pairsPerRound: 1000, timeout: time.Minute,
 		queries: []string{queryMetricTotal},
 		windows: windowConfig{lengths: []time.Duration{time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
-		targets: targetConfig{names: 3, labels: 3, matcherLabel: "job"},
-		seed:    1,
+		targets: testTargets(), targetWindow: 6 * time.Hour,
+		seed: 1,
 	}
 	now := func() time.Time { return time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC) }
 	sum, err := run(context.Background(), cfg, newMetrics(prometheus.NewRegistry(), time.Minute), log.NewNopLogger(), now)
@@ -690,7 +690,9 @@ func TestRunNothingCompared(t *testing.T) {
 func TestPickTargetsFacets(t *testing.T) {
 	_, srv := newFakeFrontend(t, testSeries()...)
 	r, _ := newTestRunner(srv)
-	got, err := pickTargets(context.Background(), r.client, targetConfig{names: 3, labels: 3, matcherLabel: "job", facets: true}, testWindow, log.NewNopLogger(), func() {})
+	cfg := testTargets()
+	cfg.facets = true
+	got, err := pickTargets(context.Background(), r.client, cfg, testTargetWindows, log.NewNopLogger(), func() {})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"http_requests_total", "up", "build_info"}, got.names)
 	// pod and job are on every http_requests_total series; status is not.
@@ -714,8 +716,8 @@ func TestRunFacetProbeRefused(t *testing.T) {
 		address: srv.URL, tenant: "test-tenant", pairsPerRound: 1000, timeout: time.Minute,
 		queries: []string{queryMetricTotal, queryMetricNotEqual},
 		windows: windowConfig{lengths: []time.Duration{time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
-		targets: targetConfig{names: 3, labels: 3, matcherLabel: "job"},
-		seed:    1,
+		targets: testTargets(), targetWindow: 6 * time.Hour,
+		seed: 1,
 	}
 	now := func() time.Time { return time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC) }
 	sum, err := run(context.Background(), cfg, m, log.NewNopLogger(), now)
@@ -827,9 +829,9 @@ func TestRunBurstOncePerInterval(t *testing.T) {
 		address: srv.URL, tenant: "test-tenant", pairsPerRound: 1, timeout: time.Minute,
 		queries: []string{queryMetricTotal},
 		windows: windowConfig{lengths: []time.Duration{time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
-		targets: targetConfig{names: 3, labels: 3, matcherLabel: "job"},
-		seed:    1,
-		burst:   4, burstInterval: time.Hour, interval: time.Millisecond,
+		targets: testTargets(), targetWindow: 6 * time.Hour,
+		seed:  1,
+		burst: 4, burstInterval: time.Hour, interval: time.Millisecond,
 	}
 	// Each round reads the clock at its start and at its end. Three rounds, 40 minutes apart; the run stops after the third.
 	at := func(m int) time.Time { return time.Date(2026, 1, 2, 12, m, 0, 0, time.UTC) }
@@ -863,8 +865,14 @@ func TestConfigValidate(t *testing.T) {
 	require.NoError(t, parse("-windows", "1h"))
 	require.ErrorContains(t, parse("-queries", "nope"), "unknown query")
 	require.ErrorContains(t, parse("-tenant", ""), "required")
+	var cfg config
+	fs := flag.NewFlagSet("compare", flag.ContinueOnError)
+	cfg.register(fs)
+	require.NoError(t, fs.Parse([]string{"-address", "http://x", "-tenant", "t", "-name-ranks", "500,5,5,50"}))
+	require.NoError(t, cfg.validate())
+	assert.Equal(t, []int{5, 50, 500}, cfg.targets.ranks, "sorted, without duplicates")
 	for _, args := range [][]string{
-		{"-top-names", "0"}, {"-top-labels", "0"}, {"-fallback-names", "0"}, {"-pairs-per-round", "0"},
+		{"-name-ranks", "0"}, {"-name-ranks", "a"}, {"-name-ranks", ""}, {"-target-source", "nope"}, {"-target-window", "0"}, {"-label-values-limit", "0"}, {"-top-labels", "0"}, {"-fallback-names", "0"}, {"-pairs-per-round", "0"},
 		{"-timeout", "0"}, {"-interval", "-1s"}, {"-request-gap", "-1s"}, {"-table-limit", "-1"},
 		{"-burst", "-1"}, {"-burst", "65"},
 	} {
@@ -883,7 +891,9 @@ func TestPickTargetsPaced(t *testing.T) {
 		return orig.RoundTrip(req)
 	})
 	paces := 0
-	_, err := pickTargets(context.Background(), r.client, targetConfig{names: 3, labels: 3, matcherLabel: "job", facets: true}, testWindow, log.NewNopLogger(), func() { paces++ })
+	cfg := testTargets()
+	cfg.facets = true
+	_, err := pickTargets(context.Background(), r.client, cfg, testTargetWindows, log.NewNopLogger(), func() { paces++ })
 	require.NoError(t, err)
 	assert.Equal(t, requests-1, paces)
 }
@@ -907,9 +917,9 @@ func TestRunEstimateOnly(t *testing.T) {
 		queries:       []string{queryMetricTotal, queryMetricByLabel},
 		windowLengths: []string{"1h"},
 		windows:       windowConfig{queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
-		targets:       targetConfig{names: 3, labels: 3, matcherLabel: "job"},
-		seed:          1, fallbackNames: 5,
-		estimateOnly: true,
+		targets:       testTargets(), targetWindow: 6 * time.Hour,
+		seed: 1, fallbackNames: 5,
+		nameRanks: []string{"1", "2", "3"}, estimateOnly: true,
 		scenarioPath: writeScenarios(t, `
 - {name: api_by_pod, selector: '{__name__="up", job="api"}', group_by: pod}
 `),
