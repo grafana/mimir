@@ -62,6 +62,7 @@
 * [FEATURE] Query-frontend: Add the experimental `-query-frontend.cardinality-estimation-cache.*` flags to store cardinality estimates in a dedicated memcached cache instead of the results cache. Disabled by default. #17173
 * [FEATURE] Distributor: Ingest valid samples and native histograms even when other samples in the same series fail validation. Previously, the entire series was discarded. The metrics `cortex_discarded_samples_total` and `cortex_discarded_attributed_samples_total` now count each discarded sample or histogram. #17151
 * [FEATURE] Ingester: Add the experimental `/ingester/label_churn/{tenant}` endpoint, which returns the label names whose values created the most new series in the lookback window, set with the `lookback` parameter (default `30m`). The `limit` parameter (default `30`) sets the maximum number of returned label names. Enable it with `-ingester.label-churn-enabled`. #17080
+* [FEATURE] Ruler: Add experimental zone-aware tenant shuffle sharding with `-ruler.ring.zone-awareness-enabled`, `-ruler.ring.instance-availability-zone`, and `-ruler.ring.excluded-zones`. Each tenant shard holds the same number of rulers in each zone. When a zone has fewer rulers than its share, the shard takes the missing rulers from the other zones. #17154
 * [ENHANCEMENT] Ingester: The `/ingester/ring` page links each ingester to its `/ingester/tenants` page, set with the experimental `-ingester.ring.status-page-ingester-link-template`. The `/ingester/tenants` page shows and sorts by the head series of each tenant. The `/ingester/tsdb/{tenant}` page links to the label churn of the tenant when it's enabled. #17285
 * [ENHANCEMENT] API: OTLP translation headers (`-api.otlp-translation-headers-enabled`) are now stable and no longer experimental. The flag remains disabled by default. #17076
 * [ENHANCEMENT] Store-gateway: Emit exponential native histograms for `cortex_bucket_stores_blocks_sync_seconds` alongside existing classic buckets. #17077
@@ -237,6 +238,7 @@
 * [FEATURE] Enable active query tracking in read path components to keep track of running queries during crashes. #16876 #16981
 * [FEATURE] Allow common (`mimirComponentAnnotations`) and per-component annotations (`<component>_annotations`) to be set on each Mimir component. #17143
 * [FEATURE] Add the optional `memcached-cardinality` cache for query-frontend cardinality estimates. Set `cache_cardinality_enabled: true` to deploy it. Requires `cache_frontend_enabled`. #17173
+* [FEATURE] Add `multi_zone_ruler_ring_zone_enabled` and `multi_zone_ruler_zone_awareness_enabled` to roll out ruler zone-aware tenant shuffle sharding in two steps. Enable the first on all rulers before the second. #17154
 * [ENHANCEMENT] Add `multi_zone_ingester_zpdb_cross_zone_eviction_delay` config option to set `crossZoneEvictionDelay` on the ingester `ZoneAwarePodDisruptionBudget`. Defaults to `20m` when `ingest_storage_enabled` is true, and to unset otherwise. #16271
 * [ENHANCEMENT] Compactor: Allow the drain autoscaler's speed estimates to be read from recording rules. #16283
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.39.0. #16440
