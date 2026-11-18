@@ -40,7 +40,11 @@ local filename = 'mimir-top-tenants.json';
   // Shows the share of each of the top $limit tenants by the given per-tenant query, plus the sum of
   // all the other tenants as "others", so that each slice is proportional to the real total.
   // Only use it for values that can be summed up across tenants.
-  local topTenantsPieChartPanel(title, query, legend='{{ user }}', unit='short') = {
+  // The query is summed by the labels in groupBy first: some queries also have cluster and namespace
+  // labels, and a tenant in several selected clusters must still be a single slice, not several
+  // slices with the same name, some of them counted in "others".
+  local topTenantsPieChartPanel(title, perTenantQuery, groupBy, legend='{{ user }}', unit='short') = {
+    local query = 'sum by (%s) (%s)' % [groupBy, perTenantQuery],
     datasource: '$datasource',
     title: title,
     type: 'piechart',
@@ -102,7 +106,8 @@ local filename = 'mimir-top-tenants.json';
 
   // Builds a row with a table of the top $limit tenants by the given per-tenant query, with their
   // percentage of the total, next to a pie chart with their share of the total.
-  local topTenantsPieChartRow(rowTitle, panelTitle, query, tableStyles, sortCol=2, tenantLabel='user', legend='{{ user }}', unit='short') =
+  // groupBy are the labels that identify a pie chart slice, and must match the legend.
+  local topTenantsPieChartRow(rowTitle, panelTitle, query, tableStyles, sortCol=2, tenantLabel='user', groupBy=tenantLabel, legend='{{ user }}', unit='short') =
     local styles = {
       [k]: tableStyles[k]
       for k in std.objectFields(tableStyles)
@@ -128,7 +133,7 @@ local filename = 'mimir-top-tenants.json';
       } +
       tableTenantLinks(tenantLabel)
     )
-    .addPanel(topTenantsPieChartPanel('Share of the total', query, legend, unit))
+    .addPanel(topTenantsPieChartPanel('Share of the total', query, groupBy, legend, unit))
     + {
       panels: [super.panels[0] { span: 9 }, super.panels[1] { span: 3 }],
     },
@@ -377,6 +382,7 @@ local filename = 'mimir-top-tenants.json';
           Value: { alias: 'rules' },
         },
         sortCol=3,
+        groupBy='rule_group, user',
         legend='{{ user }} / {{ rule_group }}',
       )
     )
