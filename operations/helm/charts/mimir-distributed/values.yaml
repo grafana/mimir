@@ -3481,7 +3481,7 @@ gateway:
       # -- The nginx image repository
       repository: nginx/nginx-unprivileged
       # -- The nginx image tag
-      tag: 1.31-alpine
+      tag: 1.31.9-alpine
 
     # -- Basic auth configuration
     basicAuth:
