@@ -17,12 +17,11 @@ const readerBufferSize = 4096
 
 type FileReader struct {
 	src    positionalReader
-	owner  *FileDecbufFactory
+	close  func()
 	buf    *bufio.Reader
 	base   int
 	length int
 	off    int
-	lenBuf [numLenBytes]byte
 }
 
 // positionalReader adapts an io.ReaderAt to io.Reader by tracking its own position,
@@ -53,10 +52,10 @@ func NewFileReader(file *os.File, base, length int) (*FileReader, error) {
 	return newFileReader(file, base, length, nil)
 }
 
-func newFileReader(file io.ReaderAt, base, length int, owner *FileDecbufFactory) (*FileReader, error) {
+func newFileReader(file io.ReaderAt, base, length int, close func()) (*FileReader, error) {
 	f := &FileReader{
 		src:    positionalReader{r: file},
-		owner:  owner,
+		close:  close,
 		buf:    bufferPool.Get().(*bufio.Reader),
 		base:   base,
 		length: length,
@@ -163,9 +162,9 @@ func (f *FileReader) Close() error {
 		bufferPool.Put(f.buf)
 		f.buf = nil
 	}
-	if f.owner != nil {
-		f.owner.release()
-		f.owner = nil
+	if f.close != nil {
+		f.close()
+		f.close = nil
 	}
 	return nil
 }

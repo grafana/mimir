@@ -30,6 +30,7 @@ type FileDecbufFactory struct {
 	refs      atomic.Int64
 	closeOnce sync.Once
 	closeErr  error
+	releaseFn func()
 }
 
 func NewFileDecbufFactory(path string) *FileDecbufFactory {
@@ -50,6 +51,7 @@ func NewFileDecbufFactory(path string) *FileDecbufFactory {
 
 	df.file = f
 	df.size = int(stat.Size())
+	df.releaseFn = df.release
 	return df
 }
 
@@ -80,10 +82,7 @@ func (df *FileDecbufFactory) closeFile() {
 }
 
 func (df *FileDecbufFactory) newFileReader(base, length int) (*FileReader, error) {
-	if err := df.acquire(); err != nil {
-		return nil, err
-	}
-	r, err := newFileReader(df.file, base, length, df)
+	r, err := newFileReader(df.file, base, length, df.releaseFn)
 	if err != nil {
 		df.release()
 		return nil, errors.Wrap(err, "create file reader")
@@ -92,26 +91,29 @@ func (df *FileDecbufFactory) newFileReader(base, length int) (*FileReader, error
 }
 
 func (df *FileDecbufFactory) NewDecbufAtChecked(_ context.Context, offset int, table *crc32.Table) Decbuf {
-	r, err := df.newFileReader(offset, numLenBytes)
-	if err != nil {
+	if err := df.acquire(); err != nil {
 		return Decbuf{E: err}
 	}
-	d := Decbuf{r: r}
 
 	// TODO: A particular index-header only has symbols and posting offsets. We should only need to read
 	//  the length of each of those a single time per index-header (DecbufFactory). Should the factory
 	//  cache the length? Should the table of contents be passed to the factory?
-	n, err := df.file.ReadAt(r.lenBuf[:], int64(offset))
+	var lenBuf [numLenBytes]byte
+	n, err := df.file.ReadAt(lenBuf[:], int64(offset))
 	if n != numLenBytes {
+		df.release()
 		if err == nil || errors.Is(err, io.EOF) {
 			err = errors.Wrapf(ErrInvalidSize, "insufficient bytes read for size (got %d, wanted %d)", n, numLenBytes)
 		}
-		d.E = err
-		return d
+		return Decbuf{E: err}
 	}
+	contentLength := int(binary.BigEndian.Uint32(lenBuf[:]))
 
-	contentLength := int(binary.BigEndian.Uint32(r.lenBuf[:]))
-	r.length = numLenBytes + contentLength + crc32.Size
+	r, err := df.newFileReader(offset, numLenBytes+contentLength+crc32.Size)
+	if err != nil {
+		return Decbuf{E: err}
+	}
+	d := Decbuf{r: r}
 
 	if d.ResetAt(numLenBytes); d.Err() != nil {
 		return d
@@ -138,6 +140,9 @@ func (df *FileDecbufFactory) NewDecbufInSection(_ context.Context, _, _, _ int) 
 }
 
 func (df *FileDecbufFactory) NewRawDecbuf(_ context.Context) Decbuf {
+	if err := df.acquire(); err != nil {
+		return Decbuf{E: err}
+	}
 	r, err := df.newFileReader(0, df.size)
 	if err != nil {
 		return Decbuf{E: err}
