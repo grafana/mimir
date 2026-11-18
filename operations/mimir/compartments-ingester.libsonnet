@@ -227,4 +227,12 @@
     $._config.ingest_storage_ingester_autoscaling_enabled,
   ),
   assert ingesterDisabledKnobsError == null : ingesterDisabledKnobsError,
+
+  local maxDerivedTokenPartitionsError = $.validateMaxDerivedTokenPartitions(
+    'compartments ingesters',
+    [scaledObject.spec.maxReplicaCount for scaledObject in std.objectValues($.ingest_storage_ingester_primary_zone_scalings)]
+    + std.objectValues($._config.ingester_compartment_static_replicas),
+    $._config.ingest_storage_partition_ring_max_derived_token_partitions,
+  ),
+  assert maxDerivedTokenPartitionsError == null : maxDerivedTokenPartitionsError,
 }
