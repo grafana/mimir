@@ -29,6 +29,8 @@ type sampler struct {
 	endAt     time.Time
 	gauges    [2]map[string][]float64
 	lag       [2][]float64
+	// No metric has the head snapshots' size: it's their files', at the window's end.
+	snapshotBytes [2]float64
 }
 
 // The gauges sampled over the window.
@@ -47,6 +49,9 @@ func (s *sampler) run(ctx context.Context, every time.Duration) {
 		select {
 		case <-ctx.Done():
 			s.snapshot(&s.end)
+			for i, ing := range s.ingesters {
+				s.snapshotBytes[i] = headSnapshotBytes(ing.dir)
+			}
 			s.endAt = time.Now()
 			return
 		case <-ticker.C:
@@ -132,6 +137,9 @@ type Resources struct {
 	HeadSnapshotFailures        float64 `json:"head_snapshot_failures,omitempty"`
 	HeadSnapshotRounds          float64 `json:"head_snapshot_rounds,omitempty"`
 	HeadSnapshotRoundSecondsAvg float64 `json:"head_snapshot_round_seconds_avg,omitempty"`
+	// The size of the tenants' last head snapshots at the window's end: what a restart restores besides the chunk
+	// files. None when the bench can't see the ingester's directory, as with -external.
+	HeadSnapshotBytes float64 `json:"head_snapshot_bytes,omitempty"`
 }
 
 type APIReport struct {
@@ -213,6 +221,7 @@ func (s *sampler) resources(i int) Resources {
 	if r.HeadSnapshotRounds > 0 {
 		r.HeadSnapshotRoundSecondsAvg = end["cortex_ingester_seriesstore_head_snapshot_round_duration_seconds_sum"] / r.HeadSnapshotRounds
 	}
+	r.HeadSnapshotBytes = s.snapshotBytes[i]
 	return r
 }
 
@@ -364,6 +373,7 @@ func printResources(w io.Writer, replay *[2]float64, res [2]Resources) {
 		}{
 			{"head snapshot rounds", a.HeadSnapshotRounds, b.HeadSnapshotRounds, count},
 			{"head snapshot round avg", a.HeadSnapshotRoundSecondsAvg, b.HeadSnapshotRoundSecondsAvg, func(v float64) string { return fmt.Sprintf("%.0fs", v) }},
+			{"head snapshot size", a.HeadSnapshotBytes, b.HeadSnapshotBytes, func(v float64) string { return fmt.Sprintf("%.1f MiB", v/(1<<20)) }},
 			{"head snapshots", a.HeadSnapshots, b.HeadSnapshots, count},
 			{"head snapshot failures", a.HeadSnapshotFailures, b.HeadSnapshotFailures, count},
 		}...)

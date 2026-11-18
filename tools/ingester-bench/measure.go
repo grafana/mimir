@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -71,6 +72,20 @@ func accounting(m map[string]float64) map[string]float64 {
 		}
 	}
 	return out
+}
+
+// headSnapshotBytes is the size of the seriesstore engine's head snapshots in an ingester's directory, the last each
+// tenant wrote: one being written is a temporary file until it's whole.
+func headSnapshotBytes(dir string) float64 {
+	// The tenants' TSDB directories are in the one startIngester sets, the engine's store and its snapshot in each.
+	paths, _ := filepath.Glob(filepath.Join(dir, "tsdb", "*", "seriesstore", "snapshot"))
+	total := 0.0
+	for _, path := range paths {
+		if info, err := os.Stat(path); err == nil {
+			total += float64(info.Size())
+		}
+	}
+	return total
 }
 
 // firstIntervalMs is the longest scrape interval of the world's metrics: every series has a sample in the first one.

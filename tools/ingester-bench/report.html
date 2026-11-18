@@ -471,6 +471,8 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; background:
   ].concat(res[0].head_snapshot_rounds || res[1].head_snapshot_rounds ? [
     // Since the ingesters started, as the snapshots mostly run outside of the window.
     ['Head snapshot rounds', 'head_snapshot_rounds', fmt.count], ['Head snapshot round (avg)', 'head_snapshot_round_seconds_avg', fmt.seconds],
+    // But their size, at the window's end.
+    ['Head snapshot size', 'head_snapshot_bytes', fmt.bytes],
     ['Head snapshots', 'head_snapshots', fmt.count], ['Head snapshot failures', 'head_snapshot_failures', fmt.count],
   ] : []).map(([label, key, f]) => [label, f(res[0][key] || 0), f(res[1][key] || 0), ratioText(ratio(res[0][key] || 0, res[1][key] || 0))]);
   table('resources', ['Measure', 'A', 'B', 'B/A'], [['Replay', fmt.seconds(R.replay_seconds[0]), fmt.seconds(R.replay_seconds[1]), ratioText(ratio(R.replay_seconds[0], R.replay_seconds[1]))]].concat(resRows(res)));
