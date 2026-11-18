@@ -55,8 +55,22 @@ func TestEngineRestoresPreviousSnapshotLayout(t *testing.T) {
 		require.Len(t, exemplars, 1)
 		require.Len(t, exemplars[0].Exemplars, 1)
 		require.Equal(t, "abc", exemplars[0].Exemplars[0].Labels.Get("trace_id"))
+		// The layout has no native metadata: the engine starts without any, and covers nothing yet.
+		all := [][]*promlabels.Matcher{{promlabels.MustNewMatcher(promlabels.MatchRegexp, "__name__", ".+")}}
+		metadataSeries, _, err := e.NativeMetricMetadata(t.Context(), all, 0)
+		require.NoError(t, err)
+		require.Empty(t, metadataSeries)
+		resourceSeries, _, err := e.NativeResources(t.Context(), all, math.MinInt64, math.MaxInt64, 0)
+		require.NoError(t, err)
+		require.Empty(t, resourceSeries)
+		require.Equal(t, int64(math.MaxInt64), e.NativeMetricMetadataCoverageStart())
+		require.Equal(t, int64(math.MaxInt64), e.NativeResourcesCoverageStart())
 		if round == 0 {
 			require.NoError(t, e.Close())
+			// Without native metadata, the engine writes the plain layout, which builds without the native one read.
+			written, err := os.ReadFile(filepath.Join(dir, storeDirName, snapshotFileName))
+			require.NoError(t, err)
+			require.Equal(t, snapshotMagic, written[:len(snapshotMagic)])
 			e, err = OpenEngine(dir, "tenant", opts)
 			require.NoError(t, err)
 		}

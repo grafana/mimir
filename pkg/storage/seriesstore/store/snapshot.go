@@ -60,6 +60,8 @@ type Restored struct {
 	Checkpoint []byte
 	// The engine's state the snapshot was written with, nil when it was written without one.
 	EngineState []byte
+	// The engine's native metadata, nil in the plain layout.
+	Native *nativeSnapshotImage
 }
 
 // snapshotPlan is what a head snapshot holds beside the store, and how it is written.
@@ -67,6 +69,8 @@ type snapshotPlan struct {
 	offsets     []SnapshotOffset
 	checkpoint  []byte
 	engineState []byte
+	// The engine's native metadata, nil without any: the plain layout.
+	native *nativeSnapshot
 	// Called between batches of series, with no shard locked; an error aborts the snapshot.
 	pace func() error
 }
@@ -88,6 +92,8 @@ type snapshotWriter struct {
 	// Reused for each series, which a snapshot would otherwise allocate for.
 	metas    []ChunkMeta
 	appender []byte
+	// Writes each series' native metadata after it, nil in the plain layout.
+	native *nativeSnapshot
 }
 
 func newSnapshotWriter(out io.Writer) *snapshotWriter {
@@ -240,8 +246,12 @@ func (s *Store) writeSnapshot(plan snapshotPlan) error {
 		return fmt.Errorf("create head snapshot %s: %w", temporary, err)
 	}
 	w := newSnapshotWriter(file)
-	w.unchecksummed(snapshotMagic)
+	w.native = plan.native
+	w.unchecksummed(plan.magic())
 	err = s.writeSnapshotBody(w, plan)
+	if err == nil && plan.native != nil {
+		err = plan.native.writeEngine(w)
+	}
 	if err == nil {
 		s.exemplarsLock.Lock()
 		err = writeExemplars(w, s.tenantID, s.exemplars)
@@ -362,6 +372,9 @@ func writeTenantSeries(w *snapshotWriter, shard *shardState, pace func() error) 
 			}
 			if err = w.u8(1); err == nil {
 				err = writeSeries(w, &entries[position])
+			}
+			if err == nil && w.native != nil {
+				err = w.native.writeSeries(w, shard.tenant.Load(), &entries[position])
 			}
 			position++
 			written++
@@ -575,6 +588,8 @@ type snapshotReader struct {
 	version int
 	// The names of the ids the snapshot's labels use, by the ids of the process that wrote it.
 	names []string
+	// What the native layout has besides the plain one's, nil in the plain layout.
+	native *nativeSnapshotImage
 }
 
 func (r *snapshotReader) ReadByte() (byte, error) {
@@ -823,6 +838,7 @@ func readSnapshot(file *os.File, chunkDir, tenantID string) (restored *Restored,
 	if _, err := io.ReadFull(r.r, magic[:]); err != nil {
 		return nil, err
 	}
+	native := plainMagic(magic[:])
 	var version int
 	switch string(magic[:]) {
 	case string(snapshotMagic):
@@ -841,6 +857,11 @@ func readSnapshot(file *os.File, chunkDir, tenantID string) (restored *Restored,
 		version = 2
 	default:
 		return nil, errors.New("head snapshot has invalid magic")
+	}
+	if native {
+		if r.native, err = newNativeSnapshotImage(version); err != nil {
+			return nil, err
+		}
 	}
 	r.version = version
 	legacy := version == 2
@@ -900,6 +921,11 @@ func readSnapshot(file *os.File, chunkDir, tenantID string) (restored *Restored,
 		}
 		images[index] = image
 	}
+	if r.native != nil {
+		if err := r.native.readEngine(r); err != nil {
+			return nil, err
+		}
+	}
 	var restoredExemplars map[string]*exemplars.TenantExemplars[labels.Labels]
 	if !legacy {
 		if restoredExemplars, err = readExemplars(r); err != nil {
@@ -947,7 +973,7 @@ func readSnapshot(file *os.File, chunkDir, tenantID string) (restored *Restored,
 	}
 	store := fromShards(tenantID, shards)
 	store.exemplars = restoredExemplars[tenantID]
-	return &Restored{Store: store, Offsets: offsets, Checkpoint: checkpoint, EngineState: engineState}, nil
+	return &Restored{Store: store, Offsets: offsets, Checkpoint: checkpoint, EngineState: engineState, Native: r.native}, nil
 }
 
 // reopenCold opens the cold blocks a snapshot lists and removes anything else, like the chunk
@@ -1163,6 +1189,11 @@ func readShard(r *snapshotReader, version int) (shardImage, error) {
 				}
 				if err := readSeries(r, version, tenantID, t, &image); err != nil {
 					return image, err
+				}
+				if r.native != nil {
+					if err := r.native.readSeries(r, t); err != nil {
+						return image, err
+					}
 				}
 			}
 			if err := readTenantState(r, version, t); err != nil {

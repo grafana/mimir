@@ -887,7 +887,8 @@ func (e *Engine) observeResourceLocked(t *tenant, series *Series, o *resourceObs
 	if o == nil {
 		return
 	}
-	if series.resourceID == 0 {
+	// A series' first observation, or any once the coverage started again.
+	if series.resourceID == 0 || e.resourcesObservedFrom.Load() == math.MaxInt64 {
 		e.resourceObservedAt(timestamp)
 	}
 	id := o.identity

@@ -5,12 +5,14 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,6 +26,8 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
@@ -51,6 +55,7 @@ type nativeInfoHarness struct {
 	tenant        string
 	distributor   *distributor.Distributor
 	limits        *validation.Overrides
+	tenantLimits  *harnessTenantLimits
 	queryable     storage.Queryable
 	engine        promql.QueryEngine
 	nativeMetrics *querier.NativeTargetInfoMetrics
@@ -66,6 +71,23 @@ type harnessIngester struct {
 	cfg      Config
 	ingester *Ingester
 	server   *grpc.Server
+}
+
+// harnessTenantLimits are the tenant's limits, which a fixture may change partway, as a runtime config reload does.
+type harnessTenantLimits struct {
+	tenant string
+	limits atomic.Pointer[validation.Limits]
+}
+
+func (l *harnessTenantLimits) ByUserID(userID string) *validation.Limits {
+	if userID != l.tenant {
+		return nil
+	}
+	return l.limits.Load()
+}
+
+func (l *harnessTenantLimits) AllByUserID() map[string]*validation.Limits {
+	return map[string]*validation.Limits{l.tenant: l.limits.Load()}
 }
 
 // startIngester starts an ingester of cfg, with the data in cfg's directories, behind a gRPC server on a new port.
@@ -109,7 +131,9 @@ func newNativeInfoHarness(t testing.TB, engine string, partitions int, limits va
 	const topic = "mimir"
 	ctx := context.Background()
 	logger := log.NewNopLogger()
-	h := &nativeInfoHarness{tenant: "tenant", limits: validation.NewOverrides(limits, nil), reg: prometheus.NewRegistry(), lookbackDelta: 5 * time.Minute}
+	tenantLimits := &harnessTenantLimits{tenant: "tenant"}
+	tenantLimits.limits.Store(&limits)
+	h := &nativeInfoHarness{tenant: "tenant", limits: validation.NewOverrides(limits, tenantLimits), tenantLimits: tenantLimits, reg: prometheus.NewRegistry(), lookbackDelta: 5 * time.Minute}
 
 	_, kafkaAddr := testkafka.CreateCluster(t, int32(partitions), topic)
 	ringKV, closeRing := consul.NewInMemoryClient(ring.GetCodec(), logger, nil)
@@ -208,6 +232,22 @@ func newNativeInfoHarness(t testing.TB, engine string, partitions int, limits va
 	h.engine, err = streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 	return h
+}
+
+// setNativeResources turns the tenant's native resources on or off, for the pushes from then on: the distributor gives
+// the series their resources only while they're on, and the ingesters keep them only then.
+func (h *nativeInfoHarness) setNativeResources(enabled bool) {
+	limits := *h.tenantLimits.limits.Load()
+	limits.NativeResourcesEnabled = enabled
+	h.tenantLimits.limits.Store(&limits)
+}
+
+// nativeResourcesCoverageStart is the coverage start of the native resources of the series named name that native
+// info() gets, the latest of the ingesters', once they have every push.
+func (h *nativeInfoHarness) nativeResourcesCoverageStart(t testing.TB, name string) int64 {
+	res, err := h.distributor.NativeResources(h.queryContext(true), [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, name)}}, math.MinInt64, math.MaxInt64, 0, false)
+	require.NoError(t, err)
+	return res.CoverageStart
 }
 
 // pushOTLP pushes the metrics as an OTLP request, which the distributor converts with the tenant's settings: its

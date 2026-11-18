@@ -280,7 +280,7 @@ func TestNativeResourcesMatchersRangeAndLimit(t *testing.T) {
 }
 
 // With the switch off, nothing is kept; metric metadata and resources are switched apart; a reopened engine, restored
-// from its snapshot, starts without resources, and their coverage starts again.
+// from its snapshot, keeps its resources, and their coverage start.
 func TestResourcesDisabledSeparatelyAndAfterReopening(t *testing.T) {
 	dir := t.TempDir()
 	l := promlabels.FromStrings(model.MetricNameLabel, "up")
@@ -311,8 +311,8 @@ func TestResourcesDisabledSeparatelyAndAfterReopening(t *testing.T) {
 	e = open()
 	t.Cleanup(func() { _ = e.Close() })
 	require.True(t, e.Restored())
-	require.Empty(t, resourceVersionsOf(t, e, l))
-	require.Equal(t, int64(math.MaxInt64), e.resourcesObservedFrom.Load())
+	require.Equal(t, []stringVersion{testStringVersion(5_000, "frontend", "node-1")}, stringVersionsOf(t, e, l))
+	require.EqualValues(t, 5_000, e.resourcesObservedFrom.Load())
 }
 
 // The reverse index is kept up to date from the engine's open, so that lookups made while series are appended lose

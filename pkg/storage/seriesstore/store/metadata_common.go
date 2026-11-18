@@ -85,9 +85,14 @@ func keptMetricMetadata(m metadata.Metadata, stats *metricMetadataStats) (metada
 	return m, true
 }
 
-// SetNativeMetricMetadata sets whether the series' own metric metadata is kept, from the next batch on.
+// SetNativeMetricMetadata sets whether the series' own metric metadata is kept, from the next batch on. Off, the
+// coverage starts again, with the first observation once it's on: nothing is observed in between, which the versions
+// from before would otherwise be served over. The runs from before stay, and age out with the head.
 func (e *Engine) SetNativeMetricMetadata(enabled bool) {
 	e.nativeMetadata.Store(enabled)
+	if !enabled && e.metadataObservedFrom.Load() != math.MaxInt64 {
+		e.metadataObservedFrom.Store(math.MaxInt64)
+	}
 }
 
 // SetMetricMetadataChangeLimit sets how many changes of its metadata a series may have in a window of sample time of

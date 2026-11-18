@@ -546,7 +546,8 @@ func (m *metadataMemo) release() {
 // observeMetadataLocked records that series has the value id from timestamp on, for a caller holding its shard's lock
 // and, through memo, a reference to id.
 func (e *Engine) observeMetadataLocked(t *tenant, series *Series, _ *metadataMemo, id uint32, timestamp int64) {
-	if series.metadataID == 0 {
+	// A series' first observation, or any once the coverage started again.
+	if series.metadataID == 0 || e.metadataObservedFrom.Load() == math.MaxInt64 {
 		for observed := e.metadataObservedFrom.Load(); timestamp < observed && !e.metadataObservedFrom.CompareAndSwap(observed, timestamp); {
 			observed = e.metadataObservedFrom.Load()
 		}

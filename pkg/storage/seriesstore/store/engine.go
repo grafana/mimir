@@ -203,6 +203,9 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 				state = restored.EngineState
 			}
 			err := e.adoptRestored()
+			if err == nil && restored.Native != nil {
+				err = e.adoptRestoredNative(restored.Native)
+			}
 			if err == nil && state != nil {
 				err = e.restoreState(state)
 			}
@@ -342,7 +345,7 @@ func (e *Engine) Close() error {
 	defer e.compactionLock.Unlock()
 	var err error
 	if e.dir != "" {
-		err = e.store.writeSnapshot(snapshotPlan{engineState: e.encodeState()})
+		err = e.store.writeSnapshot(snapshotPlan{engineState: e.encodeState(), native: e.nativeSnapshot()})
 	}
 	return errors.Join(err, e.store.Close())
 }
@@ -367,7 +370,7 @@ func (e *Engine) Checkpoint(ctx context.Context, checkpoint []byte, duty float64
 		return errEngineClosed
 	}
 	started := time.Now()
-	return e.store.writeSnapshot(snapshotPlan{checkpoint: checkpoint, engineState: e.encodeState(), pace: func() error {
+	return e.store.writeSnapshot(snapshotPlan{checkpoint: checkpoint, engineState: e.encodeState(), native: e.nativeSnapshot(), pace: func() error {
 		if duty > 0 && duty < 1 {
 			worked := time.Since(started)
 			timer := time.NewTimer(time.Duration(float64(worked) * (1 - duty) / duty))

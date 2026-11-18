@@ -49,9 +49,13 @@ const (
 	ResourceDictionaryLimit
 )
 
-// SetNativeResources sets whether the series' resources are kept, from the next batch on.
+// SetNativeResources sets whether the series' resources are kept, from the next batch on. Off, the coverage starts
+// again, like SetNativeMetricMetadata's.
 func (e *Engine) SetNativeResources(enabled bool) {
 	e.nativeResources.Store(enabled)
+	if !enabled && e.resourcesObservedFrom.Load() != math.MaxInt64 {
+		e.resourcesObservedFrom.Store(math.MaxInt64)
+	}
 }
 
 // ResourceVersion is a series' resource from a time on.

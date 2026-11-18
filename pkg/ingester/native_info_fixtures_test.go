@@ -147,15 +147,17 @@ func TestNativeInfo_Fixtures(t *testing.T) {
 			queries: []string{`info(requests)`},
 			from:    0, to: 9, step: 15 * time.Second,
 		},
-		// Coverage boundaries: every ingester restarts partway, and the seriesstore engine doesn't keep native resources
-		// over a restart, so the lookup's coverage starts after it. Before it, the stored target_info is in force, and the
-		// lookback bridges from its last sample to the first that the restarted ingesters see the resource with.
+		// Every ingester restarts partway, and keeps its native resources over the restart: the lookup's coverage still
+		// starts at the first push, so native info() has its own versions across the restart, without the stored
+		// target_info.
 		"a reopened engine partway": {
 			push: func(t testing.TB, h *nativeInfoHarness, at func(float64) time.Time) {
 				everyMinute(0, 4, func(m int) { h.pushOTLP(t, otlpGauge(at(float64(m)), api("a", "node-1"), 0, 1)) })
+				require.Equal(t, at(0).UnixMilli(), h.nativeResourcesCoverageStart(t, "requests"))
 				for partition := range h.ingesters {
 					h.restart(t, partition)
 				}
+				require.Equal(t, at(0).UnixMilli(), h.nativeResourcesCoverageStart(t, "requests"), "the restart keeps the coverage start")
 				everyMinute(5, 9, func(m int) {
 					host := "node-1"
 					if m >= 7 {
@@ -163,6 +165,26 @@ func TestNativeInfo_Fixtures(t *testing.T) {
 					}
 					h.pushOTLP(t, otlpGauge(at(float64(m)), api("a", host), 0, 1))
 				})
+			},
+			queries: []string{`info(requests)`},
+			from:    0, to: 9, step: 15 * time.Second,
+		},
+		// Coverage boundaries: the tenant's native resources go on partway, as an experiment tenant's do, so the lookup's
+		// coverage starts with the first push after. Before it, the stored target_info is in force, and the lookback
+		// bridges from its last sample to the first that the ingesters see the resource with.
+		"native resources turned on partway": {
+			push: func(t testing.TB, h *nativeInfoHarness, at func(float64) time.Time) {
+				h.setNativeResources(false)
+				everyMinute(0, 4, func(m int) { h.pushOTLP(t, otlpGauge(at(float64(m)), api("a", "node-1"), 0, 1)) })
+				h.setNativeResources(true)
+				everyMinute(5, 9, func(m int) {
+					host := "node-1"
+					if m >= 7 {
+						host = "node-2"
+					}
+					h.pushOTLP(t, otlpGauge(at(float64(m)), api("a", host), 0, 1))
+				})
+				require.Equal(t, at(5).UnixMilli(), h.nativeResourcesCoverageStart(t, "requests"), "the coverage starts partway")
 			},
 			queries: []string{`info(requests)`},
 			from:    0, to: 9, step: 15 * time.Second,

@@ -226,7 +226,7 @@ func TestNativeMetricMetadataMatchersAndLimit(t *testing.T) {
 }
 
 // With the switch off, a record's or a batch's metadata isn't kept, as the ingester gives the appender none then; a
-// reopened engine, restored from its snapshot, starts without any.
+// reopened engine, restored from its snapshot, keeps what it had.
 func TestMetricMetadataDisabledAndAfterReopening(t *testing.T) {
 	dir := t.TempDir()
 	l := promlabels.FromStrings(model.MetricNameLabel, "up")
@@ -253,8 +253,8 @@ func TestMetricMetadataDisabledAndAfterReopening(t *testing.T) {
 	e = open()
 	t.Cleanup(func() { _ = e.Close() })
 	require.True(t, e.Restored())
-	require.Empty(t, versionsOf(t, e, up))
-	require.Equal(t, int64(math.MaxInt64), e.metadataObservedFrom.Load())
+	require.Equal(t, []MetricMetadataVersion{{EffectiveFrom: 4_000, Metadata: metadata.Metadata{Type: model.MetricTypeGauge, Help: "Up."}}}, versionsOf(t, e, up)[l.String()])
+	require.EqualValues(t, 4_000, e.metadataObservedFrom.Load())
 }
 
 func histogramAt(timestamp int64, buckets uint32) mimirpb.Histogram {
