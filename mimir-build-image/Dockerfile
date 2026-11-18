@@ -30,8 +30,7 @@ ENV GOLANGCI_LINT_VERSION=v2.14.0
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go install -ldflags="-X main.version=${GOLANGCI_LINT_VERSION#v}" github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}
 
-# Pin checklocks to a pseudo-version from gVisor's go branch; update this
-# manually as Renovate doesn't resolve it correctly.
+# renovate: datasource=custom.gvisor-go depName=gvisor.dev/gvisor
 ENV CHECKLOCKS_VERSION=v0.0.0-20261112062828-1ac1e607b563
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go install gvisor.dev/gvisor/tools/checklocks/cmd/checklocks@${CHECKLOCKS_VERSION}
