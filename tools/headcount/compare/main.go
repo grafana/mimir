@@ -217,6 +217,9 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 			}
 			level.Warn(logger).Log("msg", "picking targets failed; skipping the round", "err", err)
 		} else {
+			for _, class := range targets.facetRefusals {
+				m.refusals.WithLabelValues(queryFacetProbe, sideEstimate, class).Inc()
+			}
 			cands := candidates(cfg.queries, targets, cfg.windows.windows(t), pcfg, rng)
 			rng.Shuffle(len(cands), func(i, j int) { cands[i], cands[j] = cands[j], cands[i] })
 			if cfg.burst > 0 && (lastBurst.IsZero() || t.Sub(lastBurst) >= cfg.burstInterval) {

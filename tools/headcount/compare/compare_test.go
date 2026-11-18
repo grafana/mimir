@@ -863,6 +863,7 @@ func TestRunFacetProbeRefused(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, sum.mismatched)
 	assert.Equal(t, 3, probes, "one refused probe per name")
+	assert.Equal(t, 3.0, counterSum(m.refusals, map[string]string{"query": queryFacetProbe, "side": sideEstimate, "class": classBadRequest}), "each skipped name is a refusal")
 	assert.Equal(t, 3.0, pairsCount(m, queryMetricTotal, outcomePass, classExact))
 	assert.Equal(t, 3, sum.compared)
 	assert.Equal(t, 0.0, pairsCount(m, queryMetricNotEqual, outcomePass, classExact)+pairsCount(m, queryMetricNotEqual, outcomePass, classEmpty))

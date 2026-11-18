@@ -97,6 +97,8 @@ type targets struct {
 	matcherValues []string
 	// facets holds, for each name, the label its matcher queries filter on.
 	facets map[string]facet
+	// facetRefusals holds the refusal class of each name whose facet probe failed, so its skipped matcher queries show in the refusals counter.
+	facetRefusals []string
 	// tenantSeries is the tenant's series over the target window, the total of its name table.
 	tenantSeries int64
 }
@@ -160,7 +162,9 @@ func pickTargets(ctx context.Context, c *client, cfg targetConfig, w window, log
 			continue
 		}
 		if f, ok, err := pickFacet(ctx, c, name, t.labels[name], w, next); err != nil {
-			level.Warn(logger).Log("msg", "picking a facet failed; skipping the matcher queries of this name", "name", name, "err", err)
+			class := classifyRefusal(sideEstimate, err)
+			t.facetRefusals = append(t.facetRefusals, class)
+			level.Warn(logger).Log("msg", "picking a facet failed; skipping the matcher queries of this name", "name", name, "class", class, "err", err)
 		} else if ok {
 			t.facets[name] = f
 		}
