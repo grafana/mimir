@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -26,12 +27,14 @@ import (
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/matcher/compat"
+	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/term"
 
+	mimiram "github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/mimirtool/client"
 	"github.com/grafana/mimir/pkg/mimirtool/printer"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -214,7 +217,34 @@ func (a *AlertmanagerCommand) readAlertManagerConfig() (string, map[string]strin
 		return "", nil, err
 	}
 
+	if err := validateAlertmanagerTemplates(templates); err != nil {
+		return "", nil, err
+	}
+
 	return cfg, templates, nil
+}
+
+// validateAlertmanagerTemplates checks that the template files can be parsed, using the same
+// template functions that Mimir's Alertmanager makes available.
+func validateAlertmanagerTemplates(templates map[string]string) error {
+	tmpl, err := template.FromGlobs([]string{}, mimiram.WithCustomFunctions(""))
+	if err != nil {
+		return err
+	}
+
+	// Parse in a stable order so that errors are reproducible.
+	names := make([]string, 0, len(templates))
+	for name := range templates {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		if err := tmpl.Parse(strings.NewReader(templates[name])); err != nil {
+			return errors.Wrapf(err, "invalid template file %s", name)
+		}
+	}
+	return nil
 }
 
 func (a *AlertmanagerCommand) readAlertManagerConfigTemplates() (map[string]string, error) {
