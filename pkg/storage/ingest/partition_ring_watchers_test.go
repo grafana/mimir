@@ -61,7 +61,10 @@ func TestPartitionRingWatchers_Enabled(t *testing.T) {
 	assert.Equal(t, 2, w.PartitionRing(1).PartitionsCount())
 	assert.Equal(t, 3, w.PartitionRing(2).PartitionsCount())
 
-	assert.Same(t, w.Watcher(1).PartitionRing(), w.PartitionRing(1))
+	// A watcher replaces its ring in the background after it starts. Thus compare the
+	// ring content, not the ring pointer.
+	assert.Same(t, w.Watcher(1), w.All()[1])
+	assert.Equal(t, 2, w.Watcher(1).PartitionRing().PartitionsCount())
 }
 
 func TestPartitionRingWatchers_DoesNotPanicWithRealRegistererAndMultipleCompartments(t *testing.T) {
