@@ -8,18 +8,24 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/regexp"
+	"github.com/go-logfmt/logfmt"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
 
-// stripSlogFields removes slog-added fields (caller, time) from logfmt lines so
-// tests can compare against expected output that was written for plain go-kit logging.
-var slogFieldRe = regexp.MustCompile(`\s*(caller|time)=\S+`)
-
-func stripSlogFields(line string) string {
-	return strings.TrimSpace(slogFieldRe.ReplaceAllString(line, ""))
+func decodeLogFields(t *testing.T, line string) map[string]string {
+	t.Helper()
+	dec := logfmt.NewDecoder(strings.NewReader(line))
+	require.True(t, dec.ScanRecord(), "missing log record: %q", line)
+	fields := map[string]string{}
+	for dec.ScanKeyval() {
+		key := string(dec.Key())
+		require.NotContains(t, fields, key, "duplicate field in %q", line)
+		fields[key] = string(dec.Value())
+	}
+	require.NoError(t, dec.Err())
+	return fields
 }
 
 func TestValidateMatchersInConfigDesc(t *testing.T) {
@@ -148,16 +154,21 @@ inhibit_rules:
 			buf := bytes.Buffer{}
 			validateMatchersInConfigDesc(log.NewLogfmtLogger(&buf), "test", test.config)
 			allLines := strings.Split(strings.Trim(buf.String(), "\n"), "\n")
-			// Filter out the SlogFromGoKit probe line.
-			var lines []string
-			for _, l := range allLines {
-				if !strings.Contains(l, "probe=") {
-					lines = append(lines, stripSlogFields(l))
+			var records []map[string]string
+			for _, line := range allLines {
+				fields := decodeLogFields(t, line)
+				// Skip the adapter's "probe" record so adapter initialization does not affect the expected sequence.
+				// Ignore "caller" and "time" because source locations and timestamps can change between runs.
+				if _, ok := fields["probe"]; ok {
+					continue
 				}
+				delete(fields, "caller")
+				delete(fields, "time")
+				records = append(records, fields)
 			}
-			require.Equal(t, len(test.expected), len(lines))
-			for i := range lines {
-				require.Equal(t, test.expected[i], lines[i])
+			require.Len(t, records, len(test.expected))
+			for i, line := range test.expected {
+				require.Equal(t, decodeLogFields(t, line), records[i], "log record %d", i)
 			}
 		})
 	}

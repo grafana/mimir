@@ -76,7 +76,7 @@ func TestSlogFromGoKit(t *testing.T) {
 		slogger := SlogFromGoKit(mLogger)
 
 		for _, l := range levels {
-			mLogger.On("Log", level.Key(), l, "caller", mock.AnythingOfType("string"), "time", mock.AnythingOfType("time.Time"), "msg", "test", "attr", slog.StringValue("value")).Times(1).Return(nil)
+			mLogger.On("Log", level.Key(), l, "caller", mock.AnythingOfType("string"), "time", mock.AnythingOfType("time.Time"), "msg", "test", "attr", "value").Times(1).Return(nil)
 			attrs := []any{"attr", "value"}
 			switch l {
 			case level.DebugValue():
