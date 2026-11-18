@@ -1033,9 +1033,10 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-// TestRunEstimateOnly: with -estimate-only, drawn and scenario pairs send their estimate and no truth, and an answered estimate counts as compared.
+// TestRunEstimateOnly: with -estimate-only, drawn and scenario pairs send their estimate and no truth, every estimate goes without strong read consistency, and an answered estimate counts as compared.
 func TestRunEstimateOnly(t *testing.T) {
 	f, srv := newFakeFrontend(t, testSeries()...)
+	f.eventualEstimates = true
 	truths := 0
 	f.truthHook = func(string, time.Duration, map[string]int64) int {
 		truths++

@@ -76,7 +76,7 @@ func (c *config) register(f *flag.FlagSet) {
 	f.Uint64Var(&c.seed, "seed", 0, "seed for drawing targets and pairs; 0 uses the time")
 	f.IntVar(&c.burst, "burst", 0, "estimates sent at once, without their truth, to fill the count limits of the store-gateways and ingesters; 0 sends no burst")
 	f.DurationVar(&c.burstInterval, "burst-interval", time.Hour, "time between bursts; the first round sends one")
-	f.BoolVar(&c.estimateOnly, "estimate-only", false, "send only the estimate of each pair, without its PromQL truth, to measure the estimate's latency and cost apart from PromQL's; nothing is compared")
+	f.BoolVar(&c.estimateOnly, "estimate-only", false, "send only the estimate of each pair, without its PromQL truth, to measure the estimate's latency and cost apart from PromQL's, sent without X-Read-Consistency: strong as a dashboard sends them; nothing is compared")
 	f.StringVar(&c.scenarioPath, "scenario", "", "YAML file of hand-written pairs, each run every round next to the drawn ones; see the README")
 }
 
@@ -192,7 +192,7 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 	}
 	rng := rand.New(rand.NewPCG(seed, seed))
 	r := &runner{
-		client:        &client{baseURL: strings.TrimRight(cfg.address, "/"), tenant: cfg.tenant, http: &http.Client{Timeout: cfg.timeout}},
+		client:        &client{baseURL: strings.TrimRight(cfg.address, "/"), tenant: cfg.tenant, http: &http.Client{Timeout: cfg.timeout}, eventualEstimates: cfg.estimateOnly},
 		cfg:           cfg.classify,
 		m:             m,
 		logger:        logger,

@@ -35,6 +35,9 @@ type fakeFrontend struct {
 	// spans holds the samples of some series, by their labels' String. The estimate counts such a series when its one chunk, from its first sample to its last or its staleness marker, overlaps the window; PromQL counts it when a sample other than the marker is in the range.
 	spans map[string]seriesSpan
 
+	// eventualEstimates expects estimates without X-Read-Consistency: strong.
+	eventualEstimates bool
+
 	mu              sync.Mutex
 	estimates       int
 	labelValueCalls int
@@ -90,7 +93,11 @@ func (f *fakeFrontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	switch r.URL.Path {
 	case "/prometheus/api/v1/cardinality/estimate":
-		require.Equal(f.t, querierapi.ReadConsistencyStrong, r.Header.Get(querierapi.ReadConsistencyHeader))
+		wantConsistency := querierapi.ReadConsistencyStrong
+		if f.eventualEstimates {
+			wantConsistency = ""
+		}
+		require.Equal(f.t, wantConsistency, r.Header.Get(querierapi.ReadConsistencyHeader))
 		f.estimate(w, r)
 	case "/prometheus/api/v1/query":
 		require.Equal(f.t, querierapi.ReadConsistencyStrong, r.Header.Get(querierapi.ReadConsistencyHeader))
