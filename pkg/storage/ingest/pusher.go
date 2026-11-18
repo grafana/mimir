@@ -191,6 +191,7 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 	for r := range recordsChannel {
 		if r.err != nil {
 			level.Error(spanlogger.FromContext(ctx, c.logger)).Log("msg", "failed to parse write request; skipping", "err", r.err)
+			c.metrics.storagePusherMetrics.skippedMalformedRecords.Inc()
 			continue
 		}
 
@@ -277,6 +278,7 @@ func (c PusherConsumer) consumeRecordsOf(ctx context.Context, records iter.Seq[*
 		metrics.processingTime.WithLabelValues("record").Observe(time.Since(start).Seconds())
 		if errors.Is(err, ErrMalformedRecord) {
 			level.Error(spanlogger.FromContext(ctx, c.logger)).Log("msg", "failed to parse write request; skipping", "err", err)
+			metrics.skippedMalformedRecords.Inc()
 			continue
 		}
 		// Client errors are logged and the record is skipped, as the storage writers do.

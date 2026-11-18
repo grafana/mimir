@@ -81,6 +81,8 @@ func TestPusherConsumer(t *testing.T) {
 		expErr      string
 
 		expectedLogLines []string
+		// expectedSkippedRecords is the number of records skipped because they couldn't be decoded.
+		expectedSkippedRecords int
 	}{
 		"single record": {
 			records: []testRecord{
@@ -119,6 +121,7 @@ func TestPusherConsumer(t *testing.T) {
 			expectedLogLines: []string{
 				"level=error msg=\"failed to parse write request; skipping\" err=\"parsing ingest consumer write request: proto: WriteRequest: illegal tag 0 (wire type 0)\"",
 			},
+			expectedSkippedRecords: 1,
 		},
 		"mixed record versions": {
 			records: []testRecord{
@@ -148,6 +151,7 @@ func TestPusherConsumer(t *testing.T) {
 			expectedLogLines: []string{
 				"level=error msg=\"failed to parse write request; skipping\" err=\"parsing ingest consumer write request: received a record with an unsupported version: 101, max supported version: 2\"",
 			},
+			expectedSkippedRecords: 1,
 		},
 		"failed processing of record": {
 			records: []testRecord{
@@ -246,7 +250,8 @@ func TestPusherConsumer(t *testing.T) {
 			})
 
 			logs := &concurrency.SyncBuffer{}
-			metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+			reg := prometheus.NewPedanticRegistry()
+			metrics := NewPusherConsumerMetrics(reg)
 			c := NewPusherConsumer(pusher, KafkaConfig{}, metrics, log.NewLogfmtLogger(logs))
 			err := c.Consume(context.Background(), kafkaRecordsAll(t, tc.records))
 			if tc.expErr == "" {
@@ -261,6 +266,13 @@ func TestPusherConsumer(t *testing.T) {
 				logLines = removeUnimportantLogFields(logLines)
 			}
 			assert.Equal(t, tc.expectedLogLines, logLines)
+
+			// The counter is exported in every case, at zero when nothing was skipped, so that an alert on its
+			// absence only fires for a process without it.
+			series, err := testutil.GatherAndCount(reg, "cortex_ingest_storage_reader_records_skipped_total")
+			require.NoError(t, err)
+			assert.Equal(t, 1, series)
+			assert.Equal(t, float64(tc.expectedSkippedRecords), testutil.ToFloat64(metrics.storagePusherMetrics.skippedMalformedRecords))
 		})
 	}
 }
@@ -1828,7 +1840,8 @@ func TestPusherConsumer_PushesRecordsToARecordPusher(t *testing.T) {
 					return nil
 				},
 			}
-			c := NewPusherConsumer(pusher, KafkaConfig{IngestionConcurrencyMax: concurrency}, NewPusherConsumerMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
+			metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+			c := NewPusherConsumer(pusher, KafkaConfig{IngestionConcurrencyMax: concurrency}, metrics, log.NewNopLogger())
 			err := c.Consume(context.Background(), kafkaRecordsAll(t, records))
 			require.ErrorContains(t, err, "disk full")
 			require.Equal(t, []string{"first", "client error", "server error"}, byTenant["t1"])
@@ -1838,6 +1851,12 @@ func TestPusherConsumer_PushesRecordsToARecordPusher(t *testing.T) {
 				// Another tenant's records may be pushed or not when the error stops the batch, in order.
 				require.Contains(t, [][]string{nil, {"malformed"}, {"malformed", "fourth"}}, byTenant["t2"])
 			}
+			// The malformed record is counted as skipped when it was pushed, which depends on the goroutines above.
+			skipped := 0.0
+			if slices.Contains(byTenant["t2"], "malformed") {
+				skipped = 1
+			}
+			require.Equal(t, skipped, testutil.ToFloat64(metrics.storagePusherMetrics.skippedMalformedRecords))
 		})
 	}
 

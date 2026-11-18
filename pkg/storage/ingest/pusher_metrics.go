@@ -44,6 +44,8 @@ type storagePusherMetrics struct {
 	clientErrRequests    prometheus.Counter
 	serverErrRequests    prometheus.Counter
 	totalRequests        prometheus.Counter
+	// skippedMalformedRecords counts the records the reader couldn't decode and skipped, whose samples are lost.
+	skippedMalformedRecords prometheus.Counter
 }
 
 // newStoragePusherMetrics creates a new storagePusherMetrics instance.
@@ -52,6 +54,10 @@ func newStoragePusherMetrics(reg prometheus.Registerer) *storagePusherMetrics {
 		Name: "cortex_ingest_storage_reader_requests_failed_total",
 		Help: "Number of write requests which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.",
 	}, []string{"cause"})
+	skippedRecordsCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_ingest_storage_reader_records_skipped_total",
+		Help: "Number of records skipped without being ingested, by reason. A malformed record couldn't be decoded, and its samples are lost.",
+	}, []string{"reason"})
 
 	return &storagePusherMetrics{
 		batchingQueueMetrics: newBatchingQueueMetrics(reg),
@@ -82,6 +88,9 @@ func newStoragePusherMetrics(reg prometheus.Registerer) *storagePusherMetrics {
 		}),
 		clientErrRequests: errRequestsCounter.WithLabelValues("client"),
 		serverErrRequests: errRequestsCounter.WithLabelValues("server"),
+		// Created here, so a reader that skipped nothing exports a zero rather than no series: an alert on the
+		// counter's absence then tells a process without it from one that skipped nothing.
+		skippedMalformedRecords: skippedRecordsCounter.WithLabelValues("malformed"),
 		totalRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_requests_total",
 			Help: "Number of attempted write requests after batching records from Kafka.",
