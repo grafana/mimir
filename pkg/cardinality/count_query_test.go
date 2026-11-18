@@ -34,8 +34,6 @@ func TestCounterForQuery(t *testing.T) {
 		want      string
 	}{
 		"an empty window":            {q: cardinalitypb.CountQuery{StartMs: 10, EndMs: 10}, want: "must be after its start"},
-		"negative max_index_bytes":   {q: cardinalitypb.CountQuery{EndMs: 10, MaxIndexBytes: -1}, want: "max_index_bytes can't be negative"},
-		"negative max_hashes":        {q: cardinalitypb.CountQuery{EndMs: 10, MaxHashes: -1}, want: "max_hashes can't be negative"},
 		"negative max_groups":        {q: cardinalitypb.CountQuery{EndMs: 10}, maxGroups: -1, want: "max_groups can't be negative"},
 		"an unknown matcher type":    {q: cardinalitypb.CountQuery{EndMs: 10, Matchers: []cardinalitypb.LabelMatcher{{Type: 7, Name: "job"}}}, want: "invalid matcher type 7"},
 		"a regex that doesn't parse": {q: cardinalitypb.CountQuery{EndMs: 10, Matchers: []cardinalitypb.LabelMatcher{{Type: labels.MatchRegexp, Name: "job", Value: "("}}}, want: "missing closing"},

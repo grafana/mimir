@@ -32,11 +32,8 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type SeriesCountsRequest struct {
-	// What to count. max_index_bytes is measured as index_bytes plus postings_offsets_table_bytes in the response.
-	// It is checked before any series entry is read, from the matching postings times an estimated series size, and
-	// again while reading. max_hashes is refused before any series entry is read when the blocks of one time
-	// range that sit inside the window match more series than it, counted from their postings over distinct shards, or
-	// about that share of it with a query shard; and during the walk once the distinct series hashed pass it.
+	// What to count. The store-gateway refuses a request that would hold more than the tenant's cardinality estimate
+	// memory limit in expanded postings, groups and hashes, before the memory is taken.
 	cardinalitypb.CountQuery `protobuf:"bytes,1,opt,name=query,proto3,embedded=query" json:"query"`
 	// Blocks to count, as ULID strings. Blocks this store-gateway does not hold are left out of the response's block_ids.
 	BlockIds []string `protobuf:"bytes,2,rep,name=block_ids,json=blockIds,proto3" json:"block_ids,omitempty"`
@@ -102,15 +99,14 @@ type SeriesCountsResponse struct {
 	// Bytes of postings and series entries read from the bucket, not from a cache.
 	PostingsFetchedBytes int64 `protobuf:"varint,5,opt,name=postings_fetched_bytes,json=postingsFetchedBytes,proto3" json:"postings_fetched_bytes,omitempty"`
 	SeriesFetchedBytes   int64 `protobuf:"varint,6,opt,name=series_fetched_bytes,json=seriesFetchedBytes,proto3" json:"series_fetched_bytes,omitempty"`
-	// Postings and series bytes read, cached or not, as max_index_bytes charges them: for postings the larger of the
-	// bytes touched and the bytes fetched from the bucket, for series the bytes of the entries processed.
+	// Postings and series bytes read, cached or not: for postings the larger of the bytes touched and the bytes
+	// fetched from the bucket, for series the bytes of the entries processed.
 	IndexBytes int64 `protobuf:"varint,7,opt,name=index_bytes,json=indexBytes,proto3" json:"index_bytes,omitempty"`
 	// Blocks counted from the group-by label's postings, without reading series entries, because they sit inside
 	// the window and the postings were the cheaper read.
 	BlocksFromPostings int64 `protobuf:"varint,8,opt,name=blocks_from_postings,json=blocksFromPostings,proto3" json:"blocks_from_postings,omitempty"`
-	// Bytes of the group-by label's postings offsets table walked to count blocks from postings, priced from the
-	// index-header's samples. With index-header version 2 the table is read from object storage. max_index_bytes
-	// bounds index_bytes plus these.
+	// Bytes of the postings offsets tables walked, for the group-by label and for planning the matchers, priced from
+	// the index-header's samples. With index-header version 2 the table is read from object storage.
 	PostingsOffsetsTableBytes int64 `protobuf:"varint,9,opt,name=postings_offsets_table_bytes,json=postingsOffsetsTableBytes,proto3" json:"postings_offsets_table_bytes,omitempty"`
 	// Blocks counted from the postings offsets table alone, reading no postings and no series entries: blocks
 	// inside the window with no matchers, hashes or query shard whose table is cheaper than their series

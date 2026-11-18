@@ -38,10 +38,8 @@ type estimateError struct {
 
 // The limits that refuse an estimate, as the refusals counter names them.
 const (
-	refusedByMaxHashes     = cardinality.LimitMaxHashes
-	refusedByMaxIndexBytes = cardinality.LimitMaxIndexBytes
-	refusedByMemory        = "memory"
-	refusedByMaxGroups     = cardinality.LimitMaxGroups
+	refusedByMemory    = cardinality.LimitMemory
+	refusedByMaxGroups = cardinality.LimitMaxGroups
 )
 
 func (e estimateError) Error() string { return e.err.Error() }

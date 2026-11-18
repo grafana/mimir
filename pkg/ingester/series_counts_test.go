@@ -173,57 +173,6 @@ func TestIngester_SeriesCounts(t *testing.T) {
 		assert.Equal(t, []uint64{labels.StableHash(a2)}, resp.Groups[1].Hashes)
 	})
 
-	t.Run("refused before the walk when over max_index_bytes", func(t *testing.T) {
-		_, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartMs: 0, EndMs: 2 * hour, MaxIndexBytes: 100})
-		require.Error(t, err)
-		st, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok, err)
-		assert.Equal(t, codes.ResourceExhausted, st.Code())
-		assert.Contains(t, st.Message(), "max_index_bytes 100")
-	})
-
-	t.Run("asked for hashes, refused before the walk when the matching series are more than max_hashes", func(t *testing.T) {
-		for _, matchers := range [][]cardinalitypb.LabelMatcher{everySeries, nil} {
-			// The head may hold series with no chunk in the window, so it is
-			// priced by the walk, which refuses at the third series counted.
-			_, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{Matchers: matchers, StartMs: 0, EndMs: 2 * hour, Hashes: true, MaxHashes: 2})
-			assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-			n, ok := cardinality.HashesNeeded(err)
-			require.True(t, ok, err)
-			assert.Equal(t, int64(3), n)
-		}
-		_, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartMs: 0, EndMs: 2 * hour, Hashes: true, MaxHashes: 3})
-		require.NoError(t, err)
-		_, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartMs: 0, EndMs: 2 * hour, MaxHashes: 1})
-		require.NoError(t, err, "counts hold no hashes")
-		_, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 0, EndMs: 2 * hour, Hashes: true, MaxHashes: -1})
-		assert.Equal(t, codes.InvalidArgument, status.Code(err))
-	})
-
-	t.Run("with no matchers the limit is checked from the series each source holds", func(t *testing.T) {
-		_, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 0, EndMs: 2 * hour, MaxIndexBytes: 100})
-		st, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok, err)
-		assert.Equal(t, codes.ResourceExhausted, st.Code())
-		assert.Contains(t, st.Message(), "would walk 3 series in 1 head and local blocks")
-		assert.Contains(t, st.Message(), "more than max_index_bytes 100")
-	})
-
-	t.Run("a request is refused when its series cost more than max_index_bytes, and not at the limit", func(t *testing.T) {
-		// Three series at ingesterSeriesCostBytes each.
-		for name, matchers := range map[string][]cardinalitypb.LabelMatcher{"no matchers": nil, "a matcher": everySeries} {
-			resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{Matchers: matchers, StartMs: 0, EndMs: 2 * hour, MaxIndexBytes: 3 * ingesterSeriesCostBytes})
-			require.NoError(t, err, name)
-			assert.Equal(t, int64(3), resp.SeriesCounted, name)
-			assert.Equal(t, int64(3*ingesterSeriesCostBytes), resp.IndexBytes, name)
-
-			_, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{Matchers: matchers, StartMs: 0, EndMs: 2 * hour, MaxIndexBytes: 3*ingesterSeriesCostBytes - 1})
-			st, ok := grpcutil.ErrorToStatus(err)
-			require.True(t, ok, name)
-			assert.Equal(t, codes.ResourceExhausted, st.Code(), name)
-		}
-	})
-
 	t.Run("a cancelled request stops the walk", func(t *testing.T) {
 		cancelled, cancel := context.WithCancel(ctx)
 		cancel()
@@ -353,50 +302,6 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, resp.Groups, 2)
 		assert.ElementsMatch(t, []uint64{labels.StableHash(a1), labels.StableHash(a2)}, resp.Groups[0].Hashes)
-	})
-
-	t.Run("max_index_bytes prices the series of every source", func(t *testing.T) {
-		_, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 0, EndMs: 4 * hour, MaxIndexBytes: 3 * ingesterSeriesCostBytes})
-		st, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok, err)
-		assert.Equal(t, codes.ResourceExhausted, st.Code())
-		assert.Contains(t, st.Message(), "walk 4 series in 2 head and local blocks")
-	})
-
-	t.Run("a walk over two sources prices each series at the gathering cost", func(t *testing.T) {
-		everySeries := []cardinalitypb.LabelMatcher{{Type: labels.MatchRegexp, Name: model.MetricNameLabel, Value: ".+"}}
-		// Four series over the block and the head fit at the two-source price,
-		// and one byte less refuses before the walk.
-		resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartMs: 0, EndMs: 4 * hour, MaxIndexBytes: 4 * ingesterMultiSourceSeriesCostBytes})
-		require.NoError(t, err)
-		assert.Equal(t, int64(4*ingesterMultiSourceSeriesCostBytes), resp.IndexBytes, "what the answer reports as used of max_index_bytes")
-		_, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartMs: 0, EndMs: 4 * hour, MaxIndexBytes: 4*ingesterMultiSourceSeriesCostBytes - 1})
-		st, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok, err)
-		assert.Equal(t, codes.ResourceExhausted, st.Code())
-		assert.Contains(t, st.Message(), fmt.Sprintf("at %d bytes each", ingesterMultiSourceSeriesCostBytes))
-		_, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 0, EndMs: 4 * hour, MaxIndexBytes: 4*ingesterMultiSourceSeriesCostBytes - 1})
-		assert.Equal(t, codes.ResourceExhausted, status.Code(err), "with no matchers too")
-		assert.Contains(t, status.Convert(err).Message(), fmt.Sprintf("about %d bytes at %d bytes each", 4*ingesterMultiSourceSeriesCostBytes, ingesterMultiSourceSeriesCostBytes))
-
-		// The head alone is one source, priced at the single-source cost.
-		_, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartMs: 2 * hour, EndMs: 4 * hour, MaxIndexBytes: 2 * ingesterSeriesCostBytes})
-		require.NoError(t, err)
-	})
-
-	t.Run("asked for hashes, max_hashes counts a series in the block and the head once", func(t *testing.T) {
-		everySeries := []cardinalitypb.LabelMatcher{{Type: labels.MatchRegexp, Name: model.MetricNameLabel, Value: ".+"}}
-		// The block holds a1 and b1, the head a1 and a2: three distinct.
-		_, walked, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartMs: 0, EndMs: 4 * hour, Hashes: true, MaxHashes: 1})
-		assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-		assert.Zero(t, walked, "the local block inside the window alone matches two, so it is refused before the walk")
-		_, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartMs: 0, EndMs: 4 * hour, Hashes: true, MaxHashes: 2})
-		assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-		n, ok := cardinality.HashesNeeded(err)
-		require.True(t, ok)
-		assert.Equal(t, int64(3), n, "refused during the walk at the third distinct series")
-		_, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartMs: 0, EndMs: 4 * hour, Hashes: true, MaxHashes: 3})
-		require.NoError(t, err)
 	})
 
 	t.Run("max_groups refuses before counting where a block gives a lower bound, otherwise while counting", func(t *testing.T) {
@@ -960,17 +865,14 @@ func TestIngester_SeriesCounts_ConcurrencyLimit(t *testing.T) {
 	srv = &seriesCountsServerMock{ctx: ctx}
 	require.NoError(t, i.SeriesCounts(req, srv), "the slot is free again")
 	require.NotEmpty(t, srv.sent)
-	// A walk the limit refuses frees its slot too.
-	err = i.SeriesCounts(&client.SeriesCountsRequest{StartMs: 0, EndMs: 2000, MaxIndexBytes: 1}, &seriesCountsServerMock{ctx: ctx})
+	// A walk a limit refuses frees its slot too.
+	err = i.SeriesCounts(&client.SeriesCountsRequest{StartMs: 0, EndMs: 2000, GroupBy: "job", MaxGroups: 1}, &seriesCountsServerMock{ctx: ctx})
 	assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-	assert.Equal(t, 1.0, testutil.ToFloat64(m.refusals.WithLabelValues(seriesCountsRefusedByMaxIndexBytes)))
-	err = i.SeriesCounts(&client.SeriesCountsRequest{StartMs: 0, EndMs: 2000, Hashes: true, MaxHashes: 1}, &seriesCountsServerMock{ctx: ctx})
-	assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-	assert.Equal(t, 1.0, testutil.ToFloat64(m.refusals.WithLabelValues(seriesCountsRefusedByMaxHashes)))
+	assert.Equal(t, 1.0, testutil.ToFloat64(m.refusals.WithLabelValues(seriesCountsRefusedByMaxGroups)))
 	assert.Positive(t, testutil.ToFloat64(m.seriesWalked), "the answered walk's series")
 	walks := &dto.Metric{}
 	require.NoError(t, m.walkDuration.WithLabelValues("head").(prometheus.Metric).Write(walks))
-	assert.Equal(t, uint64(2), walks.GetHistogram().GetSampleCount(), "the answered walk and the one refused during it, not the one refused before it")
+	assert.Equal(t, uint64(2), walks.GetHistogram().GetSampleCount(), "the answered walk and the one refused during it")
 	done, err = i.startSeriesCounts(ctx)
 	require.NoError(t, err, "a finished request frees its slot")
 	done()

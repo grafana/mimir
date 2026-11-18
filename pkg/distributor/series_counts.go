@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -19,7 +18,6 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.opentelemetry.io/otel/attribute"
-	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/cardinality"
@@ -98,20 +96,9 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 		hashed = true
 		d.seriesCountsSwitchedToHashes.WithLabelValues("replication_sets").Inc()
 	}
-	// Split max_index_bytes and max_hashes across the ingesters that will be asked.
 	shared := *req
 	shared.Hashes = hashed
-	calls := d.seriesCountsCalls(replicationSets)
-	if calls > 1 {
-		if req.MaxIndexBytes > 0 {
-			shared.MaxIndexBytes = max(1, req.MaxIndexBytes/int64(calls))
-		}
-		if req.MaxHashes > 0 {
-			shared.MaxHashes = max(1, req.MaxHashes/int64(calls))
-		}
-	}
-
-	perSet, _, err := d.seriesCountsFanOut(ctx, replicationSets, &shared, charge)
+	perSet, err := d.seriesCountsFanOut(ctx, replicationSets, &shared, charge)
 	if err != nil {
 		return SeriesCountsResult{}, err
 	}
@@ -130,35 +117,8 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 	return out, nil
 }
 
-// seriesCountsCalls is how many ingesters ring.DoUntilQuorum asks for sets when none of them fails.
-func (d *Distributor) seriesCountsCalls(sets []ring.ReplicationSet) int {
-	calls := 0
-	for _, rs := range sets {
-		switch {
-		case !d.cfg.MinimizeIngesterRequests:
-			calls += len(rs.Instances)
-		case zoneAware(rs):
-			perZone := map[string]int{}
-			for _, instance := range rs.Instances {
-				perZone[instance.Zone]++
-			}
-			sizes := slices.Sorted(maps.Values(perZone))
-			// The zone sorter picks the zones, so assume the largest.
-			for _, n := range sizes[min(len(sizes), max(0, rs.MaxUnavailableZones)):] {
-				calls += n
-			}
-		default:
-			calls += max(0, len(rs.Instances)-rs.MaxErrors)
-		}
-	}
-	return calls
-}
-
 // seriesCountsFanOut sends req to the replication sets' ingesters, charging the answers to charge.
-// It also returns what the ingesters called used of max_index_bytes: what each answer reports,
-// DoUntilQuorum's discarded ones included, and the whole of req.MaxIndexBytes for a call that
-// failed or was still running, since it does not say what it read.
-func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.SeriesCountsRequest, charge *seriesCountsCharge) (_ [][]seriesCountsAnswer, _ int64, returnErr error) {
+func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.SeriesCountsRequest, charge *seriesCountsCharge) (_ [][]seriesCountsAnswer, returnErr error) {
 	ctx, span := tracer.Start(ctx, "Distributor.SeriesCounts fan-out")
 	defer func() {
 		if returnErr != nil {
@@ -174,7 +134,6 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 	quorumConfig.IsTerminalError = isSeriesCountsRefusal
 	perSet := make([][]seriesCountsAnswer, len(replicationSets))
 	setErrs := make([]error, len(replicationSets))
-	var called, succeeded, reported atomic.Int64
 	err := concurrency.ForEachJob(ctx, len(replicationSets), 0, func(ctx context.Context, idx int) error {
 		// An older owner fails the whole set, instead of whichever error DoUntilQuorum saw last.
 		var (
@@ -182,12 +141,7 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 			older    error
 		)
 		answers, err := ring.DoUntilQuorum[seriesCountsAnswer](ctx, replicationSets[idx], quorumConfig, func(ctx context.Context, desc *ring.InstanceDesc) (seriesCountsAnswer, error) {
-			called.Inc()
 			a, err := d.seriesCountsCall(ctx, desc, req, charge)
-			if err == nil {
-				succeeded.Inc()
-				reported.Add(a.resp.IndexBytes)
-			}
 			if err != nil && isOlderIngesterError(err) {
 				olderMtx.Lock()
 				if older == nil {
@@ -219,13 +173,10 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 	// The first set to fail cancels the others, so a later set's older owner may not be seen.
 	for _, setErr := range setErrs {
 		if setErr != nil && isOlderIngesterError(setErr) {
-			return perSet, 0, setErr
+			return perSet, setErr
 		}
 	}
-	// succeeded is read before called, so a call that answers meanwhile is charged its whole share.
-	unanswered := -succeeded.Load()
-	unanswered += called.Load()
-	return perSet, reported.Load() + unanswered*req.MaxIndexBytes, err
+	return perSet, err
 }
 
 // seriesCountsCall sends req to one ingester and checks every group of its answer carries the counts asked for.

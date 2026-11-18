@@ -53,7 +53,6 @@ type estimateIngesters interface {
 // estimateLimits are the per-tenant limits of an estimate.
 type estimateLimits interface {
 	CardinalityEstimateEnabled(userID string) bool
-	CardinalityEstimateMaxIndexBytes(userID string) int64
 	CardinalityEstimateMaxMemoryBytes(userID string) uint64
 	CardinalityEstimateMaxGroups(userID string) int64
 	QueryIngestersWithin(userID string) time.Duration
@@ -107,8 +106,6 @@ func (e *CardinalityEstimator) clampToLookback(spanLog *spanlogger.SpanLogger, t
 
 // Estimate answers req for tenantID.
 func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (res CardinalityEstimateResult, err error) {
-	// The tenant's limit bounds max_index_bytes before it is split across the sources.
-	req.MaxIndexBytes = cardinality.BoundByLimit(req.MaxIndexBytes, e.limits.CardinalityEstimateMaxIndexBytes(tenantID))
 	req.MaxGroups = cardinality.BoundByLimit(req.MaxGroups, e.limits.CardinalityEstimateMaxGroups(tenantID))
 	// The groups and hashes held in the querier count against the memory limit.
 	if _, terr := limiter.MemoryConsumptionTrackerFromContext(ctx); terr != nil {
@@ -119,8 +116,6 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 		// The tracker is the estimate's own, so its peak is what the estimate held, refused or not.
 		defer func() { res.PeakMemoryBytes = tracker.PeakEstimatedMemoryConsumptionBytes() }()
 	}
-	// The same limit sets how many hashes each source may send. A lower budget already on the request is kept.
-	req.MaxHashes = cardinality.BoundByLimit(req.MaxHashes, estimateHashBudget(e.limits.CardinalityEstimateMaxMemoryBytes(tenantID), e.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID)))
 	// Pick the sources the way a query does. Block metadata alone can't say the blocks are complete.
 	now := e.now()
 	needIngesters := false
@@ -157,11 +152,6 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 	return res, err
 }
 
-// estimateHashBudget is how many label-set hashes a deduplicating estimate may hold, or 0 for no limit.
-func estimateHashBudget(estimate, query uint64) int64 {
-	return cardinality.HashBudget(estimateMemoryLimit(estimate, query))
-}
-
 // estimateMemoryLimit is the memory an estimate may hold in the querier, the lower of the limits that are set.
 func estimateMemoryLimit(estimate, query uint64) uint64 {
 	if query > 0 && (estimate == 0 || query < estimate) {
@@ -194,18 +184,7 @@ func (e *CardinalityEstimator) blocksOnly(ctx context.Context, tenantID string, 
 
 // blocksAndHeadCounts answers a window that reaches into the ingesters' range and starts before query-store-after. The querier unions both sources' label-set hashes, so a series in a block and an ingester counts once.
 func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID string, req *CardinalityEstimateRequest, storeMaxT, heldFrom int64) (CardinalityEstimateResult, error) {
-	half := req.MaxIndexBytes
-	if half > 0 {
-		half = max(1, half/2)
-	}
-	// The two sides share the hashes budget too.
-	halfHashes := req.MaxHashes
-	if halfHashes > 0 {
-		halfHashes = max(1, halfHashes/2)
-	}
 	blocksReq := *req
-	blocksReq.MaxIndexBytes = half
-	blocksReq.MaxHashes = halfHashes
 	blocksReq.MaxT = storeMaxT
 
 	m := newEstimateMerger(ctx, true)
@@ -230,14 +209,12 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 	g.Go(func() error {
 		var err error
 		sr, err = e.ingesters.SeriesCounts(gCtx, req.Matchers, &client.SeriesCountsRequest{
-			Matchers:      cardinalitypb.ToLabelMatchers(req.Matchers),
-			StartMs:       req.MinT,
-			EndMs:         req.MaxT,
-			GroupBy:       req.GroupBy,
-			Hashes:        true,
-			MaxIndexBytes: half,
-			MaxHashes:     halfHashes,
-			MaxGroups:     req.MaxGroups,
+			Matchers:  cardinalitypb.ToLabelMatchers(req.Matchers),
+			StartMs:   req.MinT,
+			EndMs:     req.MaxT,
+			GroupBy:   req.GroupBy,
+			Hashes:    true,
+			MaxGroups: req.MaxGroups,
 		})
 		if err != nil {
 			return classifyIngesterError(err)
@@ -283,13 +260,11 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 // A window that starts before heldFrom and before the oldest data the ingesters report may miss series, so the counts are then a lower bound.
 func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityEstimateRequest, heldFrom int64) (CardinalityEstimateResult, error) {
 	sr, err := e.ingesters.SeriesCounts(ctx, req.Matchers, &client.SeriesCountsRequest{
-		Matchers:      cardinalitypb.ToLabelMatchers(req.Matchers),
-		StartMs:       req.MinT,
-		EndMs:         req.MaxT,
-		GroupBy:       req.GroupBy,
-		MaxIndexBytes: req.MaxIndexBytes,
-		MaxHashes:     req.MaxHashes,
-		MaxGroups:     req.MaxGroups,
+		Matchers:  cardinalitypb.ToLabelMatchers(req.Matchers),
+		StartMs:   req.MinT,
+		EndMs:     req.MaxT,
+		GroupBy:   req.GroupBy,
+		MaxGroups: req.MaxGroups,
 	})
 	if err != nil {
 		return CardinalityEstimateResult{}, classifyIngesterError(err)
@@ -339,9 +314,7 @@ func classifyIngesterError(err error) error {
 		case codes.Unimplemented:
 			return refusedEstimate("ingesters %w yet, they may run an older version", errCountsNotSupported)
 		case codes.ResourceExhausted:
-			if limit := sourceRefusalLimit(err); limit == refusedByMaxHashes {
-				return refusedByLimit(limit, "%w", sourceRefusal{msg: "ingesters, given the hashes the tenant's cardinality estimate memory limit allows, shared among them: " + st.Message(), err: err})
-			} else if limit != "" {
+			if limit := sourceRefusalLimit(err); limit != "" {
 				return refusedByLimit(limit, "%w", sourceRefusal{msg: "ingesters: " + st.Message(), err: err})
 			}
 		case codes.Unavailable:

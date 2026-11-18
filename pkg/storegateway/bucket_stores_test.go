@@ -755,15 +755,7 @@ func TestBucketStores_SeriesCounts(t *testing.T) {
 		return &storegatewaypb.SeriesCountsRequest{BlockIds: blockIDs(userID), StartMs: 10, EndMs: 50}
 	}
 
-	srv := &seriesCountsServerMock{ctx: userCtx("user-1")}
-	oneByte := req("user-1")
-	oneByte.MaxIndexBytes = 1
-	err = stores.SeriesCounts(oneByte, srv)
-	require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-	assert.Contains(t, err.Error(), "more than max_index_bytes 1", "the request's limit")
-	assert.Empty(t, srv.sent)
-
-	srv = &seriesCountsServerMock{ctx: userCtx("user-2")}
+	srv := &seriesCountsServerMock{ctx: userCtx("user-2")}
 	require.NoError(t, stores.SeriesCounts(req("user-2"), srv))
 	require.Len(t, srv.sent, 1)
 	assert.Equal(t, map[string][]int64{"series_2": {1}}, countsByGroup(srv.sent[0]))

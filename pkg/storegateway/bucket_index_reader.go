@@ -225,17 +225,6 @@ func (r *bucketIndexReader) plannedFetchBytes(plan postingsPlan) int64 {
 	return n
 }
 
-// heapBytes is about how much memory the plan holds.
-func (p postingsPlan) heapBytes() int64 {
-	var n int64
-	for _, g := range p.groups {
-		for _, k := range g.keys {
-			n += int64(len(k.Name)+len(k.Value)) + 64
-		}
-	}
-	return n
-}
-
 // planPostings resolves ms to the posting groups to fetch, from the index-header alone.
 func (r *bucketIndexReader) planPostings(ctx context.Context, ms []*labels.Matcher) (postingsPlan, error) {
 	postingGroups, err := toPostingGroups(ctx, ms, r.block.indexHeaderReader)

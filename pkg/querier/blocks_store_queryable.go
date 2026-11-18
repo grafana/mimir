@@ -187,7 +187,7 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 		}),
 		estimateRefusals: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_querier_cardinality_estimate_refusals_total",
-			Help: "Cardinality estimates a limit refused, by limit, which answer 422: max_hashes (series hashes a source or the querier would hold to deduplicate), max_index_bytes, memory (the groups and hashes held in the querier, against the tenant's cardinality estimate memory limit or its max estimated memory consumption per query when that is lower), max_groups (distinct values of the group_by label a store-gateway or the ingesters would return).",
+			Help: "Cardinality estimates a limit refused, by limit, which answer 422: memory (what the querier, a store-gateway or an ingester would hold, against the tenant's cardinality estimate memory limit, or in the querier its max estimated memory consumption per query when that is lower), max_groups (distinct values of the group_by label a store-gateway or the ingesters would return).",
 		}, []string{"limit"}),
 		estimateDedupHashes: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_querier_cardinality_estimate_dedup_hashes",

@@ -24,12 +24,6 @@ func CounterForQuery(q *cardinalitypb.CountQuery, maxGroups int64) (CounterOptio
 		return opts, nil, nil, err
 	}
 	opts.GroupBy = counter.GroupBy()
-	if q.MaxIndexBytes < 0 {
-		return opts, nil, nil, errors.New("max_index_bytes can't be negative")
-	}
-	if q.MaxHashes < 0 {
-		return opts, nil, nil, errors.New("max_hashes can't be negative")
-	}
 	if maxGroups < 0 {
 		return opts, nil, nil, errors.New("max_groups can't be negative")
 	}

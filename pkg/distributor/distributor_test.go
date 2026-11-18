@@ -7129,9 +7129,6 @@ type mockIngester struct {
 	// seriesCountsSplitHashes has SeriesCounts send every hash of a group in a part of its own, as an
 	// ingester splits a group over the message size.
 	seriesCountsSplitHashes bool
-	// seriesCountsIndexBytes is what SeriesCounts answers as index_bytes
-	// when it counts.
-	seriesCountsIndexBytes int64
 	// seriesCountsOnCall, when set, runs when SeriesCounts is called,
 	// before it fails or answers.
 	seriesCountsOnCall            func()
@@ -7881,7 +7878,6 @@ func (i *mockIngester) seriesCounts(ctx context.Context, req *client.SeriesCount
 		return &client.SeriesCountsResponse{}, nil
 	}
 	resp := &client.SeriesCountsResponse{}
-	resp.IndexBytes = i.seriesCountsIndexBytes
 	for _, ts := range i.timeseries {
 		if !match(ts.Labels, matchers) {
 			continue

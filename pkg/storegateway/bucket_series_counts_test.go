@@ -5,12 +5,9 @@ package storegateway
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math/rand"
 	"path/filepath"
-	"sort"
 	"strings"
-	"sync"
 	"testing"
 	"unsafe"
 
@@ -35,16 +32,12 @@ import (
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
-	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
 const hourMs = int64(60 * 60 * 1000)
-
-// groupHashes is the hashes whose memory one group is charged as.
-const groupHashes = int64(cardinality.GroupBytes / cardinality.HashBytes)
 
 // chunkAt is a two-sample chunk spanning [minT, maxT], both inclusive.
 func chunkAt(minT, maxT int64) chunks.Meta {
@@ -186,14 +179,6 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 		assert.Equal(t, map[string][]int64{"": {4}}, countsByGroup(all), "series without the label are counted from the series count alone")
 	})
 
-	t.Run("a request refused on the offsets table fetches no postings", func(t *testing.T) {
-		before := postingsBytesObserved(t, store)
-		_, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, StartMs: 0, EndMs: 8 * hourMs, GroupBy: "pod", MaxIndexBytes: 1})
-		require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-		assert.Contains(t, err.Error(), "pod postings offsets table")
-		assert.Equal(t, before, postingsBytesObserved(t, store), "no postings list was fetched")
-	})
-
 	t.Run("the series count from the offsets table is the length of the all-postings list", func(t *testing.T) {
 		counted := 0
 		store.blockSet.forEach(func(b *bucketBlock) {
@@ -275,52 +260,6 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 		assert.Empty(t, resp.Groups[0].Counts)
 	})
 
-	t.Run("max_index_bytes rejects before reading series", func(t *testing.T) {
-		// Four series at no less than the 32-byte floor are more than 100 bytes.
-		// The window ends before the block does, so the series entries are needed.
-		_, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, StartMs: 0, EndMs: 4*hourMs - 1, MaxIndexBytes: 100})
-		require.Error(t, err)
-		assert.Equal(t, codes.ResourceExhausted, status.Code(err))
-		assert.Contains(t, err.Error(), "then 4 series at an estimated")
-	})
-
-	t.Run("max_hashes rejects a request for the hashes of more series", func(t *testing.T) {
-		// b1 holds four series.
-		_, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, StartMs: 0, EndMs: 4*hourMs - 1, Hashes: true, MaxHashes: 2})
-		require.Error(t, err)
-		assert.Equal(t, codes.ResourceExhausted, status.Code(err))
-		assert.Contains(t, err.Error(), "more than max_hashes 2")
-		resp, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, StartMs: 0, EndMs: 4*hourMs - 1, MaxHashes: 2})
-		require.NoError(t, err, "counts hold no hashes")
-		assert.NotEmpty(t, resp.Groups)
-	})
-
-	t.Run("max_index_bytes above the plan is exact", func(t *testing.T) {
-		resp, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, StartMs: 0, EndMs: 4 * hourMs, MaxIndexBytes: 1 << 20})
-		require.NoError(t, err)
-		assert.Equal(t, map[string][]int64{"up": {3}, "errors_total": {1}}, countsByGroup(resp))
-		assert.LessOrEqual(t, resp.IndexBytes, int64(1<<20))
-	})
-
-	t.Run("max_index_bytes covers the group-by label's postings offsets table", func(t *testing.T) {
-		req := func(limit int64) *storegatewaypb.SeriesCountsRequest {
-			return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, StartMs: 0, EndMs: 4 * hourMs, GroupBy: "pod", MaxIndexBytes: limit}
-		}
-		resp, err := store.countSeries(ctx, req(0))
-		require.NoError(t, err)
-		require.Equal(t, int64(1), resp.BlocksFromPostings)
-		require.Positive(t, resp.PostingsOffsetsTableBytes, "the pod offsets were walked")
-		total := resp.IndexBytes + resp.PostingsOffsetsTableBytes
-
-		resp, err = store.countSeries(ctx, req(total))
-		require.NoError(t, err)
-		assert.Equal(t, map[string][]int64{"p1": {2}, "p2": {1}, "p3": {1}}, countsByGroup(resp))
-
-		_, err = store.countSeries(ctx, req(total-1))
-		require.Equal(t, codes.ResourceExhausted, status.Code(err), "nothing else is read, so only the table doesn't fit")
-		assert.Contains(t, err.Error(), "pod postings offsets table")
-	})
-
 	t.Run("unknown blocks are skipped", func(t *testing.T) {
 		notHeld := store.metrics.cardinalityEstimateBlocksUncounted.WithLabelValues("not_held")
 		before := testutil.ToFloat64(notHeld)
@@ -332,9 +271,8 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 	})
 
 	for name, req := range map[string]*storegatewaypb.SeriesCountsRequest{
-		"empty window":             {StartMs: 10, EndMs: 10},
-		"bad block ID":             {StartMs: 0, EndMs: 4 * hourMs, BlockIds: []string{"x"}},
-		"negative max_index_bytes": {StartMs: 0, EndMs: 4 * hourMs, MaxIndexBytes: -1},
+		"empty window": {StartMs: 10, EndMs: 10},
+		"bad block ID": {StartMs: 0, EndMs: 4 * hourMs, BlockIds: []string{"x"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := store.countSeries(ctx, req)
@@ -389,27 +327,9 @@ func TestBucketStore_SeriesCountsNativeHistograms(t *testing.T) {
 	}
 }
 
-func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
-	c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: 0, EndMs: hourMs, MaxIndexBytes: 2000})
-	require.NoError(t, err)
-	require.NoError(t, c.checkPlan(900, 2, 2*512, 0), "900 + 2 x 512 is under the limit")
-	err = c.checkPlan(1000, 2, 2*512, 0)
-	assert.Equal(t, codes.ResourceExhausted, status.Code(err), "1000 + 2 x 512 is over the limit")
-	require.NoError(t, c.checkTable("pod", 1000, 1000))
-	assert.Equal(t, codes.ResourceExhausted, status.Code(c.checkTable("pod", 1000, 1001)), "postings plus the offsets table are over the limit")
-	require.NoError(t, c.checkRead(2000))
-	assert.Equal(t, codes.ResourceExhausted, status.Code(c.checkRead(2001)), "series larger than the plan assumed")
-
-	unlimited, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: 0, EndMs: hourMs})
-	require.NoError(t, err)
-	require.NoError(t, unlimited.checkPlan(1<<40, 1<<20, 1<<29, 0))
-	require.NoError(t, unlimited.checkRead(1<<40))
-	require.NoError(t, unlimited.checkTable("pod", 1<<40, 1<<40))
-}
-
-// The response reports index_bytes as max_index_bytes charges them, so a
-// caller that adds up answers stays within the limit the store-gateways apply.
-func TestSeriesCounts_ResponseIndexBytesIsTheLimitedMeasure(t *testing.T) {
+// The response reports index_bytes as the postings bytes (the larger of those
+// touched and those fetched) plus the series bytes processed.
+func TestSeriesCounts_ResponseIndexBytes(t *testing.T) {
 	for name, tc := range map[string]struct {
 		touched, fetched int
 		want             int64
@@ -418,7 +338,7 @@ func TestSeriesCounts_ResponseIndexBytesIsTheLimitedMeasure(t *testing.T) {
 		"postings served from the cache":                     {touched: 100, fetched: 0, want: 100 + 50},
 	} {
 		t.Run(name, func(t *testing.T) {
-			c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: 0, EndMs: hourMs})
+			c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: 0, EndMs: hourMs}, 0)
 			require.NoError(t, err)
 			c.stats = newSafeQueryStats()
 			c.stats.update(func(st *queryStats) {
@@ -427,46 +347,11 @@ func TestSeriesCounts_ResponseIndexBytesIsTheLimitedMeasure(t *testing.T) {
 				st.seriesProcessedSizeSum = 50
 			})
 			resp := &storegatewaypb.SeriesCountsResponse{}
-			require.NoError(t, c.finishResponse(resp))
+			c.finishResponse(resp)
 			assert.Equal(t, tc.want, resp.IndexBytes)
 			assert.Equal(t, indexBytes(c.stats), resp.IndexBytes)
 		})
 	}
-}
-
-// checkRead reports the series counted so far, and one block's walk calls
-// it while another block's walk adds series under the mutex, so the count
-// has to be safe to read without it. Fails under the race detector.
-func TestSeriesCounts_CheckReadWhileAnotherBlockAdds(t *testing.T) {
-	c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: 0, EndMs: hourMs, MaxIndexBytes: 1})
-	require.NoError(t, err)
-	series := seriesChunkRefs{lset: labels.FromStrings("__name__", "up")}
-	var mtx sync.Mutex
-	added := make(chan struct{})
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		mtx.Lock()
-		require.NoError(t, c.add(series))
-		mtx.Unlock()
-		close(added)
-		// Over the limit, so every call reads the count for its message.
-		for range 1000 {
-			require.Error(t, c.checkRead(2))
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		<-added
-		for range 1000 {
-			mtx.Lock()
-			require.NoError(t, c.add(series))
-			mtx.Unlock()
-		}
-	}()
-	wg.Wait()
-	assert.Equal(t, int64(1001), c.counter.Counted())
 }
 
 // A group's key is a copy of the group-by value: the value is a slice of the
@@ -485,7 +370,7 @@ func TestSeriesCounts_GroupKeysDoNotPinLabelSets(t *testing.T) {
 		"counts": {StartMs: 0, EndMs: hourMs, GroupBy: "pod"},
 		"hashes": {StartMs: 0, EndMs: hourMs, GroupBy: "pod", Hashes: true},
 	} {
-		c, err := newSeriesCountsState(req)
+		c, err := newSeriesCountsState(req, 0)
 		require.NoError(t, err)
 		require.NoError(t, c.add(seriesChunkRefs{lset: lset}))
 		keys := values(t, c)
@@ -493,29 +378,13 @@ func TestSeriesCounts_GroupKeysDoNotPinLabelSets(t *testing.T) {
 		assert.NotSame(t, unsafe.StringData(lset.Get("pod")), unsafe.StringData(keys[0]), "%s: the key is a copy of the value", name)
 	}
 
-	c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: 0, EndMs: hourMs, GroupBy: "pod"})
+	c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: 0, EndMs: hourMs, GroupBy: "pod"}, 0)
 	require.NoError(t, err)
 	v := lset.Get("pod")
 	require.NoError(t, c.addCounts(map[string]int64{v: 2}, 0))
 	keys := values(t, c)
 	require.Equal(t, []string{"a-long-pod-name"}, keys)
 	assert.NotSame(t, unsafe.StringData(v), unsafe.StringData(keys[0]), "addCounts copies the value too")
-}
-
-func TestSeriesEntryEstimate(t *testing.T) {
-	meta := func(series uint64, indexBytes int64) *block.Meta {
-		m := &block.Meta{}
-		m.Stats.NumSeries = series
-		if indexBytes > 0 {
-			m.Thanos.Files = []block.File{{RelPath: "chunks/000001", SizeBytes: 1 << 30}, {RelPath: block.IndexFilename, SizeBytes: indexBytes}}
-		}
-		return m
-	}
-	assert.Equal(t, int64(150), seriesEntryEstimate(meta(1000, 150_000)), "the index size over the series")
-	assert.Equal(t, int64(512), seriesEntryEstimate(meta(1000, 0)), "no index size: the p99")
-	assert.Equal(t, int64(512), seriesEntryEstimate(meta(0, 150_000)), "no series count: the p99")
-	assert.Equal(t, int64(512), seriesEntryEstimate(meta(10, 1<<20)), "never above the p99")
-	assert.Equal(t, int64(32), seriesEntryEstimate(meta(1000, 1000)), "never below the floor")
 }
 
 // postingsBytesObserved is the postings bytes the store's count requests
@@ -749,27 +618,22 @@ func testBucketStoreCountsHaveTheirOwnMetrics(t *testing.T, opts ...prepareStore
 	require.NoError(t, err)
 	require.Positive(t, resp.PostingsOffsetsTableBytes)
 	assert.Equal(t, float64(resp.PostingsOffsetsTableBytes), fetched("offsets_table")-tableBefore)
-	// A request refused before the walk is charged the table but didn't read it.
-	tableBefore = fetched("offsets_table")
-	_, err = store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, StartMs: 0, EndMs: 4 * hourMs, GroupBy: "pod", MaxIndexBytes: 1})
-	require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-	assert.Equal(t, tableBefore, fetched("offsets_table"))
 
 	assert.Equal(t, before, seriesSamples())
 }
 
-// With matchers, a SeriesCounts request prices every block's postings from
-// the postings offsets table before it fetches any, at what the fetch reads.
-func TestBucketStore_SeriesCountsPricesPostingsFirst(t *testing.T) {
+// With matchers, the bytes a block's postings fetch will read are known from
+// the postings offsets table before any list is fetched.
+func TestBucketStore_SeriesCountsPlansPostingsFirst(t *testing.T) {
 	for name, opts := range countIndexHeaderVersions {
 		t.Run(name, func(t *testing.T) {
-			testBucketStoreSeriesCountsPricesPostingsFirst(t, opts...)
+			testBucketStoreSeriesCountsPlansPostingsFirst(t, opts...)
 		})
 	}
 }
 
-func testBucketStoreSeriesCountsPricesPostingsFirst(t *testing.T, opts ...prepareStoreConfigOption) {
-	store, b1, b2 := prepareSeriesCountsStore(t, opts...)
+func testBucketStoreSeriesCountsPlansPostingsFirst(t *testing.T, opts ...prepareStoreConfigOption) {
+	store, _, _ := prepareSeriesCountsStore(t, opts...)
 	ctx := t.Context()
 	selectors := map[string][]*labels.Matcher{
 		"equal":                 {labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")},
@@ -780,7 +644,7 @@ func testBucketStoreSeriesCountsPricesPostingsFirst(t *testing.T, opts ...prepar
 		"two matchers":          {labels.MustNewMatcher(labels.MatchEqual, "__name__", "up"), labels.MustNewMatcher(labels.MatchNotEqual, "pod", "p3")},
 	}
 
-	t.Run("the price is what the fetch reads", func(t *testing.T) {
+	t.Run("the planned fetch size is what the fetch reads", func(t *testing.T) {
 		store.blockSet.forEach(func(b *bucketBlock) {
 			require.NoError(t, b.loadIndexHeader(ctx, newSafeQueryStats()))
 			for name, ms := range selectors {
@@ -799,316 +663,6 @@ func testBucketStoreSeriesCountsPricesPostingsFirst(t *testing.T, opts ...prepar
 		})
 	})
 
-	t.Run("a selector over most names is refused before any postings list is read", func(t *testing.T) {
-		before := postingsBytesObserved(t, store)
-		req := &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, StartMs: 0, EndMs: 8*hourMs - 1, MaxIndexBytes: 10}
-		req.Matchers = cardinalitypb.ToLabelMatchers(selectors["regex over most names"])
-		_, err := store.countSeries(ctx, req)
-		require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-		assert.Contains(t, err.Error(), "of postings lists its matchers select over 2 blocks")
-		assert.Equal(t, before, postingsBytesObserved(t, store), "no postings list was fetched")
-	})
-
-	t.Run("blocks past the plans' memory cap are planned again when fetched, with the same answer", func(t *testing.T) {
-		prev := store.countPostingsPlansMaxBytes
-		t.Cleanup(func() { store.countPostingsPlansMaxBytes = prev })
-		for name, ms := range selectors {
-			req := &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, StartMs: 0, EndMs: 8*hourMs - 1, MaxIndexBytes: 1 << 30}
-			req.Matchers = cardinalitypb.ToLabelMatchers(ms)
-			store.countPostingsPlansMaxBytes = prev
-			kept, err := store.countSeries(ctx, req)
-			require.NoError(t, err, name)
-			store.countPostingsPlansMaxBytes = 0
-			replanned, err := store.countSeries(ctx, req)
-			require.NoError(t, err, name)
-			req.MaxIndexBytes = 0
-			unpriced, err := store.countSeries(ctx, req)
-			require.NoError(t, err, name)
-			assert.Equal(t, countsByGroup(kept), countsByGroup(replanned), name)
-			assert.Equal(t, countsByGroup(kept), countsByGroup(unpriced), name)
-		}
-	})
-}
-
-// With no matchers, a block that is walked has its all-postings list priced
-// from the postings offsets table, and the list is fetched only once
-// max_index_bytes and max_hashes have passed.
-func TestBucketStore_SeriesCountsPricesAllPostingsFirst(t *testing.T) {
-	for name, opts := range countIndexHeaderVersions {
-		t.Run(name, func(t *testing.T) {
-			store, b1, b2 := prepareSeriesCountsStore(t, opts...)
-			ctx := t.Context()
-			// Hashes over two block ranges: both blocks are walked.
-			req := func() *storegatewaypb.SeriesCountsRequest {
-				return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, StartMs: 0, EndMs: 8 * hourMs, Hashes: true}
-			}
-
-			resp, err := store.countSeries(ctx, req())
-			require.NoError(t, err)
-			require.Len(t, resp.Groups, 2)
-			allPostings := resp.PostingsFetchedBytes
-			require.GreaterOrEqual(t, allPostings, int64(4*6), "six series over the two blocks, 4 bytes each")
-
-			t.Run("max_index_bytes below the all-postings lists refuses before any is fetched", func(t *testing.T) {
-				before := postingsBytesObserved(t, store)
-				limited := req()
-				limited.MaxIndexBytes = 4*6 - 1
-				_, err := store.countSeries(ctx, limited)
-				require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-				assert.Contains(t, err.Error(), "6 series at an estimated", "priced from meta.json before the index-headers load")
-				assert.Contains(t, err.Error(), "24 bytes of postings")
-				assert.Equal(t, before, postingsBytesObserved(t, store), "no postings list was fetched")
-
-				limited.MaxIndexBytes = allPostings + 6*tsdb.EstimatedSeriesP99Size
-				again, err := store.countSeries(ctx, limited)
-				require.NoError(t, err, "the lists and the series entries fit")
-				assert.Equal(t, resp.SeriesCounted, again.SeriesCounted)
-			})
-
-			t.Run("max_hashes below the first block's series refuses before any is fetched", func(t *testing.T) {
-				before := postingsBytesObserved(t, store)
-				limited := req()
-				limited.MaxHashes = 3
-				_, err := store.countSeries(ctx, limited)
-				require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-				n, ok := cardinality.HashesNeeded(err)
-				require.True(t, ok, err)
-				assert.Equal(t, int64(4), n, "the first block's four series, from the offsets table")
-				assert.Equal(t, before, postingsBytesObserved(t, store), "no postings list was fetched")
-			})
-		})
-	}
-}
-
-// Asked for hashes, a request is refused before any series entry is read
-// when the blocks of one time range already match more series than
-// max_hashes, and during the walk once the distinct hashes held pass it.
-func TestBucketStore_SeriesCountsMaxHashes(t *testing.T) {
-	for name, opts := range countIndexHeaderVersions {
-		t.Run(name, func(t *testing.T) {
-			store, b1, b2 := prepareSeriesCountsStore(t, opts...)
-			ctx := t.Context()
-			up := []cardinalitypb.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "up"}}
-			req := func(maxHashes int64, hashes bool) *storegatewaypb.SeriesCountsRequest {
-				return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, Matchers: up, StartMs: 0, EndMs: 8 * hourMs, Hashes: hashes, MaxHashes: maxHashes}
-			}
-			seriesRead := func() float64 {
-				return testutil.ToFloat64(store.metrics.cardinalityEstimateFetchedBytes.WithLabelValues("series"))
-			}
-			hashesNeeded := func(err error) int64 {
-				require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-				n, ok := cardinality.HashesNeeded(err)
-				require.True(t, ok, err)
-				return n
-			}
-
-			// Three up series in the first block, two in the second, and up{pod=p1}
-			// in both: four distinct.
-			before := seriesRead()
-			_, err := store.countSeries(ctx, req(2, true))
-			assert.Equal(t, int64(3), hashesNeeded(err), "the first block's range alone")
-			assert.Equal(t, before, seriesRead(), "no series entry was read")
-
-			_, err = store.countSeries(ctx, req(3+groupHashes, true))
-			assert.Equal(t, 4+groupHashes, hashesNeeded(err), "refused during the walk, with the one group charged")
-			assert.Greater(t, seriesRead(), before)
-
-			resp, err := store.countSeries(ctx, req(4+groupHashes, true))
-			require.NoError(t, err, "a series in two block ranges is held once")
-			assert.NotEmpty(t, resp.Groups)
-			_, err = store.countSeries(ctx, req(1, false))
-			require.NoError(t, err, "counts hold no hashes")
-			_, err = store.countSeries(ctx, req(-1, true))
-			assert.Equal(t, codes.InvalidArgument, status.Code(err))
-
-			// A window that cuts through the blocks isn't priced before the walk:
-			// their series may have no chunk in it.
-			cut := req(2+groupHashes, true)
-			cut.EndMs = 4*hourMs - 1
-			before = seriesRead()
-			_, err = store.countSeries(ctx, cut)
-			assert.Equal(t, 3+groupHashes, hashesNeeded(err), "refused during the walk at the third series in the window")
-			assert.Greater(t, seriesRead(), before)
-
-			// With a query shard nothing is priced before the walk, which refuses
-			// past what the shard really hashes.
-			sharded := req(0, true)
-			sharded.Matchers = append(sharded.Matchers, cardinalitypb.LabelMatcher{Type: labels.MatchEqual, Name: sharding.ShardLabel, Value: sharding.FormatShardIDLabelValue(0, 2)})
-			resp, err = store.countSeries(ctx, sharded)
-			require.NoError(t, err)
-			var inShard int64
-			for _, g := range resp.Groups {
-				inShard += int64(len(g.Hashes))
-			}
-			require.Positive(t, inShard)
-			sharded.MaxHashes = inShard + int64(len(resp.Groups))*groupHashes
-			_, err = store.countSeries(ctx, sharded)
-			require.NoError(t, err)
-			sharded.MaxHashes--
-			_, err = store.countSeries(ctx, sharded)
-			assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-		})
-	}
-}
-
-// The plan prices every matching series at the block's average entry size,
-// never above the p99; a request whose matching series are far larger than
-// that passes the plan and is stopped during the walk, once what was read
-// passes max_index_bytes.
-func TestBucketStore_SeriesCountsStopsMidRead(t *testing.T) {
-	for name, opts := range countIndexHeaderVersions {
-		t.Run(name, func(t *testing.T) {
-			// Two hundred one-chunk series keep the index's average entry
-			// small, while the three big series carry 300 chunks each, well
-			// over the p99 the plan prices at most.
-			var specs block.SeriesSpecs
-			for i := range 200 {
-				specs = append(specs, &block.SeriesSpec{Labels: labels.FromStrings("__name__", "small", "i", fmt.Sprintf("%03d", i)), Chunks: []chunks.Meta{chunkAt(0, 4*hourMs-1)}})
-			}
-			for i := range 3 {
-				var cs []chunks.Meta
-				for c := range 300 {
-					start := int64(c) * 10_000
-					cs = append(cs, chunkAt(start, start+9_000))
-				}
-				specs = append(specs, &block.SeriesSpec{Labels: labels.FromStrings("__name__", "big", "i", fmt.Sprint(i)), Chunks: cs})
-			}
-			bkt, err := filesystem.NewBucket(t.TempDir())
-			require.NoError(t, err)
-			store, ids := prepareSeriesCountsStoreFromSpecs(t, bkt, t.TempDir(), []block.SeriesSpecs{specs}, nil, opts...)
-			ctx := t.Context()
-			big := []cardinalitypb.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "big"}}
-			// The window ends before the block does, so the series entries
-			// are read.
-			req := func(limit int64) *storegatewaypb.SeriesCountsRequest {
-				return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{ids[0].String()}, Matchers: big, StartMs: 0, EndMs: 4*hourMs - 1, MaxIndexBytes: limit}
-			}
-			seriesRead := func() float64 {
-				return testutil.ToFloat64(store.metrics.cardinalityEstimateFetchedBytes.WithLabelValues("series"))
-			}
-
-			unlimited, err := store.countSeries(ctx, req(0))
-			require.NoError(t, err)
-			assert.Equal(t, map[string][]int64{"big": {3}}, countsByGroup(unlimited))
-
-			// walkStarted reports whether a request allowed limit index
-			// bytes passed the checks before the walk: it read series
-			// entries, and either was answered or stopped during the walk.
-			walkStarted := func(t *testing.T, limit int64) bool {
-				before := seriesRead()
-				_, err := store.countSeries(ctx, req(limit))
-				if err != nil {
-					require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-					require.Equal(t, cardinality.LimitMaxIndexBytes, cardinality.RefusedBy(err), err)
-				}
-				return seriesRead() > before
-			}
-			// The least limit that passes the checks before the walk, the
-			// postings one and then the plan: below it no series entry is
-			// read, at and above it the walk starts.
-			plan := int64(sort.Search(int(unlimited.IndexBytes), func(n int) bool { return walkStarted(t, int64(n)+1) })) + 1
-			require.False(t, walkStarted(t, plan-1), "refused before any series entry was read")
-			// That refusal names the limit that would pass it.
-			_, err = store.countSeries(ctx, req(plan-1))
-			assert.ErrorContains(t, err, fmt.Sprintf("would read about %d index bytes", plan))
-			require.Less(t, plan, unlimited.IndexBytes, "the big series entries are larger than the plan assumed")
-
-			// Allowed what the plan priced, the walk starts and stops.
-			before := seriesRead()
-			_, err = store.countSeries(ctx, req(plan))
-			require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-			assert.Equal(t, cardinality.LimitMaxIndexBytes, cardinality.RefusedBy(err))
-			assert.Greater(t, seriesRead(), before, "series entries were read before the stop")
-
-			resp, err := store.countSeries(ctx, req(unlimited.IndexBytes))
-			require.NoError(t, err, "what the request reads is exactly what it is allowed")
-			assert.Equal(t, map[string][]int64{"big": {3}}, countsByGroup(resp))
-		})
-	}
-}
-
-// Before any series entry is read, the hashes a request will hold are
-// bounded from below by the blocks inside the window: blocks of one range
-// with distinct compactor shard IDs share no series, so their series counts
-// add up, while blocks without a shard ID may share all of theirs.
-func TestBucketStore_SeriesCountsMaxHashesSumsShardBlocks(t *testing.T) {
-	upPods := func(pods ...string) block.SeriesSpecs {
-		var specs block.SeriesSpecs
-		for _, pod := range pods {
-			specs = append(specs, &block.SeriesSpec{Labels: labels.FromStrings("__name__", "up", "pod", pod), Chunks: []chunks.Meta{chunkAt(0, 4*hourMs-1)}})
-		}
-		return specs
-	}
-	// Two blocks of the same range, three and two series.
-	blocks := []block.SeriesSpecs{upPods("p1", "p2", "p3"), upPods("p4", "p5")}
-	up := []cardinalitypb.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "up"}}
-	hashesNeeded := func(t *testing.T, err error) int64 {
-		require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-		n, ok := cardinality.HashesNeeded(err)
-		require.True(t, ok, err)
-		return n
-	}
-	for name, opts := range countIndexHeaderVersions {
-		t.Run(name, func(t *testing.T) {
-			for _, sharded := range []bool{true, false} {
-				t.Run(fmt.Sprintf("shard IDs: %t", sharded), func(t *testing.T) {
-					var shardIDs []string
-					if sharded {
-						shardIDs = []string{"1_of_2", "2_of_2"}
-					}
-					store, ids := prepareSeriesCountsShardStore(t, shardIDs, blocks, opts...)
-					ctx := t.Context()
-					req := func(maxHashes int64) *storegatewaypb.SeriesCountsRequest {
-						return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{ids[0].String(), ids[1].String()}, Matchers: up, StartMs: 0, EndMs: 4 * hourMs, Hashes: true, MaxHashes: maxHashes}
-					}
-					seriesRead := func() float64 {
-						return testutil.ToFloat64(store.metrics.cardinalityEstimateFetchedBytes.WithLabelValues("series"))
-					}
-
-					before := seriesRead()
-					_, err := store.countSeries(ctx, req(4))
-					if sharded {
-						assert.Equal(t, int64(5), hashesNeeded(t, err))
-						assert.Equal(t, before, seriesRead(), "the shards add up to five before any series entry is read")
-					} else {
-						assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-						assert.Greater(t, seriesRead(), before, "blocks without a shard ID may share series, so only the larger one bounds the hashes and the walk refuses")
-					}
-
-					resp, err := store.countSeries(ctx, req(5+groupHashes))
-					require.NoError(t, err)
-					require.Len(t, resp.Groups, 1)
-					assert.Len(t, resp.Groups[0].Hashes, 5)
-				})
-			}
-		})
-	}
-}
-
-// prepareSeriesCountsShardStore is prepareSeriesCountsStoreFromSpecs with a
-// compactor shard ID label on each block, when shardIDs is set.
-func prepareSeriesCountsShardStore(t *testing.T, shardIDs []string, blocks []block.SeriesSpecs, opts ...prepareStoreConfigOption) (*BucketStore, []ulid.ULID) {
-	bkt, err := filesystem.NewBucket(t.TempDir())
-	require.NoError(t, err)
-	dir := t.TempDir()
-	var ids []ulid.ULID
-	for i, specs := range blocks {
-		meta, err := block.GenerateBlockFromSpec(dir, specs)
-		require.NoError(t, err)
-		if shardIDs != nil {
-			meta.Thanos.Labels = map[string]string{block.CompactorShardIDExternalLabel: shardIDs[i]}
-			require.NoError(t, meta.WriteToDir(log.NewNopLogger(), filepath.Join(dir, meta.ULID.String())))
-		}
-		_, err = block.Upload(context.Background(), log.NewNopLogger(), bkt, filepath.Join(dir, meta.ULID.String()), nil)
-		require.NoError(t, err)
-		ids = append(ids, meta.ULID)
-	}
-	cfg := defaultPrepareStoreConfig(t)
-	cfg.numBlocks = 0
-	for _, o := range opts {
-		o(cfg)
-	}
-	return prepareStoreWithTestBlocks(t, bkt, cfg).store, ids
 }
 
 // Each phase of a count request has its own span, with what it covered.
@@ -1134,7 +688,7 @@ func TestBucketStore_CountsHaveSpansPerPhase(t *testing.T) {
 			require.Contains(t, attrs, "BucketStore.SeriesCounts plan")
 			assert.Equal(t, int64(2), attrs["BucketStore.SeriesCounts plan"]["blocks_loaded"])
 			require.Contains(t, attrs, "BucketStore.SeriesCounts postings")
-			assert.Equal(t, int64(5), attrs["BucketStore.SeriesCounts postings"]["series_matched_summed_over_blocks"], "up{pod=p1} is in both blocks")
+			assert.Equal(t, int64(2), attrs["BucketStore.SeriesCounts postings"]["blocks"])
 			require.Contains(t, attrs, "BucketStore.SeriesCounts walk")
 			assert.Equal(t, int64(2), attrs["BucketStore.SeriesCounts walk"]["blocks"])
 			assert.Equal(t, int64(5), attrs["BucketStore.SeriesCounts walk"]["series_walked"])
@@ -1158,12 +712,6 @@ func TestBucketStore_SeriesCountsStreams(t *testing.T) {
 			up := []cardinalitypb.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "up"}}
 			require.NoError(t, store.SeriesCounts(&storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, Matchers: up, StartMs: 0, EndMs: 4 * hourMs, GroupBy: "pod"}, srv))
 			assert.Zero(t, srv.sent[0].BlocksFromOffsetsTable, "a matcher reads postings")
-
-			// A refusal is sent as the call's error, with nothing streamed before it.
-			srv = &seriesCountsServerMock{ctx: t.Context()}
-			err := store.SeriesCounts(&storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, Matchers: up, StartMs: 0, EndMs: 4 * hourMs, MaxIndexBytes: 1}, srv)
-			require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-			assert.Empty(t, srv.sent)
 		})
 	}
 }
@@ -1290,16 +838,16 @@ func testBucketStoreSeriesCountsNameTable(t *testing.T, opts ...prepareStoreConf
 			return nil
 		}}
 	})
-	table := func(ids []string, maxIndexBytes int64) (*seriesCountsServerMock, error) {
+	table := func(ids []string) (*seriesCountsServerMock, error) {
 		srv := &seriesCountsServerMock{ctx: t.Context()}
-		err := s.store.SeriesCounts(&storegatewaypb.SeriesCountsRequest{BlockIds: ids, StartMs: minT, EndMs: maxT, GroupBy: "__name__", MaxIndexBytes: maxIndexBytes}, srv)
+		err := s.store.SeriesCounts(&storegatewaypb.SeriesCountsRequest{BlockIds: ids, StartMs: minT, EndMs: maxT, GroupBy: "__name__"}, srv)
 		return srv, err
 	}
 
 	// It counts exactly the requested blocks it holds, says which, and that
 	// it read only their offsets tables.
 	unknown := ulid.MustNew(1, nil)
-	srv, err := table([]string{first, unknown.String()}, 0)
+	srv, err := table([]string{first, unknown.String()})
 	require.NoError(t, err)
 	require.NotEmpty(t, srv.sent)
 	assert.Equal(t, []string{first}, srv.sent[0].BlockIds)
@@ -1315,22 +863,14 @@ func testBucketStoreSeriesCountsNameTable(t *testing.T, opts ...prepareStoreConf
 	tableBytes := srv.sent[0].PostingsOffsetsTableBytes
 	require.Positive(t, tableBytes, "the first message reports the table walked")
 
-	// max_index_bytes bounds the table before it is walked.
-	_, err = table([]string{first}, tableBytes)
-	require.NoError(t, err)
-	walked = 0
-	_, err = table([]string{first}, tableBytes-1)
-	require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-	assert.Zero(t, walked)
-
 	// An unknown block is a one-message stream that says nothing was counted.
-	srv, err = table([]string{unknown.String()}, 0)
+	srv, err = table([]string{unknown.String()})
 	require.NoError(t, err)
 	require.Len(t, srv.sent, 1)
 	assert.Empty(t, srv.sent[0].BlockIds)
 	assert.Empty(t, srv.sent[0].Groups)
 
-	_, err = table([]string{"not-a-ulid"}, 0)
+	_, err = table([]string{"not-a-ulid"})
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
 
@@ -1414,7 +954,7 @@ func TestSeriesCounts_MaxGroupsRefusesAtTheGroupOverTheCap(t *testing.T) {
 	series := func(pod string) seriesChunkRefs {
 		return seriesChunkRefs{lset: labels.FromStrings("__name__", "up", "pod", pod)}
 	}
-	c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: 0, EndMs: hourMs, GroupBy: "pod", MaxGroups: 2})
+	c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: 0, EndMs: hourMs, GroupBy: "pod", MaxGroups: 2}, 0)
 	require.NoError(t, err)
 	require.NoError(t, c.add(series("p1")))
 	require.NoError(t, c.add(series("p2")))
@@ -1423,31 +963,12 @@ func TestSeriesCounts_MaxGroupsRefusesAtTheGroupOverTheCap(t *testing.T) {
 	require.Equal(t, cardinality.LimitMaxGroups, cardinality.RefusedBy(err), err)
 	assert.ErrorContains(t, err, "at least 3 distinct values of pod, more than max_groups 2")
 
-	c, err = newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: 0, EndMs: hourMs, GroupBy: "pod", MaxGroups: 2})
+	c, err = newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: 0, EndMs: hourMs, GroupBy: "pod", MaxGroups: 2}, 0)
 	require.NoError(t, err)
 	require.NoError(t, c.addCounts(map[string]int64{"p1": 1, "p2": 1}, 0))
 	err = c.addCounts(map[string]int64{"p3": 1, "p4": 1, "p5": 1}, 0)
 	require.Equal(t, cardinality.LimitMaxGroups, cardinality.RefusedBy(err), err)
 	assert.Equal(t, 3, c.counter.GroupCount(), "the counts stop at the first group over the cap")
-}
-
-// Each group of hashes is its own set, so max_hashes is charged for the groups as well as the hashes.
-func TestBucketStore_SeriesCountsMaxHashesChargesGroups(t *testing.T) {
-	store, b1, _ := prepareSeriesCountsStore(t)
-	ctx := t.Context()
-	// The first block holds three pods, each a group of one or two hashes: four hashes.
-	req := func(maxHashes int64) *storegatewaypb.SeriesCountsRequest {
-		return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, StartMs: 0, EndMs: 4 * hourMs, GroupBy: "pod", Hashes: true, MaxHashes: maxHashes}
-	}
-	_, err := store.countSeries(ctx, req(4+3*groupHashes-1))
-	require.Equal(t, cardinality.LimitMaxHashes, cardinality.RefusedBy(err), err)
-	n, ok := cardinality.HashesNeeded(err)
-	require.True(t, ok, err)
-	assert.Equal(t, 4+3*groupHashes, n)
-
-	resp, err := store.countSeries(ctx, req(4+3*groupHashes))
-	require.NoError(t, err)
-	assert.Len(t, resp.Groups, 3)
 }
 
 // What a block resolved, its matching postings and its group-by offsets, is dropped once the block
@@ -1488,9 +1009,9 @@ func TestBucketStore_SeriesCountsReleasesBlockStateAfterTheWalk(t *testing.T) {
 	}
 }
 
-// A matcher that is planned by walking its label's postings offsets table has that table priced and
-// charged to max_index_bytes before the plan walks it.
-func TestBucketStore_SeriesCountsChargesLazyMatcherTables(t *testing.T) {
+// A matcher that is planned by walking its label's postings offsets table has that table reported
+// in postings_offsets_table_bytes.
+func TestBucketStore_SeriesCountsReportsLazyMatcherTables(t *testing.T) {
 	for name, opts := range countIndexHeaderVersions {
 		t.Run(name, func(t *testing.T) {
 			store, b1, _ := prepareSeriesCountsStore(t, opts...)
@@ -1511,20 +1032,11 @@ func TestBucketStore_SeriesCountsChargesLazyMatcherTables(t *testing.T) {
 			})
 			require.Positive(t, podTable)
 			// Hashes, so the group-by label's table is not walked.
-			req := func(maxIndexBytes int64) *storegatewaypb.SeriesCountsRequest {
-				return &storegatewaypb.SeriesCountsRequest{
-					BlockIds: []string{b1.String()},
-					Matchers: []cardinalitypb.LabelMatcher{{Type: labels.MatchRegexp, Name: "pod", Value: "p.+"}},
-					StartMs:  0, EndMs: 4 * hourMs, Hashes: true, MaxIndexBytes: maxIndexBytes,
-				}
-			}
-
-			_, err := store.countSeries(ctx, req(podTable-1))
-			require.Equal(t, cardinality.LimitMaxIndexBytes, cardinality.RefusedBy(err), err)
-			assert.ErrorContains(t, err, "pod postings offsets table")
-			assert.Empty(t, walked, "refused before the table is walked")
-
-			resp, err := store.countSeries(ctx, req(1<<20))
+			resp, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{
+				BlockIds: []string{b1.String()},
+				Matchers: []cardinalitypb.LabelMatcher{{Type: labels.MatchRegexp, Name: "pod", Value: "p.+"}},
+				StartMs:  0, EndMs: 4 * hourMs, Hashes: true,
+			})
 			require.NoError(t, err)
 			assert.Equal(t, []string{"pod"}, walked)
 			assert.Equal(t, podTable, resp.PostingsOffsetsTableBytes)
@@ -1533,7 +1045,7 @@ func TestBucketStore_SeriesCountsChargesLazyMatcherTables(t *testing.T) {
 	}
 }
 
-// max_index_bytes charges the postings bytes fetched when they are more than the bytes touched: one
+// index_bytes counts the postings bytes fetched when they are more than the bytes touched: one
 // fetched range also holds the gaps between the lists merged into it.
 func TestSeriesCounts_IndexBytesChargeFetchedPostings(t *testing.T) {
 	stats := newSafeQueryStats()
@@ -1549,9 +1061,9 @@ func TestSeriesCounts_IndexBytesChargeFetchedPostings(t *testing.T) {
 }
 
 // The series a query shard holds are not known before the walk, so no share of the matching series
-// is taken as a lower bound: a shard smaller than the even share would be refused for hashes it never holds.
+// is taken as a lower bound: a shard smaller than the even share would otherwise be counted as holding hashes it never holds.
 func TestSeriesCounts_HashesLowerBoundWithAQueryShard(t *testing.T) {
-	c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: 0, EndMs: 4 * hourMs, Hashes: true})
+	c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: 0, EndMs: 4 * hourMs, Hashes: true}, 0)
 	require.NoError(t, err)
 	meta := &block.Meta{}
 	meta.MinTime, meta.MaxTime = 0, 4*hourMs
@@ -1560,44 +1072,4 @@ func TestSeriesCounts_HashesLowerBoundWithAQueryShard(t *testing.T) {
 
 	c.shard = &sharding.ShardSelector{ShardIndex: 0, ShardCount: 4}
 	assert.Zero(t, c.hashesLowerBound(loaded), "a shard of four may hold fewer than 25 of the 100 series")
-}
-
-// With no matchers the series counts in the blocks' meta.json are enough to refuse a request over
-// max_index_bytes or max_hashes, so it is refused without loading an index-header.
-func TestBucketStore_SeriesCountsChecksLimitsBeforeLoadingIndexHeaders(t *testing.T) {
-	store, b1, b2 := prepareSeriesCountsStore(t)
-	ctx := t.Context()
-	loads := 0
-	store.blockSet.forEach(func(b *bucketBlock) {
-		b.indexHeaderReader = &interceptedIndexReader{Reader: b.indexHeaderReader, onIndexVersionCalled: func() error {
-			loads++
-			return nil
-		}}
-	})
-	// Hashes over two block ranges of four and two series: both blocks are walked.
-	req := func() *storegatewaypb.SeriesCountsRequest {
-		return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, StartMs: 0, EndMs: 8 * hourMs, Hashes: true}
-	}
-
-	overIndexBytes := req()
-	overIndexBytes.MaxIndexBytes = 4*6 - 1
-	_, err := store.countSeries(ctx, overIndexBytes)
-	require.Equal(t, cardinality.LimitMaxIndexBytes, cardinality.RefusedBy(err), err)
-	assert.Zero(t, loads, "refused on the all-postings lists alone, from meta.json")
-
-	overHashes := req()
-	overHashes.MaxHashes = 3
-	_, err = store.countSeries(ctx, overHashes)
-	n, ok := cardinality.HashesNeeded(err)
-	require.True(t, ok, err)
-	assert.Equal(t, int64(4), n, "the first block's four series")
-	assert.Zero(t, loads)
-
-	// With a matcher the index-headers have to be read first.
-	withMatcher := req()
-	withMatcher.MaxIndexBytes = 1
-	withMatcher.Matchers = []cardinalitypb.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "up"}}
-	_, err = store.countSeries(ctx, withMatcher)
-	require.Equal(t, cardinality.LimitMaxIndexBytes, cardinality.RefusedBy(err), err)
-	assert.Positive(t, loads)
 }

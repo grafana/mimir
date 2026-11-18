@@ -27,7 +27,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
-	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -97,22 +96,17 @@ func (s *BucketStore) recordCountFetchedBytes(postings, series, offsetsTable int
 	}
 }
 
-// seriesCountsState accumulates one SeriesCounts request and prices what it reads and holds against its limits.
+// seriesCountsState accumulates one SeriesCounts request and bounds what it holds by the tenant's
+// cardinality estimate memory limit.
 type seriesCountsState struct {
 	// matchers is empty when every series is wanted.
 	matchers []*labels.Matcher
 	// opts is what is counted, as the counter validated it.
 	opts    cardinality.CounterOptions
 	counter *cardinality.SeriesCounter
-	// maxIndexBytes caps postings, series and offsets table bytes read, 0 for none.
-	maxIndexBytes int64
-	// tableBytes is the postings offsets table read so far, for the group-by label and the labels of
+	// tableBytes is the postings offsets table walked, for the group-by label and the labels of
 	// lazyMatchers, priced from the index-header's samples.
 	tableBytes atomic.Int64
-	// walkedTableBytes is the part of tableBytes whose walk finished, for metrics.
-	walkedTableBytes atomic.Int64
-	// maxHashes caps the memory of the hashes and their groups, as the hashes that memory would hold, 0 for none.
-	maxHashes int64
 	// maxGroups caps the distinct group-by values, 0 for none.
 	maxGroups int64
 	// shard is the request's query shard, nil for none.
@@ -123,121 +117,79 @@ type seriesCountsState struct {
 	matchersKey indexcache.LabelMatchersKey
 	// stats is what the request read.
 	stats *safeQueryStats
+	// mem is what the request holds: expanded postings, groups and hashes.
+	mem countMemory
 }
 
-func newSeriesCountsState(req *storegatewaypb.SeriesCountsRequest) (*seriesCountsState, error) {
+func newSeriesCountsState(req *storegatewaypb.SeriesCountsRequest, maxMemoryBytes uint64) (*seriesCountsState, error) {
 	opts, counter, matchers, err := cardinality.CounterForQuery(&req.CountQuery, req.MaxGroups)
 	if err != nil {
 		return nil, err
 	}
-	c := &seriesCountsState{
-		matchers:      matchers,
-		opts:          opts,
-		counter:       counter,
-		maxIndexBytes: req.MaxIndexBytes,
-		maxHashes:     req.MaxHashes,
-		maxGroups:     req.MaxGroups,
-	}
-	return c, nil
+	return &seriesCountsState{
+		matchers:  matchers,
+		opts:      opts,
+		counter:   counter,
+		maxGroups: req.MaxGroups,
+		mem:       countMemory{limit: maxMemoryBytes},
+	}, nil
 }
 
-// indexBytes is the postings and series bytes read so far, as max_index_bytes charges them. Postings
-// are charged the larger of the bytes touched and the bytes fetched, since a fetch also reads the gaps
-// between the lists it merges into one range. Series are charged as processed: their fetched bytes
-// include the tsdb.MaxSeriesSize each range asks for past its last series, which is not read.
+// What a count request holds, as countMemory charges it.
+const (
+	// countRefBytes is one expanded series ref.
+	countRefBytes = 8
+	// countRawPostingBytes is one entry of a postings list as fetched.
+	countRawPostingBytes = 4
+	// countGroupBytes is one group of counts, before its value.
+	countGroupBytes = 64
+)
+
+// countMemory is what one count request holds. take refuses before the memory is taken when it
+// would pass the limit. Safe for concurrent use.
+type countMemory struct {
+	// limit is the tenant's cardinality estimate memory limit, 0 for none.
+	limit uint64
+	held  atomic.Uint64
+}
+
+func (m *countMemory) take(b uint64, what string) error {
+	if b == 0 {
+		return nil
+	}
+	if n := m.held.Add(b); m.limit > 0 && n > m.limit {
+		m.held.Sub(b)
+		return cardinality.Refusalf(cardinality.LimitMemory, "the request would hold more than %d bytes in the store-gateway while counting, the tenant's cardinality estimate memory limit, with %s", m.limit, what)
+	}
+	return nil
+}
+
+func (m *countMemory) release(b uint64) {
+	if b > 0 {
+		m.held.Sub(b)
+	}
+}
+
+// indexBytes is the postings and series bytes read so far. Postings count the larger of the bytes
+// touched and the bytes fetched, since a fetch also reads the gaps between the lists it merges into
+// one range. Series count as processed: their fetched bytes include the tsdb.MaxSeriesSize each
+// range asks for past its last series, which is not read.
 func indexBytes(stats *safeQueryStats) int64 {
 	st := stats.export()
 	return int64(max(st.postingsTouchedSizeSum, st.postingsFetchedSizeSum) + st.seriesProcessedSizeSum)
 }
 
-// limitedBytes is what max_index_bytes bounds.
-func (c *seriesCountsState) limitedBytes(stats *safeQueryStats) int64 {
-	return indexBytes(stats) + c.tableBytes.Load()
-}
-
-// checkTable refuses before label's postings offsets table is walked in a block if it would pass max_index_bytes.
-func (c *seriesCountsState) checkTable(label string, read, table int64) error {
-	if c.maxIndexBytes == 0 || read+table <= c.maxIndexBytes {
-		return nil
-	}
-	return cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about %d index bytes (%d of postings, then %d of the %s postings offsets table), more than max_index_bytes %d",
-		read+table, read, table, label, c.maxIndexBytes)
-}
-
-// chargeLazyMatchers prices the postings offsets tables that planning a block's postings walks, one per
-// lazy matcher, and refuses before the plan if they would pass max_index_bytes. The price is the label's
-// whole table, an upper bound for a matcher with a prefix. It returns the bytes charged.
-func (c *seriesCountsState) chargeLazyMatchers(ctx context.Context, o *countBlock) (int64, error) {
-	var charged int64
+// measureLazyMatchers adds the postings offsets tables that planning a block's postings walks, one
+// per lazy matcher, to tableBytes. A matcher with a prefix walks less than its label's whole table.
+func (c *seriesCountsState) measureLazyMatchers(ctx context.Context, o *countBlock) error {
 	for _, m := range c.lazyMatchers {
 		labelStats, err := o.b.indexHeaderReader.LabelValuesStats(ctx, m.Name)
 		if err != nil {
-			return 0, status.Errorf(codes.Internal, "block %s: %s offsets table: %v", o.b.meta.ULID, m.Name, err)
+			return status.Errorf(codes.Internal, "block %s: %s offsets table: %v", o.b.meta.ULID, m.Name, err)
 		}
-		if labelStats.OffsetsTableBytes == 0 {
-			continue
-		}
-		if err := c.checkTable(m.Name, indexBytes(c.stats), c.tableBytes.Add(labelStats.OffsetsTableBytes)); err != nil {
-			return 0, err
-		}
-		charged += labelStats.OffsetsTableBytes
+		c.tableBytes.Add(labelStats.OffsetsTableBytes)
 	}
-	return charged, nil
-}
-
-// defaultCountPostingsPlansMaxBytes caps the posting groups one request keeps between pricing and fetching.
-const defaultCountPostingsPlansMaxBytes int64 = 64 << 20
-
-// checkPostings refuses before any postings list is fetched if their priced size would pass max_index_bytes.
-func (c *seriesCountsState) checkPostings(read, postings, blocks int64) error {
-	if c.maxIndexBytes == 0 || read+postings <= c.maxIndexBytes {
-		return nil
-	}
-	lists := "postings lists its matchers select"
-	if len(c.matchers) == 0 {
-		lists = "all-postings lists"
-	}
-	return cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about %d index bytes (%d already read, then %d of %s over %d blocks, priced from the postings offsets table), more than max_index_bytes %d",
-		read+postings, read, postings, lists, blocks, c.maxIndexBytes)
-}
-
-// checkPlan refuses before any series entry is read if the planned read would pass max_index_bytes.
-func (c *seriesCountsState) checkPlan(read int64, series int, seriesBytes, postings int64) error {
-	if c.maxIndexBytes == 0 {
-		return nil
-	}
-	estimate := read + seriesBytes + postings
-	if estimate <= c.maxIndexBytes {
-		return nil
-	}
-	avg := int64(0)
-	if series > 0 {
-		avg = seriesBytes / int64(series)
-	}
-	return cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about %d index bytes (%d of postings and postings offsets table read, then %d series at an estimated %d bytes each and %d bytes of postings), more than max_index_bytes %d",
-		estimate, read, series, avg, postings, c.maxIndexBytes)
-}
-
-// allPostingsBytes is the size of the all-postings list of a block with n series.
-func allPostingsBytes(n int64) int64 {
-	return 4 * n
-}
-
-// minSeriesEntryEstimate is the smallest estimate seriesEntryEstimate returns.
-const minSeriesEntryEstimate = 32
-
-// seriesEntryEstimate prices a series entry from meta.json's index size per series, capped at
-// tsdb.EstimatedSeriesP99Size, which is also the fallback.
-func seriesEntryEstimate(m *block.Meta) int64 {
-	if m.Stats.NumSeries == 0 {
-		return tsdb.EstimatedSeriesP99Size
-	}
-	for _, f := range m.Thanos.Files {
-		if f.RelPath == block.IndexFilename && f.SizeBytes > 0 {
-			return max(minSeriesEntryEstimate, min(tsdb.EstimatedSeriesP99Size, f.SizeBytes/int64(m.Stats.NumSeries)))
-		}
-	}
-	return tsdb.EstimatedSeriesP99Size
+	return nil
 }
 
 // seriesEntryPlanningBytes is a typical series entry size, used to choose between series entries and group-by postings.
@@ -254,43 +206,40 @@ func (c *seriesCountsState) addCounts(counts map[string]int64, without int64) er
 		counts[""] += without
 	}
 	for v, n := range counts {
+		before := c.counter.GroupCount()
 		if err := c.counter.AddCount(v, n); err != nil {
 			return err
 		}
-		if err := c.checkGroups(); err != nil {
+		if err := c.chargeAdded(before, 0, v); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// checkGroups refuses once the groups pass max_groups. Callers check as each group is created, so
-// the groups held never pass max_groups by more than one.
-func (c *seriesCountsState) checkGroups() error {
-	if n := int64(c.counter.GroupCount()); c.maxGroups > 0 && n > c.maxGroups {
+// chargeAdded checks max_groups and charges the memory of what the counter added since it held
+// groupsBefore groups and hashesBefore hashes, value being the last group-by value added. Callers
+// charge after each series, so the counter holds at most one entry past either limit.
+func (c *seriesCountsState) chargeAdded(groupsBefore int, hashesBefore int64, value string) error {
+	groups := c.counter.GroupCount()
+	if n := int64(groups); c.maxGroups > 0 && n > c.maxGroups {
 		return cardinality.MaxGroupsRefusal("the blocks hold at least", n, c.opts.GroupBy, c.maxGroups)
 	}
-	return nil
-}
-
-// checkHashes refuses once the hashes held, with the memory of the groups that hold them, pass max_hashes.
-func (c *seriesCountsState) checkHashes() error {
-	if !c.opts.Hashes || c.maxHashes == 0 {
+	var b uint64
+	if groups > groupsBefore {
+		if c.opts.Hashes {
+			b += uint64(cardinality.GroupBytes + len(value))
+		} else {
+			b += uint64(countGroupBytes + len(value))
+		}
+	}
+	if c.opts.Hashes {
+		b += uint64(c.counter.HashesHeld()-hashesBefore) * cardinality.HashBytes
+	}
+	if b == 0 {
 		return nil
 	}
-	hashes, groups := c.counter.HashesHeld(), int64(c.counter.GroupCount())
-	if hashes+groups*(cardinality.GroupBytes/cardinality.HashBytes) <= c.maxHashes {
-		return nil
-	}
-	return cardinality.MaxHashesHeldRefusal(hashes, groups, c.maxHashes)
-}
-
-// checkRead refuses once what was read passes max_index_bytes.
-func (c *seriesCountsState) checkRead(read int64) error {
-	if c.maxIndexBytes == 0 || read <= c.maxIndexBytes {
-		return nil
-	}
-	return cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request read %d index bytes after %d series, more than max_index_bytes %d", read, c.counter.Counted(), c.maxIndexBytes)
+	return c.mem.take(b, "the groups and hashes counted")
 }
 
 // strategy picks the cheapest series iterator for one block.
@@ -303,15 +252,17 @@ func (c *seriesCountsState) strategy(m *block.Meta) seriesIteratorStrategy {
 	}
 }
 
-// add counts one series and refuses a group past max_groups. The iterator already kept only series
-// in the window.
+// add counts one series, refuses a group past max_groups and charges what the counter holds. The
+// iterator already kept only series in the window.
 func (c *seriesCountsState) add(s seriesChunkRefs) error {
 	var hash uint64
 	if c.opts.Hashes {
 		hash = labels.StableHash(s.lset)
 	}
-	c.counter.AddGroupInWindow(s.lset.Get(c.opts.GroupBy), hash)
-	return c.checkGroups()
+	groups, hashes := c.counter.GroupCount(), c.counter.HashesHeld()
+	v := s.lset.Get(c.opts.GroupBy)
+	c.counter.AddGroupInWindow(v, hash)
+	return c.chargeAdded(groups, hashes, v)
 }
 
 // SeriesCounts implements the storegatewaypb.StoreGatewayServer interface.
@@ -333,12 +284,8 @@ type countBlock struct {
 	seriesCount int64
 	// groupOffsets is set when the block is counted from the group-by label's postings.
 	groupOffsets []streamindex.PostingListOffset
-	// groupPostingsBytes is what reading those postings costs.
-	groupPostingsBytes int64
-	// expanded is set once postings and pending hold the matching series; otherwise plan, if set,
-	// is the posting groups to fetch.
-	expanded bool
-	plan     *postingsPlan
+	// held is what postings is charged to the request's memory.
+	held uint64
 }
 
 // countSeries answers a SeriesCounts request as one response; every refusal comes before anything is sent.
@@ -365,7 +312,7 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 	// Counted whether or not the request is answered, and not in the Series metrics.
 	defer func() {
 		st := c.stats.export()
-		s.recordCountFetchedBytes(int64(st.postingsFetchedSizeSum), int64(st.seriesFetchedSizeSum), c.walkedTableBytes.Load())
+		s.recordCountFetchedBytes(int64(st.postingsFetchedSizeSum), int64(st.seriesFetchedSizeSum), c.tableBytes.Load())
 	}()
 	// One span per phase: plan, postings, walk. Ending a span twice is a no-op.
 	planCtx, planSpan := tracer.Start(ctx, "BucketStore.SeriesCounts plan")
@@ -377,7 +324,7 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 		}
 	}()
 	planSpan.SetAttributes(attribute.Int("blocks", len(blocks)))
-	if err := c.checkBeforeLoad(blocks); err != nil {
+	if err := c.checkBeforeLoad(blocks, s.countBlockConcurrency); err != nil {
 		return nil, err
 	}
 	loaded, err := s.loadCountBlocks(planCtx, c, blocks)
@@ -388,16 +335,6 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 	if err := c.boundGroups(planCtx, loaded); err != nil {
 		return nil, err
 	}
-	if c.maxIndexBytes > 0 {
-		price, priced, err := s.priceCountPostings(planCtx, c, loaded)
-		if err != nil {
-			return nil, err
-		}
-		planSpan.SetAttributes(attribute.Int64("postings_price_bytes", price))
-		if err := c.checkPostings(c.limitedBytes(c.stats), price, priced); err != nil {
-			return nil, err
-		}
-	}
 	planSpan.End()
 
 	postingsCtx, postingsSpan := tracer.Start(ctx, "BucketStore.SeriesCounts postings")
@@ -406,18 +343,7 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 	if err := s.resolveCountPostings(postingsCtx, c, loaded); err != nil {
 		return nil, err
 	}
-	if c.opts.Hashes && c.maxHashes > 0 {
-		matching := c.hashesLowerBound(loaded)
-		postingsSpan.SetAttributes(attribute.Int64("hashes_lower_bound", matching))
-		if matching > c.maxHashes {
-			return nil, cardinality.MaxHashesRefusal(matching, c.maxHashes)
-		}
-	}
-	series, matched, err := c.checkWalk(loaded)
-	postingsSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("series_matched_summed_over_blocks", matched), attribute.Int("series_entries_to_read", series))
-	if err != nil {
-		return nil, err
-	}
+	postingsSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("held_bytes", int64(c.mem.held.Load())))
 	postingsSpan.End()
 
 	walkCtx, walkSpan := tracer.Start(ctx, "BucketStore.SeriesCounts walk")
@@ -427,16 +353,19 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 	if err != nil {
 		return nil, err
 	}
-	if err := c.finishResponse(resp); err != nil {
-		return nil, err
-	}
+	c.finishResponse(resp)
 	walkSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("blocks_from_postings", resp.BlocksFromPostings), attribute.Int64("series_walked", resp.SeriesCounted))
 	return resp, nil
 }
 
-// newCountRequest validates req. Its limits are the caller's to set: the querier bounds them by the tenant's.
+// newCountRequest validates req. max_groups is the caller's to set: the querier bounds it by the tenant's.
+// The memory limit is the tenant's.
 func (s *BucketStore) newCountRequest(req *storegatewaypb.SeriesCountsRequest) (*seriesCountsState, error) {
-	c, err := newSeriesCountsState(req)
+	var maxMemory uint64
+	if s.countMaxMemoryBytes != nil {
+		maxMemory = s.countMaxMemoryBytes()
+	}
+	c, err := newSeriesCountsState(req, maxMemory)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -480,28 +409,37 @@ func (s *BucketStore) openCountBlocks(ids []string) ([]countBlock, error) {
 }
 
 // checkBeforeLoad refuses a request with no matchers that the series counts in the blocks' meta.json
-// already put over max_hashes or max_index_bytes, before any index-header is loaded through the gate
-// shared with Series requests. With matchers nothing is known until the index-headers are read.
-func (c *seriesCountsState) checkBeforeLoad(blocks []countBlock) error {
-	if len(c.matchers) > 0 {
+// already put over the memory limit, before any index-header is loaded through the gate shared with
+// Series requests: the all-postings lists of the largest blocks walked at once, or the hashes of the
+// series one block range is known to hold. With matchers nothing is known until the index-headers
+// are read.
+func (c *seriesCountsState) checkBeforeLoad(blocks []countBlock, concurrency int) error {
+	if len(c.matchers) > 0 || c.mem.limit == 0 {
 		return nil
 	}
-	var all, walked []countBlock
+	var all []countBlock
+	var walked []uint64
 	for _, o := range blocks {
 		o.seriesCount = int64(o.b.meta.Stats.NumSeries)
 		all = append(all, o)
-		// The other blocks may be counted from the group-by label's postings, at a price not known yet.
+		// The other blocks may be counted from the group-by label's postings.
 		if !c.postingsOnly(o.b.meta, c.shard, nil) {
-			walked = append(walked, o)
+			walked = append(walked, uint64(o.seriesCount))
 		}
 	}
-	if c.opts.Hashes && c.maxHashes > 0 {
-		if matching := c.hashesLowerBound(all); matching > c.maxHashes {
-			return cardinality.MaxHashesRefusal(matching, c.maxHashes)
-		}
+	slices.Sort(walked)
+	var postings uint64
+	for _, n := range walked[max(0, len(walked)-concurrency):] {
+		postings += n * (countRefBytes + countRawPostingBytes)
 	}
-	_, _, err := c.checkWalk(walked)
-	return err
+	var hashes uint64
+	if c.opts.Hashes {
+		hashes = uint64(c.hashesLowerBound(all)) * cardinality.HashBytes
+	}
+	if postings+hashes > c.mem.limit {
+		return cardinality.Refusalf(cardinality.LimitMemory, "the request would hold more than %d bytes in the store-gateway while counting, the tenant's cardinality estimate memory limit: %d bytes of postings for the largest blocks read at once and %d bytes of hashes, from the series counts in meta.json", c.mem.limit, postings, hashes)
+	}
+	return nil
 }
 
 // loadCountBlocks loads the blocks' index-headers and returns the blocks that can be counted.
@@ -579,59 +517,10 @@ func (c *seriesCountsState) boundGroups(ctx context.Context, loaded []countBlock
 	return nil
 }
 
-// priceCountPostings prices every block's postings from the postings offsets table before any is fetched,
-// and returns the price and the number of blocks priced. With matchers, posting groups are kept for the
-// fetch while under countPostingsPlansMaxBytes, and rebuilt then otherwise.
-func (s *BucketStore) priceCountPostings(ctx context.Context, c *seriesCountsState, loaded []countBlock) (price, priced int64, _ error) {
-	var priceSum, kept, pricedSum atomic.Int64
-	ag, actx := errgroup.WithContext(ctx)
-	ag.SetLimit(s.countBlockConcurrency)
-	for i := range loaded {
-		o := &loaded[i]
-		if len(c.matchers) == 0 {
-			if !c.postingsOnly(o.b.meta, c.shard, nil) {
-				pricedSum.Add(1)
-				priceSum.Add(allPostingsBytes(o.seriesCount))
-			}
-			continue
-		}
-		ag.Go(func() error {
-			if refs, pending, ok := o.indexr.fetchCachedExpandedPostings(actx, o.b.userID, c.matchersKey, c.stats); ok {
-				o.postings, o.pending, o.expanded = refs, pending, true
-				return nil
-			}
-			tableBytes, err := c.chargeLazyMatchers(actx, o)
-			if err != nil {
-				return err
-			}
-			plan, err := o.indexr.planPostings(actx, c.matchers)
-			if err != nil {
-				return status.Errorf(codes.Internal, "block %s: plan postings: %v", o.b.meta.ULID, err)
-			}
-			c.walkedTableBytes.Add(tableBytes)
-			if len(plan.groups) == 0 {
-				o.indexr.cacheExpandedPostings(o.b.userID, c.matchersKey, nil, nil)
-				o.expanded = true
-				return nil
-			}
-			pricedSum.Add(1)
-			priceSum.Add(o.indexr.plannedFetchBytes(plan))
-			if size := plan.heapBytes(); kept.Add(size) <= s.countPostingsPlansMaxBytes {
-				o.plan = &plan
-			} else {
-				kept.Add(-size)
-			}
-			return nil
-		})
-	}
-	if err := ag.Wait(); err != nil {
-		return 0, 0, err
-	}
-	return priceSum.Load(), pricedSum.Load(), nil
-}
-
 // resolveCountPostings resolves each block's matching series, and picks the blocks counted from the
-// group-by label's postings instead of series entries.
+// group-by label's postings instead of series entries. Expanded postings are charged to the request's
+// memory before they are read: with matchers at an upper value from the planned postings lists, then
+// at their size.
 func (s *BucketStore) resolveCountPostings(ctx context.Context, c *seriesCountsState, loaded []countBlock) error {
 	pg, pctx := errgroup.WithContext(ctx)
 	pg.SetLimit(s.countBlockConcurrency)
@@ -640,31 +529,9 @@ func (s *BucketStore) resolveCountPostings(ctx context.Context, c *seriesCountsS
 		pg.Go(func() error {
 			// With no matchers the all-postings list is fetched at the walk.
 			if len(c.matchers) > 0 {
-				var err error
-				switch {
-				case o.expanded:
-				case o.plan != nil:
-					// A kept plan skips the ExpandedPostings promise shared with concurrent requests.
-					o.postings, o.pending, err = o.indexr.expandPlannedPostings(pctx, *o.plan, c.stats)
-					o.plan = nil
-					if err == nil {
-						o.indexr.cacheExpandedPostings(o.b.userID, c.matchersKey, o.postings, o.pending)
-					}
-				default:
-					// A priced block whose plan was not kept is planned again, which walks the tables again.
-					var tableBytes int64
-					if c.maxIndexBytes > 0 {
-						if tableBytes, err = c.chargeLazyMatchers(pctx, o); err != nil {
-							return err
-						}
-					}
-					o.postings, o.pending, err = o.indexr.ExpandedPostings(pctx, c.matchers, c.stats)
-					c.walkedTableBytes.Add(tableBytes)
+				if err := c.expandMatchingPostings(pctx, o); err != nil {
+					return err
 				}
-				if err != nil {
-					return status.Errorf(codes.Internal, "block %s: expanded postings: %v", o.b.meta.ULID, err)
-				}
-				o.seriesCount = int64(len(o.postings))
 			}
 			if !c.postingsOnly(o.b.meta, c.shard, o.pending) {
 				return nil
@@ -678,14 +545,11 @@ func (s *BucketStore) resolveCountPostings(ctx context.Context, c *seriesCountsS
 			if tableBytes >= o.seriesCount*seriesEntryPlanningBytes {
 				return nil
 			}
-			if err := c.checkTable(c.opts.GroupBy, indexBytes(c.stats), c.tableBytes.Add(tableBytes)); err != nil {
-				return err
-			}
 			offsets, err := o.b.indexHeaderReader.LabelValuesOffsets(pctx, c.opts.GroupBy, "", nil)
 			if err != nil {
 				return status.Errorf(codes.Internal, "block %s: %s offsets: %v", o.b.meta.ULID, c.opts.GroupBy, err)
 			}
-			c.walkedTableBytes.Add(tableBytes)
+			c.tableBytes.Add(tableBytes)
 			var cost int64
 			if len(c.matchers) > 0 {
 				for _, off := range offsets {
@@ -693,7 +557,7 @@ func (s *BucketStore) resolveCountPostings(ctx context.Context, c *seriesCountsS
 				}
 			}
 			if tableBytes+cost < o.seriesCount*seriesEntryPlanningBytes {
-				o.groupOffsets, o.groupPostingsBytes = offsets, cost
+				o.groupOffsets = offsets
 				if o.groupOffsets == nil {
 					o.groupOffsets = []streamindex.PostingListOffset{}
 				}
@@ -702,6 +566,53 @@ func (s *BucketStore) resolveCountPostings(ctx context.Context, c *seriesCountsS
 		})
 	}
 	return pg.Wait()
+}
+
+// expandMatchingPostings sets o's postings and pending matchers for the request's matchers, from the
+// expanded postings cache or the index, charged to the request's memory.
+func (c *seriesCountsState) expandMatchingPostings(ctx context.Context, o *countBlock) error {
+	if refs, pending, ok := o.indexr.fetchCachedExpandedPostings(ctx, o.b.userID, c.matchersKey, c.stats); ok {
+		if err := c.holdPostings(o, uint64(len(refs))*countRefBytes); err != nil {
+			return err
+		}
+		o.postings, o.pending, o.seriesCount = refs, pending, int64(len(refs))
+		return nil
+	}
+	if err := c.measureLazyMatchers(ctx, o); err != nil {
+		return err
+	}
+	plan, err := o.indexr.planPostings(ctx, c.matchers)
+	if err != nil {
+		return status.Errorf(codes.Internal, "block %s: plan postings: %v", o.b.meta.ULID, err)
+	}
+	if len(plan.groups) == 0 {
+		o.indexr.cacheExpandedPostings(o.b.userID, c.matchersKey, nil, nil)
+		o.seriesCount = 0
+		return nil
+	}
+	// The fetched lists, and the refs expanded from them: at most one ref per entry fetched.
+	fetched := uint64(max(0, o.indexr.plannedFetchBytes(plan)))
+	upper := fetched + fetched/countRawPostingBytes*countRefBytes
+	if err := c.mem.take(upper, fmt.Sprintf("about %d bytes of postings lists to expand in block %s", fetched, o.b.meta.ULID)); err != nil {
+		return err
+	}
+	o.postings, o.pending, err = o.indexr.expandPlannedPostings(ctx, plan, c.stats)
+	c.mem.release(upper)
+	if err != nil {
+		return status.Errorf(codes.Internal, "block %s: expanded postings: %v", o.b.meta.ULID, err)
+	}
+	o.indexr.cacheExpandedPostings(o.b.userID, c.matchersKey, o.postings, o.pending)
+	o.seriesCount = int64(len(o.postings))
+	return c.holdPostings(o, uint64(len(o.postings))*countRefBytes)
+}
+
+// holdPostings charges b bytes of o's postings to the request's memory until the block is counted.
+func (c *seriesCountsState) holdPostings(o *countBlock, b uint64) error {
+	if err := c.mem.take(b, fmt.Sprintf("the expanded postings of block %s", o.b.meta.ULID)); err != nil {
+		return err
+	}
+	o.held += b
+	return nil
 }
 
 // hashesLowerBound is a lower bound on the distinct series a request asking for hashes will hold, from
@@ -739,28 +650,6 @@ func (c *seriesCountsState) hashesLowerBound(loaded []countBlock) int64 {
 	return matching
 }
 
-// checkWalk prices what is still to read before the walk and refuses a request over max_index_bytes.
-// It returns the series entries to read and the series matched.
-func (c *seriesCountsState) checkWalk(loaded []countBlock) (series int, matched int64, _ error) {
-	var (
-		seriesBytes int64
-		postings    int64
-	)
-	for _, o := range loaded {
-		matched += o.seriesCount
-		if o.groupOffsets != nil {
-			postings += o.groupPostingsBytes
-			continue
-		}
-		if len(c.matchers) == 0 {
-			postings += allPostingsBytes(o.seriesCount)
-		}
-		series += int(o.seriesCount)
-		seriesBytes += o.seriesCount * seriesEntryEstimate(o.b.meta)
-	}
-	return series, matched, c.checkPlan(c.limitedBytes(c.stats), series, seriesBytes, postings)
-}
-
 // walkCountBlocks counts the blocks and returns the response with the block IDs counted.
 func (s *BucketStore) walkCountBlocks(ctx context.Context, c *seriesCountsState, loaded []countBlock) (*storegatewaypb.SeriesCountsResponse, error) {
 	resp := &storegatewaypb.SeriesCountsResponse{}
@@ -782,8 +671,15 @@ func (s *BucketStore) walkCountBlocks(ctx context.Context, c *seriesCountsState,
 				err = addBlockCountsFromPostings(sctx, o.b, o.indexr, o.postings, o.seriesCount, o.groupOffsets, len(c.matchers) == 0, c, &mtx, c.stats)
 			} else {
 				if len(c.matchers) == 0 {
-					// Every check has passed, so read the all-postings list now.
-					if o.postings, err = allPostingsForBlock(sctx, o.indexr, c.stats); err != nil {
+					// The list as fetched and its expanded refs, charged before the read.
+					n := uint64(o.seriesCount)
+					if err := c.mem.take(n*(countRawPostingBytes+countRefBytes), fmt.Sprintf("the all-postings list of block %s, %d series", o.b.meta.ULID, n)); err != nil {
+						return err
+					}
+					o.postings, err = allPostingsForBlock(sctx, o.indexr, c.stats)
+					c.mem.release(n * countRawPostingBytes)
+					o.held += n * countRefBytes
+					if err != nil {
 						return status.Errorf(codes.Internal, "block %s: expanded postings: %v", o.b.meta.ULID, err)
 					}
 				}
@@ -791,6 +687,8 @@ func (s *BucketStore) walkCountBlocks(ctx context.Context, c *seriesCountsState,
 			}
 			// The block is counted, so what it resolved is not held while the others are.
 			o.postings, o.pending, o.groupOffsets = nil, nil, nil
+			c.mem.release(o.held)
+			o.held = 0
 			if err != nil {
 				if _, ok := grpcutil.ErrorToStatus(err); ok {
 					return err
@@ -808,7 +706,7 @@ func (s *BucketStore) walkCountBlocks(ctx context.Context, c *seriesCountsState,
 }
 
 // finishResponse fills resp.
-func (c *seriesCountsState) finishResponse(resp *storegatewaypb.SeriesCountsResponse) error {
+func (c *seriesCountsState) finishResponse(resp *storegatewaypb.SeriesCountsResponse) {
 	resp.Groups = c.counter.Groups()
 	resp.SeriesCounted = c.counter.Counted()
 	st := c.stats.export()
@@ -816,11 +714,9 @@ func (c *seriesCountsState) finishResponse(resp *storegatewaypb.SeriesCountsResp
 	resp.SeriesFetchedBytes = int64(st.seriesFetchedSizeSum)
 	resp.IndexBytes = indexBytes(c.stats)
 	resp.PostingsOffsetsTableBytes = c.tableBytes.Load()
-	return nil
 }
 
-// addBlockSeriesCounts adds one block's matching series to c and fails once max_index_bytes is passed.
-// Additions to c hold mtx.
+// addBlockSeriesCounts adds one block's matching series to c. Additions to c hold mtx.
 func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, indexr *bucketIndexReader, postings []storage.SeriesRef, pending []*labels.Matcher, shard *sharding.ShardSelector, c *seriesCountsState, mtx *sync.Mutex, stats *safeQueryStats) error {
 	hasher := cachedSeriesHasher{nil}
 	if shard != nil {
@@ -841,14 +737,8 @@ func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, 
 				break
 			}
 		}
-		if err == nil {
-			err = c.checkHashes()
-		}
 		mtx.Unlock()
 		if err != nil {
-			return err
-		}
-		if err := c.checkRead(c.limitedBytes(stats)); err != nil {
 			return err
 		}
 	}
@@ -901,12 +791,8 @@ func addBlockCountsFromPostings(ctx context.Context, b *bucketBlock, indexr *buc
 		}
 	}
 	mtx.Lock()
-	err := c.addCounts(counts, total-inGroups)
-	mtx.Unlock()
-	if err != nil {
-		return err
-	}
-	return c.checkRead(c.limitedBytes(stats))
+	defer mtx.Unlock()
+	return c.addCounts(counts, total-inGroups)
 }
 
 // countIntersectionCheckEvery is how many steps countIntersection takes between context checks.

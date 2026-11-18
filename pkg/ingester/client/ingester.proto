@@ -73,10 +73,8 @@ enum CountMethod {
 }
 
 message SeriesCountsRequest {
-  // What to count. max_index_bytes is refused rather than walk the series when the matching series, priced at a
-  // fixed walk cost of 64 bytes each, or 100 when the walk gathers the head and local blocks, come to more than it.
-  // max_hashes is refused before the walk when one local block inside the window matches more series than it, and
-  // during the walk once the distinct series counted in the window pass it.
+  // What to count. The ingester refuses a walk that would hold more than the tenant's cardinality estimate memory
+  // limit in series refs, gathered series, groups and hashes.
   cardinalitypb.CountQuery query = 1 [
     (gogoproto.embed) = true,
     (gogoproto.nullable) = false
@@ -96,10 +94,7 @@ message SeriesCountsResponse {
   // or not it is in the window. Samples before it are no longer on this ingester. 0 only when it holds no series and
   // no block for the tenant.
   int64 min_time_ms = 6;
-  reserved 8, 9;
-  // What the request used of max_index_bytes: the series this ingester matched in the head and local blocks, at the
-  // walk cost the limit prices them at. 0 when it walked nothing.
-  int64 index_bytes = 10;
+  reserved 8, 9, 10;
 }
 
 message LabelValuesCardinalityRequest {

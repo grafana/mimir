@@ -6909,20 +6909,9 @@
         },
         {
           "kind": "field",
-          "name": "cardinality_estimate_max_index_bytes",
-          "required": false,
-          "desc": "Maximum index bytes, postings, series entries and the postings offsets table entries walked, that one cardinality estimate may read across the store-gateways and ingesters it asks. A request that sets no max_index_bytes gets this limit, and a larger max_index_bytes is cut to it. The querier applies it: it splits it across the calls it sends, and each store-gateway and ingester refuses a call that would read more than the share it is sent. 0 means no limit.",
-          "fieldValue": null,
-          "fieldDefaultValue": 2147483648,
-          "fieldFlag": "querier.cardinality-estimate-max-index-bytes",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "cardinality_estimate_max_memory_bytes",
           "required": false,
-          "desc": "Maximum memory, in bytes, that the groups and label-set hashes of one cardinality estimate may hold in the querier while it merges the store-gateways' and ingesters' answers. An estimate over it fails with 422. When -querier.max-estimated-memory-consumption-per-query is lower, that applies instead. It also sets how many series hashes, at 32 bytes each, the store-gateways and ingesters may send one estimate that deduplicates: the querier sends each a share, and each refuses past the share it is sent. Each ingester also applies this limit to the series one count holds while it walks them. 0 means only that per-query limit applies.",
+          "desc": "Maximum memory, in bytes, that one cardinality estimate may hold: in the querier, the groups and label-set hashes it merges from the store-gateways' and ingesters' answers; in each store-gateway call, the expanded postings, groups and hashes it holds while counting; and in each ingester walk, the series refs, the series gathered across sources, and the groups and hashes. Each component refuses before it takes more, and the estimate fails with 422. When -querier.max-estimated-memory-consumption-per-query is lower, the querier applies that instead. 0 means only that per-query limit applies, in the querier alone.",
           "fieldValue": null,
           "fieldDefaultValue": 268435456,
           "fieldFlag": "querier.cardinality-estimate-max-memory-bytes",

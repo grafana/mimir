@@ -62,34 +62,15 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 		return nil
 	}
 
-	heldBeforeAttempt := map[int]int64{}
-	cov, err := q.runSeriesCountsCalls(ctx, tenantID, parts, req.MaxIndexBytes, func(ctx context.Context, c estimateCall, perCall int64, calls int) (seriesCountsCallResult, error) {
-		// Each call gets a share of the querier's hashes limit, from what the hashes already merged leave of it. The held count is read once per attempt.
-		var maxHashes int64
-		if res.Dedup && req.MaxHashes > 0 {
-			mtx.Lock()
-			held, ok := heldBeforeAttempt[c.attempt]
-			if !ok {
-				held = m.held
-				heldBeforeAttempt[c.attempt] = held
-			}
-			mtx.Unlock()
-			left := req.MaxHashes - held
-			if left <= 0 {
-				return seriesCountsCallResult{}, refusedByLimit(refusedByMaxHashes, "the %d hashes the tenant's cardinality estimate memory limit allows are held before every block was counted", req.MaxHashes)
-			}
-			maxHashes = splitIndexBytes(left, calls)
-		}
+	cov, err := q.runSeriesCountsCalls(ctx, tenantID, parts, func(ctx context.Context, c estimateCall) ([]ulid.ULID, error) {
 		stream, err := c.client.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{
-			BlockIds:      convertULIDsToString(c.ids),
-			Matchers:      pbMatchers,
-			StartMs:       req.MinT,
-			EndMs:         req.MaxT,
-			GroupBy:       req.GroupBy,
-			Hashes:        res.Dedup,
-			MaxIndexBytes: perCall,
-			MaxHashes:     maxHashes,
-			MaxGroups:     req.MaxGroups,
+			BlockIds:  convertULIDsToString(c.ids),
+			Matchers:  pbMatchers,
+			StartMs:   req.MinT,
+			EndMs:     req.MaxT,
+			GroupBy:   req.GroupBy,
+			Hashes:    res.Dedup,
+			MaxGroups: req.MaxGroups,
 		})
 		// The whole answer is read before any of it is merged, so a retried call is not counted twice. What is held is charged message by message and given back once merged or on failure.
 		var (
@@ -102,30 +83,20 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 		if err != nil {
 			// What this querier refuses while it reads the answer is not the store-gateway's failure.
 			if own := (estimateError{}); errors.As(err, &own) {
-				return seriesCountsCallResult{}, err
+				return nil, err
 			}
-			err = classifyStoreGatewayError(c.client.RemoteAddress(), err)
-			switch estimateRefusalLimit(err) {
-			case refusedByMaxIndexBytes:
-				if req.MaxIndexBytes > 0 {
-					return seriesCountsCallResult{}, refusedByLimit(refusedByMaxIndexBytes, "max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: %w", req.MaxIndexBytes, perCall, calls, err)
-				}
-			case refusedByMaxHashes:
-				return seriesCountsCallResult{}, refusedByLimit(refusedByMaxHashes, "the %d hashes the tenant's cardinality estimate memory limit allows, split into %d for each of %d store-gateway calls: %w", req.MaxHashes, maxHashes, calls, err)
-			}
-			return seriesCountsCallResult{}, err
+			return nil, classifyStoreGatewayError(c.client.RemoteAddress(), err)
 		}
 		counted, err := parseBlockIDs(c.client.RemoteAddress(), resp.BlockIds)
 		if err != nil {
-			return seriesCountsCallResult{}, err
+			return nil, err
 		}
 		err = merge(c.client.RemoteAddress(), resp)
 		release()
 		if err != nil {
-			return seriesCountsCallResult{}, err
+			return nil, err
 		}
-		// max_index_bytes bounds the postings offsets table walked as well as index_bytes.
-		return seriesCountsCallResult{counted: counted, indexBytes: resp.IndexBytes + resp.PostingsOffsetsTableBytes}, nil
+		return counted, nil
 	})
 	if err != nil {
 		return CardinalityEstimateResult{}, err
@@ -178,14 +149,6 @@ func parseBlockIDs(addr string, ids []string) ([]ulid.ULID, error) {
 		out = append(out, parsed)
 	}
 	return out, nil
-}
-
-// splitIndexBytes gives each of n calls an equal share of limit, at least one byte. 0 stays unlimited.
-func splitIndexBytes(limit int64, n int) int64 {
-	if limit <= 0 || n <= 1 {
-		return limit
-	}
-	return max(1, limit/int64(n))
 }
 
 // inOneRangeWithoutSharedSeries reports whether every block covers the same

@@ -45,11 +45,8 @@ service StoreGateway {
 }
 
 message SeriesCountsRequest {
-  // What to count. max_index_bytes is measured as index_bytes plus postings_offsets_table_bytes in the response.
-  // It is checked before any series entry is read, from the matching postings times an estimated series size, and
-  // again while reading. max_hashes is refused before any series entry is read when the blocks of one time
-  // range that sit inside the window match more series than it, counted from their postings over distinct shards, or
-  // about that share of it with a query shard; and during the walk once the distinct series hashed pass it.
+  // What to count. The store-gateway refuses a request that would hold more than the tenant's cardinality estimate
+  // memory limit in expanded postings, groups and hashes, before the memory is taken.
   cardinalitypb.CountQuery query = 1 [
     (gogoproto.embed) = true,
     (gogoproto.nullable) = false
@@ -72,15 +69,14 @@ message SeriesCountsResponse {
   // Bytes of postings and series entries read from the bucket, not from a cache.
   int64 postings_fetched_bytes = 5;
   int64 series_fetched_bytes = 6;
-  // Postings and series bytes read, cached or not, as max_index_bytes charges them: for postings the larger of the
-  // bytes touched and the bytes fetched from the bucket, for series the bytes of the entries processed.
+  // Postings and series bytes read, cached or not: for postings the larger of the bytes touched and the bytes
+  // fetched from the bucket, for series the bytes of the entries processed.
   int64 index_bytes = 7;
   // Blocks counted from the group-by label's postings, without reading series entries, because they sit inside
   // the window and the postings were the cheaper read.
   int64 blocks_from_postings = 8;
-  // Bytes of the group-by label's postings offsets table walked to count blocks from postings, priced from the
-  // index-header's samples. With index-header version 2 the table is read from object storage. max_index_bytes
-  // bounds index_bytes plus these.
+  // Bytes of the postings offsets tables walked, for the group-by label and for planning the matchers, priced from
+  // the index-header's samples. With index-header version 2 the table is read from object storage.
   int64 postings_offsets_table_bytes = 9;
   // Blocks counted from the postings offsets table alone, reading no postings and no series entries: blocks
   // inside the window with no matchers, hashes or query shard whose table is cheaper than their series

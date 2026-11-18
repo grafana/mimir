@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -22,7 +21,7 @@ import (
 // ResourceExhausted status without the detail, such as gRPC's own size
 // limit, stays a failure.
 func TestSourceRefusalLimit(t *testing.T) {
-	for _, limit := range []string{refusedByMaxIndexBytes, refusedByMaxHashes, refusedByMaxGroups} {
+	for _, limit := range []string{refusedByMaxGroups, refusedByMemory} {
 		t.Run(limit, func(t *testing.T) {
 			// The message does not name the limit.
 			refusal := cardinality.Refusalf(limit, "the request is over the limit")
@@ -41,16 +40,8 @@ func TestSourceRefusalLimit(t *testing.T) {
 		})
 	}
 
-	t.Run("a max_hashes refusal says how many series the walk needed", func(t *testing.T) {
-		err := classifyStoreGatewayError("1.1.1.1", cardinality.MaxHashesRefusal(1234, 1000))
-		assert.Equal(t, refusedByMaxHashes, estimateRefusalLimit(err))
-		n, ok := estimateHashesNeeded(CardinalityEstimateResult{}, refusedByLimit(refusedByMaxHashes, "split: %w", err))
-		require.True(t, ok)
-		assert.Equal(t, int64(1234), n)
-	})
-
 	t.Run("ResourceExhausted without the detail is a failure, whatever the words", func(t *testing.T) {
-		for _, msg := range []string{"grpc: received message larger than max (200000000 vs. 104857600)", "more than max_index_bytes 1000"} {
+		for _, msg := range []string{"grpc: received message larger than max (200000000 vs. 104857600)", "more than max_groups 1000"} {
 			plain := status.Error(codes.ResourceExhausted, msg)
 			assert.Equal(t, http.StatusInternalServerError, estimateHTTPStatus(classifyStoreGatewayError("1.1.1.1", plain)), msg)
 			assert.Empty(t, estimateRefusalLimit(classifyStoreGatewayError("1.1.1.1", plain)))

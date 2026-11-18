@@ -464,7 +464,6 @@
   "querier.label-values-max-cardinality-label-names-per-request": 100,
   "querier.cardinality-api-max-series-limit": 500,
   "querier.active-series-results-max-size-bytes": 419430400,
-  "querier.cardinality-estimate-max-index-bytes": 2147483648,
   "querier.cardinality-estimate-max-memory-bytes": 268435456,
   "querier.cardinality-estimate-max-groups": 10000000,
   "validation.cost-attribution-cooldown": 0,

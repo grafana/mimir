@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
 )
 
@@ -201,35 +200,9 @@ func TestIngester_SeriesCounts_OutOfOrderHeadCompactionDuringTheWalk(t *testing.
 		})
 	}
 
-	t.Run("the late block counts against what the head left of max_index_bytes", func(t *testing.T) {
-		req := func(maxIndexBytes int64) *client.SeriesCountsRequest {
-			return &client.SeriesCountsRequest{StartMs: 0, EndMs: 20 * minute, MaxIndexBytes: maxIndexBytes}
-		}
-		compactDuringTheWalk := func(t *testing.T, i *Ingester) {
-			i.countSourcesAfterReadsHook = func() {
-				i.countSourcesAfterReadsHook = nil
-				compactOutOfOrder(t, i)
-			}
-		}
-		// The head's 2 series and the late block's 2, at the price of a walk over one source.
-		i, ctx := setup(t, false)
-		compactDuringTheWalk(t, i)
-		resp, walked, err := i.seriesCounts(ctx, req(4*ingesterSeriesCostBytes))
-		require.NoError(t, err)
-		check(t, req(0), false, resp)
-		assert.Equal(t, int64(4), walked, "the head's first walk is not added to its second")
-
-		// Enough for the head's 2 series alone.
-		i, ctx = setup(t, false)
-		compactDuringTheWalk(t, i)
-		_, _, err = i.seriesCounts(ctx, req(2*ingesterSeriesCostBytes))
-		require.Error(t, err)
-		assert.Equal(t, cardinality.LimitMaxIndexBytes, cardinality.RefusedBy(err))
-	})
-
 	// The truncation of an in-order head compaction waits for the count's head
 	// reader, so the head still holds the new block's data and the block is
-	// not walked: a request that fits the head alone is answered.
+	// not walked.
 	t.Run("an in-order head compaction after the block list", func(t *testing.T) {
 		const hour = 60 * minute
 		i, ctx := setup(t, false)
@@ -246,7 +219,7 @@ func TestIngester_SeriesCounts_OutOfOrderHeadCompactionDuringTheWalk(t *testing.
 			require.False(t, meta.Compaction.FromOutOfOrder())
 		}
 
-		req := &client.SeriesCountsRequest{StartMs: 0, EndMs: 5 * hour, MaxIndexBytes: 2 * ingesterSeriesCostBytes}
+		req := &client.SeriesCountsRequest{StartMs: 0, EndMs: 5 * hour}
 		resp, walked, err := i.seriesCounts(ctx, req)
 		require.NoError(t, err)
 		require.NoError(t, <-done)
