@@ -6,6 +6,7 @@
 package ruler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -408,12 +409,23 @@ var (
 )
 
 func marshalAndSend(output interface{}, w http.ResponseWriter, logger log.Logger, headers ...http.Header) {
-	d, err := yaml.Marshal(&output)
+	// Use an indent of 2. With a wider indent the YAML encoder writes a block scalar that
+	// starts with whitespace (like a multi-line rule expression) with an indentation
+	// indicator that does not match its content when nested in a list, so a client
+	// reading the response gets a value with different leading whitespace.
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	err := enc.Encode(&output)
+	if err == nil {
+		err = enc.Close()
+	}
 	if err != nil {
 		level.Error(logger).Log("msg", "error marshalling yaml rule groups", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	d := buf.Bytes()
 
 	w.Header().Set("Content-Type", "application/yaml")
 	if len(headers) > 0 {
