@@ -93,6 +93,8 @@ func (s *UsersScanner) ScanUsers(ctx context.Context, maxWait time.Duration) (us
 
 func (s *UsersScanner) Stop() {
 	s.stopListings(errors.New("users scanner stopped"))
+	// listings.Do waits until the running listing, if any, returns, ensuring we've stopped.
+	// Failing explicitly ensures that a concurrent ScanUsers call that joins it doesn't use its result.
 	_, _, _ = s.listings.Do("", func() (any, error) { return nil, context.Canceled })
 }
 
