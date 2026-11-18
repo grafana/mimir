@@ -234,3 +234,54 @@ func TestCountValues_GroupLabelling(t *testing.T) {
 		})
 	}
 }
+
+func TestCountValues_MatchersPassedToInner(t *testing.T) {
+	outerMatchers := types.Matchers{
+		{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+		{Type: labels.MatchRegexp, Name: "pod", Value: "a"},
+		{Type: labels.MatchRegexp, Name: "value", Value: "123"},
+	}
+
+	testCases := map[string]struct {
+		grouping              []string
+		without               bool
+		expectedInnerMatchers types.Matchers
+	}{
+		"no grouping labels: no matchers, as the output only has the value label": {
+			grouping:              []string{},
+			expectedInnerMatchers: types.Matchers{},
+		},
+		"grouping with 'by': only matchers for the grouping labels": {
+			grouping: []string{"env"},
+			expectedInnerMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+		},
+		"grouping with 'by', grouping labels include value label: no matcher for the value label": {
+			grouping: []string{"env", "value"},
+			expectedInnerMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+		},
+		"grouping with 'without': no matchers": {
+			grouping:              []string{"pod"},
+			without:               true,
+			expectedInnerMatchers: nil,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+			inner := &operators.TestOperator{MemoryConsumptionTracker: memoryConsumptionTracker}
+
+			timeRange := types.NewInstantQueryTimeRange(time.Now())
+			labelName := operators.NewStringLiteral("value", timeRange, memoryConsumptionTracker, posrange.PositionRange{})
+			aggregator := NewCountValues(inner, labelName, types.NewInstantQueryTimeRange(timestamp.Time(0)), testCase.grouping, testCase.without, memoryConsumptionTracker, posrange.PositionRange{})
+
+			_, err := aggregator.SeriesMetadata(context.Background(), outerMatchers)
+			require.NoError(t, err)
+			require.Equal(t, testCase.expectedInnerMatchers, inner.MatchersProvided)
+		})
+	}
+}
