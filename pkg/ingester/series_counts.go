@@ -299,9 +299,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	if err := w.finish(); err != nil {
 		return nil, 0, err
 	}
-	if resp.Groups, err = w.counter.Groups(); err != nil {
-		return nil, 0, err
-	}
+	resp.Groups = w.counter.Groups()
 	resp.SeriesCounted = w.counter.Counted()
 	for _, src := range sources {
 		resp.IndexBytes += int64(len(src.refs)) * seriesCost

@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -176,7 +175,7 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 
 					// The mock ingesters count every series whatever the window.
 					start, end := tc.startMs, max(tc.startMs, 100000)+100000
-					res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: start, EndMs: end})
+					res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: start, EndMs: end})
 					require.NoError(t, err)
 					assert.Equal(t, tc.wantHashed, res.Hashed)
 					assert.Equal(t, map[string]int64{"test_1": 2, "test_2": 1}, combineSeriesCounts(res))
@@ -192,11 +191,11 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 						assert.Equal(t, want, testutil.ToFloat64(ds[0].seriesCountsSwitchedToHashes.WithLabelValues(reason)), reason)
 					}
 
-					byStatus, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: start, EndMs: end, GroupBy: "status"})
+					byStatus, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: start, EndMs: end, GroupBy: "status"})
 					require.NoError(t, err)
 					assert.Equal(t, map[string]int64{"200": 1, "500": 1, "": 1}, combineSeriesCounts(byStatus))
 
-					_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: start, EndMs: end, StepMs: 100000})
+					_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: start, EndMs: end, StepMs: 100000})
 					if tc.wantHashed {
 						require.ErrorIs(t, err, ErrSeriesCountsNeedOneIngesterPerZone)
 					} else {
@@ -224,7 +223,7 @@ func TestDistributor_SeriesCounts_ChargesAnswersToTheMemoryTracker(t *testing.T)
 				require.NoError(t, err)
 			}
 			req := func() *client.SeriesCountsRequest {
-				return &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 200000, Hashes: true}
+				return &client.SeriesCountsRequest{StartMs: 0, EndMs: 200000, Hashes: true}
 			}
 			held := func(tracker *limiter.MemoryConsumptionTracker) uint64 {
 				return tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.CardinalityEstimateGroups)
@@ -258,7 +257,7 @@ func seriesCountsAnswerBytes(responses []*client.SeriesCountsResponse) uint64 {
 	var b uint64
 	for _, resp := range responses {
 		for _, g := range resp.Groups {
-			b += uint64(seriesCountsGroupBytes + len(g.Value) + 8*len(g.Counts) + 8*len(g.Hashes) + len(g.Sketch))
+			b += uint64(seriesCountsGroupBytes + len(g.Value) + 8*len(g.Counts) + 8*len(g.Hashes))
 		}
 	}
 	return b
@@ -285,7 +284,7 @@ func TestDistributor_SeriesCounts_GivesBackTheAnswersItDrops(t *testing.T) {
 		ingesters[2].Unlock()
 
 		tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-		res, err := ds[0].SeriesCounts(limiter.AddMemoryTrackerToContext(ctx, tracker), nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 200000, Hashes: true})
+		res, err := ds[0].SeriesCounts(limiter.AddMemoryTrackerToContext(ctx, tracker), nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 200000, Hashes: true})
 		require.NoError(t, err)
 		require.Len(t, res.Responses, 2)
 		kept := seriesCountsAnswerBytes(res.Responses)
@@ -314,7 +313,7 @@ func TestDistributor_SeriesCounts_GivesBackTheAnswersItDrops(t *testing.T) {
 		}
 
 		tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-		res, err := ds[0].SeriesCounts(limiter.AddMemoryTrackerToContext(ctx, tracker), nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: sinceActive, EndMs: sinceActive + 200000})
+		res, err := ds[0].SeriesCounts(limiter.AddMemoryTrackerToContext(ctx, tracker), nil, &client.SeriesCountsRequest{StartMs: sinceActive, EndMs: sinceActive + 200000})
 		require.NoError(t, err)
 		require.True(t, res.Hashed, "asked again for hashes")
 		require.Len(t, res.Responses, 4)
@@ -360,7 +359,7 @@ func TestDistributor_SeriesCounts_ShardSizeRetryKeepsWithinMaxIndexBytes(t *test
 				ing.seriesCountsIndexBytes = tc.indexBytes
 			}
 
-			_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: sinceActive, EndMs: sinceActive + 200000, MaxIndexBytes: maxIndexBytes})
+			_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: sinceActive, EndMs: sinceActive + 200000, MaxIndexBytes: maxIndexBytes})
 			if tc.wantRefused {
 				require.Error(t, err)
 				assert.Equal(t, cardinality.LimitMaxIndexBytes, cardinality.RefusedBy(err))
@@ -415,7 +414,7 @@ func TestDistributor_SeriesCounts_ShardSizeRetryKeepsWithinMaxIndexBytes(t *test
 			ing.Unlock()
 		}
 
-		_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: sinceActive, EndMs: sinceActive + 200000, MaxIndexBytes: maxIndexBytes})
+		_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: sinceActive, EndMs: sinceActive + 200000, MaxIndexBytes: maxIndexBytes})
 		require.NoError(t, err)
 		again := 0
 		for _, ing := range ingesters {
@@ -463,7 +462,7 @@ func TestDistributor_SeriesCounts_SeriesOnTwoIngestersOfAZone(t *testing.T) {
 			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 			_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, "test_1"), 1, 100000))
 			require.NoError(t, err)
-			req := &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 200000}
+			req := &client.SeriesCountsRequest{StartMs: 0, EndMs: 200000}
 			_, err = ds[0].SeriesCounts(ctx, nil, req)
 			require.NoError(t, err)
 
@@ -501,7 +500,7 @@ func TestDistributor_SeriesCounts_SeriesOnTwoIngestersOfAZone(t *testing.T) {
 			assert.True(t, res.Hashed)
 			assert.Equal(t, map[string]int64{"test_1": 1}, combineSeriesCounts(res))
 
-			_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 200000, StepMs: 100000})
+			_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 200000, StepMs: 100000})
 			require.ErrorIs(t, err, ErrSeriesCountsNeedOneIngesterPerZone)
 		})
 	}
@@ -569,14 +568,14 @@ func TestDistributor_SeriesCounts_IngestStorageTwoZonesBothOwnersHealthy(t *test
 					}, 10*time.Second, 10*time.Millisecond)
 
 					end := max(tc.startMs, 100000) + 100000
-					res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: tc.startMs, EndMs: end})
+					res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: tc.startMs, EndMs: end})
 					require.NoError(t, err)
 					assert.Equal(t, tc.wantHashed, res.Hashed)
 					assert.Len(t, res.Responses, tc.numIngesters/2, "one answer per partition")
 					assert.Equal(t, map[string]int64{"test_1": 2, "test_2": 1}, combineSeriesCounts(res))
 					res.Release()
 
-					byStatus, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: tc.startMs, EndMs: end, GroupBy: "status"})
+					byStatus, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: tc.startMs, EndMs: end, GroupBy: "status"})
 					require.NoError(t, err)
 					assert.Equal(t, map[string]int64{"200": 1, "500": 1, "": 1}, combineSeriesCounts(byStatus))
 					byStatus.Release()
@@ -620,12 +619,12 @@ func TestDistributor_SeriesCounts_ClassicZonesMissDifferentSeries(t *testing.T) 
 				require.Len(t, ing.series(), 3)
 			}
 
-			res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 200000})
+			res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 200000})
 			require.NoError(t, err)
 			assert.True(t, res.Hashed)
 			assert.Equal(t, map[string]int64{"test_1": 4}, combineSeriesCounts(res))
 
-			_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 200000, StepMs: 100000})
+			_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 200000, StepMs: 100000})
 			require.ErrorIs(t, err, ErrSeriesCountsNeedOneIngesterPerZone)
 			assert.NotContains(t, err.Error(), "need one ingester per zone", "this ring has one ingester per zone, and its counts still can't be added up")
 			assert.Contains(t, err.Error(), "with ingest storage, one ingester per zone")
@@ -633,24 +632,52 @@ func TestDistributor_SeriesCounts_ClassicZonesMissDifferentSeries(t *testing.T) 
 	}
 }
 
-// A request for counts that the distributor must turn into one for hashes
-// needs a sketch_above, since a group's hashes are sent in one message.
-func TestDistributor_SeriesCounts_HashesNeedSketchAbove(t *testing.T) {
-	ds, _, _, _ := prepare(t, prepConfig{numIngesters: 6, happyIngesters: 6, numDistributors: 1, replicationFactor: 3})
+// A group whose hashes an ingester sends in several parts is returned as parts
+// of the same value, which union to the count of the group sent whole.
+func TestDistributor_SeriesCounts_HashesSplitAcrossMessages(t *testing.T) {
+	ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 6, happyIngesters: 6, numDistributors: 1, replicationFactor: 3})
 	ctx := user.InjectOrgID(context.Background(), "series-counts")
 	ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
-	_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, "test_1"), 1, 100000))
+	for i := range 5 {
+		_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, "test_1", "pod", fmt.Sprint(i)), 1, 100000))
+		require.NoError(t, err)
+	}
+	union := func(res SeriesCountsResult) map[string]int {
+		sets := map[string]map[uint64]struct{}{}
+		for _, r := range res.Responses {
+			for _, g := range r.Groups {
+				if sets[g.Value] == nil {
+					sets[g.Value] = map[uint64]struct{}{}
+				}
+				for _, h := range g.Hashes {
+					sets[g.Value][h] = struct{}{}
+				}
+			}
+		}
+		out := map[string]int{}
+		for v, set := range sets {
+			out[v] = len(set)
+		}
+		return out
+	}
+	whole, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 200000})
 	require.NoError(t, err)
+	assert.True(t, whole.Hashed, "replication without ingest storage can't add counts up")
+	assert.Equal(t, map[string]int{"test_1": 5}, union(whole))
 
-	res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 200000})
+	for _, ing := range ingesters {
+		ing.Lock()
+		ing.seriesCountsSplitHashes = true
+		ing.Unlock()
+	}
+	split, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 200000})
 	require.NoError(t, err)
-	assert.True(t, res.Hashed)
-
-	_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 200000})
-	st, ok := grpcutil.ErrorToStatus(err)
-	require.True(t, ok, err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-	assert.Contains(t, st.Message(), "sketch_above")
+	parts := 0
+	for _, r := range split.Responses {
+		parts += len(r.Groups)
+	}
+	assert.Greater(t, parts, len(split.Responses), "each ingester sent its group in parts")
+	assert.Equal(t, union(whole), union(split))
 }
 
 func TestDistributor_SeriesCounts_Window(t *testing.T) {
@@ -659,7 +686,7 @@ func TestDistributor_SeriesCounts_Window(t *testing.T) {
 	ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 	_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, "test_1"), 1, 100000))
 	require.NoError(t, err)
-	req := &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 300000, StepMs: 100000, WindowMs: 200000}
+	req := &client.SeriesCountsRequest{StartMs: 0, EndMs: 300000, StepMs: 100000, WindowMs: 200000}
 
 	res, err := ds[0].SeriesCounts(ctx, nil, req)
 	require.NoError(t, err)
@@ -679,7 +706,7 @@ func TestDistributor_SeriesCounts_Step(t *testing.T) {
 	_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, "test_1"), 1, 100000))
 	require.NoError(t, err)
 	// Three buckets of 100s.
-	req := &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 300000, StepMs: 100000}
+	req := &client.SeriesCountsRequest{StartMs: 0, EndMs: 300000, StepMs: 100000}
 
 	res, err := ds[0].SeriesCounts(ctx, nil, req)
 	require.NoError(t, err)
@@ -718,7 +745,7 @@ func TestDistributor_SeriesCounts_Step(t *testing.T) {
 	}
 
 	// Without a step one count per group is right.
-	res, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 300000})
+	res, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 300000})
 	require.NoError(t, err)
 	for _, resp := range res.Responses {
 		for _, g := range resp.Groups {
@@ -740,7 +767,7 @@ func TestDistributor_SeriesCounts_GroupWithoutCounts(t *testing.T) {
 		ing.seriesCountsNoCounts = true
 		ing.Unlock()
 	}
-	_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 300000})
+	_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 300000})
 	require.ErrorContains(t, err, `an ingester returned no counts for "test_1"`)
 	for _, ing := range ingesters {
 		assert.NotContains(t, err.Error(), ing.address(), "the error names the kind of component, not its address")
@@ -789,7 +816,7 @@ func TestDistributor_SeriesCounts_OlderOwnerDecidesTheError(t *testing.T) {
 						older, other := owners(cfg, ingesters)
 						fail(older, unimplemented, delays[0])
 						fail(other, unavailable, delays[1])
-						_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 300000})
+						_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 300000})
 						require.Error(t, err)
 						assert.Equal(t, codes.Unimplemented, status.Code(err), err)
 					})
@@ -801,7 +828,7 @@ func TestDistributor_SeriesCounts_OlderOwnerDecidesTheError(t *testing.T) {
 					first, second := owners(cfg, ingesters)
 					fail(first, unavailable, 0)
 					fail(second, unavailable, 0)
-					_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 300000})
+					_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 300000})
 					assert.Equal(t, codes.Unavailable, status.Code(err), err)
 				})
 			})
@@ -833,7 +860,7 @@ func TestDistributor_SeriesCounts_BusyZone(t *testing.T) {
 						ing.Unlock()
 					}
 				}
-				res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 200000})
+				res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 200000})
 				require.NoError(t, err)
 				assert.Equal(t, map[string]int64{"test_1": 1}, combineSeriesCounts(res))
 
@@ -843,7 +870,7 @@ func TestDistributor_SeriesCounts_BusyZone(t *testing.T) {
 					ing.seriesCountsErr = busy
 					ing.Unlock()
 				}
-				_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 200000})
+				_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 200000})
 				require.Error(t, err)
 				assert.True(t, cardinality.IsBusy(err), err)
 				assert.False(t, isSeriesCountsRefusal(err), "a busy ingester is not a terminal refusal")
@@ -861,7 +888,7 @@ func TestDistributor_SeriesCounts_RefusalIsNotRetried(t *testing.T) {
 		defer ing.Unlock()
 		ing.seriesCountsErr, ing.seriesCountsDelay = err, delay
 	}
-	req := &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 300000}
+	req := &client.SeriesCountsRequest{StartMs: 0, EndMs: 300000}
 	for setup, cfg := range map[string]prepConfig{
 		"classic replication": {numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}},
 		"ingest storage":      {numIngesters: 2, happyIngesters: 2, numDistributors: 1, ingestStorageEnabled: true, ingestStoragePartitions: 1, ingesterZones: []string{"zone-a", "zone-b"}, limits: prepareDefaultLimits()},
@@ -935,7 +962,7 @@ func TestDistributor_SeriesCounts_OneIngesterDownInOneZone(t *testing.T) {
 			ingesters[0].seriesCountsErr = status.Error(codes.Unavailable, "connection refused")
 			ingesters[0].Unlock()
 
-			res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 200000})
+			res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 200000})
 			require.NoError(t, err)
 			assert.True(t, res.Hashed)
 			assert.Equal(t, map[string]int64{"test_1": 2, "test_2": 1}, combineSeriesCounts(res))
@@ -945,7 +972,7 @@ func TestDistributor_SeriesCounts_OneIngesterDownInOneZone(t *testing.T) {
 			ingesters[1].Lock()
 			ingesters[1].seriesCountsErr = status.Error(codes.Unavailable, "connection refused")
 			ingesters[1].Unlock()
-			_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 200000})
+			_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 200000})
 			assert.Equal(t, codes.Unavailable, status.Code(err), err)
 		})
 	}
@@ -967,7 +994,7 @@ func TestDistributor_SeriesCounts_NoHedging(t *testing.T) {
 		ing.seriesCountsDelay = 200 * time.Millisecond
 		ing.Unlock()
 	}
-	res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 200000})
+	res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 200000})
 	require.NoError(t, err)
 	assert.Equal(t, map[string]int64{"test_1": 1}, combineSeriesCounts(res))
 	asked := 0
@@ -1028,7 +1055,7 @@ func TestDistributor_SeriesCounts_SplitsLimits(t *testing.T) {
 			cfg.configure = func(config *Config) { config.MinimizeIngesterRequests = tc.minimize }
 			ds, ingesters, _, _ := prepare(t, cfg)
 			ctx := user.InjectOrgID(context.Background(), "series-counts")
-			_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 200000, Hashes: true, MaxIndexBytes: 6000, MaxHashes: 120})
+			_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 200000, Hashes: true, MaxIndexBytes: 6000, MaxHashes: 120})
 			require.NoError(t, err)
 			var asked int64
 			for _, ing := range ingesters {
@@ -1056,7 +1083,7 @@ func TestDistributor_SeriesCounts_FanOutSpan(t *testing.T) {
 
 	ds, _, _, _ := prepare(t, prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()})
 	ctx := user.InjectOrgID(context.Background(), "series-counts")
-	_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 200000, Hashes: true})
+	_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 200000, Hashes: true})
 	require.NoError(t, err)
 	var found bool
 	for _, s := range spans.GetSpans() {

@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/axiomhq/hyperloglog"
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
@@ -199,30 +198,23 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		require.ErrorIs(t, err, errStepNeedsOneSource, "the estimator answers it bucket by bucket instead")
 	})
 
-	t.Run("a sketch from one store-gateway absorbs the other's hashes", func(t *testing.T) {
+	t.Run("a group sent in parts is unioned with the parts of another store-gateway", func(t *testing.T) {
 		days := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}}
-		sk, err := hyperloglog.NewSketch(cardinality.SketchPrecision, false)
-		require.NoError(t, err)
-		for _, h := range []uint64{0x1111111111111111, 0x2222222222222222, 0x3333333333333333} {
-			sk.InsertHash(h)
-		}
-		sketch, err := sk.MarshalBinary()
-		require.NoError(t, err)
-		var got *storegatewaypb.SeriesCountsRequest
 		clients := map[BlocksStoreClient][][]ulid.ULID{
-			gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Sketch: sketch}}}): {{b1}},
+			gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{
+				{Value: "up", Hashes: []uint64{0x1111111111111111, 0x2222222222222222}},
+				{Value: "up", Hashes: []uint64{0x3333333333333333}},
+			}}): {{b1}},
 			gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{
-				{Value: "up", Hashes: []uint64{0x3333333333333333, 0x4444444444444444}},
+				{Value: "up", Hashes: []uint64{0x3333333333333333}},
+				{Value: "up", Hashes: []uint64{0x4444444444444444}},
 				{Value: "down", Hashes: []uint64{0x5555555555555555}},
 			}}): {{b2}},
 		}
 		res, err := seriesCountsQueryable(0, 2*dayMs, days, clients).seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs})
 		require.NoError(t, err)
-		assert.Equal(t, int64(defaultSketchAbove), got.SketchAbove)
 		assert.Equal(t, map[string][]int64{"up": {4}, "down": {1}}, res.Counts, "four distinct up series, one shared")
-		assert.Equal(t, map[string]bool{"up": true}, res.Estimated)
-		assert.Equal(t, int64(len(sketch)), res.SketchBytes)
-		assert.Equal(t, int64(24), res.HashBytes, "three hashes of 8 bytes")
+		assert.Equal(t, int64(48), res.HashBytes, "six hashes of 8 bytes")
 	})
 
 	t.Run("max_index_bytes is split across the store-gateway calls", func(t *testing.T) {

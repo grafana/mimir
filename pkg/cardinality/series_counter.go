@@ -8,19 +8,12 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/axiomhq/hyperloglog"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 )
-
-// SketchPrecision is the HyperLogLog precision of every sketch, so sketches from different sources can be merged.
-const SketchPrecision = 11
-
-// ErrHashesNeedSketchAbove refuses hashes without sketch_above, since a group's hashes go in one message.
-var ErrHashesNeedSketchAbove = errors.New("hashes need a positive sketch_above, since a group over it is sent as a sketch and a group's hashes go in one message")
 
 // MaxCounterBuckets caps the buckets one count can ask for.
 const MaxCounterBuckets = 1440
@@ -37,8 +30,6 @@ type CounterOptions struct {
 	GroupBy string
 	// Hashes keeps each group's label-set hashes instead of a count. Not allowed with Step.
 	Hashes bool
-	// SketchAbove, with Hashes, sends a group with more series than this as a sketch. Must be positive with Hashes.
-	SketchAbove int64
 }
 
 // ChunkRange is the time range of one chunk, both ends included.
@@ -69,12 +60,6 @@ func NewSeriesCounter(opts CounterOptions) (*SeriesCounter, error) {
 	}
 	if opts.Step < 0 {
 		return nil, errors.New("step can't be negative")
-	}
-	if opts.SketchAbove < 0 {
-		return nil, errors.New("sketch_above can't be negative")
-	}
-	if opts.Hashes && opts.SketchAbove == 0 {
-		return nil, ErrHashesNeedSketchAbove
 	}
 	if opts.Window != 0 && opts.Step == 0 {
 		return nil, errors.New("a window needs a step")
@@ -251,35 +236,21 @@ func (c *SeriesCounter) HashesHeld() int64 { return c.hashes }
 // GroupCount is the number of distinct group-by values so far.
 func (c *SeriesCounter) GroupCount() int { return len(c.counts) + len(c.sets) }
 
-// Groups returns every group sorted by value. Exactly one of Counts, Hashes
-// and Sketch is set on each.
-func (c *SeriesCounter) Groups() ([]*cardinalitypb.SeriesCountGroup, error) {
+// Groups returns every group sorted by value. Exactly one of Counts and Hashes
+// is set on each.
+func (c *SeriesCounter) Groups() []*cardinalitypb.SeriesCountGroup {
 	out := make([]*cardinalitypb.SeriesCountGroup, 0, len(c.counts)+len(c.sets))
 	for v, counts := range c.counts {
 		out = append(out, &cardinalitypb.SeriesCountGroup{Value: v, Counts: counts})
 	}
 	for v, set := range c.sets {
-		g := &cardinalitypb.SeriesCountGroup{Value: v}
-		if c.opts.SketchAbove > 0 && int64(len(set)) > c.opts.SketchAbove {
-			sk, err := hyperloglog.NewSketch(SketchPrecision, false)
-			if err != nil {
-				return nil, err
-			}
-			for h := range set {
-				sk.InsertHash(h)
-			}
-			if g.Sketch, err = sk.MarshalBinary(); err != nil {
-				return nil, err
-			}
-		} else {
-			g.Hashes = make([]uint64, 0, len(set))
-			for h := range set {
-				g.Hashes = append(g.Hashes, h)
-			}
-			slices.Sort(g.Hashes)
+		g := &cardinalitypb.SeriesCountGroup{Value: v, Hashes: make([]uint64, 0, len(set))}
+		for h := range set {
+			g.Hashes = append(g.Hashes, h)
 		}
+		slices.Sort(g.Hashes)
 		out = append(out, g)
 	}
 	slices.SortFunc(out, func(a, b *cardinalitypb.SeriesCountGroup) int { return strings.Compare(a.Value, b.Value) })
-	return out, nil
+	return out
 }

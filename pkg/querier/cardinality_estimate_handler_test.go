@@ -558,7 +558,6 @@ func TestSetEstimateCacheControl(t *testing.T) {
 		"a lower bound":                   {out: estimateResponse{LowerBound: true}, noStore: true},
 		"a coverage gap":                  {out: estimateResponse{CoverageGap: true}, noStore: true},
 		"a table cut by limit":            {out: estimateResponse{HasMore: true}, noStore: false},
-		"estimated groups":                {out: estimateResponse{EstimatedGroups: 2}, noStore: false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
@@ -580,7 +579,7 @@ func TestObserveEstimate_RequestsFlagsAndRetries(t *testing.T) {
 	ctx := context.Background()
 	req := CardinalityEstimateRequest{MinT: 0, MaxT: dayMs}
 	answered := CardinalityEstimateResult{Read: ReadFullIndex, Source: SourceBlocks, Retries: 2}
-	flagged := CardinalityEstimateResult{Read: ReadFullIndex, Source: SourceBlocks, Retries: 1, LowerBound: true, CoverageGap: true, MissingBlocks: []ulid.ULID{ulid.MustNew(1, nil)}, MissingShards: []missingShard{{Shard: "2_of_2", MaxTime: dayMs}}, Estimated: map[string]bool{"up": true}}
+	flagged := CardinalityEstimateResult{Read: ReadFullIndex, Source: SourceBlocks, Retries: 1, LowerBound: true, CoverageGap: true, MissingBlocks: []ulid.ULID{ulid.MustNew(1, nil)}, MissingShards: []missingShard{{Shard: "2_of_2", MaxTime: dayMs}}}
 
 	q.observeEstimate(ctx, req, answered, &estimateResponse{}, time.Second, nil)
 	q.observeEstimate(ctx, req, flagged, &estimateResponse{}, time.Second, nil)
@@ -589,7 +588,7 @@ func TestObserveEstimate_RequestsFlagsAndRetries(t *testing.T) {
 	q.observeEstimate(ctx, req, CardinalityEstimateResult{}, nil, time.Second, errors.New("store-gateway down"))
 	q.observeRefusedRequest(time.Millisecond, badEstimateRequest("bad parameters"))
 
-	for _, flag := range []string{"lower_bound", "coverage_gap", "missing_blocks", "missing_shards", "estimated_groups"} {
+	for _, flag := range []string{"lower_bound", "coverage_gap", "missing_blocks", "missing_shards"} {
 		assert.Equal(t, 1.0, testutil.ToFloat64(q.metrics.estimateFlagged.WithLabelValues(ReadFullIndex, flag)), flag)
 	}
 	assert.Equal(t, 3.0, testutil.ToFloat64(q.metrics.estimateRetries))

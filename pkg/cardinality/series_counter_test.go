@@ -3,15 +3,11 @@
 package cardinality
 
 import (
-	"fmt"
 	"maps"
-	"math"
-	"math/rand/v2"
 	"slices"
 	"testing"
 	"unsafe"
 
-	"github.com/axiomhq/hyperloglog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,8 +27,7 @@ func TestSeriesCounter(t *testing.T) {
 		assert.True(t, c.Add(a2, []ChunkRange{{MinTime: 150, MaxTime: 300}}))
 		assert.False(t, c.Add(b1, []ChunkRange{{MinTime: 200, MaxTime: 250}}), "the window end is excluded")
 		assert.False(t, c.Add(b1, nil))
-		groups, err := c.Groups()
-		require.NoError(t, err)
+		groups := c.Groups()
 		assert.Equal(t, []*cardinalitypb.SeriesCountGroup{{Value: "a", Counts: []int64{2}}}, groups)
 		assert.Equal(t, int64(2), c.Counted())
 		assert.Equal(t, 1, c.GroupCount())
@@ -44,8 +39,7 @@ func TestSeriesCounter(t *testing.T) {
 		for _, l := range []labels.Labels{a1, a2, b1} {
 			c.Add(l, []ChunkRange{{MinTime: 0, MaxTime: 5}})
 		}
-		groups, err := c.Groups()
-		require.NoError(t, err)
+		groups := c.Groups()
 		assert.Equal(t, []*cardinalitypb.SeriesCountGroup{{Value: "1", Counts: []int64{2}}, {Value: "2", Counts: []int64{1}}}, groups)
 	})
 
@@ -54,8 +48,7 @@ func TestSeriesCounter(t *testing.T) {
 		require.NoError(t, err)
 		c.Add(a1, []ChunkRange{{MinTime: 0, MaxTime: 4}, {MinTime: 5, MaxTime: 12}, {MinTime: 35, MaxTime: 50}})
 		c.Add(a2, []ChunkRange{{MinTime: 20, MaxTime: 29}})
-		groups, err := c.Groups()
-		require.NoError(t, err)
+		groups := c.Groups()
 		assert.Equal(t, []*cardinalitypb.SeriesCountGroup{{Value: "a", Counts: []int64{1, 1, 1, 1}}}, groups)
 	})
 
@@ -80,10 +73,8 @@ func TestSeriesCounter(t *testing.T) {
 			assert.True(t, gathered.AddGroupBuckets("a", 0, touched))
 			assert.False(t, gathered.AddGroupBuckets("a", 0, gathered.MarkBuckets(nil, chunks[2])), "no chunk in the window")
 			assert.Nil(t, gathered.MarkBuckets(nil, chunks[2]), "nothing allocated for a series with no chunk in the window")
-			want, err := fromChunks.Groups()
-			require.NoError(t, err)
-			got, err := gathered.Groups()
-			require.NoError(t, err)
+			want := fromChunks.Groups()
+			got := gathered.Groups()
 			assert.Equal(t, want, got, "step %d", step)
 			assert.Equal(t, fromChunks.Counted(), gathered.Counted())
 		}
@@ -97,34 +88,30 @@ func TestSeriesCounter(t *testing.T) {
 		touched := wide.MarkBuckets(nil, []ChunkRange{{MinTime: 995, MaxTime: 999}})
 		assert.Len(t, touched, 2)
 		assert.True(t, wide.AddGroupBuckets("a", 0, touched))
-		groups, err := wide.Groups()
-		require.NoError(t, err)
+		groups := wide.Groups()
 		assert.Equal(t, int64(1), groups[0].Counts[99])
 		assert.Equal(t, int64(0), groups[0].Counts[98])
 	})
 
-	t.Run("hashes, and a sketch above the threshold", func(t *testing.T) {
-		c, err := NewSeriesCounter(CounterOptions{MinT: 0, MaxT: 10, Hashes: true, SketchAbove: 1})
+	t.Run("hashes", func(t *testing.T) {
+		c, err := NewSeriesCounter(CounterOptions{MinT: 0, MaxT: 10, Hashes: true})
 		require.NoError(t, err)
 		for _, l := range []labels.Labels{a1, a2, a1, b1} {
 			c.Add(l, []ChunkRange{{MinTime: 1, MaxTime: 2}})
 		}
-		groups, err := c.Groups()
-		require.NoError(t, err)
+		groups := c.Groups()
 		require.Len(t, groups, 2)
 		assert.Equal(t, "a", groups[0].Value)
-		require.NotEmpty(t, groups[0].Sketch, "two series is above sketch_above 1")
-		sk, err := hyperloglog.NewSketch(SketchPrecision, false)
-		require.NoError(t, err)
-		require.NoError(t, sk.UnmarshalBinary(groups[0].Sketch))
-		assert.Equal(t, uint64(2), sk.Estimate())
+		want := []uint64{labels.StableHash(a1), labels.StableHash(a2)}
+		slices.Sort(want)
+		assert.Equal(t, want, groups[0].Hashes)
 		assert.Equal(t, []uint64{labels.StableHash(b1)}, groups[1].Hashes)
 	})
 
 	t.Run("a group's key doesn't keep the series' label set alive", func(t *testing.T) {
 		for name, opts := range map[string]CounterOptions{
 			"counts": {MinT: 0, MaxT: 10, GroupBy: "pod"},
-			"hashes": {MinT: 0, MaxT: 10, GroupBy: "pod", Hashes: true, SketchAbove: 1},
+			"hashes": {MinT: 0, MaxT: 10, GroupBy: "pod", Hashes: true},
 		} {
 			c, err := NewSeriesCounter(opts)
 			require.NoError(t, err)
@@ -141,65 +128,14 @@ func TestSeriesCounter(t *testing.T) {
 
 	t.Run("invalid options", func(t *testing.T) {
 		for name, opts := range map[string]CounterOptions{
-			"empty window":                {MinT: 10, MaxT: 10},
-			"negative step":               {MinT: 0, MaxT: 10, Step: -1},
-			"step doesn't divide":         {MinT: 0, MaxT: 10, Step: 3},
-			"too many buckets":            {MinT: 0, MaxT: 2000, Step: 1},
-			"hashes with a step":          {MinT: 0, MaxT: 10, Step: 5, Hashes: true},
-			"negative sketch_above":       {MinT: 0, MaxT: 10, SketchAbove: -1},
-			"hashes without sketch_above": {MinT: 0, MaxT: 10, Hashes: true},
+			"empty window":        {MinT: 10, MaxT: 10},
+			"negative step":       {MinT: 0, MaxT: 10, Step: -1},
+			"step doesn't divide": {MinT: 0, MaxT: 10, Step: 3},
+			"too many buckets":    {MinT: 0, MaxT: 2000, Step: 1},
+			"hashes with a step":  {MinT: 0, MaxT: 10, Step: 5, Hashes: true},
 		} {
 			_, err := NewSeriesCounter(opts)
 			assert.Error(t, err, name)
 		}
 	})
-}
-
-// A group sent as a sketch is counted within the error HyperLogLog has at
-// SketchPrecision: a standard error of 1.04/sqrt(2^11), about 2.3%. Each
-// size is checked at three standard errors, from one source's sketch and from
-// two overlapping sources' sketches merged, as the querier merges them. The
-// hashes come from a fixed seed, so the test is deterministic.
-func TestSeriesCounter_SketchAccuracy(t *testing.T) {
-	require.Equal(t, 11, SketchPrecision, "sketches of other precisions can't be merged with ones already sent")
-	// The bound of precision 11, not of SketchPrecision, so a lower precision fails here too.
-	stdErr := 1.04 / math.Sqrt(1<<11)
-
-	sketchOf := func(t *testing.T, hashes []uint64) *hyperloglog.Sketch {
-		c, err := NewSeriesCounter(CounterOptions{MinT: 0, MaxT: 10, Hashes: true, SketchAbove: 10_000})
-		require.NoError(t, err)
-		for _, h := range hashes {
-			require.True(t, c.AddGroup("up", h, []ChunkRange{{MinTime: 1, MaxTime: 2}}))
-		}
-		groups, err := c.Groups()
-		require.NoError(t, err)
-		require.Len(t, groups, 1)
-		require.NotEmpty(t, groups[0].Sketch)
-		require.Empty(t, groups[0].Hashes)
-		sk, err := hyperloglog.NewSketch(SketchPrecision, false)
-		require.NoError(t, err)
-		require.NoError(t, sk.UnmarshalBinary(groups[0].Sketch))
-		return sk
-	}
-	for _, n := range []int{20_000, 100_000, 1_000_000} {
-		t.Run(fmt.Sprint(n), func(t *testing.T) {
-			rng := rand.New(rand.NewPCG(uint64(n), 42))
-			hashes := make([]uint64, n)
-			for i := range hashes {
-				hashes[i] = rng.Uint64()
-			}
-			within := func(t *testing.T, sk *hyperloglog.Sketch) {
-				relErr := math.Abs(float64(sk.Estimate())-float64(n)) / float64(n)
-				assert.LessOrEqual(t, relErr, 3*stdErr, "estimate %d of %d series", sk.Estimate(), n)
-			}
-			t.Run("one source", func(t *testing.T) {
-				within(t, sketchOf(t, hashes))
-			})
-			t.Run("two sources sharing a third of the series, merged", func(t *testing.T) {
-				first, second := sketchOf(t, hashes[:2*n/3]), sketchOf(t, hashes[n/3:])
-				require.NoError(t, first.Merge(second))
-				within(t, first)
-			})
-		})
-	}
 }

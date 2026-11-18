@@ -14,13 +14,12 @@ import (
 // with, the group-by label filled in, a counter for them and q's matchers.
 func CounterForQuery(q *cardinalitypb.CountQuery, maxGroups int64) (CounterOptions, *SeriesCounter, []*labels.Matcher, error) {
 	opts := CounterOptions{
-		MinT:        q.StartMs,
-		MaxT:        q.EndMs,
-		Step:        q.StepMs,
-		Window:      q.WindowMs,
-		GroupBy:     q.GroupBy,
-		Hashes:      q.Hashes,
-		SketchAbove: q.SketchAbove,
+		MinT:    q.StartMs,
+		MaxT:    q.EndMs,
+		Step:    q.StepMs,
+		Window:  q.WindowMs,
+		GroupBy: q.GroupBy,
+		Hashes:  q.Hashes,
 	}
 	counter, err := NewSeriesCounter(opts)
 	if err != nil {

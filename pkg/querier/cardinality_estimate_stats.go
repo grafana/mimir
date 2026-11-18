@@ -31,7 +31,7 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 		attrs = append(attrs, attribute.String("cost", "unknown"))
 	} else {
 		attrs = append(attrs, estimateResultAttributes(res)...)
-		attrs = append(attrs, attribute.Int("group_count", out.GroupCount), attribute.Int64("total", out.Total), attribute.Int("estimated_groups", out.EstimatedGroups))
+		attrs = append(attrs, attribute.Int("group_count", out.GroupCount), attribute.Int64("total", out.Total))
 	}
 	trace.SpanFromContext(ctx).SetAttributes(attrs...)
 
@@ -46,11 +46,10 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 		q.metrics.estimateRetries.Add(float64(res.Retries))
 		if err == nil {
 			for flag, set := range map[string]bool{
-				"lower_bound":      res.LowerBound,
-				"coverage_gap":     res.CoverageGap,
-				"missing_blocks":   len(res.MissingBlocks) > 0,
-				"missing_shards":   len(res.MissingShards) > 0,
-				"estimated_groups": len(res.Estimated) > 0,
+				"lower_bound":    res.LowerBound,
+				"coverage_gap":   res.CoverageGap,
+				"missing_blocks": len(res.MissingBlocks) > 0,
+				"missing_shards": len(res.MissingShards) > 0,
 			} {
 				if set {
 					q.metrics.estimateFlagged.WithLabelValues(path, flag).Inc()
@@ -71,7 +70,6 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 			"postings_fetched":       res.PostingsFetchedBytes,
 			"series_fetched":         res.SeriesFetchedBytes,
 			"hashes":                 res.HashBytes,
-			"sketches":               res.SketchBytes,
 		} {
 			m.estimateBytes.WithLabelValues(res.Read, kind).Add(float64(b))
 		}
@@ -128,7 +126,6 @@ func estimateResultAttributes(res CardinalityEstimateResult) []attribute.KeyValu
 		attribute.Int64("series_fetched_bytes", res.SeriesFetchedBytes),
 		attribute.Int64("blocks_from_postings", res.BlocksFromPostings),
 		attribute.Int64("hash_bytes", res.HashBytes),
-		attribute.Int64("sketch_bytes", res.SketchBytes),
 	}
 }
 

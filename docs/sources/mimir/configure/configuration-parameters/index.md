@@ -5329,10 +5329,10 @@ blocked_requests:
 # CLI flag: -querier.cardinality-estimate-max-index-bytes
 [cardinality_estimate_max_index_bytes: <int> | default = 2147483648]
 
-# (experimental) Maximum memory, in bytes, that the groups, label-set hashes and
-# sketches of one cardinality estimate may hold in the querier while it merges
-# the store-gateways' and ingesters' answers. An estimate over it fails with
-# 422. When -querier.max-estimated-memory-consumption-per-query is lower, that
+# (experimental) Maximum memory, in bytes, that the groups and label-set hashes
+# of one cardinality estimate may hold in the querier while it merges the
+# store-gateways' and ingesters' answers. An estimate over it fails with 422.
+# When -querier.max-estimated-memory-consumption-per-query is lower, that
 # applies instead. It also sets how many series hashes, at 32 bytes each, the
 # store-gateways and ingesters may send one estimate that deduplicates: the
 # querier sends each a share, and each refuses past the share it is sent. Each

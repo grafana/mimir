@@ -81,10 +81,8 @@ type CardinalityEstimateResult struct {
 	// BlocksFromOffsetsTable from the offsets table alone.
 	BlocksFromPostings     int64
 	BlocksFromOffsetsTable int64
-	// Estimated holds the groups counted from an HLL sketch, not exactly.
-	Estimated map[string]bool
-	// HashBytes and SketchBytes are the dedup payload received.
-	HashBytes, SketchBytes int64
+	// HashBytes is the dedup payload received.
+	HashBytes int64
 	// DedupHashes is the distinct label-set hashes held to deduplicate.
 	DedupHashes int64
 	// PeakMemoryBytes is the most the querier's memory tracker held for the estimate's groups, hashes and held replies.

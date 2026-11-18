@@ -4,32 +4,27 @@ package querier
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/axiomhq/hyperloglog"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// Memory the merger charges to the request's memory consumption tracker: a hash, a group, a sketch.
+// Memory the merger charges to the request's memory consumption tracker: a hash, a group.
 const (
-	estimateHashBytes   = cardinality.HashBytes
-	estimateGroupBytes  = 64
-	estimateSketchBytes = 1 << cardinality.SketchPrecision
+	estimateHashBytes  = cardinality.HashBytes
+	estimateGroupBytes = 64
 )
 
-// estimateMerger combines the groups the sources of an estimate send: it adds counts when the sources share no series, otherwise unions hashes and merges HLL sketches. It is not safe for concurrent use.
+// estimateMerger combines the groups the sources of an estimate send: it adds counts when the sources share no series, otherwise unions hashes, also those of a group a source sent in several parts. It is not safe for concurrent use.
 type estimateMerger struct {
-	dedup    bool
-	held     int64
-	counts   map[string][]int64
-	hashes   map[string]map[uint64]struct{}
-	sketches map[string]*hyperloglog.Sketch
+	dedup  bool
+	held   int64
+	counts map[string][]int64
+	hashes map[string]map[uint64]struct{}
 
-	hashBytes, sketchBytes int64
+	hashBytes int64
 
 	// buckets, when positive, is how many counts every group must carry.
 	buckets int
@@ -42,11 +37,10 @@ type estimateMerger struct {
 func newEstimateMerger(ctx context.Context, dedup bool) *estimateMerger {
 	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	return &estimateMerger{
-		tracker:  tracker,
-		dedup:    dedup,
-		counts:   map[string][]int64{},
-		hashes:   map[string]map[uint64]struct{}{},
-		sketches: map[string]*hyperloglog.Sketch{},
+		tracker: tracker,
+		dedup:   dedup,
+		counts:  map[string][]int64{},
+		hashes:  map[string]map[uint64]struct{}{},
 	}
 }
 
@@ -72,37 +66,7 @@ func (m *estimateMerger) charge(b uint64) error {
 }
 
 // add merges one group from source.
-func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint64, sketch []byte) error {
-	if m.dedup && len(sketch) > 0 {
-		sk, err := hyperloglog.NewSketch(cardinality.SketchPrecision, false)
-		if err != nil {
-			return err
-		}
-		if err := sk.UnmarshalBinary(sketch); err != nil {
-			return fmt.Errorf("%s returned a bad sketch for %q: %w", aSource(source), value, err)
-		}
-		into := m.sketches[value]
-		if into == nil {
-			if into, err = hyperloglog.NewSketch(cardinality.SketchPrecision, false); err != nil {
-				return err
-			}
-		}
-		// A sketch carries its own precision, so the first one of a group is merged too.
-		if err := into.Merge(sk); err != nil {
-			if errors.Is(err, hyperloglog.ErrorPrecisionMismatch) {
-				return refusedEstimate("%s sent a sketch for %q with another precision than the %d this querier merges", aSource(source), value, cardinality.SketchPrecision)
-			}
-			return err
-		}
-		if m.sketches[value] == nil {
-			if err := m.charge(uint64(estimateGroupBytes + len(value) + estimateSketchBytes)); err != nil {
-				return err
-			}
-			m.sketches[value] = into
-		}
-		m.sketchBytes += int64(len(sketch))
-		return nil
-	}
+func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint64) error {
 	if m.dedup {
 		m.hashBytes += 8 * int64(len(hashes))
 		set := m.hashes[value]
@@ -151,23 +115,9 @@ func (m *estimateMerger) finish(res *CardinalityEstimateResult) error {
 		res.Counts[v] = c
 	}
 	for v, set := range m.hashes {
-		if sk := m.sketches[v]; sk != nil {
-			for h := range set {
-				sk.InsertHash(h)
-			}
-			continue
-		}
 		res.Counts[v] = []int64{int64(len(set))}
 	}
-	for v, sk := range m.sketches {
-		if res.Estimated == nil {
-			res.Estimated = map[string]bool{}
-		}
-		res.Estimated[v] = true
-		res.Counts[v] = []int64{int64(sk.Estimate())}
-	}
 	res.HashBytes += m.hashBytes
-	res.SketchBytes += m.sketchBytes
 	if m.dedup {
 		res.DedupHashes = max(res.DedupHashes, m.held)
 	}
