@@ -185,6 +185,7 @@ func TestSeries_SeedOnlyDependsOnTheDimensionValues(t *testing.T) {
 
 	def := Definition{
 		Charsets: []Charset{CharsetUTF8, CharsetLegacy},
+		Metadata: MetadataDefinition{Units: []Unit{UnitSeconds, UnitNone}, Helps: []Help{HelpUTF8, HelpASCII}},
 		Floats:   &FloatsDefinition{Types: allMetricTypes},
 		NativeHistograms: &NativeHistogramsDefinition{
 			SampleTypes: []SampleType{SampleTypeFloat, SampleTypeInt},
@@ -213,11 +214,13 @@ func TestSeries_SeedOnlyDependsOnTheDimensionValues(t *testing.T) {
 
 func TestSeries_Labels(t *testing.T) {
 	common := []prompb.Label{{Name: labelWriteInterval, Value: "10s"}, {Name: labelSeed, Value: "1"}}
-	s := testSeries(t, testSeriesValues{sampleType: SampleTypeFloat, kind: KindCounter, schema: -2, layout: LayoutGaps})
+	s := testSeries(t, testSeriesValues{unit: UnitSeconds, sampleType: SampleTypeFloat, kind: KindCounter, schema: -2, layout: LayoutGaps})
 	expected := map[string]string{
-		"__name__":         "mimir_continuous_test_explore_native_histogram_counter",
+		"__name__":         "mimir_continuous_test_explore_native_histogram_counter_help_ascii_seconds",
 		labelFamily:        "native_histogram",
 		labelCharset:       "legacy",
+		labelUnit:          "seconds",
+		labelHelp:          "ascii",
 		labelSampleType:    "float",
 		labelKind:          "counter",
 		labelSchema:        "-2",
@@ -227,17 +230,19 @@ func TestSeries_Labels(t *testing.T) {
 	}
 	require.Equal(t, expected, labelMap(t, s.Labels(common)))
 
-	s = testSeries(t, testSeriesValues{charset: CharsetUTF8, sampleType: SampleTypeFloat, kind: KindCounter, schema: -2, layout: LayoutGaps})
-	expected["__name__"] = "mimir.continuous_test.explore.native_histogram.counter"
+	s = testSeries(t, testSeriesValues{charset: CharsetUTF8, unit: UnitSeconds, sampleType: SampleTypeFloat, kind: KindCounter, schema: -2, layout: LayoutGaps})
+	expected["__name__"] = "mimir.continuous_test.explore.native_histogram.counter.help_ascii.seconds"
 	expected[labelCharset] = "utf8"
 	expected[utf8LabelName] = utf8LabelValue
 	require.Equal(t, expected, labelMap(t, s.Labels(common)))
 
-	s = testSeries(t, testSeriesValues{metricType: MetricTypeCounter})
+	s = testSeries(t, testSeriesValues{help: HelpNone, metricType: MetricTypeCounter})
 	require.Equal(t, map[string]string{
-		"__name__":         "mimir_continuous_test_explore_float_counter_total",
+		"__name__":         "mimir_continuous_test_explore_float_counter_help_none_total",
 		labelFamily:        "float",
 		labelCharset:       "legacy",
+		labelUnit:          "none",
+		labelHelp:          "none",
 		labelType:          "counter",
 		labelWriteInterval: "10s",
 		labelSeed:          "1",
@@ -246,34 +251,44 @@ func TestSeries_Labels(t *testing.T) {
 
 func TestSeries_MetricName(t *testing.T) {
 	for metricType, expected := range map[MetricType]string{
-		MetricTypeCounter:  "mimir_continuous_test_explore_float_counter_total",
-		MetricTypeGauge:    "mimir_continuous_test_explore_float_gauge",
-		MetricTypeUnknown:  "mimir_continuous_test_explore_float_unknown",
-		MetricTypeInfo:     "mimir_continuous_test_explore_float_info",
-		MetricTypeStateset: "mimir_continuous_test_explore_float_stateset",
+		MetricTypeCounter:  "mimir_continuous_test_explore_float_counter_help_ascii_total",
+		MetricTypeGauge:    "mimir_continuous_test_explore_float_gauge_help_ascii",
+		MetricTypeUnknown:  "mimir_continuous_test_explore_float_unknown_help_ascii",
+		MetricTypeInfo:     "mimir_continuous_test_explore_float_info_help_ascii",
+		MetricTypeStateset: "mimir_continuous_test_explore_float_stateset_help_ascii",
 	} {
 		require.Equal(t, expected, testSeries(t, testSeriesValues{metricType: metricType}).MetricName())
 	}
-	require.Equal(t, "mimir.continuous_test.explore.float.counter_total", testSeries(t, testSeriesValues{charset: CharsetUTF8, metricType: MetricTypeCounter}).MetricName())
-	require.Equal(t, "mimir_continuous_test_explore_native_histogram_gauge", testSeries(t, testSeriesValues{kind: KindGauge}).MetricName())
-	require.Equal(t, "mimir.continuous_test.explore.native_histogram.gauge", testSeries(t, testSeriesValues{charset: CharsetUTF8, kind: KindGauge}).MetricName())
+	require.Equal(t, "mimir_continuous_test_explore_float_counter_help_utf8_seconds_total", testSeries(t, testSeriesValues{unit: UnitSeconds, help: HelpUTF8, metricType: MetricTypeCounter}).MetricName())
+	require.Equal(t, "mimir.continuous_test.explore.float.counter.help_none.bytes_total", testSeries(t, testSeriesValues{charset: CharsetUTF8, unit: UnitBytes, help: HelpNone, metricType: MetricTypeCounter}).MetricName())
+	require.Equal(t, "mimir_continuous_test_explore_native_histogram_gauge_help_ascii", testSeries(t, testSeriesValues{kind: KindGauge}).MetricName())
+	require.Equal(t, "mimir.continuous_test.explore.native_histogram.gauge.help_ascii.seconds", testSeries(t, testSeriesValues{charset: CharsetUTF8, unit: UnitSeconds, kind: KindGauge}).MetricName())
 }
 
 func TestSeries_Metadata(t *testing.T) {
-	s := testSeries(t, testSeriesValues{kind: KindGauge, charset: CharsetUTF8})
+	s := testSeries(t, testSeriesValues{kind: KindGauge, charset: CharsetUTF8, unit: UnitSeconds})
 	require.Equal(t, prompb.MetricMetadata{
 		Type:             prompb.MetricMetadata_GAUGEHISTOGRAM,
-		MetricFamilyName: "mimir.continuous_test.explore.native_histogram.gauge",
+		MetricFamilyName: "mimir.continuous_test.explore.native_histogram.gauge.help_ascii.seconds",
 		Help:             "A native histogram gauge written by the continuous-test explore test with protocol v2.",
-		Unit:             metadataUnit,
+		Unit:             "seconds",
 	}, s.Metadata(ProtocolV2))
 
-	s = testSeries(t, testSeriesValues{})
+	s = testSeries(t, testSeriesValues{unit: UnitBytes, help: HelpUTF8})
 	require.Equal(t, prompb.MetricMetadata{
 		Type:             prompb.MetricMetadata_HISTOGRAM,
-		MetricFamilyName: "mimir_continuous_test_explore_native_histogram_counter",
-		Help:             "A native histogram counter written by the continuous-test explore test with protocol otlp.",
+		MetricFamilyName: "mimir_continuous_test_explore_native_histogram_counter_help_utf8_bytes",
+		Help:             "A native histogram counter written by the continuous-test explore test with protocol otlp." + utf8HelpSuffix,
+		Unit:             "By",
 	}, s.Metadata(ProtocolOTLP))
+	require.Equal(t, "bytes", s.PrometheusUnit())
+
+	s = testSeries(t, testSeriesValues{help: HelpNone})
+	require.Equal(t, prompb.MetricMetadata{
+		Type:             prompb.MetricMetadata_HISTOGRAM,
+		MetricFamilyName: "mimir_continuous_test_explore_native_histogram_counter_help_none",
+	}, s.Metadata(ProtocolOTLP))
+	require.Empty(t, s.PrometheusUnit())
 
 	for metricType, expected := range map[MetricType]prompb.MetricMetadata_MetricType{
 		MetricTypeCounter:  prompb.MetricMetadata_COUNTER,
@@ -282,28 +297,32 @@ func TestSeries_Metadata(t *testing.T) {
 		MetricTypeInfo:     prompb.MetricMetadata_INFO,
 		MetricTypeStateset: prompb.MetricMetadata_STATESET,
 	} {
-		s = testSeries(t, testSeriesValues{metricType: metricType})
+		s = testSeries(t, testSeriesValues{unit: UnitSeconds, metricType: metricType})
 		require.Equal(t, prompb.MetricMetadata{
 			Type:             expected,
 			MetricFamilyName: s.MetricName(),
 			Help:             "A float " + string(metricType) + " written by the continuous-test explore test with protocol v1.",
-			Unit:             metadataUnit,
+			Unit:             "seconds",
 		}, s.Metadata(ProtocolV1))
 	}
 }
 
 // The OTLP endpoint escapes UTF-8 names to the expected names however it is configured to handle
-// underscores and suffixes.
+// underscores and suffixes, and translates OTLP units back.
 func TestSeries_EscapedNames(t *testing.T) {
 	otlpTypes := map[MetricType]otlptranslator.MetricType{
 		MetricTypeCounter: otlptranslator.MetricTypeMonotonicCounter,
 		MetricTypeGauge:   otlptranslator.MetricTypeGauge,
 	}
 	var series []Series
-	for metricType := range otlpTypes {
-		series = append(series, testSeries(t, testSeriesValues{charset: CharsetUTF8, metricType: metricType}))
+	for _, unit := range []Unit{UnitNone, UnitSeconds, UnitBytes} {
+		for _, help := range []Help{HelpNone, HelpASCII, HelpUTF8} {
+			for metricType := range otlpTypes {
+				series = append(series, testSeries(t, testSeriesValues{charset: CharsetUTF8, unit: unit, help: help, metricType: metricType}))
+			}
+			series = append(series, testSeries(t, testSeriesValues{charset: CharsetUTF8, unit: unit, help: help}))
+		}
 	}
-	series = append(series, testSeries(t, testSeriesValues{charset: CharsetUTF8}))
 	for _, suffixes := range []bool{false, true} {
 		namer := otlptranslator.MetricNamer{WithMetricSuffixes: suffixes}
 		for _, s := range series {
@@ -311,10 +330,16 @@ func TestSeries_EscapedNames(t *testing.T) {
 			if s.Family == FamilyFloat {
 				otlpType = otlpTypes[s.Type]
 			}
-			escaped, err := namer.Build(otlptranslator.Metric{Name: s.MetricName(), Type: otlpType})
+			m := s.Metadata(ProtocolOTLP)
+			escaped, err := namer.Build(otlptranslator.Metric{Name: s.MetricName(), Unit: m.Unit, Type: otlpType})
 			require.NoError(t, err)
 			require.Equal(t, s.metricName(CharsetLegacy), escaped, "series %s, suffixes %t", s, suffixes)
 		}
+	}
+	unitNamer := otlptranslator.UnitNamer{}
+	for _, unit := range []Unit{UnitNone, UnitSeconds, UnitBytes} {
+		s := testSeries(t, testSeriesValues{unit: unit})
+		require.Equal(t, s.PrometheusUnit(), unitNamer.Build(s.Metadata(ProtocolOTLP).Unit), "unit %s", unit)
 	}
 	for _, sanitization := range []bool{false, true} {
 		for _, preserve := range []bool{false, true} {
@@ -349,10 +374,12 @@ var allMetricTypes = []MetricType{MetricTypeCounter, MetricTypeGauge, MetricType
 
 // testSeriesValues holds the test seed and the dimension values of a test series: a float series
 // if metricType is set, or else a native histogram series. Unset values default to the first
-// value of each dimension.
+// value of each dimension, but for the help, which defaults to an ASCII help.
 type testSeriesValues struct {
 	seed       uint64
 	charset    Charset
+	unit       Unit
+	help       Help
 	metricType MetricType
 	sampleType SampleType
 	kind       Kind
@@ -361,7 +388,10 @@ type testSeriesValues struct {
 }
 
 func testSeries(t *testing.T, v testSeriesValues) Series {
-	def := Definition{Charsets: []Charset{cmp.Or(v.charset, CharsetLegacy)}}
+	def := Definition{
+		Charsets: []Charset{cmp.Or(v.charset, CharsetLegacy)},
+		Metadata: MetadataDefinition{Units: []Unit{cmp.Or(v.unit, UnitNone)}, Helps: []Help{cmp.Or(v.help, HelpASCII)}},
+	}
 	if v.metricType != "" {
 		def.Floats = &FloatsDefinition{Types: []MetricType{v.metricType}}
 	} else {

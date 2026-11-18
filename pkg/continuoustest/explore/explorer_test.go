@@ -16,19 +16,19 @@ func TestExplorer_DefaultDefinition(t *testing.T) {
 		// Remote write writes the 5 float types and every native histogram combination but the 8 of
 		// custom buckets with negative or zero buckets, of the legacy charset. OTLP writes the float
 		// counters and gauges, and the 52 native histogram int counters with exponential buckets, of
-		// each charset.
-		model.LegacyValidation: {v1: 5 + 216, v2: 5 + 216, otlp: 4 + 104, series: 5 + 216 + 2 + 52},
-		model.UTF8Validation:   {v1: 10 + 432, v2: 10 + 432, otlp: 4 + 104, series: 10 + 432},
+		// each charset. Each of them has the 6 combinations of a unit and a help text.
+		model.LegacyValidation: {v1: 6 * (5 + 216), v2: 6 * (5 + 216), otlp: 6 * (4 + 104), series: 6 * (5 + 216 + 2 + 52)},
+		model.UTF8Validation:   {v1: 6 * (10 + 432), v2: 6 * (10 + 432), otlp: 6 * (4 + 104), series: 6 * (10 + 432)},
 	} {
 		t.Run(scheme.String(), func(t *testing.T) {
 			e := testDefaultExplorer(t, scheme)
-			require.Len(t, e.series[ProtocolV1], expected.v1)
-			require.Len(t, e.series[ProtocolV2], expected.v2)
-			require.Len(t, e.series[ProtocolOTLP], expected.otlp)
+			require.Len(t, e.allSeries(ProtocolV1), expected.v1)
+			require.Len(t, e.allSeries(ProtocolV2), expected.v2)
+			require.Len(t, e.allSeries(ProtocolOTLP), expected.otlp)
 			require.Equal(t, expected.series, e.numSeries())
 
-			for p, series := range e.series {
-				for _, s := range series {
+			for _, p := range e.protocols {
+				for _, s := range e.allSeries(p) {
 					if histogram.IsCustomBucketsSchema(s.Schema) {
 						require.Contains(t, []Layout{LayoutContiguous, LayoutGaps}, s.Layout, "series %s", s)
 					}
@@ -50,20 +50,57 @@ func TestExplorer_DefaultDefinition(t *testing.T) {
 func TestExplorer_Pick(t *testing.T) {
 	e := testDefaultExplorer(t, model.LegacyValidation)
 	rng := newRand(1, 0)
+	// Every draw is a choice: values that can't be written with the values drawn before aren't
+	// offered, and neither are single values.
+	choose := func(n int) int {
+		require.Greater(t, n, 1)
+		return rng.IntN(n)
+	}
 	protocols, sizes := map[Protocol]bool{}, map[int]bool{}
 	for range 1000 {
-		protocol, series := e.pick(rng.IntN)
+		protocol, series := e.pick(choose)
 		protocols[protocol] = true
 		sizes[len(series)] = true
 		seen := map[string]bool{}
 		for _, s := range series {
 			require.False(t, seen[s.String()], "the series of a write must be distinct")
 			seen[s.String()] = true
-			require.Contains(t, e.series[protocol], s, "protocol %s can't write series %s", protocol, s)
+			require.Contains(t, e.allSeries(protocol), s, "protocol %s can't write series %s", protocol, s)
 		}
 	}
 	require.Equal(t, map[Protocol]bool{ProtocolV1: true, ProtocolV2: true, ProtocolOTLP: true}, protocols)
 	require.Equal(t, map[int]bool{1: true, 2: true, 5: true, 10: true}, sizes)
+}
+
+// Each series of a write is of a family drawn with the same chance for every family, even though
+// there are far fewer float series than native histogram series.
+func TestExplorer_PickDrawsTheFamilyFirst(t *testing.T) {
+	def, err := LoadDefinition("")
+	require.NoError(t, err)
+	def.WriteSizes = []int{1}
+	e, err := newExplorer(1, def, exclusions(model.LegacyValidation))
+	require.NoError(t, err)
+	require.Len(t, e.allSeries(ProtocolV1), 6*(5+216))
+
+	rng := newRand(1, 0)
+	families := map[Family]int{}
+	for range 10000 {
+		_, series := e.pick(rng.IntN)
+		families[series[0].Family]++
+	}
+	require.InDelta(t, 5000, families[FamilyFloat], 200)
+	require.InDelta(t, 5000, families[FamilyNativeHistogram], 200)
+}
+
+func TestExplorer_PickFillsTheWriteWithTheOtherFamilies(t *testing.T) {
+	// v1 writes a float gauge and 2 native histogram counters.
+	def := testDefinitionWith(t, "protocols: [v1]\nwrite_sizes: [3]\ncharsets: [legacy]\nfloats: {types: [gauge]}\n")
+	e, err := newExplorer(1, def, exclusions(model.LegacyValidation))
+	require.NoError(t, err)
+	for stream := range uint64(10) {
+		_, series := e.pick(newRand(1, stream).IntN)
+		require.ElementsMatch(t, e.allSeries(ProtocolV1), series)
+	}
 }
 
 func TestExplorer_PickIsDeterministic(t *testing.T) {
@@ -85,7 +122,7 @@ func TestExplorer_PicksEverySeries(t *testing.T) {
 	e := testDefaultExplorer(t, model.LegacyValidation)
 	rng := newRand(1, 0)
 	picked := map[Protocol]map[string]bool{}
-	for range 5000 {
+	for range 30000 {
 		protocol, series := e.pick(rng.IntN)
 		if picked[protocol] == nil {
 			picked[protocol] = map[string]bool{}
@@ -94,8 +131,8 @@ func TestExplorer_PicksEverySeries(t *testing.T) {
 			picked[protocol][s.String()] = true
 		}
 	}
-	for protocol, series := range e.series {
-		require.Len(t, picked[protocol], len(series), "protocol %s", protocol)
+	for _, protocol := range e.protocols {
+		require.Len(t, picked[protocol], len(e.allSeries(protocol)), "protocol %s", protocol)
 	}
 }
 
@@ -129,9 +166,11 @@ func testDefaultExplorer(t *testing.T, scheme model.ValidationScheme) *explorer 
 }
 
 // testDefinitionWith parses a definition made of the given protocols, write sizes and charsets,
-// and int and float counters with schema 0 and the gaps layout.
+// series without unit and with an ASCII help, and int and float counters with schema 0 and the
+// gaps layout.
 func testDefinitionWith(t *testing.T, head string) Definition {
 	def, err := ParseDefinition([]byte(head + `
+metadata: {units: [none], helps: [ascii]}
 native_histograms: {sample_types: [int, float], kinds: [counter], schemas: [0], layouts: [gaps]}
 `))
 	require.NoError(t, err)

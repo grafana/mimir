@@ -26,6 +26,8 @@ const (
 
 	labelFamily        = "family"
 	labelCharset       = "charset"
+	labelUnit          = "unit"
+	labelHelp          = "help"
 	labelType          = "type"
 	labelSampleType    = "sample_type"
 	labelKind          = "kind"
@@ -36,10 +38,12 @@ const (
 	labelProtocol      = "protocol"
 
 	zeroThreshold = 0x1p-128
-	// metadataUnit is the unit of the metadata written with remote write. OTLP writes no unit,
-	// because with -distributor.otel-metric-suffixes-enabled it would also change the metric name.
-	metadataUnit = "seconds"
+	// utf8HelpSuffix ends the help texts of HelpUTF8.
+	utf8HelpSuffix = " Ünïcödé ✓, \"quoted\", back\\slashed,\ttabbed and\nmultiline."
 )
+
+// otlpUnits maps units to the units that OTLP writes, which the OTLP endpoint translates back.
+var otlpUnits = map[Unit]string{UnitSeconds: "s", UnitBytes: "By"}
 
 // Series is one combination of dimension values, written to its own series. Every write that
 // picks the series appends a sample to it, with the protocol of the write.
@@ -53,6 +57,8 @@ type Series struct {
 
 	Family  Family
 	Charset Charset
+	Unit    Unit
+	Help    Help
 
 	// Type is the metric type of float series.
 	Type MetricType
@@ -79,6 +85,10 @@ func newSeries(seed uint64, dims []dimension, values []string) (Series, error) {
 			s.Family = Family(v)
 		case labelCharset:
 			s.Charset = Charset(v)
+		case labelUnit:
+			s.Unit = Unit(v)
+		case labelHelp:
+			s.Help = Help(v)
 		case labelType:
 			s.Type = MetricType(v)
 		case labelSampleType:
@@ -115,21 +125,28 @@ func (s Series) MetricName() string {
 }
 
 // metricName returns the name of the metric of the series with names of the given charset, such
-// as mimir_continuous_test_explore_float_gauge, or mimir.continuous_test.explore.float.gauge. The
-// names of counters of float samples end with _total, which the OTLP endpoint doesn't add again.
+// as mimir_continuous_test_explore_float_gauge_help_ascii_seconds, or
+// mimir.continuous_test.explore.float.gauge.help_ascii.seconds. Metadata belongs to a metric, so
+// the name has every metadata dimension: the help text, and the unit, as its suffix. The names of
+// counters of float samples end with _total. The OTLP endpoint adds neither suffix again.
 func (s Series) metricName(charset Charset) string {
 	prefix, separator := metricNamePrefix, "_"
 	if charset == CharsetUTF8 {
 		prefix, separator = utf8MetricNamePrefix, "."
 	}
+	parts := []string{string(s.Family), string(s.Kind)}
 	if s.Family == FamilyFloat {
-		name := prefix + string(FamilyFloat) + separator + string(s.Type)
-		if s.Type == MetricTypeCounter {
-			name += "_total"
-		}
-		return name
+		parts[1] = string(s.Type)
 	}
-	return prefix + string(FamilyNativeHistogram) + separator + string(s.Kind)
+	parts = append(parts, "help_"+string(s.Help))
+	if s.Unit != UnitNone {
+		parts = append(parts, string(s.Unit))
+	}
+	name := prefix + strings.Join(parts, separator)
+	if s.Family == FamilyFloat && s.Type == MetricTypeCounter {
+		name += "_total"
+	}
+	return name
 }
 
 var floatMetadataTypes = map[MetricType]prompb.MetricMetadata_MetricType{
@@ -140,26 +157,49 @@ var floatMetadataTypes = map[MetricType]prompb.MetricMetadata_MetricType{
 	MetricTypeStateset: prompb.MetricMetadata_STATESET,
 }
 
-// Metadata returns the metadata written with the series by the given protocol. Its help identifies
-// the protocol, so that reading it back verifies the metadata of each protocol.
+// Metadata returns the metadata written with the series by the given protocol. A non-empty help
+// identifies the protocol, so that reading it back verifies the metadata of each protocol. OTLP
+// writes OTLP units.
 func (s Series) Metadata(protocol Protocol) prompb.MetricMetadata {
 	m := prompb.MetricMetadata{
 		Type:             prompb.MetricMetadata_HISTOGRAM,
 		MetricFamilyName: s.MetricName(),
-		Help:             fmt.Sprintf("A native histogram %s written by the continuous-test explore test with protocol %s.", s.Kind, protocol),
-		Unit:             metadataUnit,
+		Help:             s.help(protocol),
+		Unit:             s.PrometheusUnit(),
 	}
 	switch {
 	case s.Family == FamilyFloat:
 		m.Type = floatMetadataTypes[s.Type]
-		m.Help = fmt.Sprintf("A float %s written by the continuous-test explore test with protocol %s.", s.Type, protocol)
 	case s.Kind == KindGauge:
 		m.Type = prompb.MetricMetadata_GAUGEHISTOGRAM
 	}
 	if protocol == ProtocolOTLP {
-		m.Unit = ""
+		m.Unit = otlpUnits[s.Unit]
 	}
 	return m
+}
+
+// PrometheusUnit returns the unit of the metadata of the series as Mimir stores it.
+func (s Series) PrometheusUnit() string {
+	if s.Unit == UnitNone {
+		return ""
+	}
+	return string(s.Unit)
+}
+
+func (s Series) help(protocol Protocol) string {
+	if s.Help == HelpNone {
+		return ""
+	}
+	metric := "native histogram " + string(s.Kind)
+	if s.Family == FamilyFloat {
+		metric = "float " + string(s.Type)
+	}
+	help := fmt.Sprintf("A %s written by the continuous-test explore test with protocol %s.", metric, protocol)
+	if s.Help == HelpUTF8 {
+		help += utf8HelpSuffix
+	}
+	return help
 }
 
 // TimeSeries returns the series with its sample at the given time, as it is written. commonLabels

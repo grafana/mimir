@@ -35,11 +35,15 @@ import (
 // exponential schemas and 2 layouts, or with custom buckets and the gaps layout. OTLP writes the
 // float counters and gauges, and the 12 native histogram int counters with exponential buckets,
 // of both charsets, so 16 series. That makes 41 distinct series. With the UTF-8 scheme, v1 and v2
-// each write 66 series, which are all the series.
+// each write 66 series, which are all the series. Every series has a unit, which OTLP writes as an
+// OTLP unit, and a help text with special characters.
 const testDefinition = `
 protocols: [v1, v2, otlp]
 write_sizes: [1, 2, 5, 10]
 charsets: [legacy, utf8]
+metadata:
+  units: [seconds]
+  helps: [utf8]
 floats:
   types: [counter, gauge, unknown, info, stateset]
 native_histograms:
@@ -261,7 +265,7 @@ func TestTest_DetectsWrongFloats(t *testing.T) {
 	err := test.Run(context.Background(), testStart)
 	require.ErrorContains(t, err, "expected float")
 	require.NotContains(t, err.Error(), "expected histogram")
-	require.Positive(t, testutil.ToFloat64(test.metrics.queryResultChecksFailedTotal.WithLabelValues("v1", "float", "legacy", "gauge", "", "", "", "")))
+	require.Positive(t, testutil.ToFloat64(test.metrics.queryResultChecksFailedTotal.WithLabelValues("v1", "float", "legacy", "seconds", "utf8", "gauge", "", "", "", "")))
 }
 
 func TestTest_DetectsWrongLabels(t *testing.T) {
@@ -393,8 +397,58 @@ func TestTest_SmokeTest(t *testing.T) {
 	}
 }
 
+// Every combination of a unit and a help text is written with every protocol, and read back as
+// Mimir stores it.
+func TestTest_SmokeTestWritesEveryMetadata(t *testing.T) {
+	const definition = `
+protocols: [v1, v2, otlp]
+write_sizes: [10]
+charsets: [legacy, utf8]
+metadata: {units: [none, seconds, bytes], helps: [none, ascii, utf8]}
+floats: {types: [counter, gauge]}
+native_histograms: {sample_types: [int], kinds: [counter], schemas: [0], layouts: [gaps]}
+`
+	client := newFakeClient()
+	test := newTestTestWithConfig(t, client, true, prometheus.NewPedanticRegistry(), func(cfg *Config) {
+		cfg.DefinitionFile = writeDefinition(t, definition)
+	})
+	require.NoError(t, test.Run(context.Background(), testStart))
+
+	// v1 and v2 write the 27 series with legacy names, and OTLP the 54 series of both charsets.
+	require.Equal(t, float64(27+27+54), sumCounters(test.metrics.queryResultChecksTotal))
+	require.Zero(t, sumCounters(test.metrics.queryResultChecksFailedTotal))
+	units, helps := map[string]bool{}, map[string]bool{}
+	for _, metadata := range client.metadata {
+		for _, m := range metadata {
+			units[m.Unit] = true
+			helps[m.Help] = true
+		}
+	}
+	require.Equal(t, map[string]bool{"": true, "seconds": true, "bytes": true}, units)
+	require.Len(t, helps, 1+3*3*2, "an empty help, and for each of the 3 metric types and 3 protocols, an ASCII and a UTF-8 help")
+}
+
+// Mimir may not store metadata of an unknown type without help or unit, so it isn't expected back.
+func TestTest_ExpectsNoEmptyMetadata(t *testing.T) {
+	const definition = `
+protocols: [v1, v2]
+write_sizes: [1]
+charsets: [legacy]
+metadata: {units: [none], helps: [none]}
+floats: {types: [unknown]}
+`
+	client := newFakeClient()
+	test := newTestTestWithConfig(t, client, true, prometheus.NewPedanticRegistry(), func(cfg *Config) {
+		cfg.DefinitionFile = writeDefinition(t, definition)
+	})
+	require.NoError(t, test.Run(context.Background(), testStart))
+	require.Empty(t, client.metadata)
+	require.Equal(t, float64(2), sumCounters(test.metrics.queryResultChecksTotal))
+	require.Zero(t, sumCounters(test.metrics.queryResultChecksFailedTotal))
+}
+
 func TestTest_InitErrors(t *testing.T) {
-	path := writeDefinition(t)
+	path := writeDefinition(t, testDefinition)
 
 	cfg := Config{DefinitionFile: path, WriteInterval: testWriteInterval, Seed: 1, RandomSource: RandomSourceSeed, NameValidationScheme: model.LegacyValidation}
 	managerCfg := continuoustest.ManagerConfig{RunInterval: 30 * time.Second}
@@ -456,16 +510,16 @@ func newTestTest(t *testing.T, client *fakeClient, smokeTest bool, reg prometheu
 }
 
 func newTestTestWithConfig(t *testing.T, client *fakeClient, smokeTest bool, reg prometheus.Registerer, modify func(*Config)) *Test {
-	cfg := Config{DefinitionFile: writeDefinition(t), WriteInterval: testWriteInterval, Seed: 1, RandomSource: RandomSourceSeed, NameValidationScheme: model.LegacyValidation}
+	cfg := Config{DefinitionFile: writeDefinition(t, testDefinition), WriteInterval: testWriteInterval, Seed: 1, RandomSource: RandomSourceSeed, NameValidationScheme: model.LegacyValidation}
 	modify(&cfg)
 	test := NewTest(cfg, client, continuoustest.ManagerConfig{SmokeTest: smokeTest, RunInterval: 30 * time.Second}, log.NewNopLogger(), reg)
 	require.NoError(t, test.Init(context.Background(), time.Now()))
 	return test
 }
 
-func writeDefinition(t *testing.T) string {
+func writeDefinition(t *testing.T, definition string) string {
 	path := filepath.Join(t.TempDir(), "definition.yaml")
-	require.NoError(t, os.WriteFile(path, []byte(testDefinition), 0o600))
+	require.NoError(t, os.WriteFile(path, []byte(definition), 0o600))
 	return path
 }
 
@@ -622,11 +676,20 @@ func (c *fakeClient) write(series []prompb.TimeSeries, metadata []prompb.MetricM
 		if c.dropMetadata {
 			break
 		}
+		if m.Type == prompb.MetricMetadata_UNKNOWN && m.Help == "" && m.Unit == "" {
+			// Like Mimir with ingest storage, which can't tell this metadata from no metadata.
+			continue
+		}
 		name := m.MetricFamilyName
 		if escape {
 			name = escapeMetricName(name)
 		}
 		md := v1.Metadata{Type: v1.MetricType(strings.ToLower(m.Type.String())), Help: m.Help, Unit: m.Unit}
+		if protocol == "otlp-http" {
+			// Like Mimir, the OTLP endpoint translates OTLP units, such as s to seconds.
+			unitNamer := otlptranslator.UnitNamer{}
+			md.Unit = unitNamer.Build(m.Unit)
+		}
 		if !slices.Contains(c.metadata[name], md) {
 			c.metadata[name] = append(c.metadata[name], md)
 		}

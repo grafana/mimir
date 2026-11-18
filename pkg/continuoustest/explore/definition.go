@@ -69,6 +69,28 @@ const (
 	CharsetUTF8 Charset = "utf8"
 )
 
+// Unit is the unit of the metadata of a series.
+type Unit string
+
+const (
+	UnitNone    Unit = "none"
+	UnitSeconds Unit = "seconds"
+	UnitBytes   Unit = "bytes"
+)
+
+// Help is the kind of help text of the metadata of a series.
+type Help string
+
+const (
+	// HelpNone is an empty help text.
+	HelpNone Help = "none"
+	// HelpASCII is a sentence of ASCII characters.
+	HelpASCII Help = "ascii"
+	// HelpUTF8 also has non-ASCII characters and special characters, such as quotes, a backslash and a
+	// newline.
+	HelpUTF8 Help = "utf8"
+)
+
 type SampleType string
 
 const (
@@ -104,9 +126,11 @@ type Definition struct {
 	Protocols  []Protocol `yaml:"protocols"`
 	WriteSizes []int      `yaml:"write_sizes"`
 
-	// Charsets is a dimension of the series of every family. Floats and NativeHistograms define the
-	// other dimensions of the series of each family. A family without a definition isn't explored.
+	// Charsets and Metadata define dimensions of the series of every family. Floats and
+	// NativeHistograms define the other dimensions of the series of each family. A family without a
+	// definition isn't explored.
 	Charsets         []Charset                   `yaml:"charsets"`
+	Metadata         MetadataDefinition          `yaml:"metadata"`
 	Floats           *FloatsDefinition           `yaml:"floats"`
 	NativeHistograms *NativeHistogramsDefinition `yaml:"native_histograms"`
 }
@@ -128,6 +152,8 @@ func (d Definition) familyDimensions(family Family, dims []dimension) []dimensio
 	return append([]dimension{
 		newDimension(labelFamily, []Family{family}),
 		newDimension(labelCharset, d.Charsets),
+		newDimension(labelUnit, d.Metadata.Units),
+		newDimension(labelHelp, d.Metadata.Helps),
 	}, dims...)
 }
 
@@ -168,6 +194,19 @@ func exclusions(scheme model.ValidationScheme) []exclusion {
 		)
 	}
 	return excl
+}
+
+// MetadataDefinition lists the values of each metadata dimension of the series of every family.
+type MetadataDefinition struct {
+	Units []Unit `yaml:"units"`
+	Helps []Help `yaml:"helps"`
+}
+
+func (d MetadataDefinition) validate() error {
+	if err := validateValues("units", d.Units, []Unit{UnitNone, UnitSeconds, UnitBytes}); err != nil {
+		return err
+	}
+	return validateValues("helps", d.Helps, []Help{HelpNone, HelpASCII, HelpUTF8})
 }
 
 // FloatsDefinition lists the values of each dimension of float series to explore.
@@ -262,6 +301,9 @@ func ParseDefinition(data []byte) (Definition, error) {
 	}
 	if err := validateValues("charsets", def.Charsets, []Charset{CharsetLegacy, CharsetUTF8}); err != nil {
 		return Definition{}, err
+	}
+	if err := def.Metadata.validate(); err != nil {
+		return Definition{}, fmt.Errorf("metadata: %w", err)
 	}
 	if def.Floats == nil && def.NativeHistograms == nil {
 		return Definition{}, errors.New("at least one of floats and native_histograms is required")

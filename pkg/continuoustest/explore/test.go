@@ -221,7 +221,7 @@ func (t *Test) runWrites(ctx context.Context, now time.Time) error {
 func (t *Test) runSmokeTest(ctx context.Context, now time.Time) error {
 	var writes []write
 	for _, p := range t.explorer.protocols {
-		series := t.explorer.series[p]
+		series := t.explorer.allSeries(p)
 		for i := 0; len(series) > 0; i++ {
 			n := min(t.explorer.writeSizes[i%len(t.explorer.writeSizes)], len(series))
 			writes = append(writes, write{protocol: p, series: series[:n]})
@@ -358,8 +358,11 @@ func (t *Test) verify(ctx context.Context, w write) error {
 
 	metadata := map[string][]v1.Metadata{}
 	for i, s := range w.series {
+		want, ok := expectedMetadata(s, w.protocol)
+		if !ok {
+			continue
+		}
 		name := t.storedMetricName(w.protocol, s)
-		want := expectedMetadata(s, w.protocol)
 		got, ok := metadata[name]
 		if !ok {
 			if got, err = t.readMetadata(ctx, name, want); err != nil {
@@ -415,9 +418,15 @@ func (t *Test) readMetadata(ctx context.Context, metric string, want v1.Metadata
 	}
 }
 
-func expectedMetadata(s Series, protocol Protocol) v1.Metadata {
+// expectedMetadata returns the metadata written with the series by the given protocol as Mimir
+// stores it, or false if Mimir may not store it. Remote write 2.0, which ingest storage also uses
+// for its records, can't tell metadata of an unknown type without help or unit from no metadata.
+func expectedMetadata(s Series, protocol Protocol) (v1.Metadata, bool) {
 	m := s.Metadata(protocol)
-	return v1.Metadata{Type: v1.MetricType(strings.ToLower(m.Type.String())), Help: m.Help, Unit: m.Unit}
+	if m.Type == prompb.MetricMetadata_UNKNOWN && m.Help == "" && m.Unit == "" {
+		return v1.Metadata{}, false
+	}
+	return v1.Metadata{Type: v1.MetricType(strings.ToLower(m.Type.String())), Help: m.Help, Unit: s.PrometheusUnit()}, true
 }
 
 // escapesNames returns whether names written with the given protocol are stored escaped. Unless
@@ -488,7 +497,7 @@ func histogramsEqual(actual, expected *model.SampleHistogram) bool {
 // dimensionNames returns the names of the dimensions of every family of series, in the order of
 // Definition.families.
 func dimensionNames() []string {
-	return []string{labelFamily, labelCharset, labelType, labelSampleType, labelKind, labelSchema, labelLayout}
+	return []string{labelFamily, labelCharset, labelUnit, labelHelp, labelType, labelSampleType, labelKind, labelSchema, labelLayout}
 }
 
 // checkLabelValues returns the values of the labels of the check metrics: the protocol, then the
