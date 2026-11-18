@@ -17,6 +17,122 @@ local filename = 'mimir-top-tenants.json';
     $.queries.ingester.ingestOrClassicDeduplicatedQuery(perIngesterQuery, groupByLabels='user')
   ),
 
+  local othersLegend = 'others',
+
+  local tenantDashboardLink(tenant) = {
+    title: 'Tenant dashboard for ${%s}' % tenant,
+    url: $.dashboardURL('mimir-tenants.json') + '&var-user=${%s:percentencode}' % tenant,
+    targetBlank: true,
+  },
+
+  // In a table, makes the tenant column link to the tenant's dashboard.
+  local tableTenantLinks(tenantLabel) = {
+    fieldConfig+: {
+      overrides+: [
+        $.overrideFieldByName(tenantLabel, [
+          $.overrideProperty('links', [tenantDashboardLink('__value.raw')]),
+        ]),
+      ],
+    },
+  },
+
+
+  // Shows the share of each of the top $limit tenants by the given per-tenant query, plus the sum of
+  // all the other tenants as "others", so that each slice is proportional to the real total.
+  // Only use it for values that can be summed up across tenants.
+  local topTenantsPieChartPanel(title, query, legend='{{ user }}', unit='short') = {
+    datasource: '$datasource',
+    title: title,
+    type: 'piechart',
+    targets: [
+      {
+        expr: 'sort_desc(topk($limit, %s))' % query,
+        format: 'time_series',
+        instant: true,
+        legendFormat: legend,
+        refId: 'A',
+      },
+      {
+        expr: |||
+          sum(
+            (%(query)s)
+            unless
+            topk($limit, %(query)s)
+          )
+        ||| % { query: query },
+        format: 'time_series',
+        instant: true,
+        legendFormat: othersLegend,
+        refId: 'B',
+      },
+    ],
+    fieldConfig: {
+      defaults: {
+        unit: unit,
+      },
+      overrides: [
+        $.overrideFieldByName(othersLegend, [
+          $.overrideProperty('color', { mode: 'fixed', fixedColor: '#8F8F8F' }),
+        ]),
+      ],
+    },
+    options: {
+      pieType: 'donut',
+      // Keep the queries' order: tenants from largest to smallest, then "others".
+      sort: 'none',
+      displayLabels: [],
+      reduceOptions: {
+        calcs: ['lastNotNull'],
+        fields: '',
+        values: false,
+      },
+      // Only the names: the table next to the pie chart shows the values and percentages.
+      legend: {
+        showLegend: true,
+        displayMode: 'list',
+        placement: 'right',
+        values: [],
+      },
+      tooltip: {
+        mode: 'single',
+        sort: 'none',
+      },
+    },
+  },
+
+  // Builds a row with a table of the top $limit tenants by the given per-tenant query, with their
+  // percentage of the total, next to a pie chart with their share of the total.
+  local topTenantsPieChartRow(rowTitle, panelTitle, query, tableStyles, sortCol=2, tenantLabel='user', legend='{{ user }}', unit='short') =
+    local styles = {
+      [k]: tableStyles[k]
+      for k in std.objectFields(tableStyles)
+      if k != 'Value'
+    } + {
+      'Value #A': tableStyles.Value,
+      'Value #B': { alias: '% of total', unit: 'percentunit', decimals: 1 },
+    };
+    $.row(rowTitle) { collapse: true }
+    .addPanel(
+      $.panel(panelTitle) +
+      { sort: { col: sortCol, desc: true } } +
+      $.tablePanel(
+        [
+          'topk($limit, %s)' % query,
+          'topk($limit, %(query)s) / scalar(sum(%(query)s))' % { query: query },
+        ],
+        styles,
+      ) +
+      {
+        // Join the two queries' rows by their labels, into one row per tenant.
+        transformations: [{ id: 'merge', options: {} }],
+      } +
+      tableTenantLinks(tenantLabel)
+    )
+    .addPanel(topTenantsPieChartPanel('Share of the total', query, legend, unit))
+    + {
+      panels: [super.panels[0] { span: 9 }, super.panels[1] { span: 3 }],
+    },
+
   [filename]:
     assert std.md5(filename) == 'bc6e12d4fe540e4a1785b9d3ca0ffdd9' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Top tenants') + { uid: std.md5(filename) })
@@ -43,39 +159,27 @@ local filename = 'mimir-top-tenants.json';
     )
 
     .addRow(
-      ($.row('By active series') + { collapse: true })
-      .addPanel(
-        $.panel('Top $limit users by active series') +
-        { sort: { col: 2, desc: true } } +
-        $.tablePanel(
-          [
-            |||
-              topk($limit, %s)
-            ||| % [
-              $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_series{%s}' % [$.jobMatcher($._config.job_names.ingester)], groupByLabels='user'),
-            ],
-          ], {
-            user: { alias: 'user', unit: 'string' },
-            Value: { alias: 'series' },
-          }
-        )
-      ),
+      topTenantsPieChartRow(
+        'By active series',
+        'Top $limit users by active series',
+        $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_series{%s}' % [$.jobMatcher($._config.job_names.ingester)], groupByLabels='user'),
+        {
+          user: { alias: 'user', unit: 'string' },
+          Value: { alias: 'series' },
+        },
+      )
     )
 
     .addRow(
-      ($.row('By in-memory series') + { collapse: true })
-      .addPanel(
-        $.panel('Top $limit users by in-memory series (series created - series removed)') +
-        { sort: { col: 2, desc: true } } +
-        $.tablePanel(
-          [
-            'topk($limit, %(in_memory_series_per_user)s)' % { in_memory_series_per_user: in_memory_series_per_user_query() },
-          ], {
-            user: { alias: 'user', unit: 'string' },
-            Value: { alias: 'series' },
-          }
-        )
-      ),
+      topTenantsPieChartRow(
+        'By in-memory series',
+        'Top $limit users by in-memory series (series created - series removed)',
+        in_memory_series_per_user_query(),
+        {
+          user: { alias: 'user', unit: 'string' },
+          Value: { alias: 'series' },
+        },
+      )
     )
 
     .addRow(
@@ -108,20 +212,16 @@ local filename = 'mimir-top-tenants.json';
     )
 
     .addRow(
-      ($.row('By samples rate') + { collapse: true })
-      .addPanel(
-        $.panel('Top $limit users by received samples rate in last 5m') +
-        { sort: { col: 2, desc: true } } +
-        $.tablePanel(
-          [
-            'topk($limit, sum by (user) (rate(cortex_distributor_received_samples_total{%(job)s}[5m])))'
-            % { job: $.jobMatcher($._config.job_names.distributor) },
-          ], {
-            user: { alias: 'user', unit: 'string' },
-            Value: { alias: 'samples/s' },
-          }
-        )
-      ),
+      topTenantsPieChartRow(
+        'By samples rate',
+        'Top $limit users by received samples rate in last 5m',
+        'sum by (user) (rate(cortex_distributor_received_samples_total{%(job)s}[5m]))'
+        % { job: $.jobMatcher($._config.job_names.distributor) },
+        {
+          user: { alias: 'user', unit: 'string' },
+          Value: { alias: 'samples/s' },
+        },
+      )
     )
 
     .addRow(
@@ -165,62 +265,57 @@ local filename = 'mimir-top-tenants.json';
             user: { alias: 'User', unit: 'string' },
             Value: { alias: 'Bytes (99th Percentile)', unit: 'bytes' },
           },
-        )
+        ) +
+        tableTenantLinks('user')
       ),
     )
 
     .addRowIf(
       $._config.gateway_per_tenant_metrics_enabled,
-      ($.row('By gateway read requests rate') + { collapse: true })
-      .addPanel(
-        $.panel('Top $limit users by gateway read requests rate in last 5m') +
-        { sort: { col: 2, desc: true } } +
-        $.tablePanel(
-          [
-            'topk($limit, sum by (tenant) (rate(cortex_per_tenant_request_total{route=~"%s", %s}[5m])))'
-            % [$.queries.read_http_routes_regex, $.namespaceMatcher()],
-          ], {
-            tenant: { alias: 'tenant', unit: 'string' },
-            Value: { alias: 'requests/s' },
-          }
-        )
-      ),
+      topTenantsPieChartRow(
+        'By gateway read requests rate',
+        'Top $limit users by gateway read requests rate in last 5m',
+        'sum by (tenant) (rate(cortex_per_tenant_request_total{route=~"%s", %s}[5m]))'
+        % [$.queries.read_http_routes_regex, $.namespaceMatcher()],
+        {
+          tenant: { alias: 'tenant', unit: 'string' },
+          Value: { alias: 'requests/s' },
+        },
+        tenantLabel='tenant',
+        legend='{{ tenant }}',
+        unit='reqps',
+      )
     )
 
     .addRowIf(
       $._config.gateway_per_tenant_metrics_enabled,
-      ($.row('By gateway write requests rate') + { collapse: true })
-      .addPanel(
-        $.panel('Top $limit users by gateway write requests rate in last 5m') +
-        { sort: { col: 2, desc: true } } +
-        $.tablePanel(
-          [
-            'topk($limit, sum by (tenant) (rate(cortex_per_tenant_request_total{route=~"%s", %s}[5m])))'
-            % [$.queries.write_http_routes_regex, $.namespaceMatcher()],
-          ], {
-            tenant: { alias: 'tenant', unit: 'string' },
-            Value: { alias: 'requests/s' },
-          }
-        )
-      ),
+      topTenantsPieChartRow(
+        'By gateway write requests rate',
+        'Top $limit users by gateway write requests rate in last 5m',
+        'sum by (tenant) (rate(cortex_per_tenant_request_total{route=~"%s", %s}[5m]))'
+        % [$.queries.write_http_routes_regex, $.namespaceMatcher()],
+        {
+          tenant: { alias: 'tenant', unit: 'string' },
+          Value: { alias: 'requests/s' },
+        },
+        tenantLabel='tenant',
+        legend='{{ tenant }}',
+        unit='reqps',
+      )
     )
 
 
     .addRow(
-      ($.row('By discarded samples rate') + { collapse: true })
-      .addPanel(
-        $.panel('Top $limit users by discarded samples rate in last 5m') +
-        { sort: { col: 2, desc: true } } +
-        $.tablePanel(
-          [
-            'topk($limit, sum by (user) (rate(cortex_discarded_samples_total{%(job)s}[5m])))'
-            % { job: $.jobMatcher($._config.job_names.ingester + $._config.job_names.distributor) },
-          ], {
-            user: { alias: 'user', unit: 'string' },
-            Value: { alias: 'samples/s' },
-          }
-        )
-      ),
+      topTenantsPieChartRow(
+        'By discarded samples rate',
+        'Top $limit users by discarded samples rate in last 5m',
+        'sum by (user) (rate(cortex_discarded_samples_total{%(job)s}[5m]))'
+        % { job: $.jobMatcher($._config.job_names.ingester + $._config.job_names.distributor) },
+        {
+          user: { alias: 'user', unit: 'string' },
+          Value: { alias: 'samples/s' },
+        },
+      )
     )
 
     .addRow(
@@ -246,58 +341,44 @@ local filename = 'mimir-top-tenants.json';
     )
 
     .addRow(
-      ($.row('By series with exemplars') + { collapse: true })
-      .addPanel(
-        $.panel('Top $limit users by series with exemplars') +
-        { sort: { col: 2, desc: true } } +
-        $.tablePanel(
-          [
-            |||
-              topk($limit, %s)
-            ||| % [
-              $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{%s}' % [$.jobMatcher($._config.job_names.ingester)], groupByLabels='user'),
-            ],
-          ], {
-            user: { alias: 'user', unit: 'string' },
-            Value: { alias: 'series' },
-          }
-        )
-      ),
+      topTenantsPieChartRow(
+        'By series with exemplars',
+        'Top $limit users by series with exemplars',
+        $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{%s}' % [$.jobMatcher($._config.job_names.ingester)], groupByLabels='user'),
+        {
+          user: { alias: 'user', unit: 'string' },
+          Value: { alias: 'series' },
+        },
+      )
     )
 
     .addRow(
-      ($.row('By exemplars rate') + { collapse: true })
-      .addPanel(
-        $.panel('Top $limit users by received exemplars rate in last 5m') +
-        { sort: { col: 2, desc: true } } +
-        $.tablePanel(
-          [
-            'topk($limit, sum by (user) (rate(cortex_distributor_received_exemplars_total{%(job)s}[5m])))'
-            % { job: $.jobMatcher($._config.job_names.distributor) },
-          ], {
-            user: { alias: 'user', unit: 'string' },
-            Value: { alias: 'exemplars/s' },
-          }
-        )
-      ),
+      topTenantsPieChartRow(
+        'By exemplars rate',
+        'Top $limit users by received exemplars rate in last 5m',
+        'sum by (user) (rate(cortex_distributor_received_exemplars_total{%(job)s}[5m]))'
+        % { job: $.jobMatcher($._config.job_names.distributor) },
+        {
+          user: { alias: 'user', unit: 'string' },
+          Value: { alias: 'exemplars/s' },
+        },
+      )
     )
 
 
     .addRow(
-      ($.row('By rule group size') + { collapse: true })
-      .addPanel(
-        $.panel('Top $limit biggest groups') +
-        { sort: { col: 3, desc: true } } +
-        $.tablePanel(
-          [
-            'topk($limit, sum by (rule_group, user) (cortex_prometheus_rule_group_rules{%(job)s}))'
-            % { job: $.jobMatcher($._config.job_names.ruler) },
-          ], {
-            user: { alias: 'user', unit: 'string' },
-            Value: { alias: 'rules' },
-          }
-        )
-      ),
+      topTenantsPieChartRow(
+        'By rule group size',
+        'Top $limit biggest groups',
+        'sum by (rule_group, user) (cortex_prometheus_rule_group_rules{%(job)s})'
+        % { job: $.jobMatcher($._config.job_names.ruler) },
+        {
+          user: { alias: 'user', unit: 'string' },
+          Value: { alias: 'rules' },
+        },
+        sortCol=3,
+        legend='{{ user }} / {{ rule_group }}',
+      )
     )
 
     .addRow(
@@ -313,30 +394,25 @@ local filename = 'mimir-top-tenants.json';
             user: { alias: 'user', unit: 'string' },
             Value: { alias: 'seconds' },
           }
-        )
+        ) +
+        tableTenantLinks('user')
       )
     )
 
     .addRow(
-      ($.row('By estimated compaction jobs from bucket-index') + { collapse: true })
-      .addPanel(
-        $.panel('Top $limit users by estimated compaction jobs from bucket-index') +
-        { sort: { col: 2, desc: true } } +
-        $.tablePanel(
-          [
-            |||
-              topk($limit,
-                sum by (user) (cortex_bucket_index_estimated_compaction_jobs{%s})
-                and ignoring(user)
-                (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{%s}[$__rate_interval])) == 0)
-              )
-            ||| % [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)],
-          ], {
-            user: { alias: 'user', unit: 'string' },
-            Value: { alias: 'Compaction Jobs', decimals: 0 },
-          }
-        )
-      ),
+      topTenantsPieChartRow(
+        'By estimated compaction jobs from bucket-index',
+        'Top $limit users by estimated compaction jobs from bucket-index',
+        |||
+          sum by (user) (cortex_bucket_index_estimated_compaction_jobs{%s})
+          and ignoring(user)
+          (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{%s}[$__rate_interval])) == 0)
+        ||| % [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)],
+        {
+          user: { alias: 'user', unit: 'string' },
+          Value: { alias: 'Compaction Jobs', decimals: 0 },
+        },
+      )
     )
 
     .addRow(
@@ -355,7 +431,8 @@ local filename = 'mimir-top-tenants.json';
             user: { alias: 'user', unit: 'string' },
             Value: { alias: 'per-instance disk usage', unit: 'bytes' },
           }
-        )
+        ) +
+        tableTenantLinks('user')
       ),
     ),
 }
