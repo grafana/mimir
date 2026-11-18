@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/prometheus/common/model"
 
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
@@ -26,6 +27,8 @@ type client struct {
 	baseURL string
 	tenant  string
 	http    *http.Client
+	// clusterLabel is sent as the cluster validation header when set, for a query-frontend that validates it.
+	clusterLabel string
 	// eventualEstimates sends estimates without X-Read-Consistency: strong, as a dashboard does, so their latency has no wait for the ingesters to catch up.
 	eventualEstimates bool
 }
@@ -68,6 +71,9 @@ func (c *client) get(ctx context.Context, path string, params url.Values, strong
 	}
 	req.Header.Set("X-Scope-OrgID", c.tenant)
 	req.Header.Set("User-Agent", userAgent)
+	if c.clusterLabel != "" {
+		req.Header.Set(clusterutil.ClusterValidationLabelHeader, c.clusterLabel)
+	}
 	// Both answers are computed every time: no-store keeps the query-frontend's results cache and its estimate cache out of the pair.
 	req.Header.Set("Cache-Control", "no-store")
 	if strong {
