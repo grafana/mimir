@@ -42,6 +42,7 @@ import (
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -1371,5 +1372,74 @@ func TestTripperware_QueryCostLimits(t *testing.T) {
 				require.EqualError(t, err, tc.expectErr[endpoint])
 			})
 		}
+	}
+}
+
+func TestTripperware_QueryCostLookback(t *testing.T) {
+	newTripperware := func(t *testing.T) Tripperware {
+		engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
+		limits := mockLimits{maxQueryLookback: time.Hour}
+		tw, err := NewTripperware(Config{CacheResults: true, SplitQueriesByInterval: time.Hour}, log.NewNopLogger(), limits,
+			newMockQueryLimitsProvider(&limits), newTestCodec(), nil, nil, engine, engineOpts, nil,
+			false, false, nil, prometheus.NewRegistry(), limiter.NewInflightMemoryConsumptionTracker(nil, nil))
+		require.NoError(t, err)
+		return tw
+	}
+	newRequest := func(t *testing.T, method, endpoint, params string) *http.Request {
+		target := "/prometheus/api/v1/" + endpoint
+		var body io.Reader
+		if method == http.MethodGet {
+			target += "?" + params
+		} else {
+			body = strings.NewReader(params)
+		}
+		req := httptest.NewRequest(method, target, body).WithContext(user.InjectOrgID(t.Context(), "user-1"))
+		if method == http.MethodPost {
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		return req
+	}
+
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		for _, endpoint := range []string{"query_cost", "query_range_cost"} {
+			t.Run("outside the lookback/"+method+"/"+endpoint, func(t *testing.T) {
+				next := RoundTripFunc(func(*http.Request) (*http.Response, error) {
+					t.Fatal("a skipped estimate must not reach the querier")
+					return nil, nil
+				})
+				req := newRequest(t, method, endpoint, "query=up&time=3600&start=0&end=3600&step=60")
+				resp, err := newTripperware(t)(next).RoundTrip(req)
+				require.NoError(t, err)
+				require.Equal(t, http.StatusOK, resp.StatusCode)
+				data, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+				require.NoError(t, resp.Body.Close())
+				require.JSONEq(t, `{"status":"success","data":{"estimate":{"seriesTouched":0,"samplesRead":0}}}`, string(data))
+			})
+		}
+
+		t.Run("clamped to the lookback/"+method, func(t *testing.T) {
+			end := time.Now()
+			var forwarded url.Values
+			next := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+				require.Equal(t, r.URL.RequestURI(), r.RequestURI)
+				var err error
+				forwarded, err = util.ParseRequestFormWithoutConsumingBody(r)
+				require.NoError(t, err)
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+			})
+			params := fmt.Sprintf("query=up&start=%d&end=%d&step=60&timeout=10s", end.Add(-3*time.Hour).Unix(), end.Unix())
+			resp, err := newTripperware(t)(next).RoundTrip(newRequest(t, method, "query_range_cost", params))
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+
+			start, err := strconv.ParseFloat(forwarded.Get("start"), 64)
+			require.NoError(t, err)
+			require.InDelta(t, float64(end.Add(-time.Hour).Unix()), start, 60)
+			require.Equal(t, "up", forwarded.Get("query"))
+			require.Equal(t, strconv.FormatInt(end.Unix(), 10), forwarded.Get("end"))
+			require.Equal(t, "60", forwarded.Get("step"))
+			require.Equal(t, "10s", forwarded.Get("timeout"))
+		})
 	}
 }
