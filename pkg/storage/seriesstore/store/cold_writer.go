@@ -3,6 +3,7 @@ package store
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
@@ -94,15 +95,50 @@ func writeColdBlock(directory string, id uint64, series []frozenSeries) (*coldBl
 	})
 	var names []string
 	local := map[string]uint32{}
-	pairs := 0
-	for index := range series {
-		series[index].labels.Range(func(name, _ string) {
-			pairs++
-			if _, ok := local[name]; !ok {
-				local[name] = uint32(len(names))
-				names = append(names, name)
-			}
-		})
+	type postingRange struct {
+		name uint32
+		end  int
+	}
+	type tenantRange struct {
+		start, end int
+		postings   []postingRange
+	}
+	var ranges []tenantRange
+	var counts []int
+	var usedNames []uint32
+	maxPairs := 0
+	for start := 0; start < len(series); {
+		end := start + 1
+		for end < len(series) && series[end].tenant == series[start].tenant {
+			end++
+		}
+		usedNames = usedNames[:0]
+		for index := start; index < end; index++ {
+			series[index].labels.Range(func(name, _ string) {
+				id, ok := local[name]
+				if !ok {
+					id = uint32(len(names))
+					local[name] = id
+					names = append(names, name)
+					counts = append(counts, 0)
+				}
+				if counts[id] == 0 {
+					usedNames = append(usedNames, id)
+				}
+				counts[id]++
+			})
+		}
+		slices.Sort(usedNames)
+		groups := make([]postingRange, 0, len(usedNames))
+		total := 0
+		for _, name := range usedNames {
+			total += counts[name]
+			groups = append(groups, postingRange{name, total})
+			counts[name] = 0
+		}
+		ranges = append(ranges, tenantRange{start, end, groups})
+		maxPairs = max(maxPairs, total)
+		start = end
 	}
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return nil, err
@@ -121,16 +157,6 @@ func writeColdBlock(directory string, id uint64, series []frozenSeries) (*coldBl
 		out.text(name)
 	}
 	// Tenants: id, time range and where their tables are, patched once written.
-	type tenantRange struct{ start, end int }
-	var ranges []tenantRange
-	for start := 0; start < len(series); {
-		end := start
-		for end < len(series) && series[end].tenant == series[start].tenant {
-			end++
-		}
-		ranges = append(ranges, tenantRange{start, end})
-		start = end
-	}
 	out.varint(uint64(len(ranges)))
 	headers := make([]int, len(ranges))
 	for index, r := range ranges {
@@ -147,19 +173,27 @@ func writeColdBlock(directory string, id uint64, series []frozenSeries) (*coldBl
 		hash        uint64
 	}
 	var labelBuffer []byte
-	postings := make([]posting, 0, pairs)
+	postingRoom := make([]posting, maxPairs)
+	cursors := make([]int, len(names))
 	for rangeIndex, r := range ranges {
 		offsets := make([]uint64, 0, r.end-r.start)
-		postings = postings[:0]
+		total := 0
+		for _, group := range r.postings {
+			cursors[group.name] = total
+			total = group.end
+		}
+		postings := postingRoom[:total]
 		minTime, maxTime := int64(math.MaxInt64), int64(math.MinInt64)
 		for index, frozen := range series[r.start:r.end] {
 			offsets = append(offsets, uint64(out.offset))
 			labelBuffer = labelBuffer[:0]
 			frozen.labels.Range(func(name, value string) {
-				labelBuffer = putUvarint(labelBuffer, uint64(local[name]))
+				nameID := local[name]
+				labelBuffer = putUvarint(labelBuffer, uint64(nameID))
 				labelBuffer = putUvarint(labelBuffer, uint64(len(value)))
 				labelBuffer = append(labelBuffer, value...)
-				postings = append(postings, posting{local[name], uint32(index), labels.ValueHash(value)})
+				postings[cursors[nameID]] = posting{nameID, uint32(index), labels.ValueHash(value)}
+				cursors[nameID]++
 			})
 			out.varint(uint64(len(labelBuffer)))
 			out.bytes(labelBuffer)
@@ -187,26 +221,18 @@ func writeColdBlock(directory string, id uint64, series []frozenSeries) (*coldBl
 			out.uint64(frozen.labels.Hash())
 			out.uint64(labels.StableHash(frozen.labels))
 		}
-		slices.SortFunc(postings, func(a, b posting) int {
-			switch {
-			case a.name != b.name:
-				if a.name < b.name {
-					return -1
+		// Grouping by name during the write leaves only each name's value hashes to sort.
+		begin := 0
+		for _, group := range r.postings {
+			end := group.end
+			slices.SortFunc(postings[begin:end], func(a, b posting) int {
+				if order := cmp.Compare(a.hash, b.hash); order != 0 {
+					return order
 				}
-				return 1
-			case a.hash != b.hash:
-				if a.hash < b.hash {
-					return -1
-				}
-				return 1
-			case a.index != b.index:
-				if a.index < b.index {
-					return -1
-				}
-				return 1
-			}
-			return 0
-		})
+				return cmp.Compare(a.index, b.index)
+			})
+			begin = end
+		}
 		// Entries of (name, value hash, list offset), then the lists of series indexes: each entry is a run of the sorted
 		// postings, its list their indexes.
 		var entries []int
