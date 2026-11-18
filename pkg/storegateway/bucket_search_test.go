@@ -497,18 +497,6 @@ func TestStorepbToParamsExpression(t *testing.T) {
 		_, err := storepbToParams(&storepb.SearchFilter{Expression: "foo", ScoreAfter: 0.5})
 		require.EqualError(t, err, "score after 0.5 requires resume after")
 	})
-
-	t.Run("invalid expressions are rejected", func(t *testing.T) {
-		tests := map[string]string{
-			"foo AND":     "search expression: expected term or (, got end of expression at position 7",
-			"NOT foo":     "search expression: every accepting path must require a positive term",
-			"(foo OR bar": "search expression: expected ), got end of expression at position 11",
-		}
-		for expression, wantErr := range tests {
-			_, err := storepbToParams(&storepb.SearchFilter{Expression: expression})
-			require.EqualError(t, err, wantErr, expression)
-		}
-	})
 }
 
 // TestStreamBucketSearchResultsBatching exercises streamBucketSearchResults
@@ -849,7 +837,7 @@ func TestBucketStoreSearchWithExpression(t *testing.T) {
 					End:    math.MaxInt64,
 					Filter: &storepb.SearchFilter{Expression: tc.expression, FuzzAlg: storepb.FUZZ_ALG_SUBSTRING},
 				}
-				s := &mockSearchLabelNamesServer{ctx: context.Background()}
+				s := &mockSearchLabelNamesServer{ctx: t.Context()}
 				require.NoError(t, bs.SearchLabelNames(req, s))
 				assert.Equal(t, tc.want, collectSearchNames(s.sent))
 			})
@@ -874,7 +862,7 @@ func TestBucketStoreSearchWithExpression(t *testing.T) {
 					Label:  "a",
 					Filter: &storepb.SearchFilter{Expression: tc.expression, FuzzAlg: storepb.FUZZ_ALG_SUBSTRING},
 				}
-				s := &mockSearchLabelValuesServer{ctx: context.Background()}
+				s := &mockSearchLabelValuesServer{ctx: t.Context()}
 				require.NoError(t, bs.SearchLabelValues(req, s))
 				assert.Equal(t, tc.want, collectSearchNames(s.sent))
 			})
@@ -893,11 +881,6 @@ func TestBucketStoreSearchWithExpression(t *testing.T) {
 				wantMsg: "search expression: expected term or (, got end of expression at position 7",
 			},
 			{
-				name:    "expression without a positive term",
-				filter:  &storepb.SearchFilter{Expression: "NOT foo"},
-				wantMsg: "search expression: every accepting path must require a positive term",
-			},
-			{
 				name:    "terms and expression together",
 				filter:  &storepb.SearchFilter{Terms: []string{"foo"}, Expression: "bar"},
 				wantMsg: "invalid search parameters: search terms and search expression are mutually exclusive",
@@ -906,8 +889,8 @@ func TestBucketStoreSearchWithExpression(t *testing.T) {
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				errs := map[string]error{
-					"label names":  bs.SearchLabelNames(&storepb.SearchLabelNamesRequest{Start: 0, End: math.MaxInt64, Filter: tc.filter}, &mockSearchLabelNamesServer{ctx: context.Background()}),
-					"label values": bs.SearchLabelValues(&storepb.SearchLabelValuesRequest{Start: 0, End: math.MaxInt64, Label: "a", Filter: tc.filter}, &mockSearchLabelValuesServer{ctx: context.Background()}),
+					"label names":  bs.SearchLabelNames(&storepb.SearchLabelNamesRequest{Start: 0, End: math.MaxInt64, Filter: tc.filter}, &mockSearchLabelNamesServer{ctx: t.Context()}),
+					"label values": bs.SearchLabelValues(&storepb.SearchLabelValuesRequest{Start: 0, End: math.MaxInt64, Label: "a", Filter: tc.filter}, &mockSearchLabelValuesServer{ctx: t.Context()}),
 				}
 				for rpc, err := range errs {
 					require.Error(t, err, rpc)

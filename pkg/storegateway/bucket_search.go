@@ -266,12 +266,12 @@ func applyPerBlockSearchHints(values []string, params *streaminglabelvalues.Para
 }
 
 // storepbToParams converts a wire SearchFilter into a validated
-// streaminglabelvalues.Params via NewParams, or via NewExpressionParams when
-// the filter carries an expression, and then WithCursor. A nil input returns
-// (nil, nil). Terms and an expression together return an error that wraps
-// ErrTermsAndExpression. An unknown FuzzAlg is an error. A sender that is
-// newer than this server can send a value that this server does not know, and
-// a silent fallback to another algorithm would return wrong results.
+// streaminglabelvalues.Params via NewTermsOrExpressionParams and WithCursor.
+// A nil input returns (nil, nil). Terms and an expression together return an
+// error that wraps ErrTermsAndExpression. An unknown FuzzAlg is an error. A
+// sender that is newer than this server can send a value that this server does
+// not know, and a silent fallback to another algorithm would return wrong
+// results.
 func storepbToParams(wf *storepb.SearchFilter) (*streaminglabelvalues.Params, error) {
 	if wf == nil {
 		return nil, nil
@@ -289,18 +289,7 @@ func storepbToParams(wf *storepb.SearchFilter) (*streaminglabelvalues.Params, er
 	default:
 		return nil, fmt.Errorf("unknown fuzz algorithm %d", wf.FuzzAlg)
 	}
-	var (
-		params *streaminglabelvalues.Params
-		err    error
-	)
-	if wf.Expression != "" {
-		if len(wf.Terms) > 0 {
-			return nil, fmt.Errorf("invalid search parameters: %w", streaminglabelvalues.ErrTermsAndExpression)
-		}
-		params, err = streaminglabelvalues.NewExpressionParams(wf.Expression, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
-	} else {
-		params, err = streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
-	}
+	params, err := streaminglabelvalues.NewTermsOrExpressionParams(wf.Terms, wf.Expression, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
 	if err != nil {
 		return nil, err
 	}

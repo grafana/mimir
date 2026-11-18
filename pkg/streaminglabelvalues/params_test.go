@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/prometheus/prometheus/util/searchexpr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -182,12 +181,45 @@ func TestWithCursorRejectsInvalid(t *testing.T) {
 	}
 }
 
-func TestParamsValidateRejectsTermsAndExpression(t *testing.T) {
-	expr, err := searchexpr.Parse("foo")
-	require.NoError(t, err)
+func TestNewTermsOrExpressionParams(t *testing.T) {
+	t.Run("builds from whichever input is present", func(t *testing.T) {
+		tests := []struct {
+			name           string
+			terms          []string
+			expression     string
+			wantTerms      []string
+			wantExpression bool
+		}{
+			{name: "terms only", terms: []string{"foo"}, wantTerms: []string{"foo"}},
+			{name: "expression only", expression: "foo AND NOT bar", wantExpression: true},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				got, err := NewTermsOrExpressionParams(tc.terms, tc.expression, true, FuzzAlgSubstring, 0)
+				require.NoError(t, err)
+				require.NotNil(t, got)
+				assert.Equal(t, tc.wantTerms, got.Terms)
+				assert.Equal(t, tc.wantExpression, got.expressionExpr != nil)
+			})
+		}
+	})
 
-	p := &Params{Terms: []string{"bar"}, expressionExpr: expr}
-	err = p.validate()
-	require.ErrorIs(t, err, ErrTermsAndExpression)
-	require.EqualError(t, err, "invalid search parameters: search terms and search expression are mutually exclusive")
+	t.Run("terms and expression together are rejected", func(t *testing.T) {
+		// A whitespace-only expression is still present, so it conflicts with
+		// terms instead of being dropped in favour of them.
+		for _, expression := range []string{"bar", "\t"} {
+			got, err := NewTermsOrExpressionParams([]string{"foo"}, expression, true, FuzzAlgSubstring, 0)
+			require.ErrorIs(t, err, ErrTermsAndExpression, "expression %q", expression)
+			require.EqualError(t, err, "invalid search parameters: search terms and search expression are mutually exclusive", "expression %q", expression)
+			assert.Nil(t, got, "expression %q", expression)
+		}
+	})
+
+	t.Run("whitespace-only expression is rejected", func(t *testing.T) {
+		// Only "" means no expression. Treating blank input as no filter would
+		// return unfiltered results instead of an error.
+		got, err := NewTermsOrExpressionParams(nil, "  ", true, FuzzAlgSubstring, 0)
+		require.EqualError(t, err, "search expression is empty")
+		assert.Nil(t, got)
+	})
 }

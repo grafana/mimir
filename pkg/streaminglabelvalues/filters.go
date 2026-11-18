@@ -393,39 +393,38 @@ func BuildFilter(p *Params) (storage.Filter, error) {
 	if p == nil {
 		return nil, nil
 	}
-	if p.expressionExpr != nil {
-		if len(p.Terms) > 0 {
-			return nil, fmt.Errorf("invalid search parameters: %w", ErrTermsAndExpression)
-		}
-		inner, err := searchexpr.Compile(p.expressionExpr, newTermFilterFactory(p))
-		if err != nil {
-			return nil, err
-		}
-		if !p.CaseSensitive {
-			inner = &caseFoldingFilter{inner: inner}
-		}
-		return &quantizingFilter{inner: inner}, nil
-	}
-	if len(p.Terms) == 0 {
-		return nil, nil
-	}
-	threshold := float64(p.FuzzThreshold) / 100.0
-	perTerm := make([]storage.Filter, 0, len(p.Terms))
-	for _, term := range p.Terms {
-		if !p.CaseSensitive {
-			term = strings.ToLower(term)
-		}
-		f, err := buildPerTermFilter(term, true, p.FuzzAlg, p.FuzzThreshold, threshold)
-		if err != nil {
-			return nil, err
-		}
-		perTerm = append(perTerm, f)
-	}
 	var inner storage.Filter
-	if len(perTerm) == 1 {
-		inner = perTerm[0]
+	if p.expressionExpr != nil {
+		// Compile re-runs searchexpr.Validate, which NewExpressionParams already
+		// passed. The store-gateway builds one filter per block, so this repeats
+		// per block, but the walk is bounded by searchexpr's term and nesting
+		// limits. Skipping it needs a non-validating Compile in searchexpr.
+		var err error
+		inner, err = searchexpr.Compile(p.expressionExpr, newTermFilterFactory(p))
+		if err != nil {
+			return nil, err
+		}
 	} else {
-		inner = newFilterOr(perTerm...)
+		if len(p.Terms) == 0 {
+			return nil, nil
+		}
+		threshold := float64(p.FuzzThreshold) / 100.0
+		perTerm := make([]storage.Filter, 0, len(p.Terms))
+		for _, term := range p.Terms {
+			if !p.CaseSensitive {
+				term = strings.ToLower(term)
+			}
+			f, err := buildPerTermFilter(term, true, p.FuzzAlg, p.FuzzThreshold, threshold)
+			if err != nil {
+				return nil, err
+			}
+			perTerm = append(perTerm, f)
+		}
+		if len(perTerm) == 1 {
+			inner = perTerm[0]
+		} else {
+			inner = newFilterOr(perTerm...)
+		}
 	}
 	if !p.CaseSensitive {
 		inner = &caseFoldingFilter{inner: inner}

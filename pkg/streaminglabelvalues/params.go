@@ -41,8 +41,9 @@ const (
 // server translates its proto request into this struct before it builds
 // a filter, so this package does not depend on any proto.
 //
-// Use NewParams or NewExpressionParams to construct a validated Params object,
-// and WithCursor to add the cursor of a previous page.
+// Use NewParams, NewExpressionParams or NewTermsOrExpressionParams to construct
+// a validated Params object, and WithCursor to add the cursor of a previous
+// page.
 type Params struct {
 	// Terms are the search terms. An empty slice (or nil) yields a nil filter
 	// unless the Params holds an expression. Multiple terms are combined with
@@ -115,6 +116,25 @@ func NewExpressionParams(expression string, caseSensitive bool, alg FuzzAlg, thr
 	return p, nil
 }
 
+// NewTermsOrExpressionParams constructs and validates Params from input that
+// can carry either search terms or a search expression, such as a wire
+// SearchFilter. It is the only place that enforces their mutual exclusion:
+// both together return an error that wraps ErrTermsAndExpression.
+//
+// Only "" means no expression, because the proto zero value cannot be told
+// apart from an omitted field. Any other expression must be valid, so a
+// whitespace-only one is rejected rather than treated as no filter, which
+// would return unfiltered results.
+func NewTermsOrExpressionParams(terms []string, expression string, caseSensitive bool, alg FuzzAlg, threshold int) (*Params, error) {
+	if expression == "" {
+		return NewParams(terms, caseSensitive, alg, threshold)
+	}
+	if len(terms) > 0 {
+		return nil, fmt.Errorf("invalid search parameters: %w", ErrTermsAndExpression)
+	}
+	return NewExpressionParams(expression, caseSensitive, alg, threshold)
+}
+
 // WithCursor returns a validated copy of p with the cursor of a previous page.
 // A nil p gives a Params without terms.
 func (p *Params) WithCursor(resumeAfter string, scoreAfter float64) (*Params, error) {
@@ -131,10 +151,10 @@ func (p *Params) WithCursor(resumeAfter string, scoreAfter float64) (*Params, er
 }
 
 // validate returns a non-nil error if Params has fields outside their
-// permitted ranges. Empty Terms is permitted (yields a nil filter). Terms and
-// an expression are mutually exclusive, and an expression must pass
-// searchexpr.Validate. Internal to the package — external callers should
-// construct via NewParams or NewExpressionParams, and WithCursor.
+// permitted ranges. Empty Terms is permitted (yields a nil filter). An
+// expression must pass searchexpr.Validate. Internal to the package — external
+// callers should construct via NewParams, NewExpressionParams or
+// NewTermsOrExpressionParams, and WithCursor.
 func (p *Params) validate() error {
 	if p == nil {
 		return nil
@@ -146,9 +166,6 @@ func (p *Params) validate() error {
 	}
 	if p.FuzzThreshold < 0 || p.FuzzThreshold > 100 {
 		return fmt.Errorf("fuzz threshold %d out of [0,100]", p.FuzzThreshold)
-	}
-	if len(p.Terms) > 0 && p.expressionExpr != nil {
-		return fmt.Errorf("invalid search parameters: %w", ErrTermsAndExpression)
 	}
 	for i, t := range p.Terms {
 		if t == "" {
