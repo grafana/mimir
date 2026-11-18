@@ -31,6 +31,7 @@ import (
 
 type config struct {
 	address, tenant, listen string
+	clusterLabel            string
 	interval, gap, timeout  time.Duration
 	pairsPerRound           int
 	queries                 flagext.StringSliceCSV
@@ -51,6 +52,7 @@ type config struct {
 
 func (c *config) register(f *flag.FlagSet) {
 	f.StringVar(&c.address, "address", "", "base URL of the query-frontend, such as http://localhost:8080 through a port-forward (required)")
+	f.StringVar(&c.clusterLabel, "cluster-label", "", "cluster validation label sent in the X-Cluster header, for a query-frontend with -server.cluster-validation.http.enabled; empty sends none")
 	f.StringVar(&c.tenant, "tenant", "", "tenant ID sent as X-Scope-OrgID (required)")
 	f.StringVar(&c.listen, "listen", "", "address to serve /metrics on; empty serves nothing")
 	f.DurationVar(&c.interval, "interval", 0, "time between rounds; 0 runs one round and exits with 1 if a pair mismatched, or 3 if no pair passed, was tolerated or, with -estimate-only, answered")
@@ -192,7 +194,7 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 	}
 	rng := rand.New(rand.NewPCG(seed, seed))
 	r := &runner{
-		client:        &client{baseURL: strings.TrimRight(cfg.address, "/"), tenant: cfg.tenant, http: &http.Client{Timeout: cfg.timeout}, eventualEstimates: cfg.estimateOnly},
+		client:        &client{baseURL: strings.TrimRight(cfg.address, "/"), tenant: cfg.tenant, clusterLabel: cfg.clusterLabel, http: &http.Client{Timeout: cfg.timeout}, eventualEstimates: cfg.estimateOnly},
 		cfg:           cfg.classify,
 		m:             m,
 		logger:        logger,
