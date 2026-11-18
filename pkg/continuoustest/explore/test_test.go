@@ -79,11 +79,9 @@ func TestTest_Run(t *testing.T) {
 		samples += len(w.series)
 	}
 	require.Equal(t, float64(60), sumCounters(test.metrics.writesTotal))
-	require.Equal(t, float64(samples), sumCounters(test.metrics.queryResultChecksTotal))
-	require.Zero(t, sumCounters(test.metrics.queryResultChecksFailedTotal))
+	require.Equal(t, float64(samples), testutil.ToFloat64(test.metrics.queryResultChecksTotal))
+	require.Zero(t, testutil.ToFloat64(test.metrics.queryResultChecksFailedTotal))
 	require.Zero(t, sumCounters(test.metrics.writesFailedTotal))
-	// The failure counter of every checked combination exists, at zero.
-	require.Equal(t, testutil.CollectAndCount(test.metrics.queryResultChecksTotal), testutil.CollectAndCount(test.metrics.queryResultChecksFailedTotal))
 }
 
 func TestTest_WriteInterval(t *testing.T) {
@@ -99,20 +97,6 @@ func TestTest_WriteInterval(t *testing.T) {
 			require.Equal(t, "1m", s.Get(labelWriteInterval), "write %d", i)
 		}
 	}
-}
-
-func TestTest_MetricLabelsAreTheDimensions(t *testing.T) {
-	def, err := LoadDefinition("")
-	require.NoError(t, err)
-	var names []string
-	for _, dims := range def.families() {
-		for _, d := range dims {
-			if !slices.Contains(names, d.name) {
-				names = append(names, d.name)
-			}
-		}
-	}
-	require.ElementsMatch(t, names, dimensionNames())
 }
 
 func TestTest_WritesPickProtocolsSizesAndSeries(t *testing.T) {
@@ -189,7 +173,7 @@ func TestTest_NewSeriesWithCachedMatchingSeries(t *testing.T) {
 	runFor(t, test, testStart, time.Hour)
 
 	require.Len(t, client.series, 41, "every series has been created, most of them after earlier queries")
-	require.Zero(t, sumCounters(test.metrics.queryResultChecksFailedTotal))
+	require.Zero(t, testutil.ToFloat64(test.metrics.queryResultChecksFailedTotal))
 }
 
 func TestTest_Deterministic(t *testing.T) {
@@ -255,7 +239,7 @@ func TestTest_DetectsWrongResults(t *testing.T) {
 	client.corrupt = func(h *prompb.Histogram) { h.Sum++ }
 	err := test.Run(context.Background(), testStart.Add(30*time.Second))
 	require.ErrorContains(t, err, "expected histogram")
-	require.Positive(t, sumCounters(test.metrics.queryResultChecksFailedTotal))
+	require.Positive(t, testutil.ToFloat64(test.metrics.queryResultChecksFailedTotal))
 }
 
 func TestTest_DetectsWrongFloats(t *testing.T) {
@@ -265,7 +249,7 @@ func TestTest_DetectsWrongFloats(t *testing.T) {
 	err := test.Run(context.Background(), testStart)
 	require.ErrorContains(t, err, "expected float")
 	require.NotContains(t, err.Error(), "expected histogram")
-	require.Positive(t, testutil.ToFloat64(test.metrics.queryResultChecksFailedTotal.WithLabelValues("v1", "float", "legacy", "seconds", "utf8", "gauge", "", "", "", "")))
+	require.Positive(t, testutil.ToFloat64(test.metrics.queryResultChecksFailedTotal))
 }
 
 func TestTest_DetectsWrongLabels(t *testing.T) {
@@ -293,7 +277,7 @@ func TestTest_DetectsMissingMetadata(t *testing.T) {
 	test.metadataTimeout = 0
 	err := test.Run(context.Background(), testStart)
 	require.ErrorContains(t, err, "expected metadata")
-	require.Positive(t, sumCounters(test.metrics.queryResultChecksFailedTotal))
+	require.Positive(t, testutil.ToFloat64(test.metrics.queryResultChecksFailedTotal))
 }
 
 func TestTest_WaitsForMetadata(t *testing.T) {
@@ -415,8 +399,8 @@ native_histograms: {sample_types: [int], kinds: [counter], schemas: [0], layouts
 	require.NoError(t, test.Run(context.Background(), testStart))
 
 	// v1 and v2 write the 27 series with legacy names, and OTLP the 54 series of both charsets.
-	require.Equal(t, float64(27+27+54), sumCounters(test.metrics.queryResultChecksTotal))
-	require.Zero(t, sumCounters(test.metrics.queryResultChecksFailedTotal))
+	require.Equal(t, float64(27+27+54), testutil.ToFloat64(test.metrics.queryResultChecksTotal))
+	require.Zero(t, testutil.ToFloat64(test.metrics.queryResultChecksFailedTotal))
 	units, helps := map[string]bool{}, map[string]bool{}
 	for _, metadata := range client.metadata {
 		for _, m := range metadata {
@@ -443,8 +427,8 @@ floats: {types: [unknown]}
 	})
 	require.NoError(t, test.Run(context.Background(), testStart))
 	require.Empty(t, client.metadata)
-	require.Equal(t, float64(2), sumCounters(test.metrics.queryResultChecksTotal))
-	require.Zero(t, sumCounters(test.metrics.queryResultChecksFailedTotal))
+	require.Equal(t, float64(2), testutil.ToFloat64(test.metrics.queryResultChecksTotal))
+	require.Zero(t, testutil.ToFloat64(test.metrics.queryResultChecksFailedTotal))
 }
 
 func TestTest_InitErrors(t *testing.T) {

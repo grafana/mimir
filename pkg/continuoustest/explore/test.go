@@ -378,13 +378,10 @@ func (t *Test) verify(ctx context.Context, w write) error {
 
 	errs := multierror.New()
 	for i, s := range w.series {
-		labelValues := checkLabelValues(w.protocol, s)
-		t.metrics.queryResultChecksTotal.WithLabelValues(labelValues...).Inc()
-		// The failure counter is created at zero, so that no failures is distinguishable from no checks.
-		failed := t.metrics.queryResultChecksFailedTotal.WithLabelValues(labelValues...)
+		t.metrics.queryResultChecksTotal.Inc()
 		t.run.checks++
 		if err := errors.Join(checkErrs[i], unexpected); err != nil {
-			failed.Inc()
+			t.metrics.queryResultChecksFailedTotal.Inc()
 			t.run.checksFailed++
 			level.Warn(logger).Log("msg", "Query result check failed", "series", s, "err", err)
 			errs.Add(fmt.Errorf("%s: series %s: %w", w, s, err))
@@ -494,41 +491,17 @@ func histogramsEqual(actual, expected *model.SampleHistogram) bool {
 	return true
 }
 
-// dimensionNames returns the names of the dimensions of every family of series, in the order of
-// Definition.families.
-func dimensionNames() []string {
-	return []string{labelFamily, labelCharset, labelUnit, labelHelp, labelType, labelSampleType, labelKind, labelSchema, labelLayout}
-}
-
-// checkLabelValues returns the values of the labels of the check metrics: the protocol, then the
-// value of each dimension of the series, or an empty value for the dimensions of other families.
-func checkLabelValues(protocol Protocol, s Series) []string {
-	values := make([]string, 0, len(dimensionNames())+1)
-	values = append(values, string(protocol))
-	for _, name := range dimensionNames() {
-		value := ""
-		for _, l := range s.Dimensions {
-			if l.Name == name {
-				value = l.Value
-			}
-		}
-		values = append(values, value)
-	}
-	return values
-}
-
 type metrics struct {
 	writesTotal                  *prometheus.CounterVec
 	writesFailedTotal            *prometheus.CounterVec
 	samplesTotal                 *prometheus.CounterVec
 	queriesTotal                 prometheus.Counter
 	queriesFailedTotal           prometheus.Counter
-	queryResultChecksTotal       *prometheus.CounterVec
-	queryResultChecksFailedTotal *prometheus.CounterVec
+	queryResultChecksTotal       prometheus.Counter
+	queryResultChecksFailedTotal prometheus.Counter
 }
 
 func newMetrics(reg prometheus.Registerer) *metrics {
-	checkLabels := append([]string{labelProtocol}, dimensionNames()...)
 	return &metrics{
 		writesTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "mimir_continuous_test_explore_writes_total",
@@ -550,13 +523,13 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 			Name: "mimir_continuous_test_explore_queries_failed_total",
 			Help: "Total number of failed queries of the explore test.",
 		}),
-		queryResultChecksTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		queryResultChecksTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "mimir_continuous_test_explore_query_result_checks_total",
-			Help: "Total number of samples read back and checked by the explore test, by protocol and series dimension values.",
-		}, checkLabels),
-		queryResultChecksFailedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Help: "Total number of samples read back and checked by the explore test.",
+		}),
+		queryResultChecksFailedTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "mimir_continuous_test_explore_query_result_checks_failed_total",
-			Help: "Total number of samples read back by the explore test that failed the check, by protocol and series dimension values.",
-		}, checkLabels),
+			Help: "Total number of samples read back by the explore test that failed the check. The log line of each failure has the series and the error.",
+		}),
 	}
 }
