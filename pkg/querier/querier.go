@@ -128,8 +128,17 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 }
 
 func (cfg *Config) Validate() error {
-	if cfg.ExperimentalQueryCostAPIEnabled && cfg.QueryCostEstimatedScrapeInterval < time.Millisecond {
-		return errors.New("querier.query-cost-estimated-scrape-interval must be at least 1ms when the query cost API is enabled")
+	if cfg.ExperimentalQueryCostAPIEnabled {
+		if cfg.QueryCostEstimatedScrapeInterval < time.Millisecond {
+			return errors.New("querier.query-cost-estimated-scrape-interval must be at least 1ms when the query cost API is enabled")
+		}
+		// These timeouts expire each query at once, so each estimate would fail too.
+		if cfg.EngineConfig.Timeout < 0 {
+			return errors.New("querier.timeout must not be negative when the query cost API is enabled")
+		}
+		if cfg.EngineConfig.Timeout == 0 && cfg.QueryEngine == PrometheusEngine {
+			return errors.New("querier.timeout must be positive when the query cost API is enabled with the Prometheus engine")
+		}
 	}
 
 	if cfg.QueryEngine != PrometheusEngine && cfg.QueryEngine != MimirEngine {

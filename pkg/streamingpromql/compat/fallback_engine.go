@@ -104,3 +104,14 @@ func (e EngineWithFallback) NewRangeQuery(ctx context.Context, q storage.Queryab
 
 	return e.fallback.NewRangeQuery(ctx, q, opts, qs, start, end, interval)
 }
+
+// AcquireQuerySlot implements promql.QuerySlotAcquirer. It uses the preferred engine, or the
+// fallback engine if only the fallback engine implements promql.QuerySlotAcquirer.
+func (e EngineWithFallback) AcquireQuerySlot(ctx context.Context, qs string) (func(), error) {
+	for _, engine := range []promql.QueryEngine{e.preferred, e.fallback} {
+		if acquirer, ok := engine.(promql.QuerySlotAcquirer); ok {
+			return acquirer.AcquireQuerySlot(ctx, qs)
+		}
+	}
+	return func() {}, nil
+}

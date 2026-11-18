@@ -774,7 +774,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 
 	limits := mockLimits{alignQueriesWithStep: true}
 	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
-	queryRangeMiddlewares, queryInstantMiddlewares, remoteReadMiddlewares := newQueryMiddlewares(
+	queryRangeMiddlewares, queryInstantMiddlewares, remoteReadMiddlewares, _ := newQueryMiddlewares(
 		cfg,
 		log.NewNopLogger(),
 		limits,
@@ -1284,6 +1284,92 @@ func TestTripperware_QueryCostPassThrough(t *testing.T) {
 					require.Equal(t, 1, calls)
 				})
 			}
+		}
+	}
+}
+
+func TestTripperware_QueryCostLimits(t *testing.T) {
+	const (
+		rangeParams   = "query=up&start=0&end=86400&step=60"
+		instantParams = "query=up[1d]&time=86400"
+	)
+	for _, tc := range []struct {
+		name      string
+		limits    mockLimits
+		expectErr map[string]string
+		params    map[string]string
+	}{
+		{
+			name:   "blocked query",
+			limits: mockLimits{blockedQueries: []validation.BlockedQuery{{Pattern: "up.*", Regex: true, Reason: "blocked for test"}}},
+			expectErr: map[string]string{
+				"query_cost":       "the request has been blocked by the cluster administrator blocked for test (err-mimir-query-blocked)",
+				"query_range_cost": "the request has been blocked by the cluster administrator blocked for test (err-mimir-query-blocked)",
+			},
+		},
+		{
+			name:   "max total query length",
+			limits: mockLimits{maxTotalQueryLength: time.Hour},
+			expectErr: map[string]string{
+				"query_cost":       "the total query time range exceeds the limit (query length: 23h59m59.999s, limit: 1h0m0s) (err-mimir-max-total-query-length). To adjust the related per-tenant limit, configure -query-frontend.max-total-query-length, or contact your service administrator.",
+				"query_range_cost": "the total query time range exceeds the limit (query length: 24h0m0s, limit: 1h0m0s) (err-mimir-max-total-query-length). To adjust the related per-tenant limit, configure -query-frontend.max-total-query-length, or contact your service administrator.",
+			},
+		},
+		{
+			name:   "max query expression size",
+			limits: mockLimits{maxQueryExpressionSizeBytes: 1},
+			expectErr: map[string]string{
+				"query_cost":       "the raw query size in bytes exceeds the limit (query size: 6, limit: 1) (err-mimir-max-query-expression-size-bytes). To adjust the related per-tenant limit, configure -query-frontend.max-query-expression-size-bytes, or contact your service administrator.",
+				"query_range_cost": "the raw query size in bytes exceeds the limit (query size: 2, limit: 1) (err-mimir-max-query-expression-size-bytes). To adjust the related per-tenant limit, configure -query-frontend.max-query-expression-size-bytes, or contact your service administrator.",
+			},
+		},
+		{
+			name: "invalid parameters",
+			params: map[string]string{
+				"query_cost":       "query=sum(",
+				"query_range_cost": "query=up&start=0&end=86400",
+			},
+			expectErr: map[string]string{
+				"query_cost":       "invalid parameter \"query\": 1:5: parse error: unclosed left parenthesis",
+				"query_range_cost": "missing required parameter \"step\"",
+			},
+		},
+		{
+			name: "experimental function not enabled",
+			params: map[string]string{
+				"query_cost":       "query=mad_over_time(up[5m])&time=86400",
+				"query_range_cost": "query=mad_over_time(up[5m])&start=0&end=86400&step=60",
+			},
+			expectErr: map[string]string{
+				"query_cost":       "invalid parameter \"query\": experimental function \"mad_over_time\" is not enabled for tenant",
+				"query_range_cost": "invalid parameter \"query\": experimental function \"mad_over_time\" is not enabled for tenant",
+			},
+		},
+	} {
+		for _, endpoint := range []string{"query_cost", "query_range_cost"} {
+			t.Run(tc.name+"/"+endpoint, func(t *testing.T) {
+				engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
+				limits := tc.limits
+				tw, err := NewTripperware(Config{CacheResults: true, SplitQueriesByInterval: time.Hour}, log.NewNopLogger(), limits,
+					newMockQueryLimitsProvider(&limits), newTestCodec(), nil, nil, engine, engineOpts, nil,
+					false, false, nil, prometheus.NewRegistry(), limiter.NewInflightMemoryConsumptionTracker(nil, nil))
+				require.NoError(t, err)
+				params, ok := tc.params[endpoint]
+				if !ok {
+					params = rangeParams
+					if endpoint == "query_cost" {
+						// The range selector spans the same time range as the range request.
+						params = instantParams
+					}
+				}
+				req := httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/"+endpoint+"?"+params, nil).WithContext(user.InjectOrgID(t.Context(), "user-1"))
+				next := RoundTripFunc(func(*http.Request) (*http.Response, error) {
+					t.Fatal("a rejected request must not reach the querier")
+					return nil, nil
+				})
+				_, err = tw(next).RoundTrip(req)
+				require.EqualError(t, err, tc.expectErr[endpoint])
+			})
 		}
 	}
 }
