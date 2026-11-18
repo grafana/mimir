@@ -16,8 +16,6 @@ func CounterForQuery(q *cardinalitypb.CountQuery, maxGroups int64) (CounterOptio
 	opts := CounterOptions{
 		MinT:    q.StartMs,
 		MaxT:    q.EndMs,
-		Step:    q.StepMs,
-		Window:  q.WindowMs,
 		GroupBy: q.GroupBy,
 		Hashes:  q.Hashes,
 	}

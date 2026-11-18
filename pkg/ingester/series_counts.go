@@ -155,9 +155,8 @@ const ingesterMultiSourceSeriesCostBytes = 100
 const (
 	// seriesRefBytes is one resolved series ref.
 	seriesRefBytes = 8
-	// gatheredSeriesBytes is one series gathered by hash, map entry included, with one word of
-	// buckets. Measured at 94.
-	gatheredSeriesBytes = 96
+	// gatheredSeriesBytes is one series gathered by hash, map entry included. Measured at 56.
+	gatheredSeriesBytes = 56
 )
 
 // seriesCounts answers a SeriesCounts request, with errors carrying their gRPC status. It also returns
@@ -319,9 +318,9 @@ type seriesCountsWalk struct {
 	maxIndexBytes int64
 	// walked is the series walked so far, counted or not.
 	walked int64
-	// byHash holds the buckets of each series by label-set hash until finish counts them. It is set
-	// when the walk covers several sources, so a series in more than one counts once.
-	byHash map[uint64]*gatheredSeries
+	// byHash holds the group-by value of each series in the window by label-set hash until finish
+	// counts them. It is set when the walk covers several sources, so a series in more than one counts once.
+	byHash map[uint64]string
 	// values interns the group-by values of byHash.
 	values map[string]string
 	// maxMemoryBytes is the tenant's memory limit, 0 for none. It bounds heldBytes, the series refs
@@ -338,12 +337,6 @@ func (w *seriesCountsWalk) hold(b uint64) error {
 		return cardinality.Refusalf(cardinality.LimitMemory, "the request would hold more than %d bytes of series in the ingester while counting, the tenant's cardinality estimate memory limit", w.maxMemoryBytes)
 	}
 	return nil
-}
-
-// gatheredSeries is one series of a walk over several sources.
-type gatheredSeries struct {
-	value   string
-	buckets cardinality.SeriesBuckets
 }
 
 // newSeriesCountsWalk validates req. Its limits are the caller's to set: the querier bounds them by the tenant's.
@@ -363,12 +356,12 @@ func (i *Ingester) newSeriesCountsWalk(userID string, req *client.SeriesCountsRe
 }
 
 // countFromPostingsOnly counts a request that needs no walk and reports whether it did. That is
-// a single local block inside the window, with no matchers, step or hashes. The head is always
+// a single local block inside the window, with no matchers or hashes. The head is always
 // walked, since it can hold series with no chunk.
 func (w *seriesCountsWalk) countFromPostingsOnly(ctx context.Context, sources []*countSource, resp *client.SeriesCountsResponse) (bool, error) {
 	req := w.req
 	src := sources[0]
-	if len(sources) != 1 || !src.block || len(w.matchers) > 0 || req.StepMs != 0 || req.Hashes ||
+	if len(sources) != 1 || !src.block || len(w.matchers) > 0 || req.Hashes ||
 		src.blockMinT < req.StartMs || src.blockMaxT >= req.EndMs {
 		return false, nil
 	}
@@ -498,7 +491,7 @@ func (w *seriesCountsWalk) walk(ctx context.Context, sources []*countSource) err
 }
 
 func (w *seriesCountsWalk) gatherByHash() {
-	w.byHash = map[uint64]*gatheredSeries{}
+	w.byHash = map[uint64]string{}
 	w.values = map[string]string{}
 }
 
@@ -523,8 +516,6 @@ func (w *seriesCountsWalk) walkLate(ctx context.Context, all, late []*countSourc
 
 func (w *seriesCountsWalk) walkSources(ctx context.Context, sources []*countSource) error {
 	req, counter, byHash := w.req, w.counter, w.byHash
-	// A gathered series holds its buckets, of which gatheredSeriesBytes covers one word.
-	gatheredBytes := uint64(gatheredSeriesBytes + 8*((counter.Buckets()+63)/64-1))
 	var (
 		builder    labels.ScratchBuilder
 		metas      []chunks.Meta
@@ -565,8 +556,7 @@ func (w *seriesCountsWalk) walkSources(ctx context.Context, sources []*countSour
 			}
 			lset := builder.Labels()
 			h := labels.StableHash(lset)
-			g := byHash[h]
-			if g == nil {
+			if _, ok := byHash[h]; !ok {
 				// The value is a substring of the series' labels, so it is cloned and interned.
 				v := lset.Get(counter.GroupBy())
 				if interned, ok := w.values[v]; ok {
@@ -578,13 +568,11 @@ func (w *seriesCountsWalk) walkSources(ctx context.Context, sources []*countSour
 						return err
 					}
 				}
-				if err := w.hold(gatheredBytes); err != nil {
+				if err := w.hold(gatheredSeriesBytes); err != nil {
 					return err
 				}
-				g = &gatheredSeries{value: v}
-				byHash[h] = g
+				byHash[h] = v
 			}
-			g.buckets = counter.MarkBuckets(g.buckets, ranges)
 		}
 	}
 	return nil
@@ -592,8 +580,8 @@ func (w *seriesCountsWalk) walkSources(ctx context.Context, sources []*countSour
 
 // finish counts the series gathered by hash.
 func (w *seriesCountsWalk) finish() error {
-	for h, g := range w.byHash {
-		w.counter.AddGroupBuckets(g.value, h, g.buckets)
+	for h, v := range w.byHash {
+		w.counter.AddGroupInWindow(v, h)
 		if err := checkCountedHashes(w.req, w.counter); err != nil {
 			return err
 		}
@@ -637,7 +625,7 @@ func appendSeriesRanges(ranges []cardinality.ChunkRange, src *countSource, ref s
 	for _, m := range *metas {
 		maxT := m.MaxTime
 		if maxT == math.MaxInt64 {
-			if m.MinTime < req.StartMs || req.StepMs > 0 {
+			if m.MinTime < req.StartMs {
 				if maxT, err = lastSampleTime(src.chunkr, m); err != nil {
 					if errors.Is(err, storage.ErrNotFound) {
 						// Only the open chunk is gone: the chunks collected so far still count.

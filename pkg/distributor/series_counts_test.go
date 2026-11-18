@@ -194,13 +194,6 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 					byStatus, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: start, EndMs: end, GroupBy: "status"})
 					require.NoError(t, err)
 					assert.Equal(t, map[string]int64{"200": 1, "500": 1, "": 1}, combineSeriesCounts(byStatus))
-
-					_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: start, EndMs: end, StepMs: 100000})
-					if tc.wantHashed {
-						require.ErrorIs(t, err, ErrSeriesCountsNeedOneIngesterPerZone)
-					} else {
-						require.NoError(t, err, "counts that add up carry buckets")
-					}
 				})
 			}
 		})
@@ -499,9 +492,6 @@ func TestDistributor_SeriesCounts_SeriesOnTwoIngestersOfAZone(t *testing.T) {
 			require.NoError(t, err)
 			assert.True(t, res.Hashed)
 			assert.Equal(t, map[string]int64{"test_1": 1}, combineSeriesCounts(res))
-
-			_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 200000, StepMs: 100000})
-			require.ErrorIs(t, err, ErrSeriesCountsNeedOneIngesterPerZone)
 		})
 	}
 }
@@ -623,11 +613,6 @@ func TestDistributor_SeriesCounts_ClassicZonesMissDifferentSeries(t *testing.T) 
 			require.NoError(t, err)
 			assert.True(t, res.Hashed)
 			assert.Equal(t, map[string]int64{"test_1": 4}, combineSeriesCounts(res))
-
-			_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 200000, StepMs: 100000})
-			require.ErrorIs(t, err, ErrSeriesCountsNeedOneIngesterPerZone)
-			assert.NotContains(t, err.Error(), "need one ingester per zone", "this ring has one ingester per zone, and its counts still can't be added up")
-			assert.Contains(t, err.Error(), "with ingest storage, one ingester per zone")
 		})
 	}
 }
@@ -680,77 +665,38 @@ func TestDistributor_SeriesCounts_HashesSplitAcrossMessages(t *testing.T) {
 	assert.Equal(t, union(whole), union(split))
 }
 
-func TestDistributor_SeriesCounts_Window(t *testing.T) {
-	ds, _, _, _ := prepare(t, prepConfig{numIngesters: 2, happyIngesters: 2, numDistributors: 1, ingestStorageEnabled: true, ingestStoragePartitions: 1, ingesterZones: []string{"zone-a", "zone-b"}, limits: prepareDefaultLimits()})
-	ctx := user.InjectOrgID(context.Background(), "series-counts")
-	ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
-	_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, "test_1"), 1, 100000))
-	require.NoError(t, err)
-	req := &client.SeriesCountsRequest{StartMs: 0, EndMs: 300000, StepMs: 100000, WindowMs: 200000}
-
-	res, err := ds[0].SeriesCounts(ctx, nil, req)
-	require.NoError(t, err)
-	require.NotEmpty(t, res.Responses)
-	for _, resp := range res.Responses {
-		for _, g := range resp.Groups {
-			// Buckets [0, 200s) and [100s, 300s).
-			assert.Len(t, g.Counts, 2, "the window is passed on")
-		}
-	}
-}
-
-func TestDistributor_SeriesCounts_Step(t *testing.T) {
+// A zone that answers a group with more than one count is a failed replica:
+// the other zone answers. When every zone does, the request fails and says why.
+func TestDistributor_SeriesCounts_GroupWithSeveralCounts(t *testing.T) {
 	ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 2, happyIngesters: 2, numDistributors: 1, ingestStorageEnabled: true, ingestStoragePartitions: 1, ingesterZones: []string{"zone-a", "zone-b"}, limits: prepareDefaultLimits()})
 	ctx := user.InjectOrgID(context.Background(), "series-counts")
 	ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 	_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, "test_1"), 1, 100000))
 	require.NoError(t, err)
-	// Three buckets of 100s.
-	req := &client.SeriesCountsRequest{StartMs: 0, EndMs: 300000, StepMs: 100000}
+	req := &client.SeriesCountsRequest{StartMs: 0, EndMs: 300000}
 
+	// Calls that returned at quorum may still have requests running.
+	ingesters[0].Lock()
+	ingesters[0].seriesCountsTwoCounts = true
+	ingesters[0].Unlock()
 	res, err := ds[0].SeriesCounts(ctx, nil, req)
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Responses)
 	for _, resp := range res.Responses {
 		for _, g := range resp.Groups {
-			assert.Len(t, g.Counts, 3, "one count per bucket")
+			assert.Len(t, g.Counts, 1, "the zone with two counts per group is left out")
 		}
 	}
 
-	// One zone answering one count per group is a failed replica: the other
-	// zone answers, and the one-bucket counts are not merged with its own.
-	// Calls that returned at quorum may still have requests running.
-	ingesters[0].Lock()
-	ingesters[0].seriesCountsIgnoreStep = true
-	ingesters[0].Unlock()
-	res, err = ds[0].SeriesCounts(ctx, nil, req)
-	require.NoError(t, err)
-	require.NotEmpty(t, res.Responses)
-	for _, resp := range res.Responses {
-		for _, g := range resp.Groups {
-			assert.Len(t, g.Counts, 3, "the zone with one count per group is left out")
-		}
-	}
-
-	// When every zone does, the request fails and says why.
 	for _, ing := range ingesters {
 		ing.Lock()
-		ing.seriesCountsIgnoreStep = true
+		ing.seriesCountsTwoCounts = true
 		ing.Unlock()
 	}
 	_, err = ds[0].SeriesCounts(ctx, nil, req)
-	require.ErrorContains(t, err, `returned 1 buckets for "test_1" instead of the 3 asked for with step_ms`)
+	require.ErrorContains(t, err, `returned 2 counts for "test_1" instead of one`)
 	for _, ing := range ingesters {
 		assert.NotContains(t, err.Error(), ing.address(), "the error names the kind of component, not its address")
-	}
-
-	// Without a step one count per group is right.
-	res, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 300000})
-	require.NoError(t, err)
-	for _, resp := range res.Responses {
-		for _, g := range resp.Groups {
-			assert.Len(t, g.Counts, 1)
-		}
 	}
 }
 
@@ -768,7 +714,7 @@ func TestDistributor_SeriesCounts_GroupWithoutCounts(t *testing.T) {
 		ing.Unlock()
 	}
 	_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: 0, EndMs: 300000})
-	require.ErrorContains(t, err, `an ingester returned no counts for "test_1"`)
+	require.ErrorContains(t, err, `an ingester returned 0 counts for "test_1" instead of one`)
 	for _, ing := range ingesters {
 		assert.NotContains(t, err.Error(), ing.address(), "the error names the kind of component, not its address")
 	}

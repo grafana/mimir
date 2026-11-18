@@ -21,7 +21,6 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 		attribute.Int64("window_start_ms", req.MinT),
 		attribute.Int64("window_end_ms", req.MaxT),
 		attribute.String("group_by", req.GroupBy),
-		attribute.Int64("step_ms", req.Step),
 		attribute.Int64("peak_memory_bytes", int64(res.PeakMemoryBytes)),
 	}
 	if n, ok := estimateHashesNeeded(res, err); ok {

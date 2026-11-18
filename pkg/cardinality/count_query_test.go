@@ -18,11 +18,11 @@ func TestCounterForQuery(t *testing.T) {
 		labels.MustNewMatcher(labels.MatchEqual, "job", "a"),
 		labels.MustNewMatcher(labels.MatchNotRegexp, "pod", "p.+"),
 	}
-	q := &cardinalitypb.CountQuery{Matchers: cardinalitypb.ToLabelMatchers(want), StartMs: 10, EndMs: 70, StepMs: 20}
+	q := &cardinalitypb.CountQuery{Matchers: cardinalitypb.ToLabelMatchers(want), StartMs: 10, EndMs: 70}
 	opts, counter, matchers, err := CounterForQuery(q, 5)
 	require.NoError(t, err)
-	assert.Equal(t, CounterOptions{MinT: 10, MaxT: 70, Step: 20, GroupBy: model.MetricNameLabel}, opts)
-	assert.Equal(t, 3, counter.Buckets())
+	assert.Equal(t, CounterOptions{MinT: 10, MaxT: 70, GroupBy: model.MetricNameLabel}, opts)
+	assert.Equal(t, model.MetricNameLabel, counter.GroupBy())
 	require.Len(t, matchers, len(want))
 	for i := range want {
 		assert.Equal(t, want[i].String(), matchers[i].String())

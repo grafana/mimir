@@ -174,12 +174,6 @@ func TestBlocksStoreQueryable_CardinalityEstimate_SkipsBlocksMarkedForDeletion(t
 		assert.ElementsMatch(t, []string{shard1.String(), shard2.String()}, asked[0])
 	})
 
-	t.Run("without marks the blocks may share series and the request is refused", func(t *testing.T) {
-		req := CardinalityEstimateRequest{MinT: minT, MaxT: maxT, Step: maxT}
-		_, err := newQueryable(nil).cardinalityEstimate(context.Background(), "user-1", &req)
-		require.Error(t, err)
-		assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
-	})
 }
 
 // Right after a compaction the store-gateways still hold the sources and may not have loaded the output, so the sources are dropped only once the output is older than the upload grace period.

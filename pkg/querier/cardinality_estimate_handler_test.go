@@ -773,31 +773,23 @@ func TestCardinalityEstimateHandler_IgnoresCompareParameter(t *testing.T) {
 	assert.Empty(t, rec.Header().Get("Cache-Control"), "a complete answer may be cached")
 }
 
-// With step, the response carries one total per bucket, summed over every
-// group, including the groups min_count left out; total sums each group's
-// largest bucket.
-func TestCardinalityEstimateHandler_Totals(t *testing.T) {
+// total sums every group's count, including the groups min_count left out.
+func TestCardinalityEstimateHandler_Total(t *testing.T) {
 	b1 := ulid.MustNew(1, nil)
 	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 	gateway := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{
-		{Value: "a", Counts: []int64{1, 3}},
-		{Value: "b", Counts: []int64{2, 1}},
+		{Value: "a", Counts: []int64{3}},
+		{Value: "b", Counts: []int64{2}},
 	}})
 	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
 
-	rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), fmt.Sprintf("start=0&end=%d&step=12h&min_count=3", dayMs/1000))
+	rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), fmt.Sprintf("start=0&end=%d&min_count=3", dayMs/1000))
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	var out estimateResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
-	assert.Equal(t, []int64{3, 4}, out.Totals, "each bucket's series, over every group")
-	assert.Equal(t, int64(5), out.Total, "the sum of each group's largest bucket")
+	assert.Equal(t, int64(5), out.Total)
 	assert.Equal(t, 2, out.GroupCount)
-	assert.Equal(t, []estimateGroup{{Value: "a", Count: 3, Counts: []int64{1, 3}}}, out.Groups, "b is below min_count")
-
-	oneBucket := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "a", Counts: []int64{3}}}})
-	rec = estimateRequest(t, seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{oneBucket: {{b1}}}), CardinalityEstimateConfig{}, false, context.Background(), fmt.Sprintf("start=0&end=%d", dayMs/1000))
-	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	assert.NotContains(t, rec.Body.String(), `"totals"`, "no totals without step")
+	assert.Equal(t, []estimateGroup{{Value: "a", Count: 3}}, out.Groups, "b is below min_count")
 }
 
 // zeroLabelNameLength is ingestersWithinLimit with no label name length set.
@@ -824,18 +816,13 @@ func TestCardinalityEstimator_ClampToLookback(t *testing.T) {
 		wantMinT int64
 		wantLeft bool
 	}{
-		"no limit keeps the window":                         {req: CardinalityEstimateRequest{MinT: 0, MaxT: 100 * hour}, wantMinT: 0, wantLeft: true},
-		"a window inside the lookback is kept":              {limits: lookbackLimits{lookback: 10 * time.Hour}, req: CardinalityEstimateRequest{MinT: 95 * hour, MaxT: 100 * hour}, wantMinT: 95 * hour, wantLeft: true},
-		"the start moves up to the lookback":                {limits: lookbackLimits{lookback: 10 * time.Hour}, req: CardinalityEstimateRequest{MinT: 0, MaxT: 100 * hour}, wantMinT: 90 * hour, wantLeft: true},
-		"the start moves up to the retention":               {limits: lookbackLimits{retention: 20 * time.Hour}, req: CardinalityEstimateRequest{MinT: 0, MaxT: 100 * hour}, wantMinT: 80 * hour, wantLeft: true},
-		"the shorter of the two applies":                    {limits: lookbackLimits{lookback: 10 * time.Hour, retention: 20 * time.Hour}, req: CardinalityEstimateRequest{MinT: 0, MaxT: 100 * hour}, wantMinT: 90 * hour, wantLeft: true},
-		"a window that ends at the lookback is empty":       {limits: lookbackLimits{lookback: 10 * time.Hour}, req: CardinalityEstimateRequest{MinT: 0, MaxT: 90 * hour}, wantMinT: 0},
-		"a window that ends before the retention is empty":  {limits: lookbackLimits{retention: 10 * time.Hour}, req: CardinalityEstimateRequest{MinT: 0, MaxT: 50 * hour}, wantMinT: 0},
-		"with step, whole buckets are dropped":              {limits: lookbackLimits{lookback: 10 * time.Hour}, req: CardinalityEstimateRequest{MinT: 85 * hour, MaxT: 100 * hour, Step: 3 * hour}, wantMinT: 91 * hour, wantLeft: true},
-		"with step, a start on a boundary keeps its bucket": {limits: lookbackLimits{lookback: 9 * time.Hour}, req: CardinalityEstimateRequest{MinT: 85 * hour, MaxT: 100 * hour, Step: 3 * hour}, wantMinT: 91 * hour, wantLeft: true},
-		"with step, no whole bucket left is empty":          {limits: lookbackLimits{lookback: 2 * time.Hour}, req: CardinalityEstimateRequest{MinT: 85 * hour, MaxT: 100 * hour, Step: 3 * hour}, wantMinT: 85 * hour},
-		"with window, a bucket needs its whole window":      {limits: lookbackLimits{lookback: 4 * time.Hour}, req: CardinalityEstimateRequest{MinT: 90 * hour, MaxT: 100 * hour, Step: 2 * hour, Window: 4 * hour}, wantMinT: 96 * hour, wantLeft: true},
-		"with window, no whole window left is empty":        {limits: lookbackLimits{lookback: 3 * time.Hour}, req: CardinalityEstimateRequest{MinT: 90 * hour, MaxT: 100 * hour, Step: 2 * hour, Window: 4 * hour}, wantMinT: 90 * hour},
+		"no limit keeps the window":                        {req: CardinalityEstimateRequest{MinT: 0, MaxT: 100 * hour}, wantMinT: 0, wantLeft: true},
+		"a window inside the lookback is kept":             {limits: lookbackLimits{lookback: 10 * time.Hour}, req: CardinalityEstimateRequest{MinT: 95 * hour, MaxT: 100 * hour}, wantMinT: 95 * hour, wantLeft: true},
+		"the start moves up to the lookback":               {limits: lookbackLimits{lookback: 10 * time.Hour}, req: CardinalityEstimateRequest{MinT: 0, MaxT: 100 * hour}, wantMinT: 90 * hour, wantLeft: true},
+		"the start moves up to the retention":              {limits: lookbackLimits{retention: 20 * time.Hour}, req: CardinalityEstimateRequest{MinT: 0, MaxT: 100 * hour}, wantMinT: 80 * hour, wantLeft: true},
+		"the shorter of the two applies":                   {limits: lookbackLimits{lookback: 10 * time.Hour, retention: 20 * time.Hour}, req: CardinalityEstimateRequest{MinT: 0, MaxT: 100 * hour}, wantMinT: 90 * hour, wantLeft: true},
+		"a window that ends at the lookback is empty":      {limits: lookbackLimits{lookback: 10 * time.Hour}, req: CardinalityEstimateRequest{MinT: 0, MaxT: 90 * hour}, wantMinT: 0},
+		"a window that ends before the retention is empty": {limits: lookbackLimits{retention: 10 * time.Hour}, req: CardinalityEstimateRequest{MinT: 0, MaxT: 50 * hour}, wantMinT: 0},
 	} {
 		t.Run(name, func(t *testing.T) {
 			e := NewCardinalityEstimator(&BlocksStoreQueryable{}, nil, tc.limits)
@@ -883,34 +870,6 @@ func TestCardinalityEstimateHandler_MaxQueryLookback(t *testing.T) {
 	assert.Zero(t, out.Total)
 	assert.False(t, out.LowerBound)
 	assert.Empty(t, rec.Header().Get("Cache-Control"))
-}
-
-func TestCardinalityEstimateHandler_BucketCapAfterMaxQueryLookback(t *testing.T) {
-	const hour = int64(time.Hour / time.Millisecond)
-	now := time.UnixMilli(100 * hour)
-	serve := func(limits estimateLimits, q *BlocksStoreQueryable) *httptest.ResponseRecorder {
-		q.logger = log.NewNopLogger()
-		e := NewCardinalityEstimator(q, nil, limits)
-		e.now = func() time.Time { return now }
-		r := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/prometheus/api/v1/cardinality/estimate?start=0&end=%d&step=1m", 100*3600), nil)
-		r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
-		rec := httptest.NewRecorder()
-		NewCardinalityEstimateHandler(e, CardinalityEstimateConfig{}, false).ServeHTTP(rec, r)
-		return rec
-	}
-
-	// 6000 buckets as asked, 600 from the lookback on.
-	limits := lookbackLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), lookback: 10 * time.Hour}
-	rec := serve(limits, seriesCountsQueryable(90*hour, 100*hour, nil, nil))
-	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	var out estimateResponse
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
-	assert.Equal(t, estimateWindow{Start: 90 * hour, End: 100 * hour}, out.Window)
-
-	// Without a lookback the cap refuses the window before any source is read.
-	rec = serve(ingestersWithinLimit(13*time.Hour), &BlocksStoreQueryable{})
-	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
-	assert.Contains(t, rec.Body.String(), fmt.Sprintf("more than %d", cardinality.MaxCounterBuckets))
 }
 
 // The log line and span of an estimate carry the most the querier's memory

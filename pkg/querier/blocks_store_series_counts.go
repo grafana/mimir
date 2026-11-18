@@ -15,7 +15,7 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
-// seriesCountsInWindow counts the matching series with a chunk in the window, from the store-gateways. In one block range of series-disjoint blocks their counts are added up, otherwise each returns label-set hashes and the counts are the size of their union. Per-bucket counts need the first case.
+// seriesCountsInWindow counts the matching series with a chunk in the window, from the store-gateways. In one block range of series-disjoint blocks their counts are added up, otherwise each returns label-set hashes and the counts are the size of their union.
 func (q *BlocksStoreQueryable) seriesCountsInWindow(ctx context.Context, tenantID string, req CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	parts, all, err := q.seriesCountsParts(ctx, tenantID, req.MinT, req.MaxT)
 	if err != nil {
@@ -41,14 +41,6 @@ func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string
 // seriesCountsInto sends req to the store-gateways for the blocks in parts and adds every group they return to m. The result carries everything but the counts, which m.finish writes.
 func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID string, req CardinalityEstimateRequest, parts []estimatePart, all bucketindex.Blocks, dedup bool, m *estimateMerger) (CardinalityEstimateResult, error) {
 	res := CardinalityEstimateResult{Counts: map[string][]int64{}, Dedup: dedup}
-	buckets, err := req.expectedBuckets()
-	if err != nil {
-		return CardinalityEstimateResult{}, err
-	}
-	m.buckets = buckets
-	if res.Dedup && req.Step > 0 {
-		return CardinalityEstimateResult{}, badEstimateRequest("%w: the window spans more than one block range, or blocks that may share series", errStepNeedsOneSource)
-	}
 	pbMatchers := cardinalitypb.ToLabelMatchers(req.Matchers)
 	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	var mtx sync.Mutex
@@ -93,8 +85,6 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 			Matchers:      pbMatchers,
 			StartMs:       req.MinT,
 			EndMs:         req.MaxT,
-			StepMs:        req.Step,
-			WindowMs:      req.windowMs(),
 			GroupBy:       req.GroupBy,
 			Hashes:        res.Dedup,
 			MaxIndexBytes: perCall,

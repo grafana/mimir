@@ -7125,9 +7125,8 @@ type mockIngester struct {
 	// know shard_size_unchanged_before_ms: it reports its time and never
 	// refuses, leaving the check to the distributor.
 	seriesCountsIgnoreShardSizeCheck bool
-	// seriesCountsIgnoreStep has SeriesCounts answer one count per group,
-	// whatever the step.
-	seriesCountsIgnoreStep bool
+	// seriesCountsTwoCounts has SeriesCounts answer each group of counts with two.
+	seriesCountsTwoCounts bool
 	// seriesCountsNoCounts has SeriesCounts answer each group with no
 	// counts, a malformed answer.
 	seriesCountsNoCounts bool
@@ -7908,23 +7907,15 @@ func (i *mockIngester) seriesCounts(ctx context.Context, req *client.SeriesCount
 			counts[v]++
 		}
 	}
-	// The mock keeps no chunks, so a series is in every bucket.
-	buckets := 1
-	if req.StepMs > 0 && !req.Hashes && !i.seriesCountsIgnoreStep {
-		if n, err := cardinality.Buckets(req.StartMs, req.EndMs, req.StepMs, req.WindowMs); err == nil {
-			buckets = n
-		}
-	}
 	for v, n := range counts {
-		if i.seriesCountsNoCounts {
+		switch {
+		case i.seriesCountsNoCounts:
 			resp.Groups = append(resp.Groups, &cardinalitypb.SeriesCountGroup{Value: v})
-			continue
+		case i.seriesCountsTwoCounts:
+			resp.Groups = append(resp.Groups, &cardinalitypb.SeriesCountGroup{Value: v, Counts: []int64{n, n}})
+		default:
+			resp.Groups = append(resp.Groups, &cardinalitypb.SeriesCountGroup{Value: v, Counts: []int64{n}})
 		}
-		perBucket := make([]int64, buckets)
-		for b := range perBucket {
-			perBucket[b] = n
-		}
-		resp.Groups = append(resp.Groups, &cardinalitypb.SeriesCountGroup{Value: v, Counts: perBucket})
 	}
 	for v, h := range hashes {
 		resp.Groups = append(resp.Groups, &cardinalitypb.SeriesCountGroup{Value: v, Hashes: h})
