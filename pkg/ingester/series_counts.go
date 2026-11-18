@@ -13,7 +13,6 @@ import (
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/tenant"
-	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
@@ -138,10 +137,6 @@ func (i *Ingester) startSeriesCounts(ctx context.Context) (func(), error) {
 	return i.seriesCountsGate.Done, nil
 }
 
-// seriesCountsLateBlocksTries is how many times a walk lists the blocks again for the ones an
-// out-of-order head compaction wrote during it.
-const seriesCountsLateBlocksTries = 3
-
 // What a walk holds for each series, measured by BenchmarkSeriesCountsWalk_HeldBytes.
 const (
 	// seriesRefBytes is one resolved series ref.
@@ -258,25 +253,6 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	if err := w.walk(wctx, sources); err != nil {
 		return nil, 0, err
 	}
-	// An out-of-order head compaction does not wait for this walk: it writes the head's out-of-order
-	// chunks to new blocks and drops them from the head. Those blocks hold what the head walk missed.
-	// The head is walked at most twice, and the blocks listed after its last walk hold all it
-	// missed, so the tries only bound the blocks of compactions that keep landing.
-	for range seriesCountsLateBlocksTries {
-		late, err := lateBlockSources(db, sources, req.StartMs, req.EndMs)
-		// Closed with the others.
-		sources = append(sources, late...)
-		if err != nil {
-			return nil, 0, err
-		}
-		if len(late) == 0 {
-			break
-		}
-		level.Debug(util_log.WithContext(wctx, i.logger)).Log("msg", "series counts walks the blocks an out-of-order head compaction wrote during the walk", "blocks", len(late))
-		if err := w.walkLate(wctx, sources, late); err != nil {
-			return nil, 0, err
-		}
-	}
 	if err := w.finish(); err != nil {
 		return nil, 0, err
 	}
@@ -367,14 +343,9 @@ func (w *seriesCountsWalk) boundGroups(ctx context.Context, sources []*countSour
 
 // resolvePostings resolves every source's postings before any series is walked, so the memory limit
 // is checked against the whole request. It returns the series matched, summed over the sources.
-// A source resolved before keeps its series.
 func (w *seriesCountsWalk) resolvePostings(ctx context.Context, sources []*countSource) (int64, error) {
 	var total int64
 	for _, src := range sources {
-		if src.resolved {
-			total += int64(len(src.refs))
-			continue
-		}
 		var (
 			postings index.Postings
 			err      error
@@ -403,14 +374,14 @@ func (w *seriesCountsWalk) resolvePostings(ctx context.Context, sources []*count
 		if err := w.hold(uint64(len(refs)) * seriesRefBytes); err != nil {
 			return 0, err
 		}
-		src.refs, src.resolved = refs, true
+		src.refs = refs
 		total += int64(len(refs))
 	}
 	return total, nil
 }
 
-// walk counts the sources' resolved series. With several sources the buckets of each series are
-// gathered by label-set hash first, so the series counts once. finish must follow.
+// walk counts the sources' resolved series. With several sources each series is gathered by
+// label-set hash first, so it counts once. finish must follow.
 func (w *seriesCountsWalk) walk(ctx context.Context, sources []*countSource) error {
 	if len(sources) > 1 {
 		w.gatherByHash()
@@ -421,24 +392,6 @@ func (w *seriesCountsWalk) walk(ctx context.Context, sources []*countSource) err
 func (w *seriesCountsWalk) gatherByHash() {
 	w.byHash = map[uint64]string{}
 	w.values = map[string]string{}
-}
-
-// walkLate adds the late sources, blocks written while all's other sources were walked, to the walk.
-// A walk that counted its one source directly starts again, so the series are gathered by hash.
-func (w *seriesCountsWalk) walkLate(ctx context.Context, all, late []*countSource) error {
-	if _, err := w.resolvePostings(ctx, all); err != nil {
-		return err
-	}
-	if w.byHash != nil {
-		return w.walkSources(ctx, late)
-	}
-	counter, err := cardinality.NewSeriesCounter(w.counterOpts)
-	if err != nil {
-		return err
-	}
-	w.counter, w.walked = counter, 0
-	w.gatherByHash()
-	return w.walkSources(ctx, all)
 }
 
 func (w *seriesCountsWalk) walkSources(ctx context.Context, sources []*countSource) error {
@@ -731,18 +684,16 @@ func oldestHeld(db *userTSDB) int64 {
 type countSource struct {
 	// numSeries is how many series the source holds, whatever the window.
 	numSeries int64
-	// block is set for a local block, whose id is blockID and bounds are blockMinT and blockMaxT, both included.
+	// block is set for a local block, whose bounds are blockMinT and blockMaxT, both included.
 	block                bool
-	blockID              ulid.ULID
 	blockMinT, blockMaxT int64
 	idx                  tsdb.IndexReader
 	chunkr               tsdb.ChunkReader // head only, to find the open chunk's end
 	// ooo reads the head's out-of-order chunks, head only, when they overlap the window.
 	ooo tsdb.IndexReader
 	// refs are the series to walk, once resolved.
-	refs     []storage.SeriesRef
-	resolved bool
-	close    func()
+	refs  []storage.SeriesRef
+	close func()
 }
 
 // countSources opens the index of the head and of every local block that overlaps [minT, maxT).
@@ -777,7 +728,8 @@ func (i *Ingester) countSources(db *userTSDB, minT, maxT int64) (out []*countSou
 		headSrc = &countSource{numSeries: int64(head.NumSeries()), idx: idx, chunkr: chunkr, close: func() { _ = idx.Close(); _ = chunkr.Close() }}
 		if outOfOrder {
 			// An in-order start of MaxInt64 selects no in-order chunks. No out-of-order isolation
-			// is taken, since tsdb does not export it: see lateBlockSources.
+			// is taken, since tsdb does not export it, so a block an out-of-order head compaction
+			// writes during the walk is not counted by it.
 			headSrc.ooo = tsdb.NewHeadAndOOOIndexReader(head, math.MaxInt64, minT, maxT-1, 0)
 		}
 		out = append(out, headSrc)
@@ -785,7 +737,7 @@ func (i *Ingester) countSources(db *userTSDB, minT, maxT int64) (out []*countSou
 	if i.countSourcesBetweenReadsHook != nil {
 		i.countSourcesBetweenReadsHook()
 	}
-	if out, err = appendBlockSources(out, db, minT, maxT, nil, false); err != nil {
+	if out, err = appendBlockSources(out, db, minT, maxT); err != nil {
 		return out, err
 	}
 	if i.countSourcesAfterReadsHook != nil {
@@ -794,46 +746,17 @@ func (i *Ingester) countSources(db *userTSDB, minT, maxT int64) (out []*countSou
 	return out, nil
 }
 
-// appendBlockSources appends a source for every local block that overlaps [minT, maxT) and is not in
-// known, or only for the ones an out-of-order head compaction wrote.
-func appendBlockSources(out []*countSource, db *userTSDB, minT, maxT int64, known map[ulid.ULID]struct{}, onlyOutOfOrder bool) ([]*countSource, error) {
+// appendBlockSources appends a source for every local block that overlaps [minT, maxT).
+func appendBlockSources(out []*countSource, db *userTSDB, minT, maxT int64) ([]*countSource, error) {
 	for _, b := range db.Blocks() {
 		if b.MaxTime() <= minT || b.MinTime() >= maxT {
-			continue
-		}
-		if meta := b.Meta(); onlyOutOfOrder && !meta.Compaction.FromOutOfOrder() {
-			continue
-		}
-		if _, ok := known[b.Meta().ULID]; ok {
 			continue
 		}
 		idx, err := b.Index()
 		if err != nil {
 			return out, err
 		}
-		out = append(out, &countSource{numSeries: int64(b.Meta().Stats.NumSeries), block: true, blockID: b.Meta().ULID, blockMinT: b.MinTime(), blockMaxT: b.MaxTime() - 1, idx: idx, close: func() { _ = idx.Close() }})
+		out = append(out, &countSource{numSeries: int64(b.Meta().Stats.NumSeries), block: true, blockMinT: b.MinTime(), blockMaxT: b.MaxTime() - 1, idx: idx, close: func() { _ = idx.Close() }})
 	}
 	return out, nil
-}
-
-// lateBlockSources opens the local blocks overlapping [minT, maxT) that an out-of-order head
-// compaction wrote and that are not in sources, when sources read the head's out-of-order chunks.
-// A block of an in-order head compaction is left out: that compaction's truncation waits for the
-// head reader, so the head still holds the block's data. The caller closes the sources returned,
-// also on error.
-func lateBlockSources(db *userTSDB, sources []*countSource, minT, maxT int64) ([]*countSource, error) {
-	outOfOrder := false
-	known := map[ulid.ULID]struct{}{}
-	for _, src := range sources {
-		if src.ooo != nil {
-			outOfOrder = true
-		}
-		if src.block {
-			known[src.blockID] = struct{}{}
-		}
-	}
-	if !outOfOrder {
-		return nil, nil
-	}
-	return appendBlockSources(nil, db, minT, maxT, known, true)
 }
