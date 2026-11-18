@@ -154,6 +154,29 @@ func TestOptimizationColdWriterEquivalent(t *testing.T) {
 		t.Fatalf("blocks differ: baseline=%d streamed=%d", len(x), len(y))
 	}
 }
+func TestColdWriterWithDifferentTenantLabels(t *testing.T) {
+	rows := []frozenSeries{
+		frozen("b", [][2]string{{"__name__", "up"}, {"region", "west"}}, [2]int64{10, 20}),
+		frozen("a", [][2]string{{"__name__", "up"}, {"job", "db"}}, [2]int64{5, 8}),
+		frozen("b", [][2]string{{"__name__", "down"}, {"region", "west"}}, [2]int64{15, 20}),
+		frozen("a", [][2]string{{"__name__", "up"}, {"job", "api"}}, [2]int64{1, 2}),
+		frozen("c", [][2]string{{"__name__", "up"}, {"service", "agent"}}, [2]int64{30, 40}),
+	}
+	want, err := buildMemoryColdBlock("", 1, slices.Clone(rows))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer want.close()
+	got, err := writeColdBlock(t.TempDir(), 1, rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer got.close()
+	if !slices.Equal(want.data, got.data) {
+		t.Fatal("cold block differs from reference encoding")
+	}
+}
+
 func benchmarkStreamColdBlock(directory string, id uint64, series []frozenSeries) (*coldBlock, error) {
 	sort.SliceStable(series, func(a, b int) bool {
 		if series[a].tenant != series[b].tenant {
