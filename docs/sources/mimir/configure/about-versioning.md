@@ -65,6 +65,8 @@ The following features are currently experimental:
   - Health check grace period for connections to other replicas (`-alertmanager.alertmanager-client.health-check-grace-period`)
 - Block-builder
   - Verify blocks before uploading them to object storage (`-block-builder.verify-blocks-before-upload`)
+- Blocks storage
+  - Read blocks from a secondary bucket in the store-gateway, querier, compactor, and compactor scheduler (`-blocks-storage.secondary-bucket-name`)
 - Compactor
   - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.
     - `-compactor.max-lookback`

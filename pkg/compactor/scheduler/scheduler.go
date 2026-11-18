@@ -126,7 +126,7 @@ func NewCompactorScheduler(
 		return nil, err
 	}
 
-	bkt, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "compactor-scheduler", logger, registerer)
+	bkt, err := bucket.NewClientWithSecondary(context.Background(), storageCfg.Bucket, storageCfg.SecondaryBucketName, "compactor-scheduler", logger, registerer)
 	if err != nil {
 		return nil, err
 	}

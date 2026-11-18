@@ -149,16 +149,32 @@ func checkObjectStoresConfig(ctx context.Context, cfg Config, logger log.Logger)
 // checkBlocksStorageConfig checks connectivity to the blocks storage bucket. With compartments enabled the
 // querier's bucket name carries the read-compartment placeholder (it reads one bucket per read
 // compartment), so each compartment's resolved bucket is checked; otherwise the single configured bucket
-// is checked, as the placeholder is invalid as an actual bucket name.
+// is checked, as the placeholder is invalid as an actual bucket name. The secondary bucket, if set, is
+// checked the same way.
 func checkBlocksStorageConfig(ctx context.Context, cfg Config, logger log.Logger) error {
 	bucketCfg := cfg.BlocksStorage.Bucket
+	secondaryBucketName := cfg.BlocksStorage.SecondaryBucketName
 	if !cfg.Compartments.Enabled || !strings.HasSuffix(bucketCfg.BucketName(), compartments.ReadCompartmentIDPlaceholder) {
-		return checkObjectStoreConfig(ctx, bucketCfg, logger)
+		if secondaryBucketName == "" {
+			return checkObjectStoreConfig(ctx, bucketCfg, logger)
+		}
+		return multierror.New(
+			checkObjectStoreConfig(ctx, bucketCfg, logger),
+			errors.Wrap(checkObjectStoreConfig(ctx, bucketCfg.WithBucketName(secondaryBucketName), logger), "secondary bucket"),
+		).Err()
 	}
 
 	errs := multierror.New()
+	checkedSecondaryBucketNames := map[string]struct{}{}
 	for c := 0; c < cfg.Compartments.Read.NumCompartments; c++ {
 		errs.Add(errors.Wrapf(checkObjectStoreConfig(ctx, bucketCfg.ReadCompartmentConfig(c), logger), "read compartment %d", c))
+
+		name := compartments.ReplaceReadCompartment(secondaryBucketName, c)
+		if _, checked := checkedSecondaryBucketNames[name]; name == "" || checked {
+			continue
+		}
+		checkedSecondaryBucketNames[name] = struct{}{}
+		errs.Add(errors.Wrapf(checkObjectStoreConfig(ctx, bucketCfg.WithBucketName(name), logger), "read compartment %d secondary bucket", c))
 	}
 	return errs.Err()
 }

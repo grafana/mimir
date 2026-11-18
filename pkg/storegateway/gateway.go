@@ -461,7 +461,7 @@ func requestActivity(ctx context.Context, name string, req interface{}) string {
 }
 
 func createBucketClient(cfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
-	bucketClient, err := bucket.NewClient(context.Background(), cfg.Bucket, "store-gateway", logger, reg)
+	bucketClient, err := bucket.NewClientWithSecondary(context.Background(), cfg.Bucket, cfg.SecondaryBucketName, "store-gateway", logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "create bucket client")
 	}

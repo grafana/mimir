@@ -178,23 +178,30 @@ func (cfg *Config) BucketName() string {
 	return ""
 }
 
-// ReadCompartmentConfig returns a copy of cfg with the read-compartment-id placeholder resolved to the
-// given read compartment ID in the active backend's bucket name. It is a no-op when the placeholder is
-// absent. It must enumerate the same backends as BucketName so the two stay consistent.
-func (cfg Config) ReadCompartmentConfig(readCompartmentID int) Config {
+// WithBucketName returns a copy of cfg with the bucket (S3/GCS), container (Azure/Swift) or directory
+// (filesystem) name of the active backend set to name. It must enumerate the same backends as
+// BucketName so the two stay consistent.
+func (cfg Config) WithBucketName(name string) Config {
 	switch cfg.Backend {
 	case S3:
-		cfg.S3.BucketName = compartments.ReplaceReadCompartment(cfg.S3.BucketName, readCompartmentID)
+		cfg.S3.BucketName = name
 	case GCS:
-		cfg.GCS.BucketName = compartments.ReplaceReadCompartment(cfg.GCS.BucketName, readCompartmentID)
+		cfg.GCS.BucketName = name
 	case Azure:
-		cfg.Azure.ContainerName = compartments.ReplaceReadCompartment(cfg.Azure.ContainerName, readCompartmentID)
+		cfg.Azure.ContainerName = name
 	case Swift:
-		cfg.Swift.ContainerName = compartments.ReplaceReadCompartment(cfg.Swift.ContainerName, readCompartmentID)
+		cfg.Swift.ContainerName = name
 	case Filesystem:
-		cfg.Filesystem.Directory = compartments.ReplaceReadCompartment(cfg.Filesystem.Directory, readCompartmentID)
+		cfg.Filesystem.Directory = name
 	}
 	return cfg
+}
+
+// ReadCompartmentConfig returns a copy of cfg with the read-compartment-id placeholder resolved to the
+// given read compartment ID in the active backend's bucket name. It is a no-op when the placeholder is
+// absent.
+func (cfg Config) ReadCompartmentConfig(readCompartmentID int) Config {
+	return cfg.WithBucketName(compartments.ReplaceReadCompartment(cfg.BucketName(), readCompartmentID))
 }
 
 // NewClient creates a new bucket client based on the configured backend
@@ -238,6 +245,24 @@ func NewClient(ctx context.Context, cfg Config, component string, logger log.Log
 	}
 
 	return instrumentedClient, nil
+}
+
+// NewClientWithSecondary creates a bucket client like NewClient. When secondaryBucketName isn't empty,
+// it also creates a client for the bucket with that name, with the same backend config, and returns a
+// MultiBucketClient that uses cfg's bucket as the primary bucket.
+func NewClientWithSecondary(ctx context.Context, cfg Config, secondaryBucketName, component string, logger log.Logger, reg prometheus.Registerer) (objstore.InstrumentedBucket, error) {
+	primary, err := NewClient(ctx, cfg, component, logger, reg)
+	if err != nil || secondaryBucketName == "" {
+		return primary, err
+	}
+
+	secondary, err := NewClient(ctx, cfg.WithBucketName(secondaryBucketName), component, logger, reg)
+	if err != nil {
+		_ = primary.Close()
+		return nil, fmt.Errorf("create secondary bucket client: %w", err)
+	}
+
+	return NewMultiBucketClient(primary, secondary), nil
 }
 
 func bucketWithMetrics(bucketClient objstore.Bucket, component string, reg prometheus.Registerer) objstore.Bucket {

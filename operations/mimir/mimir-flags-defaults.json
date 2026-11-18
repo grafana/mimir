@@ -809,6 +809,7 @@
   "blocks-storage.swift.request-timeout": 5000000000,
   "blocks-storage.filesystem.dir": "blocks",
   "blocks-storage.storage-prefix": "",
+  "blocks-storage.secondary-bucket-name": "",
   "blocks-storage.bucket-store.sync-dir": "./tsdb-sync/",
   "blocks-storage.bucket-store.sync-interval": 900000000000,
   "blocks-storage.bucket-store.max-concurrent": 200,

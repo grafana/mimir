@@ -5,6 +5,7 @@ package compactor
 import (
 	"context"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -31,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -804,6 +806,112 @@ func TestMultitenantCompactor_ShouldGuaranteeSeriesShardingConsistencyOverTheTim
 		}
 
 		require.NoError(t, postings.Err())
+	}
+}
+
+func TestMultitenantCompactor_ShouldCompactBlocksFromTheSecondaryBucketIntoThePrimaryBucket(t *testing.T) {
+	const (
+		userID     = "user-1"
+		numSeries  = 10
+		blockRange = 2 * time.Hour
+	)
+
+	var (
+		blockRangeMillis = blockRange.Milliseconds()
+		ctx              = context.Background()
+		logger           = log.NewNopLogger()
+		primaryDir       = t.TempDir()
+		secondaryDir     = t.TempDir()
+	)
+
+	storageCfg := mimir_tsdb.BlocksStorageConfig{}
+	flagext.DefaultValues(&storageCfg)
+	storageCfg.Bucket.Backend = bucket.Filesystem
+	storageCfg.Bucket.Filesystem.Directory = primaryDir
+	storageCfg.SecondaryBucketName = secondaryDir
+
+	compactorCfg := prepareConfig(t)
+	compactorCfg.DataDir = t.TempDir()
+	compactorCfg.BlockRanges = mimir_tsdb.DurationList{blockRange, 2 * blockRange}
+
+	primary, err := bucket.NewClient(ctx, storageCfg.Bucket, "test", logger, nil)
+	require.NoError(t, err)
+	secondary, err := bucket.NewClient(ctx, storageCfg.Bucket.WithBucketName(secondaryDir), "test", logger, nil)
+	require.NoError(t, err)
+
+	// The secondary bucket has a block, a block that has been marked for deletion before the deletion
+	// delay, and a stale bucket index. The primary bucket has a block that overlaps the block in the
+	// secondary bucket.
+	secondaryBlock := createTSDBBlock(t, secondary, userID, blockRangeMillis, 2*blockRangeMillis, numSeries, nil)
+	deletedBlock := createTSDBBlock(t, secondary, userID, 2*blockRangeMillis, 3*blockRangeMillis, numSeries, nil)
+	createDeletionMark(t, block.BucketWithGlobalMarkers(secondary), userID, deletedBlock, time.Now().Add(-2*compactorCfg.DeletionDelay))
+	require.NoError(t, bucketindex.WriteIndex(ctx, secondary, userID, nil, &bucketindex.Index{
+		Version:   bucketindex.IndexVersion2,
+		Blocks:    bucketindex.Blocks{{ID: deletedBlock, MinTime: 2 * blockRangeMillis, MaxTime: 3 * blockRangeMillis}},
+		UpdatedAt: time.Now().Unix(),
+	}))
+	primaryBlock := createTSDBBlock(t, primary, userID, blockRangeMillis, 2*blockRangeMillis, numSeries, nil)
+
+	reg := prometheus.NewPedanticRegistry()
+	c, err := NewMultitenantCompactor(compactorCfg, storageCfg, newMockConfigProvider(), logger, reg)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, c))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
+	})
+
+	test.Poll(t, 15*time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_compactor_runs_completed_total Total number of compaction runs successfully completed.
+			# TYPE cortex_compactor_runs_completed_total counter
+			cortex_compactor_runs_completed_total 1
+		`), "cortex_compactor_runs_completed_total")
+	})
+
+	// The cleaner writes the updated bucket index into the primary bucket, and doesn't change the stale
+	// bucket index in the secondary bucket.
+	test.Poll(t, 15*time.Second, true, func() interface{} {
+		exists, err := primary.Exists(ctx, path.Join(userID, bucketindex.IndexCompressedFilename))
+		require.NoError(t, err)
+		return exists
+	})
+	primaryIndex, err := bucketindex.ReadIndex(ctx, primary, userID, nil, logger)
+	require.NoError(t, err)
+	assert.NotContains(t, primaryIndex.Blocks.GetULIDs(), deletedBlock)
+	secondaryIndex, err := bucketindex.ReadIndex(ctx, secondary, userID, nil, logger)
+	require.NoError(t, err)
+	assert.Equal(t, []ulid.ULID{deletedBlock}, secondaryIndex.Blocks.GetULIDs())
+
+	// The cleaner deleted all the files of the block that was marked for deletion from the secondary bucket.
+	var deletedBlockFiles []string
+	require.NoError(t, secondary.Iter(ctx, path.Join(userID, deletedBlock.String()), func(name string) error {
+		deletedBlockFiles = append(deletedBlockFiles, name)
+		return nil
+	}, objstore.WithRecursiveIter()))
+	assert.Empty(t, deletedBlockFiles)
+
+	// The compacted block is in the primary bucket, and it merges the blocks of the two buckets.
+	fetcher, err := block.NewMetaFetcher(logger, 1, bucket.NewUserBucketClient(userID, primary, nil), t.TempDir(), reg, nil, 0)
+	require.NoError(t, err)
+	metas, partials, err := fetcher.FetchWithoutMarkedForDeletion(ctx)
+	require.NoError(t, err)
+	require.Empty(t, partials)
+	require.Len(t, metas, 1)
+	for _, meta := range metas {
+		assert.ElementsMatch(t, []ulid.ULID{secondaryBlock, primaryBlock}, meta.Compaction.Sources)
+	}
+
+	// The compactor wrote the deletion marks of the source blocks into the primary bucket only.
+	for _, blockID := range []ulid.ULID{secondaryBlock, primaryBlock} {
+		markPath := path.Join(userID, blockID.String(), block.DeletionMarkFilename)
+
+		exists, err := primary.Exists(ctx, markPath)
+		require.NoError(t, err)
+		assert.True(t, exists, markPath)
+
+		exists, err = secondary.Exists(ctx, markPath)
+		require.NoError(t, err)
+		assert.False(t, exists, markPath)
 	}
 }
 

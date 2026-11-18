@@ -11684,6 +11684,17 @@
           "fieldType": "string"
         },
         {
+          "kind": "field",
+          "name": "secondary_bucket_name",
+          "required": false,
+          "desc": "Name of a secondary bucket (S3/GCS), container (Azure/Swift) or directory (filesystem) that uses the same backend, credentials and storage prefix as the blocks storage bucket. When set, the store-gateway, querier, compactor and compactor-scheduler read an object from the secondary bucket when the blocks storage bucket doesn't have it, list the objects of the two buckets, and delete objects from the two buckets. They write new objects only to the blocks storage bucket. With compartments enabled, the querier replaces the \"\u003cread-compartment-id\u003e\" placeholder in this name. Other components ignore this setting.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "blocks-storage.secondary-bucket-name",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "bucket_store",
           "required": false,

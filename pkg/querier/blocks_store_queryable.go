@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
 
@@ -310,13 +311,18 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		return nil, errors.Wrap(err, "failed to create metadata cache client")
 	}
 
+	// Read compartments with the same secondary bucket name share one client: the client's metrics are
+	// scoped by bucket, so a second client for the same bucket can't register them on the shared registry.
+	secondaryBuckets := map[string]objstore.InstrumentedBucket{}
+
 	finders := make([]BlocksFinder, numCompartments)
 	storesRings := make([]*ring.Ring, numCompartments)
 	for idx := 0; idx < numCompartments; idx++ {
 		var (
-			bucketCfg = storageCfg.Bucket
-			ringName  = storegateway.RingNameForClient
-			ringKey   = storegateway.RingKey
+			bucketCfg           = storageCfg.Bucket
+			secondaryBucketName = storageCfg.SecondaryBucketName
+			ringName            = storegateway.RingNameForClient
+			ringKey             = storegateway.RingKey
 		)
 
 		// cacheBucketID prefixes every metadata cache key. It should be "blocks", but without compartments
@@ -333,12 +339,25 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 			// The finder's metrics are scoped by bucket, so all compartments share one "component"; the ring
 			// name/key have no such scope and are suffixed instead.
 			bucketCfg = storageCfg.Bucket.ReadCompartmentConfig(idx)
+			secondaryBucketName = compartments.ReplaceReadCompartment(secondaryBucketName, idx)
 			cacheBucketID = compartments.WithReadCompartmentSuffix("blocks", idx)
 			ringName = compartments.WithReadCompartmentSuffix(ringName, idx)
 			ringKey = compartments.WithReadCompartmentSuffix(ringKey, idx)
 		}
 
-		finder, err := newBlocksStoreQueryableFinder(cacheBucketID, metadataCache, bucketCfg, storageCfg, limits, logger, reg)
+		var secondaryBucket objstore.InstrumentedBucket
+		if secondaryBucketName != "" {
+			secondaryBucket = secondaryBuckets[secondaryBucketName]
+			if secondaryBucket == nil {
+				secondaryBucket, err = bucket.NewClient(context.Background(), storageCfg.Bucket.WithBucketName(secondaryBucketName), "querier", logger, reg)
+				if err != nil {
+					return nil, errors.Wrap(err, "failed to create secondary bucket client")
+				}
+				secondaryBuckets[secondaryBucketName] = secondaryBucket
+			}
+		}
+
+		finder, err := newBlocksStoreQueryableFinder(cacheBucketID, metadataCache, bucketCfg, secondaryBucket, storageCfg, limits, logger, reg)
 		if err != nil {
 			return nil, err
 		}
@@ -379,12 +398,16 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	return NewBlocksStoreQueryable(stores, clientsPool, compartmentsCfg, dynamicReplication, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
 }
 
-// newBlocksStoreQueryableFinder creates a BucketIndexBlocksFinder over the given bucket config. Its
-// metrics are scoped by bucket, so one finder per read compartment can share a registry.
-func newBlocksStoreQueryableFinder(cacheBucketID string, metadataCache cache.Cache, bucketCfg bucket.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (BlocksFinder, error) {
+// newBlocksStoreQueryableFinder creates a BucketIndexBlocksFinder over the given bucket config. When
+// secondaryBucket isn't nil, the finder reads objects from it that the bucket doesn't have. Its metrics
+// are scoped by bucket, so one finder per read compartment can share a registry.
+func newBlocksStoreQueryableFinder(cacheBucketID string, metadataCache cache.Cache, bucketCfg bucket.Config, secondaryBucket objstore.InstrumentedBucket, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (BlocksFinder, error) {
 	bucketClient, err := bucket.NewClient(context.Background(), bucketCfg, "querier", logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create bucket client")
+	}
+	if secondaryBucket != nil {
+		bucketClient = bucket.NewMultiBucketClient(bucketClient, secondaryBucket)
 	}
 
 	componentReg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg)
