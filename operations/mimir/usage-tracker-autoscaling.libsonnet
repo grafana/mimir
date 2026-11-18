@@ -15,7 +15,6 @@
     usage_tracker_hpa_scale_up_stabilization_seconds: 300,  // 5m
     usage_tracker_hpa_scale_down_period_seconds: 600,  // 10m
     usage_tracker_hpa_scale_up_period_seconds: 600,  // 10m
-    usage_tracker_hpa_smoothing_window: '15m',
 
     // Delay KEDA's first trigger evaluation after ScaledObject creation. Without it, the first
     // evaluation can scale the usage-tracker down to the min replica count. Set to 0 to disable.
