@@ -26,6 +26,8 @@ type client struct {
 	baseURL string
 	tenant  string
 	http    *http.Client
+	// eventualEstimates sends estimates without X-Read-Consistency: strong, as a dashboard does, so their latency has no wait for the ingesters to catch up.
+	eventualEstimates bool
 }
 
 // httpError is a non-200 answer. body is the error text of a Prometheus API error body, or else the body itself.
@@ -209,7 +211,7 @@ func (c *client) estimate(ctx context.Context, selector, groupBy string, startMS
 		params.Set("limit", strconv.Itoa(limit))
 	}
 	var out estimateResponse
-	latency, err := c.get(ctx, "/prometheus/api/v1/cardinality/estimate", params, true, &out)
+	latency, err := c.get(ctx, "/prometheus/api/v1/cardinality/estimate", params, !c.eventualEstimates, &out)
 	if err != nil {
 		return nil, latency, err
 	}

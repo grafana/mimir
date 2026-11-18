@@ -32,7 +32,7 @@ With `-burst N`, the first round and then one round every `-burst-interval` (def
 
 ## Estimate only
 
-With `-estimate-only`, each drawn and scenario pair sends only its estimate, without the PromQL truth, and nothing is compared. Target picking and bursts are unchanged. Use it after a compared run has shown the counts are right, for two things a compared run can't give: latency samples at a rate the PromQL load would not allow, and the estimate's own CPU, memory and bytes on the store-gateways and ingesters, which a compared run mixes with the truth's. A pair counts in `cardinality_estimate_compare_pairs_total` with `order="estimate_only"` and `outcome="answered"` or `refusal`, and its latency in `cardinality_estimate_compare_request_duration_seconds` with `position="alone"` and `reference="none"`.
+With `-estimate-only`, each drawn and scenario pair sends only its estimate, without the PromQL truth, and nothing is compared. Every estimate, including target picking and bursts, is sent without `X-Read-Consistency: strong`, as a dashboard sends it, so its latency has no wait for the ingesters to read what was written before it; a compared run needs that wait so both sides see the same head. Use it after a compared run has shown the counts are right, for two things a compared run can't give: latency samples at a rate the PromQL load would not allow, and the estimate's own CPU, memory and bytes on the store-gateways and ingesters, which a compared run mixes with the truth's. A pair counts in `cardinality_estimate_compare_pairs_total` with `order="estimate_only"` and `outcome="answered"` or `refusal`, and its latency in `cardinality_estimate_compare_request_duration_seconds` with `position="alone"` and `reference="none"`.
 
 ## Scenarios
 
