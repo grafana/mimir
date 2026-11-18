@@ -29,11 +29,16 @@ const (
 	// Which of the pair's requests went first. The first may warm caches for the second, but neither starts cold: target picking and earlier pairs read the same indexes.
 	positionFirst  = "first"
 	positionSecond = "second"
+	// positionAlone is an estimate sent without its truth, with -estimate-only.
+	positionAlone = "alone"
+	// orderEstimateOnly is the order of a pair whose truth isn't sent.
+	orderEstimateOnly = "estimate_only"
 
 	// How the truth was asked for.
 	referenceGrouped   = "grouped"    // one query for the whole table
 	referencePerValue  = "per_value"  // one query per group, for a table whose grouped truth was refused
 	referencePerBucket = "per_bucket" // one query per bucket of a step
+	referenceNone      = "none"       // no truth was sent
 
 	// queryFacetProbe labels the refusals of facet probes during target picking.
 	queryFacetProbe = "facet_probe"
@@ -383,6 +388,28 @@ func (r *runner) truth(ctx context.Context, p pair, set truthSet, edgeSlack time
 	return out, total, nil
 }
 
+// estimateOnly sends only the pair's estimate, without its truth, and records its latency, flags or refusal. It returns the outcome.
+func (r *runner) estimateOnly(ctx context.Context, p pair) string {
+	est, latency, err := r.client.estimate(ctx, p.selector(), p.groupBy, p.window.start, p.window.end, p.step(), p.limit)
+	if ctx.Err() != nil {
+		return ""
+	}
+	res := pairResult{Pair: p.String(), Order: orderEstimateOnly, reference: referenceNone}
+	if err != nil {
+		class := classifyRefusal(sideEstimate, err)
+		res.Outcome, res.Class = outcomeRefusal, class
+		res.Refusals = []string{sideEstimate + ":" + class}
+		res.refused = [][2]string{{sideEstimate, class}}
+		level.Warn(r.logger).Log("msg", "refused", "pair", res.Pair, "side", sideEstimate, "class", class, "err", err)
+	} else {
+		res.Outcome = outcomeAnswered
+		res.Read, res.Source, res.Flags = est.Read, est.Source, est.flags()
+		res.latency = latencies{estimate: latency, estimateOK: true, estimatePos: positionAlone}
+	}
+	r.record(p, &res)
+	return res.Outcome
+}
+
 // burst sends n estimates at once, drawn in turn from cands, without their truth, so the count limits fill. It records how each was answered and how long it took.
 func (r *runner) burst(ctx context.Context, cands []pair, n int) {
 	if len(cands) == 0 || n <= 0 {
@@ -476,7 +503,12 @@ func (r *runner) record(p pair, res *pairResult) {
 	if len(res.Estimated) > 0 {
 		logger = log.With(logger, "estimated_groups", len(res.Estimated), "estimated", fmt.Sprintf("%+v", res.Estimated[:min(len(res.Estimated), maxLogged)]))
 	}
-	if res.Outcome != outcomeMismatch {
+	switch res.Outcome {
+	case outcomeAnswered:
+		level.Info(logger).Log("msg", "estimated")
+		return
+	case outcomeMismatch:
+	default:
 		level.Info(logger).Log("msg", "compared", "differing_groups", len(res.Diffs))
 		return
 	}

@@ -41,7 +41,7 @@ func newMetrics(reg prometheus.Registerer, timeout time.Duration) *metrics {
 	return &metrics{
 		pairs: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "cardinality_estimate_compare_pairs_total",
-			Help: "Compared pairs of an estimate and its PromQL truth, by query, window kind, which request went first, outcome (pass, tolerated, flagged, mismatch, refusal), the class of the pair's most severe group, and the estimate's read and source, empty when it didn't answer.",
+			Help: "Compared pairs of an estimate and its PromQL truth, by query, window kind, which request went first, outcome (pass, tolerated, flagged, mismatch, refusal, or answered with -estimate-only), the class of the pair's most severe group, and the estimate's read and source, empty when it didn't answer.",
 		}, []string{"query", "window", "order", "outcome", "class", "read", "source"}),
 		flags: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "cardinality_estimate_compare_flags_total",
@@ -57,7 +57,7 @@ func newMetrics(reg prometheus.Registerer, timeout time.Duration) *metrics {
 		}, []string{"query", "side", "class"}),
 		duration: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "cardinality_estimate_compare_request_duration_seconds",
-			Help:    "Client-side latency of each side of a pair that answered, once per pair, summed over the side's queries, by query, window kind and length, side, position (first or second), reference (grouped, per_value or per_bucket), and the estimate's read and source.",
+			Help:    "Client-side latency of each side of a pair that answered, once per pair, summed over the side's queries, by query, window kind and length, side, position (first, second, or alone with -estimate-only), reference (grouped, per_value, per_bucket, or none with -estimate-only), and the estimate's read and source.",
 			Buckets: latencyBuckets,
 		}, []string{"query", "window", "length", "side", "position", "reference", "read", "source"}),
 		sketchError: f.NewHistogramVec(prometheus.HistogramOpts{
