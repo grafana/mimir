@@ -197,6 +197,7 @@
 * [BUGFIX] Admin: Use relative links for the config, runtime config and ingester links in the administration web UI, so that they work when the UI is served behind a reverse proxy that adds a path prefix. #17271
 * [BUGFIX] MQE: Fix `quantile`, `quantile_over_time` and `mad_over_time` returning a value with a rounding error, or `0` for very small values, when the quantile falls between two identical values. MQE now returns that value exactly, the same as the Prometheus engine. #17444
 * [BUGFIX] Query-frontend: Fix retried POST requests to the label names, label values, series, cardinality and active series endpoints being sent without their body. Retries dropped the parameters sent in the body, such as `match[]`, so a retried label names or label values request could return results for all series. #17445
+* [BUGFIX] Querier: Return HTTP 400 instead of HTTP 500 from the remote read endpoint when a store-gateway rejects the query because of a limit, such as `-querier.max-fetched-chunks-per-query`. #17404
 
 ### Mixin
 
