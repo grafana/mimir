@@ -34,6 +34,9 @@ const (
 	referenceGrouped   = "grouped"    // one query for the whole table
 	referencePerValue  = "per_value"  // one query per group, for a table whose grouped truth was refused
 	referencePerBucket = "per_bucket" // one query per bucket of a step
+
+	// queryFacetProbe labels the refusals of facet probes during target picking.
+	queryFacetProbe = "facet_probe"
 )
 
 type runner struct {
