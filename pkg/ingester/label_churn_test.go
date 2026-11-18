@@ -97,12 +97,17 @@ func TestIngester_LabelChurn(t *testing.T) {
 	db := i.getTSDB(userID)
 
 	router := mux.NewRouter()
-	router.HandleFunc("/ingester/label_churn/{tenant}", i.LabelChurnHandler)
 	router.HandleFunc("/ingester/tsdb/{tenant}/label_churn", i.LabelChurnPageHandler)
-	serveLabelChurn := func(path string) *httptest.ResponseRecorder {
+	router.HandleFunc("/ingester/tsdb/{tenant}/label_churn.json", i.LabelChurnHandler)
+	serveLabelChurnWithAccept := func(path, accept string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.Header.Set("Accept", accept)
 		recorder := httptest.NewRecorder()
-		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		router.ServeHTTP(recorder, request)
 		return recorder
+	}
+	serveLabelChurn := func(path string) *httptest.ResponseRecorder {
+		return serveLabelChurnWithAccept(path, "")
 	}
 
 	response, err := db.labelChurn(ctx, since, 0)
@@ -119,20 +124,25 @@ func TestIngester_LabelChurn(t *testing.T) {
 	})
 
 	t.Run("the handler returns the scores as JSON", func(t *testing.T) {
-		recorder := serveLabelChurn("/ingester/label_churn/test?lookback=30m&limit=1")
-		require.Equal(t, http.StatusOK, recorder.Code)
+		for _, recorder := range []*httptest.ResponseRecorder{
+			serveLabelChurn("/ingester/tsdb/test/label_churn.json?lookback=30m&limit=1"),
+			serveLabelChurnWithAccept("/ingester/tsdb/test/label_churn?lookback=30m&limit=1", "application/json"),
+		} {
+			require.Equal(t, http.StatusOK, recorder.Code)
+			require.Equal(t, "application/json", recorder.Header().Get("Content-Type"))
 
-		var handlerResponse labelChurnResponse
-		require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &handlerResponse))
-		require.Equal(t, []labelChurnScore{podScore}, handlerResponse.Scores)
+			var handlerResponse labelChurnResponse
+			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &handlerResponse))
+			require.Equal(t, []labelChurnScore{podScore}, handlerResponse.Scores)
+		}
 	})
 
 	t.Run("the handler rejects invalid requests", func(t *testing.T) {
 		for path, expectedStatus := range map[string]int{
-			"/ingester/label_churn/test?lookback=abc": http.StatusBadRequest,
-			"/ingester/label_churn/test?limit=-1":     http.StatusBadRequest,
-			"/ingester/label_churn/other-tenant":      http.StatusNotFound,
-			"/ingester/label_churn/test?lookback=1s":  http.StatusServiceUnavailable,
+			"/ingester/tsdb/test/label_churn.json?lookback=abc": http.StatusBadRequest,
+			"/ingester/tsdb/test/label_churn.json?limit=-1":     http.StatusBadRequest,
+			"/ingester/tsdb/other-tenant/label_churn.json":      http.StatusNotFound,
+			"/ingester/tsdb/test/label_churn.json?lookback=1s":  http.StatusServiceUnavailable,
 		} {
 			require.Equal(t, expectedStatus, serveLabelChurn(path).Code, path)
 		}
@@ -151,7 +161,7 @@ func TestIngester_LabelChurn(t *testing.T) {
 		require.Contains(t, page, `<td align="right">3</td>`)
 		require.Contains(t, page, fmt.Sprintf("up (%d), other (%d)", 2*labelChurnSampledSeriesPerValue, labelChurnSampledSeriesPerValue))
 		require.NotContains(t, page, "<td>"+model.MetricNameLabel+"</td>")
-		require.Contains(t, page, `<a href="../../label_churn/test?limit=1&amp;lookback=30m">Download as JSON</a>`)
+		require.Contains(t, page, `<a href="label_churn.json?limit=1&amp;lookback=30m">Download as JSON</a>`)
 	})
 
 	t.Run("the page uses the default parameters", func(t *testing.T) {
@@ -191,7 +201,7 @@ func TestIngester_LabelChurn(t *testing.T) {
 
 	t.Run("the handler rejects requests when label churn detection is disabled", func(t *testing.T) {
 		recorder := httptest.NewRecorder()
-		(&Ingester{}).LabelChurnHandler(recorder, httptest.NewRequest(http.MethodGet, "/ingester/label_churn/test", nil))
+		(&Ingester{}).LabelChurnHandler(recorder, httptest.NewRequest(http.MethodGet, "/ingester/tsdb/test/label_churn.json", nil))
 		require.Equal(t, http.StatusNotFound, recorder.Code)
 		require.Contains(t, recorder.Body.String(), errLabelChurnDisabled.Error())
 

@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -164,18 +165,23 @@ type labelChurnPageContent struct {
 }
 
 // LabelChurnPageHandler shows the label churn scores of the tenant in the path as an HTML page.
+// When the request accepts JSON, it returns the same response as LabelChurnHandler.
 // It has the same parameters as LabelChurnHandler.
 func (i *Ingester) LabelChurnPageHandler(w http.ResponseWriter, r *http.Request) {
-	tenantID := mux.Vars(r)["tenant"]
+	if strings.Contains(r.Header.Get("Accept"), "application/json") {
+		i.LabelChurnHandler(w, r)
+		return
+	}
+
 	lookback := cmp.Or(r.FormValue("lookback"), model.Duration(defaultLabelChurnLookback).String())
 	limit := cmp.Or(r.FormValue("limit"), strconv.Itoa(defaultLabelChurnLimit))
 
 	content := labelChurnPageContent{
 		Now:                   time.Now(),
-		Tenant:                tenantID,
+		Tenant:                mux.Vars(r)["tenant"],
 		Lookback:              lookback,
 		Limit:                 limit,
-		JSONLink:              "../../label_churn/" + url.PathEscape(tenantID) + "?" + url.Values{"lookback": {lookback}, "limit": {limit}}.Encode(),
+		JSONLink:              "label_churn.json?" + url.Values{"lookback": {lookback}, "limit": {limit}}.Encode(),
 		SampledSeriesPerValue: labelChurnSampledSeriesPerValue,
 	}
 

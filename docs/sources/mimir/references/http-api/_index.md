@@ -53,7 +53,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Ingester tenants](#ingester-tenants) | Ingester | `GET /ingester/tenants` |
 | [Ingester tenant TSDB](#ingester-tenant-tsdb) | Ingester | `GET /ingester/tsdb/{tenant}` |
 | [Ingester tenant label churn page](#ingester-tenant-label-churn-page) | Ingester | `GET /ingester/tsdb/{tenant}/label_churn` |
-| [Ingester tenant label churn](#ingester-tenant-label-churn) | Ingester | `GET /ingester/label_churn/{tenant}` |
+| [Ingester tenant label churn](#ingester-tenant-label-churn) | Ingester | `GET /ingester/tsdb/{tenant}/label_churn.json` |
 | [Instant query](#instant-query) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query` |
 | [Range query](#range-query) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_range` |
 | [Exemplar query](#exemplar-query) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_exemplars` |
@@ -557,6 +557,7 @@ GET /ingester/tsdb/{tenant}/label_churn
 
 Displays a web page with the label names whose new values created the most new series for the tenant on given ingester, in the lookback window.
 The page explains how the ingester collects the scores and how to read them, and links to the same scores as JSON.
+When the request has the `Accept: application/json` header, the page returns the same JSON as the [label churn endpoint](#ingester-tenant-label-churn).
 It accepts the same `lookback` and `limit` parameters as the [label churn endpoint](#ingester-tenant-label-churn).
 
 This page is an [experimental feature](../../configure/about-versioning/#experimental-features).
@@ -565,7 +566,7 @@ To enable it, set `-ingester.label-churn-enabled`.
 ### Ingester tenant label churn
 
 ```
-GET /ingester/label_churn/{tenant}
+GET /ingester/tsdb/{tenant}/label_churn.json
 ```
 
 Returns, as JSON, the label names whose new values created the most new series for the tenant on given ingester, in the lookback window.
