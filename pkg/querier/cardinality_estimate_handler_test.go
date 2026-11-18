@@ -930,8 +930,8 @@ func TestCardinalityEstimateHandler_PeakMemory(t *testing.T) {
 	ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
 		{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: hashes}}},
 	}}}
-	// The merger charges the group, then its 100 distinct hashes.
-	groupCharge := uint64(estimateGroupBytes + len("up"))
+	// The merger charges the group as a hash set, then its 100 distinct hashes.
+	groupCharge := uint64(cardinality.GroupBytes + len("up"))
 	allCharges := groupCharge + 100*estimateHashBytes
 
 	for name, tc := range map[string]struct {

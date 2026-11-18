@@ -107,7 +107,8 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 		m.hashBytes += 8 * int64(len(hashes))
 		set := m.hashes[value]
 		if set == nil {
-			if err := m.charge(uint64(estimateGroupBytes + len(value))); err != nil {
+			// A group that holds hashes is its own set, charged as the store-gateway charges it.
+			if err := m.charge(uint64(cardinality.GroupBytes + len(value))); err != nil {
 				return err
 			}
 			set = map[uint64]struct{}{}
