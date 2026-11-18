@@ -546,13 +546,8 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 		return true // 5xx
 	}
 
-	if status, ok := grpcutil.ErrorToStatus(err); ok {
-		for _, details := range status.Details() {
-			if errDetails, ok := details.(*mimirpb.ErrorDetails); ok {
-				return !mimirpb.IsClientErrorCause(errDetails.GetCause())
-			}
-		}
-		return true
+	if _, ok := grpcutil.ErrorToStatus(err); ok {
+		return !isRulerClientPushError(err)
 	}
 
 	if validation.IsLimitError(err) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

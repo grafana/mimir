@@ -5,6 +5,7 @@
 ### Grafana Mimir
 
 * [CHANGE] Reject empty values for `-blocks-storage.tsdb.float-chunk-encoding` and the per-tenant `float_chunk_encoding` setting. Use `xor` or `xor2`, or omit the per-tenant setting to inherit the global value. #16718
+* [CHANGE] Distributor: `PushWrappers` must finish reading decoded request data before calling `next`. Copy values needed for post-push processing before forwarding the request. #16676
 * [CHANGE] Query-frontend: The PromQL extended range selector modifiers `smoothed` and `anchored` are now always enabled. The `-query-frontend.enabled-promql-extended-range-selectors` flag and `enabled_promql_extended_range_selectors` per-tenant setting are deprecated and have no effect, but remain accepted for configuration compatibility. #16618
 * [CHANGE] Query-frontend: PromQL duration expressions are now stable and remain always enabled. #16618
 * [CHANGE] Rename the experimental `-ingester.float-chunk-encoding` flag to `-blocks-storage.tsdb.float-chunk-encoding` because it applies to the ingester, block-builder, and compactor. The per-tenant `float_chunk_encoding` setting is unchanged. #16544
@@ -33,6 +34,7 @@
 * [CHANGE] Distributor: The error returned when a tenant exceeds the active series limit no longer includes the limit value. #17190
 * [CHANGE] MQE: The experimental PromQL functions `min_of` and `max_of`, in queries and in duration expressions, now return NaN only if both arguments are NaN. This matches the `min` and `max` aggregators. #17276
 * [CHANGE] Distributor: OTLP exponential histograms now use the zero threshold of the OTel data point as the native histogram zero threshold. Previously, the zero threshold was always `1e-128`. A data point with no zero threshold now gets a zero threshold of `0`. After the upgrade, each affected series starts a new chunk at its first sample because the zero threshold changes. #17276
+* [CHANGE] Ruler: Classify rule evaluation failures caused by the tenant request-rate, ingestion-rate or active-series write limits as `user` instead of `operator` in the `reason` label of `prometheus_rule_evaluation_failures_total`, consistent with tenant limits enforced by ingesters. #17306
 * [FEATURE] Server: Add `-server.metrics-cache-duration` to cache `/metrics` responses and reduce repeated collection, encoding, and compression. Disabled by default; cached metrics can lag live values by the configured duration. #16954
 * [FEATURE] Server: Add `-server.tls-curve-preferences` to configure TLS key exchange curve preferences. #16954
 * [CHANGE] Alertmanager: Enforce that SNS receivers provide explicit credentials (access key and secret key) by default. This prevents malicious users from creating a SNS receiver with a custom URL that then receives the Alertmanager's AWS credentials. The existing behaviour can be restored by setting `-alertmanager.require-explicit-sns-credentials=false`. #17315
@@ -65,11 +67,12 @@
 * [ENHANCEMENT] Store-gateway: Emit exponential native histograms for `cortex_bucket_stores_blocks_sync_seconds` alongside existing classic buckets. #17077
 * [ENHANCEMENT] Reduce partition shuffle-shard construction cost after ring updates by reusing immutable token indexes. #17012
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-health-validation-concurrency` option to limit how many blocks are validated concurrently within a compaction job. #16269
-* [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-symbol-table-size-threshold` option to preemptively marks a just-compacted block as no-compact if its symbol table size exceeds the configured threshold. #16562
+* [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-symbol-table-size-threshold` option to preemptively marks a just-compacted block as no-compact if its symbol table size exceeds the configured threshold. The default is 3.8GB (roughly 95% of the TSDB index symbol table limit). #16562 #17303
 * [ENHANCEMENT] Query-frontend: Improve the stability of cardinality estimates and therefore sharding factors for queries when running splitting and caching inside MQE is enabled, or range vector splitting is enabled. #16274 #16301 #16305 #16311 #16858 #16869 #16881
   * When running splitting and caching inside MQE is enabled, the `cortex_query_frontend_cardinality_estimation_difference` metric will no longer be emitted.
 * [ENHANCEMENT] Distributor: Add the experimental `cortex_distributor_otlp_requests_with_job_or_instance_resource_attribute_total{user}` counter to track OTLP requests carrying `job` or `instance` as a resource attribute. #16285
 * [ENHANCEMENT] MQE: Add experimental support for `fill`, `fill_left`, and `fill_right` modifiers for filling missing samples in one-to-one binary operations. #16071
+* [ENHANCEMENT] Distributor: Release decoded write requests after serialization to save memory when writing only to ingest storage. #16676
 * [ENHANCEMENT] Ruler: Split oversized remote distributor writes to keep resulting calls within the configured gRPC maximum send size, and expose the number of generated requests in `cortex_ruler_remote_distributor_requests_per_write_request`. #16160
 * [ENHANCEMENT] Alerts: Don't fire `MimirMemberlistZoneAwareRoutingAutoFailover` while the node is still joining the cluster. #16315
 * [ENHANCEMENT] Store-gateway: added a `route` label to the `cortex_bucket_store_series_request_stage_duration_seconds` metric to match the `route` label of `cortex_request_duration_seconds`. #16374
@@ -116,6 +119,7 @@
 * [ENHANCEMENT] Ingester: Add the `cortex_ingester_series_with_floats_and_histograms_total` metric, which counts the series in write requests that have both float samples and histograms, per tenant. #17288
 * [ENHANCEMENT] Ingester: Add the experimental `early_head_compaction_min_in_memory_series` runtime-configurable instance limit under `ingester_limits`, which overrides `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series` when set to a value greater than 0. This allows changing the TSDB Head early compaction threshold together with `max_series` without restarting ingesters. #17282
 * [ENHANCEMENT] Query-scheduler: Add the `cortex_query_scheduler_max_outstanding_requests_per_tenant` metric, which exposes the value of `-query-scheduler.max-outstanding-requests-per-tenant`. #17299
+* [ENHANCEMENT] Store-gateway: Reduce the memory usage and garbage collection pressure of loaded sparse index-headers. #16266
 * [BUGFIX] Ruler: Count write requests rejected by the tenant request-rate, ingestion-rate or active-series limits as `client_error` in `cortex_ruler_write_requests_failed_total`, so they no longer trigger `MimirRulerTooManyFailedPushes`. Ingester overload is still counted as `server_error`. #17302
 * [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
 * [BUGFIX] Store-gateway: Allow cancelling prepare-shutdown when the sync directory does not exist. #16049
@@ -229,6 +233,7 @@
 * [CHANGE] Memberlist: Set the default `-memberlist.rejoin-interval` to 60s in Jsonnet configurations. #16332
 * [CHANGE] Remove configuration to disable use of the bucket-index since it has been mandatory since version 2.11. #16980
 * [CHANGE] Autoscaling: the KEDA trigger that prevents scale-down during OOM kills (`autoscaling_oom_protection_enabled`) is now stable and enabled by default. It only applies when the memory trigger is disabled, for example for distributors with `distributor_gomemlimit_enabled: true`. Set `autoscaling_oom_protection_enabled: false` to keep the previous behavior. #17265
+* [CHANGE] Increase default requested ephemeral storage for Mimir containers to 128MB. #17395
 * [FEATURE] Enable active query tracking in read path components to keep track of running queries during crashes. #16876 #16981
 * [FEATURE] Allow common (`mimirComponentAnnotations`) and per-component annotations (`<component>_annotations`) to be set on each Mimir component. #17143
 * [FEATURE] Add the optional `memcached-cardinality` cache for query-frontend cardinality estimates. Set `cache_cardinality_enabled: true` to deploy it. Requires `cache_frontend_enabled`. #17173

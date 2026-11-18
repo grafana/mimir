@@ -6,10 +6,10 @@ metadata:
   name: test-downscale-leader-values-rollout-operator
   namespace: "citestns"
   labels:
-    helm.sh/chart: rollout-operator-0.53.1
+    helm.sh/chart: rollout-operator-0.54.0
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: test-downscale-leader-values
-    app.kubernetes.io/version: "v0.41.1"
+    app.kubernetes.io/version: "v0.42.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
@@ -46,7 +46,7 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          image: docker.io/grafana/rollout-operator:v0.41.1
+          image: docker.io/grafana/rollout-operator:v0.42.0
           imagePullPolicy: IfNotPresent
           args:
           - -kubernetes.namespace=citestns
