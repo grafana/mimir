@@ -3219,6 +3219,7 @@ spec:
         - -usage-tracker.idle-timeout=20m
         - -usage-tracker.instance-ring.heartbeat-period=30s
         - -usage-tracker.instance-ring.heartbeat-timeout=2m
+        - -usage-tracker.instance-ring.instance-availability-zone=zone-a
         - -usage-tracker.instance-ring.prefix=
         - -usage-tracker.max-partitions-to-create-per-reconcile=4
         - -usage-tracker.partition-reconcile-interval=1s
@@ -3343,6 +3344,7 @@ spec:
         - -usage-tracker.idle-timeout=20m
         - -usage-tracker.instance-ring.heartbeat-period=30s
         - -usage-tracker.instance-ring.heartbeat-timeout=2m
+        - -usage-tracker.instance-ring.instance-availability-zone=zone-b
         - -usage-tracker.instance-ring.prefix=
         - -usage-tracker.max-partitions-to-create-per-reconcile=4
         - -usage-tracker.partition-reconcile-interval=1s

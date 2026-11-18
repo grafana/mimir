@@ -214,13 +214,19 @@
 
   usage_tracker_container:: $.newUsageTrackerContainer($.usage_tracker_args, $.usage_tracker_env_map),
 
+  // Each StatefulSet must register in its own zone, even when both run in the same AZ: an instance owns
+  // partitions based on the number of instances in its zone, so with a single zone half of them have no owner.
   usage_tracker_zone_a_container::
     $.usage_tracker_container +
-    $.core.v1.container.withArgs($.util.mapToFlags($.usage_tracker_args + $.usage_tracker_zone_a_args)),
+    $.core.v1.container.withArgs($.util.mapToFlags($.usage_tracker_args + $.usage_tracker_zone_a_args + {
+      'usage-tracker.instance-ring.instance-availability-zone': 'zone-a',
+    })),
 
   usage_tracker_zone_b_container::
     $.usage_tracker_container +
-    $.core.v1.container.withArgs($.util.mapToFlags($.usage_tracker_args + $.usage_tracker_zone_b_args)),
+    $.core.v1.container.withArgs($.util.mapToFlags($.usage_tracker_args + $.usage_tracker_zone_b_args + {
+      'usage-tracker.instance-ring.instance-availability-zone': 'zone-b',
+    })),
 
   usage_tracker_zone_a_statefulset: if !$._config.usage_tracker_enabled then null else
     $.newUsageTrackerZoneStatefulSet('a', $.usage_tracker_zone_a_container, $.usage_tracker_zone_a_node_affinity_matchers),

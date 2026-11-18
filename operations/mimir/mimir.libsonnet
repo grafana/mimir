@@ -90,6 +90,7 @@
 // rulers, and before memberlist, because memberlist adds the gossip config to the usage-tracker.
 (import 'usage-tracker.libsonnet') +
 (import 'usage-tracker-autoscaling.libsonnet') +
+(import 'multi-zone-usage-tracker.libsonnet') +
 
 // Add memberlist support. Keep it at the end because it overrides all Mimir components.
 (import 'memberlist.libsonnet') +
