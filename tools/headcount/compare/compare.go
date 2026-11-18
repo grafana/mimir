@@ -43,6 +43,7 @@ const (
 	classBadRequest      = "bad_request"      // the request is invalid (400): it fails the same way every round
 	classThrottled       = "throttled"        // the query-frontend is throttling the tenant (429)
 	classBusy            = "busy"             // every store-gateway or ingester asked was at its count limit (503 unavailable); safe to retry
+	classTruncated       = "truncated"        // the answer carries a warning that a limit cut it, such as -querier.max-label-values-limit lowering the label values limit; the table can't be compared
 	classError           = "error"            // any other failure
 )
 
@@ -138,6 +139,10 @@ func classify(r *estimateResponse, d groupDiff) (outcome, class string) {
 
 // classifyRefusal names why a request failed, from its status and its error text.
 func classifyRefusal(side string, err error) string {
+	var te *truncatedError
+	if errors.As(err, &te) {
+		return classTruncated
+	}
 	var he *httpError
 	if !errors.As(err, &he) {
 		return classError

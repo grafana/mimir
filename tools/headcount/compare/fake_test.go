@@ -51,6 +51,9 @@ type fakeFrontend struct {
 	// truthHook, when set, edits the counts of one PromQL query, or refuses it with a status.
 	truthHook func(query string, rangeLen time.Duration, counts map[string]int64) (status int)
 
+	// queryWarnings and labelValuesWarnings are sent as the warnings of PromQL answers and of label values answers.
+	queryWarnings, labelValuesWarnings []string
+
 	// rangeLen is the length of the block ranges bounds mode answers, aligned to the epoch; 2h when 0.
 	rangeLen time.Duration
 	// boundsSlack widens every bounds group: lower is the count minus it and upper the count plus it.
@@ -144,7 +147,7 @@ func (f *fakeFrontend) labelValues(w http.ResponseWriter, r *http.Request, label
 	if l, _ := strconv.Atoi(r.FormValue("limit")); l > 0 && l < len(values) {
 		values = values[:l]
 	}
-	require.NoError(f.t, json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": values}))
+	require.NoError(f.t, json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": values, "warnings": f.labelValuesWarnings}))
 }
 
 func (f *fakeFrontend) matching(ms []*labels.Matcher) []labels.Labels {
@@ -312,7 +315,7 @@ func (f *fakeFrontend) query(w http.ResponseWriter, r *http.Request) {
 		}
 		result = append(result, sample{Metric: m, Value: [2]any{r.FormValue("time"), strconv.FormatInt(c, 10)}})
 	}
-	require.NoError(f.t, json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{"resultType": "vector", "result": result}}))
+	require.NoError(f.t, json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{"resultType": "vector", "result": result}, "warnings": f.queryWarnings}))
 }
 
 func (f *fakeFrontend) labelNames(w http.ResponseWriter, r *http.Request) {

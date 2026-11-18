@@ -3,12 +3,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
 	"math/rand/v2"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -951,4 +953,61 @@ func TestRunEstimateOnly(t *testing.T) {
 	assert.Equal(t, 1, sum.compared, "the drawn pair answered")
 	assert.Equal(t, 1.0, counterSum(m.refusals, map[string]string{"query": "scenario:api_by_pod", "side": sideEstimate}))
 	assert.Equal(t, 1.0, counterSum(m.pairs, map[string]string{"query": "scenario:api_by_pod", "order": orderEstimateOnly, "outcome": outcomeRefusal}))
+}
+
+// TestRunnerTruthTruncated: a PromQL answer that says a limit cut it is not a table to compare with, so it is a refusal and not a mismatch.
+func TestRunnerTruthTruncated(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	f.queryWarnings = []string{"results truncated due to limit"}
+	r, m := newTestRunner(srv)
+	res := r.run(context.Background(), metricPair("pod"))
+	assert.Equal(t, outcomeRefusal, res.Outcome)
+	assert.Equal(t, classTruncated, res.Class)
+	assert.Equal(t, 1.0, testutil.ToFloat64(m.refusals.WithLabelValues(queryMetricByLabel, sideTruth, classTruncated)))
+
+	// Other warnings don't cut the table.
+	f.queryWarnings = []string{"PromQL info: something about the query"}
+	assert.Equal(t, outcomePass, r.run(context.Background(), metricPair("pod")).Outcome)
+}
+
+// TestRunnerGroupCountBoundTruncated: a label values answer with a warning, such as the querier lowering its limit, is no upper bound on group_count, so it must not report group_count_excess.
+func TestRunnerGroupCountBoundTruncated(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	f.labelValuesWarnings = []string{"the limit was lowered to the tenant's max label values limit"}
+	f.estimateHook = func(_ int, r *estimateResponse) { r.GroupCount += 5 }
+	r, m := newTestRunner(srv)
+	p := pair{query: queryTenantByName, matchers: allSeriesMatchers(), groupBy: "__name__", window: testWindow, limit: 2, perValue: true}
+	res := r.run(context.Background(), p)
+	assert.NotEqual(t, classGroupCountHigh, res.Class)
+	assert.Contains(t, res.Refusals, "label values probe:"+classTruncated)
+	assert.Equal(t, 1.0, testutil.ToFloat64(m.refusals.WithLabelValues(queryTenantByName, sideTruth, classTruncated)))
+}
+
+// TestRunnerLargeGroupedTruth: a tenant-wide table of tens of thousands of groups is counted whole: the grouped truth has as many groups as the estimate's group_count.
+func TestRunnerLargeGroupedTruth(t *testing.T) {
+	const groups = 25_000
+	series := testSeries()
+	for i := range groups {
+		series = append(series, labels.FromStrings("__name__", "spans", "job", "tempo", "span_name", "op-"+strconv.Itoa(i)))
+	}
+	_, srv := newFakeFrontend(t, series...)
+	r, _ := newTestRunner(srv)
+	p := pair{query: queryTenantByLabel, matchers: allSeriesMatchers(), groupBy: "span_name", window: testWindow, limit: 50}
+	res := r.run(context.Background(), p)
+	assert.Equal(t, outcomePass, res.Outcome, "%+v", res.Diffs)
+	truth, _, err := r.truth(context.Background(), p, truthSet{}, 0)
+	require.NoError(t, err)
+	assert.Len(t, truth.counts, groups+1, "every span_name, and the series without one as the empty value")
+}
+
+// TestRunnerMismatchLogsTheTruthQuery: the log line of a mismatch has the grouped truth's query and its evaluation time, to run it by hand.
+func TestRunnerMismatchLogsTheTruthQuery(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	f.estimateHook = func(_ int, r *estimateResponse) { r.Groups[0].Count += 5 }
+	r, _ := newTestRunner(srv)
+	var buf bytes.Buffer
+	r.logger = log.NewLogfmtLogger(&buf)
+	r.run(context.Background(), metricPair("pod"))
+	assert.Contains(t, buf.String(), `truth_query="count by (pod) (last_over_time({__name__=\"up\"}[1h]))"`)
+	assert.Contains(t, buf.String(), "truth_at="+formatTime(testWindow.end-1))
 }

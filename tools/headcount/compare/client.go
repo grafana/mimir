@@ -63,6 +63,13 @@ func newHTTPError(status int, body []byte) *httpError {
 	return e
 }
 
+// truncatedError is an answer that says a limit cut it, so it can't stand for the whole table.
+type truncatedError struct{ what, warning string }
+
+func (e *truncatedError) Error() string {
+	return fmt.Sprintf("%s was cut: %s", e.what, e.warning)
+}
+
 // get sends a GET to path with params and decodes a 200 answer into out. With strong, the request waits for the ingesters to have read everything written before it, so the estimate and its truth see the same head.
 func (c *client) get(ctx context.Context, path string, params url.Values, strong bool, out any) (time.Duration, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path+"?"+params.Encode(), nil)
@@ -315,9 +322,16 @@ func (c *client) labelValues(ctx context.Context, label string, startMS, endMS i
 	params := url.Values{"start": {formatTime(startMS)}, "end": {formatTime(endMS - 1)}, "limit": {strconv.Itoa(limit)}}
 	var out struct {
 		Data []string `json:"data"`
+		// Warnings say, among others, that the querier lowered limit to -querier.max-label-values-limit, which answers fewer values than asked for without an error.
+		Warnings []string `json:"warnings"`
 	}
-	_, err := c.get(ctx, "/prometheus/api/v1/label/"+url.PathEscape(model.EscapeName(label, model.ValueEncodingEscaping))+"/values", params, true, &out)
-	return out.Data, err
+	if _, err := c.get(ctx, "/prometheus/api/v1/label/"+url.PathEscape(model.EscapeName(label, model.ValueEncodingEscaping))+"/values", params, true, &out); err != nil {
+		return nil, err
+	}
+	if len(out.Warnings) > 0 {
+		return nil, &truncatedError{what: "the label values", warning: out.Warnings[0]}
+	}
+	return out.Data, nil
 }
 
 // instantQuery runs a PromQL instant query at atMS and returns each result's value keyed by the value of label in it.
@@ -325,7 +339,9 @@ func (c *client) instantQuery(ctx context.Context, query, label string, atMS int
 	var parsed struct {
 		Status string `json:"status"`
 		Error  string `json:"error"`
-		Data   struct {
+		// Warnings include "results truncated due to limit" when the API cut the result.
+		Warnings []string `json:"warnings"`
+		Data     struct {
 			ResultType string `json:"resultType"`
 			Result     []struct {
 				Metric map[string]string `json:"metric"`
@@ -339,6 +355,11 @@ func (c *client) instantQuery(ctx context.Context, query, label string, atMS int
 	}
 	if parsed.Status != "success" {
 		return nil, latency, fmt.Errorf("query failed: %s", parsed.Error)
+	}
+	for _, w := range parsed.Warnings {
+		if strings.Contains(strings.ToLower(w), "truncated") {
+			return nil, latency, &truncatedError{what: "the query result", warning: w}
+		}
 	}
 	out := make(map[string]int64, len(parsed.Data.Result))
 	for _, r := range parsed.Data.Result {

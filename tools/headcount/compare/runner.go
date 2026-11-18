@@ -183,7 +183,9 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 		// A page longer than group_count already bounds it, so the page stops there.
 		values, err := r.client.labelValues(ctx, set.label, p.window.start, p.window.end, est.GroupCount+1)
 		if err != nil {
-			res.Refusals = append(res.Refusals, "label values probe:"+classifyRefusal(sideTruth, err))
+			class := classifyRefusal(sideTruth, err)
+			res.Refusals = append(res.Refusals, "label values probe:"+class)
+			res.refused = append(res.refused, [2]string{sideTruth, class})
 		} else if bound := len(values) + allowed; est.GroupCount > bound {
 			diffs = append(diffs, groupDiff{Value: groupCountKey, Estimate: int64(est.GroupCount), Truth: int64(bound), Outcome: outcomeMismatch, Class: classGroupCountHigh})
 		}
@@ -475,6 +477,10 @@ func (r *runner) record(p pair, res *pairResult) {
 	diffs := res.Diffs
 	if len(diffs) > maxLogged {
 		diffs = diffs[:maxLogged]
+	}
+	// The grouped truth is one query, which can be run by hand at truth_at to compare.
+	if res.reference == referenceGrouped {
+		logger = log.With(logger, "truth_query", truthQuery(p.matchers, p.groupBy, p.window.length()), "truth_at", formatTime(p.window.end-1))
 	}
 	level.Warn(logger).Log("msg", "mismatch no class explains; file a Bug issue", "differing_groups", len(res.Diffs), "diffs", fmt.Sprintf("%+v", diffs), "refusals", fmt.Sprint(res.Refusals))
 }
