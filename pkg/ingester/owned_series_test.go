@@ -426,9 +426,8 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 		"unchanged ring, shard size from 0 to ingester count": {
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
-					MaxGlobalSeriesPerUser:     ownedServiceTestUserSeriesLimit,
-					IngestionTenantShardSize:   0,
-					CardinalityEstimateEnabled: true,
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
+					IngestionTenantShardSize: 0,
 				},
 			},
 			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, limits map[string]*validation.Limits) {
@@ -452,15 +451,11 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, ownedServiceTestUserSeriesLimit/2)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount/2)
-				sinceBefore := c.db.shardSizeUnchangedSince()
-				require.NotZero(t, sinceBefore, "the first update saw the shard size")
-				time.Sleep(2 * time.Millisecond)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 2, ownedServiceTestUserSeriesLimit/2)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount/2)
-				require.Greater(t, c.db.shardSizeUnchangedSince(), sinceBefore, "the shard size changed")
 			},
 		},
 		"unchanged ring, shard size < ingesters, shard size up and down": {
@@ -755,7 +750,6 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				log.NewLogfmtLogger(c.buf),
 				nil,
 				c.ing.limiter.maxSeriesPerUser,
-				c.ing.limits.CardinalityEstimateEnabled,
 				c.ing.getTSDBUsers,
 				c.ing.getTSDB,
 			)
@@ -858,7 +852,6 @@ func (c *ownedSeriesWithPartitionsRingTestContext) createIngesterAndPartitionRin
 		log.NewLogfmtLogger(c.buf),
 		nil,
 		c.ing.limiter.maxSeriesPerUser,
-		c.ing.limits.CardinalityEstimateEnabled,
 		c.ing.getTSDBUsers,
 		c.ing.getTSDB,
 	)
@@ -1490,7 +1483,7 @@ func TestOwnedSeriesStartsQuicklyWithEmptyIngesterRing(t *testing.T) {
 	tenantChecks := atomic.NewInt32(0)
 
 	const interval = 10 * time.Second
-	oss := newOwnedSeriesService(interval, ringStrategy, log.NewNopLogger(), nil, nil, nil, func() []string { tenantChecks.Inc(); return []string{} }, nil)
+	oss := newOwnedSeriesService(interval, ringStrategy, log.NewNopLogger(), nil, nil, func() []string { tenantChecks.Inc(); return []string{} }, nil)
 
 	// OwnedSeriesService will become Running immediately, but doesn't do any checks since ring is empty.
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), oss))
@@ -1529,7 +1522,7 @@ func TestOwnedSeriesStartsQuicklyWithEmptyPartitionsRing(t *testing.T) {
 	// Tenant checks are only done if ring is not empty.
 	tenantChecks := atomic.NewInt32(0)
 	const interval = 10 * time.Second
-	oss := newOwnedSeriesService(interval, partitionRingStrategy, log.NewNopLogger(), nil, nil, nil, func() []string { tenantChecks.Inc(); return []string{} }, nil)
+	oss := newOwnedSeriesService(interval, partitionRingStrategy, log.NewNopLogger(), nil, nil, func() []string { tenantChecks.Inc(); return []string{} }, nil)
 
 	// OwnedSeriesService will become Running immediately, but doesn't do any checks since ring is empty.
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), oss))

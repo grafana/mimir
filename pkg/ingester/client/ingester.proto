@@ -85,10 +85,7 @@ message SeriesCountsRequest {
   // ResourceExhausted before counting when one local block inside the window, with no matchers, already holds more
   // values, and while counting once the groups pass it. 0 means no limit.
   int64 max_groups = 2;
-  // If set, the ingester counts only when it has seen the tenant's shard size unchanged since before this time, in
-  // milliseconds. Otherwise it walks nothing and returns a response with shard_size_changed set. A caller that adds
-  // up counts across partitions sets it, since a series can be in two partitions after the shard grows.
-  int64 shard_size_unchanged_before_ms = 3;
+  reserved 3;
 }
 
 message SeriesCountsResponse {
@@ -99,11 +96,7 @@ message SeriesCountsResponse {
   // or not it is in the window. Samples before it are no longer on this ingester. 0 only when it holds no series and
   // no block for the tenant.
   int64 min_time_ms = 6;
-  // The time, in milliseconds, since which this ingester has seen the tenant's shard size unchanged. 0 when it
-  // doesn't know: owned-series tracking is off, or it has not checked the tenant yet.
-  int64 shard_size_unchanged_since_ms = 8;
-  // Set when the request's shard_size_unchanged_before_ms was not met. Nothing is counted then.
-  bool shard_size_changed = 9;
+  reserved 8, 9;
   // What the request used of max_index_bytes: the series this ingester matched in the head and local blocks, at the
   // walk cost the limit prices them at. 0 when it walked nothing.
   int64 index_bytes = 10;

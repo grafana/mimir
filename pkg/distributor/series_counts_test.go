@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"maps"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -50,14 +49,10 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 	for name, tc := range map[string]struct {
 		cfg        prepConfig
 		wantHashed bool
+		// wantUpperBound is set when counts from several partitions are added up.
+		wantUpperBound bool
 		// startMs is the window's start, 0 by default.
 		startMs int64
-		// shardSizeSinceMs is since when the ingesters have seen the
-		// tenant's shard size unchanged, beforeActive by default.
-		shardSizeSinceMs *int64
-		// ingestersIgnoreShardSizeCheck makes the ingesters answer like ones
-		// too old to check the shard size themselves.
-		ingestersIgnoreShardSizeCheck bool
 	}{
 		"classic replication, three zones": {
 			cfg:        prepConfig{numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}},
@@ -87,45 +82,12 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 			startMs:    withinGracePeriod,
 			wantHashed: true,
 		},
-		// Three series don't fill four partitions, and an ingester that
-		// holds nothing answers without a shard size, as one with no TSDB
-		// for the tenant does: it can't count a series twice.
+		// The partitions add up, and a change of the shard size inside the
+		// window would not show, so the sum is flagged as an upper value.
 		"ingest storage, several partitions active since before the window": {
-			cfg:     prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
-			startMs: sinceActive,
-		},
-		"ingest storage, several partitions active since before the window, shard size changed inside it": {
-			cfg:              prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
-			startMs:          sinceActive,
-			shardSizeSinceMs: &sinceActive,
-			wantHashed:       true,
-		},
-		"ingest storage, several partitions active since before the window, shard size not known": {
-			cfg:              prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
-			startMs:          sinceActive,
-			shardSizeSinceMs: new(int64),
-			wantHashed:       true,
-		},
-		// The distributor checks the shard size itself as well, for
-		// ingesters that don't know the request field and so never refuse.
-		"ingest storage, several partitions active since before the window, ingesters that leave the shard size check to the distributor": {
-			cfg:                           prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
-			startMs:                       sinceActive,
-			ingestersIgnoreShardSizeCheck: true,
-		},
-		"ingest storage, several partitions active since before the window, shard size changed inside it, ingesters that leave the check to the distributor": {
-			cfg:                           prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
-			startMs:                       sinceActive,
-			shardSizeSinceMs:              &sinceActive,
-			ingestersIgnoreShardSizeCheck: true,
-			wantHashed:                    true,
-		},
-		"ingest storage, several partitions active since before the window, shard size not known, ingesters that leave the check to the distributor": {
-			cfg:                           prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
-			startMs:                       sinceActive,
-			shardSizeSinceMs:              new(int64),
-			ingestersIgnoreShardSizeCheck: true,
-			wantHashed:                    true,
+			cfg:            prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
+			startMs:        sinceActive,
+			wantUpperBound: true,
 		},
 		// A partition INACTIVE since 50 minutes ago is still read, and even
 		// over a window it stopped changing before, its series may also be
@@ -136,8 +98,9 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 			wantHashed: true,
 		},
 		"ingest storage, several partitions that stopped changing before the window, all ACTIVE": {
-			cfg:     prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
-			startMs: recentStart,
+			cfg:            prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
+			startMs:        recentStart,
+			wantUpperBound: true,
 		},
 		"ingest storage, several partitions, written to fewer partitions than read": {
 			cfg:        prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: writeShardSmaller},
@@ -158,14 +121,7 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimize), func(t *testing.T) {
 					cfg := tc.cfg
 					cfg.configure = func(config *Config) { config.MinimizeIngesterRequests = minimize }
-					ds, ingesters, _, _ := prepare(t, cfg)
-					for _, ing := range ingesters {
-						ing.seriesCountsShardSizeUnchangedSinceMs = beforeActive
-						if tc.shardSizeSinceMs != nil {
-							ing.seriesCountsShardSizeUnchangedSinceMs = *tc.shardSizeSinceMs
-						}
-						ing.seriesCountsIgnoreShardSizeCheck = tc.ingestersIgnoreShardSizeCheck
-					}
+					ds, _, _, _ := prepare(t, cfg)
 					ctx := user.InjectOrgID(context.Background(), "series-counts")
 					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 					for _, lbls := range fixtures {
@@ -178,13 +134,11 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 					res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: start, EndMs: end})
 					require.NoError(t, err)
 					assert.Equal(t, tc.wantHashed, res.Hashed)
+					assert.Equal(t, tc.wantUpperBound, res.UpperBound)
 					assert.Equal(t, map[string]int64{"test_1": 2, "test_2": 1}, combineSeriesCounts(res))
-					// A switch to hashes is counted once, by what showed the counts don't add up.
-					wantSwitches := map[string]float64{"replication_sets": 0, "shard_size_changed": 0}
-					switch {
-					case tc.wantHashed && tc.shardSizeSinceMs != nil:
-						wantSwitches["shard_size_changed"] = 1
-					case tc.wantHashed:
+					// A switch to hashes is counted once.
+					wantSwitches := map[string]float64{"replication_sets": 0}
+					if tc.wantHashed {
 						wantSwitches["replication_sets"] = 1
 					}
 					for reason, want := range wantSwitches {
@@ -290,138 +244,6 @@ func TestDistributor_SeriesCounts_GivesBackTheAnswersItDrops(t *testing.T) {
 		assert.Zero(t, held(tracker))
 	})
 
-	t.Run("the first round, when the shard size changed", func(t *testing.T) {
-		sinceActive := time.Now().Add(-time.Hour).UnixMilli()
-		ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()})
-		ctx := user.InjectOrgID(context.Background(), "series-counts")
-		ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
-		// Every ingester counts in the first round and leaves the shard size check to the distributor.
-		series := map[uint32]*mimirpb.PreallocTimeseries{1: {TimeSeries: &mimirpb.TimeSeries{Labels: labelAdapters(model.MetricNameLabel, "test_1")}}}
-		for _, ing := range ingesters {
-			ing.Lock()
-			ing.timeseries = maps.Clone(series)
-			ing.seriesCountsShardSizeUnchangedSinceMs = sinceActive
-			ing.seriesCountsIgnoreShardSizeCheck = true
-			ing.Unlock()
-		}
-
-		tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-		res, err := ds[0].SeriesCounts(limiter.AddMemoryTrackerToContext(ctx, tracker), nil, &client.SeriesCountsRequest{StartMs: sinceActive, EndMs: sinceActive + 200000})
-		require.NoError(t, err)
-		require.True(t, res.Hashed, "asked again for hashes")
-		require.Len(t, res.Responses, 4)
-		assert.Equal(t, seriesCountsAnswerBytes(res.Responses), held(tracker), "the first round's answers are given back")
-		assert.Greater(t, tracker.PeakEstimatedMemoryConsumptionBytes(), uint64(0))
-		res.Release()
-		assert.Zero(t, held(tracker))
-	})
-}
-
-// The second round of requests, sent for hashes when the ingesters' answers show the shard size
-// changed, gets what the first round left of max_index_bytes: what the answers report as read.
-func TestDistributor_SeriesCounts_ShardSizeRetryKeepsWithinMaxIndexBytes(t *testing.T) {
-	const maxIndexBytes = 8000
-	sinceActive := time.Now().Add(-time.Hour).UnixMilli()
-
-	for name, tc := range map[string]struct {
-		// walkFirst is how many ingesters walk in the first round, by leaving the shard size check to the distributor.
-		walkFirst int
-		// indexBytes is what each ingester that walks reports as read.
-		indexBytes  int64
-		wantRefused bool
-		// wantAgain is each ingester's max_index_bytes in the second round.
-		wantAgain int64
-	}{
-		"every ingester saw the change before walking":             {walkFirst: 0, indexBytes: 500, wantAgain: maxIndexBytes / 4},
-		"one ingester walked in the first round":                   {walkFirst: 1, indexBytes: 500, wantAgain: (maxIndexBytes - 500) / 4},
-		"every ingester walked a part of its share":                {walkFirst: 4, indexBytes: 500, wantAgain: (maxIndexBytes - 4*500) / 4},
-		"every ingester walked its whole share in the first round": {walkFirst: 4, indexBytes: maxIndexBytes / 4, wantRefused: true},
-	} {
-		t.Run(name, func(t *testing.T) {
-			ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()})
-			ctx := user.InjectOrgID(context.Background(), "series-counts")
-			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
-			// Every ingester holds a series, so each checks the shard size.
-			series := map[uint32]*mimirpb.PreallocTimeseries{1: {TimeSeries: &mimirpb.TimeSeries{Labels: labelAdapters(model.MetricNameLabel, "test_1")}}}
-			for n, ing := range ingesters {
-				ing.Lock()
-				ing.timeseries = maps.Clone(series)
-				ing.Unlock()
-				ing.seriesCountsShardSizeUnchangedSinceMs = sinceActive
-				ing.seriesCountsIgnoreShardSizeCheck = n < tc.walkFirst
-				ing.seriesCountsIndexBytes = tc.indexBytes
-			}
-
-			_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: sinceActive, EndMs: sinceActive + 200000, MaxIndexBytes: maxIndexBytes})
-			if tc.wantRefused {
-				require.Error(t, err)
-				assert.Equal(t, cardinality.LimitMaxIndexBytes, cardinality.RefusedBy(err))
-			} else {
-				require.NoError(t, err)
-			}
-
-			var again int64
-			for _, ing := range ingesters {
-				ing.Lock()
-				for _, call := range ing.calls["SeriesCounts"] {
-					if req := call[1].(*client.SeriesCountsRequest); req.Hashes {
-						again++
-						assert.Equal(t, tc.wantAgain, req.MaxIndexBytes)
-					}
-				}
-				ing.Unlock()
-			}
-			if tc.wantRefused {
-				assert.Zero(t, again)
-			} else {
-				assert.Equal(t, int64(4), again)
-				assert.LessOrEqual(t, int64(tc.walkFirst)*tc.indexBytes+again*tc.wantAgain, int64(maxIndexBytes), "the walks of both rounds together")
-			}
-		})
-	}
-
-	// An ingester that fails does not say what it read, so it is charged its whole share.
-	t.Run("a failed call is charged its whole share", func(t *testing.T) {
-		ds, ingesters, _, _ := prepare(t, prepConfig{
-			numIngesters: 4, happyIngesters: 4, numDistributors: 1,
-			ingestStorageEnabled: true, ingestStoragePartitions: 2, ingesterZones: []string{"zone-a", "zone-b"}, limits: prepareDefaultLimits(),
-		})
-		ctx := user.InjectOrgID(context.Background(), "series-counts")
-		ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
-		series := map[uint32]*mimirpb.PreallocTimeseries{1: {TimeSeries: &mimirpb.TimeSeries{Labels: labelAdapters(model.MetricNameLabel, "test_1")}}}
-		// Zone-a fails. Zone-b answers once both of zone-a's ingesters were called, so both failures are charged.
-		var failing sync.WaitGroup
-		for _, ing := range ingesters {
-			ing.Lock()
-			ing.timeseries = maps.Clone(series)
-			ing.seriesCountsShardSizeUnchangedSinceMs = sinceActive
-			ing.seriesCountsIgnoreShardSizeCheck = true
-			ing.seriesCountsIndexBytes = 500
-			if ing.zone == "zone-a" {
-				failing.Add(1)
-				ing.seriesCountsErr = status.Error(codes.Unavailable, "connection refused")
-				ing.seriesCountsOnCall = sync.OnceFunc(failing.Done)
-			} else {
-				ing.seriesCountsOnCall = failing.Wait
-			}
-			ing.Unlock()
-		}
-
-		_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartMs: sinceActive, EndMs: sinceActive + 200000, MaxIndexBytes: maxIndexBytes})
-		require.NoError(t, err)
-		again := 0
-		for _, ing := range ingesters {
-			ing.Lock()
-			for _, call := range ing.calls["SeriesCounts"] {
-				if req := call[1].(*client.SeriesCountsRequest); req.Hashes {
-					again++
-					assert.Equal(t, int64(maxIndexBytes-2*500-2*maxIndexBytes/4)/4, req.MaxIndexBytes, "two answers of 500 bytes and two failed calls of a share each")
-				}
-			}
-			ing.Unlock()
-		}
-		assert.Positive(t, again)
-	})
 }
 
 // A series can be in more than one replication set, or on more than one
@@ -506,7 +328,6 @@ func TestDistributor_SeriesCounts_IngestStorageTwoZonesBothOwnersHealthy(t *test
 		labelAdapters(model.MetricNameLabel, "test_1", "status", "500"),
 		labelAdapters(model.MetricNameLabel, "test_2"),
 	}
-	beforeActive := time.Now().Add(-3 * time.Hour).UnixMilli()
 	sinceActive := time.Now().Add(-time.Hour).UnixMilli()
 	for name, tc := range map[string]struct {
 		numIngesters int
@@ -528,7 +349,6 @@ func TestDistributor_SeriesCounts_IngestStorageTwoZonesBothOwnersHealthy(t *test
 					require.Len(t, ingesters, tc.numIngesters)
 					owners := map[int32][]*mockIngester{}
 					for _, ing := range ingesters {
-						ing.seriesCountsShardSizeUnchangedSinceMs = beforeActive
 						owners[ing.partitionID()] = append(owners[ing.partitionID()], ing)
 					}
 					require.Len(t, owners, tc.numIngesters/2)

@@ -30,12 +30,17 @@ import (
 )
 
 // SeriesCountsResult is what the ingesters answered to a SeriesCounts request.
-// When Hashed is false, adding up the responses' counts gives each series once;
-// when true, the responses carry hashes and must be unioned.
+// When Hashed is false, adding up the responses' counts gives each series once,
+// apart from what UpperBound says; when true, the responses carry hashes and
+// must be unioned.
 type SeriesCountsResult struct {
 	Responses []*ingester_client.SeriesCountsResponse
 	// Hashed is set when the responses carry hashes, asked for or because counts can't be added up.
 	Hashed bool
+	// UpperBound is set when counts from more than one partition are added up. A change of the
+	// tenant's shard size inside the window can put a series in two partitions, which the ring
+	// does not show, so the sum may count it twice.
+	UpperBound bool
 	// release gives back what the answers are charged to the context's memory tracker.
 	release func()
 }
@@ -71,15 +76,13 @@ func logSeriesCountsFailure(ctx context.Context, logger log.Logger, addr string,
 // SeriesCounts asks the ingesters to count series per value of one label over
 // a window, from their heads' chunk metas, using a query's replication sets.
 // Counts are kept only when each set has a single ingester or, under ingest
-// storage, one ingester per zone, the partitions have been stable since before
-// the window and no ingester saw the tenant's shard size change. Otherwise it asks
-// for hashes, which the caller unions, with a second request when only the
-// answers show the shard size change.
+// storage, one ingester per zone and the partitions have been stable since
+// before the window. Otherwise it asks for hashes, which the caller unions.
 //
 // The answers held are charged to the context's memory consumption tracker, if any, as they
 // arrive. The caller gives the charge back with the result's Release.
 func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Matcher, req *ingester_client.SeriesCountsRequest) (_ SeriesCountsResult, returnErr error) {
-	replicationSets, partitionsStable, changedBefore, err := d.seriesCountsReplicationSets(ctx, matchers, req.StartMs)
+	replicationSets, partitionsStable, err := d.seriesCountsReplicationSets(ctx, matchers, req.StartMs)
 	if err != nil {
 		return SeriesCountsResult{}, err
 	}
@@ -95,15 +98,9 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 		hashed = true
 		d.seriesCountsSwitchedToHashes.WithLabelValues("replication_sets").Inc()
 	}
-	// Only the ingesters know whether the shard size changed over the window.
-	checkShardSize := !hashed && d.cfg.IngestStorageConfig.Enabled && len(replicationSets) > 1
-
 	// Split max_index_bytes and max_hashes across the ingesters that will be asked.
 	shared := *req
 	shared.Hashes = hashed
-	if checkShardSize {
-		shared.ShardSizeUnchangedBeforeMs = changedBefore
-	}
 	calls := d.seriesCountsCalls(replicationSets)
 	if calls > 1 {
 		if req.MaxIndexBytes > 0 {
@@ -114,35 +111,12 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 		}
 	}
 
-	perSet, spent, err := d.seriesCountsFanOut(ctx, replicationSets, &shared, charge)
+	perSet, _, err := d.seriesCountsFanOut(ctx, replicationSets, &shared, charge)
 	if err != nil {
 		return SeriesCountsResult{}, err
 	}
-	if checkShardSize && !shardSizeUnchanged(perSet, changedBefore) {
-		// The answers of the first round are dropped.
-		for _, answers := range perSet {
-			for _, a := range answers {
-				charge.sub(a.charged)
-			}
-		}
-		hashed = true
-		d.seriesCountsSwitchedToHashes.WithLabelValues("shard_size_changed").Inc()
-		// A copy: a call of the first round cancelled at quorum may still hold shared.
-		again := shared
-		again.Hashes = true
-		again.ShardSizeUnchangedBeforeMs = 0
-		if req.MaxIndexBytes > 0 {
-			// The second round gets what the first left of max_index_bytes.
-			if again.MaxIndexBytes = (req.MaxIndexBytes - spent) / int64(max(1, calls)); again.MaxIndexBytes < 1 {
-				return SeriesCountsResult{}, cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the tenant's shard size changed, so the ingesters are asked again for hashes, and the first round used %d of max_index_bytes %d", spent, req.MaxIndexBytes)
-			}
-		}
-		if perSet, _, err = d.seriesCountsFanOut(ctx, replicationSets, &again, charge); err != nil {
-			return SeriesCountsResult{}, err
-		}
-	}
 
-	out := SeriesCountsResult{Hashed: hashed, release: charge.close}
+	out := SeriesCountsResult{Hashed: hashed, UpperBound: !hashed && len(replicationSets) > 1, release: charge.close}
 	for i, answers := range perSet {
 		if out.Hashed || !zoneAware(replicationSets[i]) {
 			// Hashes union to the same count however many replicas sent them.
@@ -329,22 +303,6 @@ func isSeriesCountsRefusal(err error) bool {
 	return false
 }
 
-// shardSizeUnchanged reports whether every ingester that counted something has
-// seen the tenant's shard size unchanged since before changedBefore.
-func shardSizeUnchanged(perSet [][]seriesCountsAnswer, changedBefore int64) bool {
-	for _, answers := range perSet {
-		for _, a := range answers {
-			if a.resp.ShardSizeChanged {
-				return false
-			}
-			if since := a.resp.ShardSizeUnchangedSinceMs; len(a.resp.Groups) > 0 && (since == 0 || since >= changedBefore) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
 // seriesCountsAddUp reports whether the counts of the ingesters in sets give
 // each series once: every set has a single instance or, under ingest storage,
 // one instance per zone, each a full copy of its partition, with the partitions
@@ -375,16 +333,15 @@ const partitionChangeSettleTime = time.Minute
 // under ingest storage whether the partitions' counts add up over a window
 // starting at startMs: every partition asked has been ACTIVE since before the
 // window (allowing for the creation grace period and ring propagation) and the
-// tenant writes to the partitions it is read from. The returned time is what
-// the partitions' state timestamps were checked against, for the shard size check.
-func (d *Distributor) seriesCountsReplicationSets(ctx context.Context, matchers []*labels.Matcher, startMs int64) ([]ring.ReplicationSet, bool, int64, error) {
+// tenant writes to the partitions it is read from.
+func (d *Distributor) seriesCountsReplicationSets(ctx context.Context, matchers []*labels.Matcher, startMs int64) ([]ring.ReplicationSet, bool, error) {
 	if !d.cfg.IngestStorageConfig.Enabled {
 		sets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
-		return sets, false, 0, err
+		return sets, false, err
 	}
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, false, 0, err
+		return nil, false, err
 	}
 	shardSize, lookbackPeriod := d.partitionShardForQuery(userID)
 	now := time.Now()
@@ -414,12 +371,12 @@ func (d *Distributor) seriesCountsReplicationSets(ctx context.Context, matchers 
 		}
 		if err != nil {
 			if d.cfg.Compartments.Enabled {
-				return nil, false, 0, fmt.Errorf("read compartment %d: %w", c, err)
+				return nil, false, fmt.Errorf("read compartment %d: %w", c, err)
 			}
-			return nil, false, 0, err
+			return nil, false, err
 		}
 	}
-	return sets, stable, changedBefore, nil
+	return sets, stable, nil
 }
 
 type seriesCountsAnswer struct {

@@ -7117,14 +7117,6 @@ type mockIngester struct {
 	// calls is a map from a methodName to list the method's invocations; each invocation is a list of the call's arguments.
 	calls map[string][][]any
 	zone  string
-	// seriesCountsShardSizeUnchangedSinceMs is what SeriesCounts answers as
-	// shard_size_unchanged_since_ms, and checks a request's
-	// shard_size_unchanged_before_ms against, as the ingester does.
-	seriesCountsShardSizeUnchangedSinceMs int64
-	// seriesCountsIgnoreShardSizeCheck answers like an ingester too old to
-	// know shard_size_unchanged_before_ms: it reports its time and never
-	// refuses, leaving the check to the distributor.
-	seriesCountsIgnoreShardSizeCheck bool
 	// seriesCountsTwoCounts has SeriesCounts answer each group of counts with two.
 	seriesCountsTwoCounts bool
 	// seriesCountsNoCounts has SeriesCounts answer each group with no
@@ -7888,11 +7880,7 @@ func (i *mockIngester) seriesCounts(ctx context.Context, req *client.SeriesCount
 		// Like an ingester with no TSDB for the tenant.
 		return &client.SeriesCountsResponse{}, nil
 	}
-	resp := &client.SeriesCountsResponse{ShardSizeUnchangedSinceMs: i.seriesCountsShardSizeUnchangedSinceMs}
-	if before := req.ShardSizeUnchangedBeforeMs; !i.seriesCountsIgnoreShardSizeCheck && before > 0 && (resp.ShardSizeUnchangedSinceMs == 0 || resp.ShardSizeUnchangedSinceMs >= before) {
-		resp.ShardSizeChanged = true
-		return resp, nil
-	}
+	resp := &client.SeriesCountsResponse{}
 	resp.IndexBytes = i.seriesCountsIndexBytes
 	for _, ts := range i.timeseries {
 		if !match(ts.Labels, matchers) {

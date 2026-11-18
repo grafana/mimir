@@ -297,7 +297,7 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 
 	// The answers are charged to the memory tracker until merged.
 	defer sr.Release()
-	res := CardinalityEstimateResult{Source: SourceHead, Read: ReadHeadChunkMetas, Counts: map[string][]int64{}, Dedup: sr.Hashed}
+	res := CardinalityEstimateResult{Source: SourceHead, Read: ReadHeadChunkMetas, Counts: map[string][]int64{}, Dedup: sr.Hashed, UpperBound: sr.UpperBound}
 	m := newEstimateMerger(ctx, sr.Hashed)
 	var headMinT int64
 	for _, resp := range sr.Responses {

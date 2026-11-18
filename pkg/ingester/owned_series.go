@@ -60,10 +60,8 @@ type ownedSeriesService struct {
 	ringStrategy ownedSeriesRingStrategy
 
 	getLocalSeriesLimit func(user string, minLocalLimit int) int
-	// estimateEnabled reports whether the tenant's shard size record is kept. Nil keeps none.
-	estimateEnabled func(user string) bool
-	getTSDBUsers    func() []string
-	getTSDB         func(user string) *userTSDB
+	getTSDBUsers        func() []string
+	getTSDB             func(user string) *userTSDB
 
 	ownedSeriesCheckDuration prometheus.Histogram
 
@@ -77,7 +75,6 @@ func newOwnedSeriesService(
 	logger log.Logger,
 	reg prometheus.Registerer,
 	getLocalSeriesLimit func(user string, minLocalLimit int) int,
-	estimateEnabled func(user string) bool,
 	getTSDBUsers func() []string,
 	getTSDB func(user string) *userTSDB,
 ) *ownedSeriesService {
@@ -85,7 +82,6 @@ func newOwnedSeriesService(
 		logger:              logger,
 		ringStrategy:        ringStrategy,
 		getLocalSeriesLimit: getLocalSeriesLimit,
-		estimateEnabled:     estimateEnabled,
 		getTSDBUsers:        getTSDBUsers,
 		getTSDB:             getTSDB,
 		interval:            interval,
@@ -203,7 +199,6 @@ func (oss *ownedSeriesService) updateAllTenants(ctx context.Context, ringChanged
 func (oss *ownedSeriesService) updateTenant(userID string, db *userTSDB, ringChanged bool) bool {
 	shardSize := oss.ringStrategy.shardSizeForUser(userID)
 	localLimit := oss.getLocalSeriesLimit(userID, 0)
-	db.trackShardSize(oss.estimateEnabled != nil && oss.estimateEnabled(userID), shardSize, time.Now(), oss.logger)
 
 	reason := db.getAndClearReasonForRecomputeOwnedSeries() // Clear reason, so that other reasons can be set while we run update here.
 

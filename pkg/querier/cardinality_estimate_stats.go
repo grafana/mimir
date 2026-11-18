@@ -49,6 +49,7 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 				"coverage_gap":   res.CoverageGap,
 				"missing_blocks": len(res.MissingBlocks) > 0,
 				"missing_shards": len(res.MissingShards) > 0,
+				"upper_bound":    res.UpperBound,
 			} {
 				if set {
 					q.metrics.estimateFlagged.WithLabelValues(path, flag).Inc()
@@ -111,6 +112,7 @@ func estimateResultAttributes(res CardinalityEstimateResult) []attribute.KeyValu
 		attribute.String("read", res.Read),
 		attribute.String("source", res.Source),
 		attribute.Bool("lower_bound", res.LowerBound),
+		attribute.Bool("upper_bound", res.UpperBound),
 		attribute.Bool("coverage_gap", res.CoverageGap),
 		attribute.Bool("dedup", res.Dedup),
 		attribute.Int("blocks", len(res.Blocks)),

@@ -54,6 +54,9 @@ type estimateResponse struct {
 	LowerBound    bool           `json:"lower_bound"`
 	MissingBlocks []string       `json:"missing_blocks,omitempty"`
 	MissingShards []missingShard `json:"missing_shards,omitempty"`
+	// UpperBound is set when head counts from several partitions were added up: a series written to
+	// two partitions after a change of the tenant's shard size counts twice.
+	UpperBound bool `json:"upper_bound,omitempty"`
 	// HasMore is set when limit cut the table. Groups dropped by min_count don't set it.
 	HasMore bool `json:"has_more"`
 	Dedup   bool `json:"dedup"`
@@ -144,7 +147,7 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 		}
 		out := estimateResponse{
 			Window: estimateWindow{Start: req.MinT, End: req.MaxT}, GroupBy: req.GroupBy, Read: res.Read,
-			Source: res.Source, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), MissingShards: res.MissingShards,
+			Source: res.Source, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, UpperBound: res.UpperBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), MissingShards: res.MissingShards,
 			Dedup: res.Dedup, GroupCount: len(res.Counts),
 			Groups: make([]estimateGroup, 0, len(res.Counts)),
 		}
@@ -179,7 +182,7 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 
 // setEstimateCacheControl marks an answer that is incomplete, so the query-frontend's cache doesn't keep it.
 func setEstimateCacheControl(w http.ResponseWriter, out *estimateResponse) {
-	if out.LowerBound || out.CoverageGap {
+	if out.LowerBound || out.UpperBound || out.CoverageGap {
 		w.Header().Set("Cache-Control", "no-store")
 	}
 }

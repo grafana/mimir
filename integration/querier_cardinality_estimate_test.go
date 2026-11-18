@@ -41,6 +41,7 @@ type cardinalityEstimate struct {
 	Dedup       bool   `json:"dedup"`
 	LowerBound  bool   `json:"lower_bound"`
 	CoverageGap bool   `json:"coverage_gap"`
+	UpperBound  bool   `json:"upper_bound"`
 	Total       int64  `json:"total"`
 	Counts      []struct {
 		Value string `json:"value"`
@@ -52,18 +53,13 @@ type cardinalityEstimate struct {
 // group deduplicated by hash with every one of its hashes.
 const largeGroupSeries = 12_000
 
-// ownedSeriesUpdateInterval is how often the ingesters' owned-series
-// service runs in the test. It records the tenant's shard size, which the
-// head-only counts need to have been unchanged since before the window.
-const ownedSeriesUpdateInterval = time.Second
-
 // TestCardinalityEstimate checks the cardinality estimate route against a
 // PromQL count over the same window, on an ingest storage cluster with two
 // partitions and a query-frontend with a results cache in front of the
 // querier: from blocks only (the name table from the index-headers, and a
-// breakdown by another label with per-bucket counts) on both index-header
-// versions, from the ingesters' heads only, and from both across the
-// store-gateways/ingesters cut.
+// breakdown by another label) on both index-header versions, from the
+// ingesters' heads only, and from both across the store-gateways/ingesters
+// cut.
 func TestCardinalityEstimate(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
@@ -94,11 +90,6 @@ func TestCardinalityEstimate(t *testing.T) {
 			"-compactor.cleanup-interval":                       "1s",
 			// Partitions count as stable a minute after they turn ACTIVE.
 			"-validation.create-grace-period": "1s",
-			// Counts are added up across partitions only when the
-			// ingesters have seen the tenant's shard size unchanged since
-			// before the window, which the owned-series service tracks.
-			"-ingester.track-ingester-owned-series":  "true",
-			"-ingester.owned-series-update-interval": ownedSeriesUpdateInterval.String(),
 			// The query-frontend keeps the estimates in a results cache.
 			"-query-frontend.cache-results":                     "true",
 			"-query-frontend.results-cache.backend":             "memcached",
@@ -363,9 +354,6 @@ func TestCardinalityEstimate(t *testing.T) {
 	for _, ing := range []*e2emimir.MimirService{ingester0, ingester1} {
 		require.NoError(t, ing.WaitSumMetrics(e2e.Greater(0), "cortex_ingester_memory_series"), ing.Name())
 	}
-	// Both ingesters hold the tenant's series now, so their owned-series
-	// service records the tenant's shard size on its next run.
-	shardSizeRecorded := time.Now().Add(ownedSeriesUpdateInterval)
 
 	t.Run("head only, partitions changed inside the window: by hash", func(t *testing.T) {
 		start, end := partitionsActive.Add(-time.Minute), time.Now().Add(time.Second)
@@ -417,14 +405,9 @@ func TestCardinalityEstimate(t *testing.T) {
 	// Last, so the cases above run while the partitions become stable.
 	t.Run("head only, partitions stable since before the window: counts added up", func(t *testing.T) {
 		// Stable once the creation grace period and the minute for the
-		// change to reach every distributor have passed, since both the
-		// partitions turned ACTIVE and the ingesters recorded the tenant's
-		// shard size.
-		start := partitionsActive
-		if shardSizeRecorded.After(start) {
-			start = shardSizeRecorded
-		}
-		start = start.Add(65 * time.Second).Truncate(time.Second).Add(time.Second)
+		// change to reach every distributor have passed since the
+		// partitions turned ACTIVE.
+		start := partitionsActive.Add(65 * time.Second).Truncate(time.Second).Add(time.Second)
 		// The pushed samples are before start; push again inside the window.
 		// Half a second in, not at start: a sample stamped with the clock
 		// as the sleep ends can read a millisecond before start, outside
@@ -444,6 +427,7 @@ func TestCardinalityEstimate(t *testing.T) {
 		got := estimate(t, start, end, url.Values{"match[]": {`{__name__="d_total"}`}})
 		assert.Equal(t, "head", got.Source)
 		assert.False(t, got.Dedup, "the partitions' counts add up")
+		assert.True(t, got.UpperBound, "two partitions' counts added up are an upper value")
 		assert.Equal(t, map[string]int64{"d_total": 20}, countsOf(got))
 		assert.Equal(t, promqlCount(t, `{__name__="d_total"}`, "__name__", start, end), countsOf(got))
 	})
