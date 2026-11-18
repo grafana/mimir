@@ -11,13 +11,15 @@ import (
 )
 
 type metrics struct {
-	pairs     *prometheus.CounterVec
-	flags     *prometheus.CounterVec
-	groups    *prometheus.CounterVec
-	refusals  *prometheus.CounterVec
-	duration  *prometheus.HistogramVec
-	rounds    *prometheus.CounterVec
-	lastRound prometheus.Gauge
+	pairs    *prometheus.CounterVec
+	flags    *prometheus.CounterVec
+	groups   *prometheus.CounterVec
+	refusals *prometheus.CounterVec
+	duration *prometheus.HistogramVec
+	// boundsWidth is the relative width of each group of a bounds check.
+	boundsWidth prometheus.Histogram
+	rounds      *prometheus.CounterVec
+	lastRound   prometheus.Gauge
 
 	bursts        prometheus.Counter
 	burstRequests *prometheus.CounterVec
@@ -47,7 +49,7 @@ func newMetrics(reg prometheus.Registerer, timeout time.Duration) *metrics {
 		}, []string{"query", "flag"}),
 		groups: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "cardinality_estimate_compare_groups_total",
-			Help: "Groups whose estimate differs from the truth, by query, outcome and class.",
+			Help: "Groups whose estimate differs from the truth, by query, outcome and class. A bounds check also counts its groups within their bounds, as pass within_bounds.",
 		}, []string{"query", "outcome", "class"}),
 		refusals: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "cardinality_estimate_compare_refusals_total",
@@ -58,6 +60,11 @@ func newMetrics(reg prometheus.Registerer, timeout time.Duration) *metrics {
 			Help:    "Client-side latency of each side of a pair that answered, once per pair, summed over the side's queries, by query, window kind and length, side, position (first, second, or alone with -estimate-only), reference (grouped, per_value, or none with -estimate-only), and the estimate's read and source.",
 			Buckets: latencyBuckets,
 		}, []string{"query", "window", "length", "side", "position", "reference", "read", "source"}),
+		boundsWidth: f.NewHistogram(prometheus.HistogramOpts{
+			Name:    "cardinality_estimate_compare_bounds_relative_width",
+			Help:    "Relative width (upper - lower) / lower of each group of a bounds check with a lower value above 0, in the groups of every block range checked.",
+			Buckets: []float64{0, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 50},
+		}),
 		rounds: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "cardinality_estimate_compare_rounds_total",
 			Help: "Rounds run, by result: ok, or failed when the targets could not be picked.",

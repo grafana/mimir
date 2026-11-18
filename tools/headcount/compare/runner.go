@@ -71,6 +71,9 @@ type pairResult struct {
 	// refused holds the side and class of each refusal the refusals counter counts.
 	refused   [][2]string
 	reference string
+	// passed counts the groups of a bounds check within their bounds, which Diffs leaves out, and widths holds their relative widths.
+	passed int
+	widths []float64
 }
 
 // latencies are the end-to-end latencies of a pair's two sides, each summed over its queries. A side that failed has none.
@@ -451,6 +454,12 @@ func (r *runner) record(p pair, res *pairResult) {
 	}
 	for _, d := range res.Diffs {
 		r.m.groups.WithLabelValues(p.query, d.Outcome, d.Class).Inc()
+	}
+	if res.passed > 0 {
+		r.m.groups.WithLabelValues(p.query, outcomePass, classWithinBounds).Add(float64(res.passed))
+	}
+	for _, w := range res.widths {
+		r.m.boundsWidth.Observe(w)
 	}
 	const maxLogged = 20
 	logger := log.With(r.logger, "pair", res.Pair, "order", res.Order, "outcome", res.Outcome, "class", res.Class, "read", res.Read, "source", res.Source, "flags", strings.Join(res.Flags, ","))

@@ -54,8 +54,12 @@ type groupDiff struct {
 	Value    string `json:"value"`
 	Estimate int64  `json:"estimate"`
 	Truth    int64  `json:"truth"`
-	Outcome  string `json:"outcome"`
-	Class    string `json:"class"`
+	// Lower, Upper and Range are the bounds of a bounds check's group and the block range they are of.
+	Lower   int64  `json:"lower,omitempty"`
+	Upper   int64  `json:"upper,omitempty"`
+	Range   string `json:"range,omitempty"`
+	Outcome string `json:"outcome"`
+	Class   string `json:"class"`
 }
 
 // answer is one side's counts per group.

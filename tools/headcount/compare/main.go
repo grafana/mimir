@@ -39,6 +39,8 @@ type config struct {
 	windowLengths           flagext.StringSliceCSV
 	nameRanks               flagext.StringSliceCSV
 	targetWindow            time.Duration
+	boundsChecks            int
+	boundsMaxRanges         int
 	windows                 windowConfig
 	targets                 targetConfig
 	pairs                   pairConfig
@@ -80,6 +82,8 @@ func (c *config) register(f *flag.FlagSet) {
 	f.DurationVar(&c.edgeSlack, "edge-slack", 5*time.Minute, "how far before the window the edge probe looks for series counted without a sample in it; set it to the tenant's largest scrape interval. 0 disables the probe")
 	f.IntVar(&c.fallbackNames, "fallback-names", 5, "when PromQL refuses a table on a per-query limit, how many of its largest groups to count one at a time instead")
 	f.Uint64Var(&c.seed, "seed", 0, "seed for drawing targets and pairs; 0 uses the time")
+	f.IntVar(&c.boundsChecks, "bounds-checks", 1, "bounds checks each round, each on a block or boundary window: a bounds request, with PromQL checked on the window of each range it answers, and the names at -name-ranks checked against the exact route; 0 sends none")
+	f.IntVar(&c.boundsMaxRanges, "bounds-max-ranges", 4, "most block ranges of a bounds answer checked, the newest ones")
 	f.IntVar(&c.burst, "burst", 0, "estimates sent at once, without their truth, to fill the count limits of the store-gateways and ingesters; 0 sends no burst")
 	f.DurationVar(&c.burstInterval, "burst-interval", time.Hour, "time between bursts; the first round sends one")
 	f.BoolVar(&c.estimateOnly, "estimate-only", false, "send only the estimate of each pair, without its PromQL truth, to measure the estimate's latency and cost apart from PromQL's, sent without X-Read-Consistency: strong as a dashboard sends them; nothing is compared")
@@ -141,6 +145,9 @@ func (c *config) validate() error {
 	}
 	if c.pairs.tableLimit < 0 || c.pairs.maxReferenceSeries < 0 {
 		return errors.New("-table-limit and -max-reference-series must not be negative")
+	}
+	if c.boundsChecks < 0 || (c.boundsChecks > 0 && c.boundsMaxRanges <= 0) {
+		return errors.New("-bounds-checks must not be negative, and -bounds-max-ranges must be positive")
 	}
 	if c.burst < 0 || c.burst > maxBurst {
 		return fmt.Errorf("-burst must be between 0 and %d", maxBurst)
@@ -279,6 +286,29 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 					sum.mismatched = true
 				case outcomePass, outcomeTolerated, outcomeAnswered:
 					sum.compared++
+				}
+			}
+			if !cfg.estimateOnly {
+				bcfg := boundsConfig{ranks: tcfg.ranks, maxRanges: cfg.boundsMaxRanges, perValue: pcfg.maxReferenceSeries > 0 && targets.tenantSeries > pcfg.maxReferenceSeries}
+				var boundsWindows []window
+				for _, w := range cfg.windows.windows(t) {
+					if w.kind == windowBlocks || w.kind == windowBoundary {
+						boundsWindows = append(boundsWindows, w)
+					}
+				}
+				for range cfg.boundsChecks {
+					if ctx.Err() != nil || len(boundsWindows) == 0 {
+						break
+					}
+					r.sleep(ctx)
+					for _, outcome := range r.boundsCheck(ctx, boundsWindows[rng.IntN(len(boundsWindows))], bcfg) {
+						switch outcome {
+						case outcomeMismatch:
+							sum.mismatched = true
+						case outcomePass, outcomeTolerated:
+							sum.compared++
+						}
+					}
 				}
 			}
 			m.rounds.WithLabelValues("ok").Inc()
