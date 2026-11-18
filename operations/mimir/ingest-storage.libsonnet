@@ -140,10 +140,6 @@
         'ingester.ring.num-tokens': 0,
         'ingester.ring.tokens-file-path': null,
       }
-    ) + (
-      if !$._config.ingest_storage_partition_ring_create_partitions_with_derived_tokens then {} else {
-        'ingester.partition-ring.create-partitions-with-derived-tokens': true,
-      }
     )
   ),
 
@@ -179,7 +175,11 @@
 
     // Apply per-component overrides to Kafka client ID.
     'ingest-storage.kafka.client-id': $.mimirKafkaClientID($.ingest_storage_ingester_kafka_client_id_settings),
-  },
+  } + (
+    if !$._config.ingest_storage_partition_ring_create_partitions_with_derived_tokens then {} else {
+      'ingester.partition-ring.create-partitions-with-derived-tokens': true,
+    }
+  ),
 
   ingest_storage_partition_ring_client_args+:: {
     // Set no key prefix for the partition ring, like we do for all other hash rings.

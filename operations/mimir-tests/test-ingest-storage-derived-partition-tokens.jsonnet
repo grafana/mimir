@@ -40,6 +40,10 @@ local scaledObjectMaxReplicas = [env.ingest_storage_ingester_primary_zone_scalin
 assert env.validateMaxDerivedTokenPartitions('ingesters', scaledObjectMaxReplicas, 15) == null;
 assert env.validateMaxDerivedTokenPartitions('ingesters', scaledObjectMaxReplicas, 14) == 'ingesters must not have more max replicas than ingest_storage_partition_ring_max_derived_token_partitions (14)';
 
+local migrationEnv = (import 'test-ingest-storage-migration-step-3.jsonnet') + derivedTokensConfig;
+local migrationErrors = derivedTokensErrors(migrationEnv);
+assert std.length(migrationErrors) == 0 : std.join('; ', migrationErrors);
+
 {
   derivedTokensConfig:: derivedTokensConfig,
   derivedTokensErrors:: derivedTokensErrors,
