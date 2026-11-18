@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -321,7 +323,12 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 		}
 	}()
 	planSpan.SetAttributes(attribute.Int("blocks", len(blocks)))
-	if err := c.checkBeforeLoad(blocks, s.countBlockConcurrency); err != nil {
+	if req.PerBlock {
+		// It reads no postings, so nothing is checked before the index-headers load.
+		if len(c.matchers) > 0 || c.opts.Hashes {
+			return nil, status.Error(codes.InvalidArgument, "a per-block count takes no matchers and no hashes")
+		}
+	} else if err := c.checkBeforeLoad(blocks, s.countBlockConcurrency); err != nil {
 		return nil, err
 	}
 	loaded, err := s.loadCountBlocks(planCtx, c, blocks)
@@ -329,6 +336,9 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 		return nil, err
 	}
 	planSpan.SetAttributes(attribute.Int("blocks_loaded", len(loaded)))
+	if req.PerBlock {
+		return s.countPerBlock(planCtx, c, loaded)
+	}
 	if err := c.boundGroups(planCtx, loaded); err != nil {
 		return nil, err
 	}
@@ -732,19 +742,19 @@ func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, 
 // With no matchers each count is the postings list's length. A series has at most one value, so the
 // matching series in no list are those without it.
 func addBlockCountsFromPostings(ctx context.Context, b *bucketBlock, indexr *bucketIndexReader, matching []storage.SeriesRef, total int64, offsets []streamindex.PostingListOffset, all bool, c *seriesCountsState, mtx *sync.Mutex, stats *safeQueryStats) error {
-	counts := make(map[string]int64, len(offsets))
-	var inGroups int64
+	var (
+		counts   map[string]int64
+		inGroups int64
+		err      error
+	)
 	if all {
-		for _, off := range offsets {
-			size := off.Off.End - off.Off.Start - 4
-			if size < 0 || size%4 != 0 {
-				return status.Errorf(codes.Internal, "block %s: postings range for %s=%q spans %d bytes, which is not a count field plus 4-byte entries",
-					b.meta.ULID, c.opts.GroupBy, off.LabelValue, off.Off.End-off.Off.Start)
-			}
-			counts[off.LabelValue] = size / 4
-			inGroups += size / 4
+		if counts, inGroups, err = countsFromOffsets(b, c.opts.GroupBy, offsets); err != nil {
+			return err
 		}
-	} else if len(offsets) > 0 {
+	} else {
+		counts = make(map[string]int64, len(offsets))
+	}
+	if !all && len(offsets) > 0 {
 		keys := make([]labelPostingOffset, len(offsets))
 		for i, off := range offsets {
 			keys[i] = labelPostingOffset{Label: labels.Label{Name: c.opts.GroupBy, Value: off.LabelValue}, off: off.Off}
@@ -776,6 +786,84 @@ func addBlockCountsFromPostings(ctx context.Context, b *bucketBlock, indexr *buc
 	mtx.Lock()
 	defer mtx.Unlock()
 	return c.addCounts(counts, total-inGroups)
+}
+
+// countsFromOffsets returns the series of each value in a block's postings offsets table for label,
+// the length of each postings list, and their sum.
+func countsFromOffsets(b *bucketBlock, label string, offsets []streamindex.PostingListOffset) (map[string]int64, int64, error) {
+	counts := make(map[string]int64, len(offsets))
+	var sum int64
+	for _, off := range offsets {
+		size := off.Off.End - off.Off.Start - 4
+		if size < 0 || size%4 != 0 {
+			return nil, 0, status.Errorf(codes.Internal, "block %s: postings range for %s=%q spans %d bytes, which is not a count field plus 4-byte entries",
+				b.meta.ULID, label, off.LabelValue, off.Off.End-off.Off.Start)
+		}
+		counts[off.LabelValue] = size / 4
+		sum += size / 4
+	}
+	return counts, sum, nil
+}
+
+// countPerBlock answers a per_block request: every loaded block counted on its own from the group-by
+// label's postings offsets table, its groups tagged with its ID. It reads no postings and no series
+// entries, so only the groups are charged to the request's memory.
+func (s *BucketStore) countPerBlock(ctx context.Context, c *seriesCountsState, loaded []countBlock) (*storegatewaypb.SeriesCountsResponse, error) {
+	perBlock := make([][]*cardinalitypb.SeriesCountGroup, len(loaded))
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(s.countBlockConcurrency)
+	for i := range loaded {
+		o := &loaded[i]
+		g.Go(func() error {
+			labelStats, err := o.b.indexHeaderReader.LabelValuesStats(gctx, c.opts.GroupBy)
+			if err != nil {
+				return status.Errorf(codes.Internal, "block %s: %s offsets table: %v", o.b.meta.ULID, c.opts.GroupBy, err)
+			}
+			offsets, err := o.b.indexHeaderReader.LabelValuesOffsets(gctx, c.opts.GroupBy, "", nil)
+			if err != nil {
+				return status.Errorf(codes.Internal, "block %s: %s offsets: %v", o.b.meta.ULID, c.opts.GroupBy, err)
+			}
+			c.tableBytes.Add(labelStats.OffsetsTableBytes)
+			counts, inGroups, err := countsFromOffsets(o.b, c.opts.GroupBy, offsets)
+			if err != nil {
+				return err
+			}
+			if without := o.seriesCount - inGroups; without > 0 {
+				counts[""] += without
+			}
+			if n := int64(len(counts)); c.maxGroups > 0 && n > c.maxGroups {
+				return cardinality.MaxGroupsRefusal(fmt.Sprintf("block %s holds", o.b.meta.ULID), n, c.opts.GroupBy, c.maxGroups)
+			}
+			id := o.b.meta.ULID.String()
+			groups := make([]*cardinalitypb.SeriesCountGroup, 0, len(counts))
+			var held uint64
+			for v, n := range counts {
+				if n <= 0 {
+					continue
+				}
+				held += uint64(countGroupBytes + len(v) + len(id))
+				groups = append(groups, &cardinalitypb.SeriesCountGroup{Value: v, Counts: []int64{n}, BlockId: id})
+			}
+			if err := c.mem.take(held, fmt.Sprintf("the %d groups of block %s", len(groups), id)); err != nil {
+				return err
+			}
+			slices.SortFunc(groups, func(a, b *cardinalitypb.SeriesCountGroup) int { return strings.Compare(a.Value, b.Value) })
+			perBlock[i] = groups
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	resp := &storegatewaypb.SeriesCountsResponse{}
+	for i, o := range loaded {
+		resp.Groups = append(resp.Groups, perBlock[i]...)
+		resp.BlockIds = append(resp.BlockIds, o.b.meta.ULID.String())
+		resp.SeriesCounted += o.seriesCount
+	}
+	resp.BlocksFromOffsetsTable = int64(len(loaded))
+	resp.PostingsOffsetsTableBytes = c.tableBytes.Load()
+	return resp, nil
 }
 
 // countIntersectionCheckEvery is how many steps countIntersection takes between context checks.

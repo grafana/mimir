@@ -42,4 +42,6 @@ message SeriesCountGroup {
   // The label-set hashes of the group's series, sorted within each part, when the request asked for hashes.
   repeated uint64 hashes = 3;
   reserved 4;
+  // The block the count is of, as a ULID string, in an answer counted per block. Empty otherwise.
+  string block_id = 5;
 }
