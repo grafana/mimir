@@ -158,3 +158,68 @@ func (q *BlocksStoreQueryable) observeRefusedRequest(elapsed time.Duration, err 
 		q.metrics.estimateDuration.WithLabelValues("none", "none", estimateRequestStatus(err)).Observe(elapsed.Seconds())
 	}
 }
+
+// observeBounds records what one bounds request cost: a log line, span attributes and metrics.
+func (q *BlocksStoreQueryable) observeBounds(ctx context.Context, req CardinalityEstimateRequest, res BoundsResult, elapsed time.Duration, err error) {
+	groups := 0
+	for _, r := range res.Ranges {
+		groups += len(r.Upper)
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String("read", ReadBounds),
+		attribute.Int64("window_start_ms", req.MinT),
+		attribute.Int64("window_end_ms", req.MaxT),
+		attribute.String("group_by", req.GroupBy),
+		attribute.Int("ranges", len(res.Ranges)),
+		attribute.Int("range_groups", groups),
+		attribute.Bool("head", res.Head != nil),
+		attribute.Int("not_covered", len(res.NotCovered)),
+		attribute.Int("store_gateways", res.StoreGateways),
+		attribute.Int("retries", res.Retries),
+		attribute.Int64("series_counted", res.SeriesCounted),
+		attribute.Int64("index_bytes", res.IndexBytes),
+		attribute.Int64("postings_offsets_table_bytes", res.PostingsOffsetsTableBytes),
+		attribute.Int64("postings_fetched_bytes", res.PostingsFetchedBytes),
+		attribute.Int64("series_fetched_bytes", res.SeriesFetchedBytes),
+		attribute.Int64("peak_memory_bytes", int64(res.PeakMemoryBytes)),
+	}
+	trace.SpanFromContext(ctx).SetAttributes(attrs...)
+	limit := estimateRefusalLimit(err)
+	var fromSource sourceRefusal
+	if q.metrics != nil {
+		if limit != "" && (limit != refusedByMemory || errors.As(err, &fromSource)) {
+			q.metrics.estimateRefusals.WithLabelValues(limit).Inc()
+		}
+		q.metrics.estimateDuration.WithLabelValues(ReadBounds, SourceBlocks, estimateRequestStatus(err)).Observe(elapsed.Seconds())
+		q.metrics.estimateRetries.Add(float64(res.Retries))
+		if err == nil {
+			for kind, b := range map[string]int64{
+				"index":                  res.IndexBytes,
+				"postings_offsets_table": res.PostingsOffsetsTableBytes,
+				"postings_fetched":       res.PostingsFetchedBytes,
+				"series_fetched":         res.SeriesFetchedBytes,
+			} {
+				q.metrics.estimateBytes.WithLabelValues(ReadBounds, kind).Add(float64(b))
+			}
+		}
+	}
+	if q.logger == nil {
+		return
+	}
+	fields := make([]any, 0, 2*len(attrs)+6)
+	fields = append(fields, "msg", "cardinality estimate", "elapsed", elapsed)
+	for _, a := range attrs {
+		fields = append(fields, string(a.Key), a.Value.AsInterface())
+	}
+	logger := level.Info(util_log.WithContext(ctx, q.logger))
+	if err != nil {
+		fields = append(fields, "status", estimateHTTPStatus(err), "err", estimateFailureDetail(err))
+		if limit != "" {
+			fields = append(fields, "refused_by", limit)
+		}
+		if estimateHTTPStatus(err) == http.StatusInternalServerError {
+			logger = level.Warn(util_log.WithContext(ctx, q.logger))
+		}
+	}
+	logger.Log(fields...)
+}

@@ -15,6 +15,9 @@ type CardinalityEstimateRequest struct {
 	Matchers   []*labels.Matcher
 	MinT, MaxT int64
 	GroupBy    string
+	// Bounds asks for a lower and an upper value per group per block range, from the postings offsets
+	// tables, instead of exact counts. It takes no matchers.
+	Bounds bool
 	// MaxGroups caps the distinct group_by values in the answer, 0 for none.
 	MaxGroups int64
 }

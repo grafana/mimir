@@ -444,3 +444,9 @@ func maxOverZones(byZone map[string][]*ingester_client.SeriesCountsResponse) *in
 func zoneAware(rs ring.ReplicationSet) bool {
 	return rs.ZoneAwarenessEnabled || rs.MaxUnavailableZones > 0
 }
+
+// IngestStorageEnabled reports whether the ingesters read from ingest storage, where a partition
+// is owned by one ingester per zone.
+func (d *Distributor) IngestStorageEnabled() bool {
+	return d.cfg.IngestStorageConfig.Enabled
+}

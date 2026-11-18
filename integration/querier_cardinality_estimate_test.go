@@ -48,6 +48,36 @@ type cardinalityEstimate struct {
 	} `json:"groups"`
 }
 
+// cardinalityBounds is the part of a bounds answer the tests check.
+type cardinalityBounds struct {
+	Ranges []struct {
+		Start       int64             `json:"start"`
+		End         int64             `json:"end"`
+		MainSet     bool              `json:"main_set"`
+		MainBlocks  int               `json:"main_blocks"`
+		OtherBlocks int               `json:"other_blocks"`
+		LowerBound  bool              `json:"lower_bound"`
+		Groups      []boundsGroupJSON `json:"groups"`
+	} `json:"ranges"`
+	NotCovered []struct {
+		Start int64 `json:"start"`
+		End   int64 `json:"end"`
+	} `json:"not_covered"`
+	Head *struct {
+		Approximate bool `json:"approximate"`
+		Groups      []struct {
+			Value    string `json:"value"`
+			InMemory int64  `json:"in_memory"`
+		} `json:"groups"`
+	} `json:"head"`
+}
+
+type boundsGroupJSON struct {
+	Value string `json:"value"`
+	Lower int64  `json:"lower"`
+	Upper int64  `json:"upper"`
+}
+
 // largeGroupSeries is how many series of e_total the recent block holds, a
 // group deduplicated by hash with every one of its hashes.
 const largeGroupSeries = 12_000
@@ -114,6 +144,13 @@ func TestCardinalityEstimate(t *testing.T) {
 		}, manySeries("e_total", "i", largeGroupSeries, recentMin, recentMax)...),
 	})
 
+	// A day of two split-compactor shards with an out-of-order block of shard 1 beside them, as the
+	// compactor leaves them: it never merges the out-of-order group into the main one. Each series is in
+	// the shard the compactor would put it in, which sharded queries rely on. m_total has three series
+	// in the shards, and the out-of-order block repeats one of shard 1 and adds a fourth.
+	boundsDay := day.Add(-96 * time.Hour)
+	uploadLabelledBlocks(t, minio, boundsDayBlocks(boundsDay))
+
 	// The query-frontend and the querier meet at the query-scheduler.
 	queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
 	require.NoError(t, s.StartAndWaitReady(queryScheduler))
@@ -140,7 +177,7 @@ func TestCardinalityEstimate(t *testing.T) {
 			e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))), svc.Name())
 	}
 	// The compactor writes the bucket index, then the store-gateway loads the blocks.
-	require.NoError(t, storeGateway.WaitSumMetrics(e2e.Equals(3), "cortex_bucket_store_blocks_loaded"))
+	require.NoError(t, storeGateway.WaitSumMetrics(e2e.Equals(6), "cortex_bucket_store_blocks_loaded"))
 
 	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
@@ -249,6 +286,57 @@ func TestCardinalityEstimate(t *testing.T) {
 		blocksOnlyCases(t)
 	})
 
+	// boundsOf sends a bounds request and returns its answer.
+	boundsOf := func(t *testing.T, start, end time.Time, params url.Values) cardinalityBounds {
+		t.Helper()
+		params.Set("mode", "bounds")
+		status, body := estimateRaw(t, start, end, params)
+		require.Equal(t, http.StatusOK, status, string(body))
+		var out cardinalityBounds
+		require.NoError(t, json.Unmarshal(body, &out), string(body))
+		return out
+	}
+
+	t.Run("bounds: a day with out-of-order blocks beside its shards holds the truth", func(t *testing.T) {
+		// A window inside the day is widened to it.
+		got := boundsOf(t, boundsDay.Add(4*time.Hour), boundsDay.Add(6*time.Hour), url.Values{})
+		require.Len(t, got.Ranges, 1)
+		r := got.Ranges[0]
+		assert.Equal(t, boundsDay.UnixMilli(), r.Start)
+		assert.Equal(t, boundsDay.Add(24*time.Hour).UnixMilli(), r.End)
+		assert.True(t, r.MainSet)
+		assert.Equal(t, 2, r.MainBlocks)
+		assert.Equal(t, 1, r.OtherBlocks)
+		assert.False(t, r.LowerBound)
+		truth := promqlCount(t, `{__name__=~"m_total|n_total"}`, "__name__", boundsDay, boundsDay.Add(24*time.Hour))
+		require.Equal(t, map[string]int64{"m_total": 4, "n_total": 1}, truth)
+		for _, g := range r.Groups {
+			assert.LessOrEqual(t, g.Lower, truth[g.Value], g.Value)
+			assert.GreaterOrEqual(t, g.Upper, truth[g.Value], g.Value)
+		}
+		assert.Equal(t, []boundsGroupJSON{{Value: "m_total", Lower: 3, Upper: 5}, {Value: "n_total", Lower: 1, Upper: 1}}, r.Groups)
+		assert.Zero(t, got.Head)
+		assert.Empty(t, got.NotCovered)
+	})
+
+	t.Run("bounds: a range of shards alone is exact, by another label too", func(t *testing.T) {
+		start, end := day, day.Add(24*time.Hour)
+		got := boundsOf(t, start, end, url.Values{"group_by": {"job"}})
+		require.Len(t, got.Ranges, 1)
+		r := got.Ranges[0]
+		truth := promqlCount(t, `{__name__=~".+"}`, "job", start, end)
+		for _, g := range r.Groups {
+			assert.Equal(t, truth[g.Value], g.Lower, g.Value)
+			assert.Equal(t, g.Lower, g.Upper, g.Value)
+		}
+		assert.Len(t, r.Groups, len(truth))
+	})
+
+	t.Run("bounds: matchers are refused", func(t *testing.T) {
+		status, body := estimateRaw(t, day, day.Add(24*time.Hour), url.Values{"mode": {"bounds"}, "match[]": {`{job="x"}`}})
+		assert.Equal(t, http.StatusBadRequest, status, string(body))
+	})
+
 	t.Run("a window no block or ingester holds is a lower bound", func(t *testing.T) {
 		start, end := day.Add(-48*time.Hour), day.Add(-24*time.Hour)
 		got := estimate(t, start, end, url.Values{"match[]": {`{__name__="a_total"}`}})
@@ -267,7 +355,7 @@ func TestCardinalityEstimate(t *testing.T) {
 	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "name", "store-gateway-client"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
-	require.NoError(t, storeGateway.WaitSumMetrics(e2e.Equals(3), "cortex_bucket_store_blocks_loaded"))
+	require.NoError(t, storeGateway.WaitSumMetrics(e2e.Equals(6), "cortex_bucket_store_blocks_loaded"))
 
 	t.Run("blocks only, index-header version 2", func(t *testing.T) {
 		blocksOnlyCases(t)
@@ -342,6 +430,15 @@ func TestCardinalityEstimate(t *testing.T) {
 			assert.Equal(t, promqlCount(t, `{__name__="c_total"}`, "job", from, from.Add(half)), countsOf(got), "half %d", i)
 			assert.Equal(t, int64(1), countsOf(got)["both"], "half %d: in the block and in the ingesters", i)
 		}
+	})
+
+	t.Run("bounds: a window that reaches the ingesters has head rows and the band after the blocks not covered", func(t *testing.T) {
+		start, end := recentMin, time.Now().Add(time.Second)
+		got := boundsOf(t, start, end, url.Values{})
+		require.NotNil(t, got.Head)
+		assert.False(t, got.Head.Approximate, "ingest storage")
+		assert.NotEmpty(t, got.Head.Groups)
+		assert.NotEmpty(t, got.NotCovered)
 	})
 
 	// Last, so the cases above run while the partitions become stable.
@@ -422,6 +519,84 @@ func uploadBlocks(t *testing.T, minio *e2e.HTTPService, blocks []block.SeriesSpe
 	for _, specs := range blocks {
 		meta, err := block.GenerateBlockFromSpec(dir, specs)
 		require.NoError(t, err)
+		_, err = block.Upload(context.Background(), log.NewNopLogger(), userBkt, filepath.Join(dir, meta.ULID.String()), meta)
+		require.NoError(t, err)
+	}
+}
+
+// boundsDayBlocks returns the blocks of the bounds day starting at from: two shard blocks of
+// m_total and n_total, and an out-of-order block of shard 1 that repeats one of its m_total series
+// and adds one more.
+func boundsDayBlocks(from time.Time) []labelledBlock {
+	shardOf := func(lset labels.Labels) uint64 { return labels.StableHash(lset) % 2 }
+	whole := func(name, value string) *block.SeriesSpec {
+		return series(name, "p", value, from, from.Add(24*time.Hour-time.Millisecond))
+	}
+	// One m_total series in each shard, then a third.
+	var shards [2]block.SeriesSpecs
+	var values []string
+	firstIn := [2]string{}
+	for c := 'a'; c <= 'z' && (firstIn[0] == "" || firstIn[1] == ""); c++ {
+		if i := shardOf(labels.FromStrings("__name__", "m_total", "p", string(c))); firstIn[i] == "" {
+			firstIn[i] = string(c)
+		}
+	}
+	values = append(values, firstIn[0], firstIn[1])
+	for c := 'a'; c <= 'z'; c++ {
+		if v := string(c); v != firstIn[0] && v != firstIn[1] {
+			values = append(values, v)
+			break
+		}
+	}
+	for _, v := range values {
+		spec := whole("m_total", v)
+		shards[shardOf(spec.Labels)] = append(shards[shardOf(spec.Labels)], spec)
+	}
+	n := whole("n_total", "a")
+	shards[shardOf(n.Labels)] = append(shards[shardOf(n.Labels)], n)
+	ooo := block.SeriesSpecs{series("m_total", "p", firstIn[0], from.Add(2*time.Hour), from.Add(3*time.Hour))}
+	for c := 'A'; c <= 'Z'; c++ {
+		if lset := labels.FromStrings("__name__", "m_total", "p", string(c)); shardOf(lset) == 0 {
+			ooo = append(ooo, whole("m_total", string(c)))
+			break
+		}
+	}
+	out := []labelledBlock{
+		{labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_2", block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue}, specs: ooo},
+	}
+	for i, specs := range shards {
+		if len(specs) > 0 {
+			out = append(out, labelledBlock{labels: map[string]string{block.CompactorShardIDExternalLabel: fmt.Sprintf("%d_of_2", i+1)}, specs: specs})
+		}
+	}
+	return out
+}
+
+// labelledBlock is one block's series and the external labels of its meta.json.
+type labelledBlock struct {
+	labels map[string]string
+	specs  block.SeriesSpecs
+}
+
+// uploadLabelledBlocks writes one block per entry for userID into minio's blocks bucket, with its
+// external labels.
+func uploadLabelledBlocks(t *testing.T, minio *e2e.HTTPService, blocks []labelledBlock) {
+	t.Helper()
+	bkt, err := s3.NewBucketClient(s3.Config{
+		Endpoint:        minio.HTTPEndpoint(),
+		Insecure:        true,
+		BucketName:      blocksBucketName,
+		AccessKeyID:     e2edb.MinioAccessKey,
+		SecretAccessKey: flagext.SecretWithValue(e2edb.MinioSecretKey),
+	}, "test", log.NewNopLogger())
+	require.NoError(t, err)
+	userBkt := bucket.NewPrefixedBucketClient(bkt, userID)
+	defer func() { require.NoError(t, userBkt.Close()) }()
+	dir := t.TempDir()
+	for _, b := range blocks {
+		meta, err := block.GenerateBlockFromSpec(dir, b.specs)
+		require.NoError(t, err)
+		meta.Thanos.Labels = b.labels
 		_, err = block.Upload(context.Background(), log.NewNopLogger(), userBkt, filepath.Join(dir, meta.ULID.String()), meta)
 		require.NoError(t, err)
 	}

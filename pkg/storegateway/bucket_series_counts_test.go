@@ -1058,4 +1058,3 @@ func TestSeriesCounts_IndexBytesChargeFetchedPostings(t *testing.T) {
 	stats.update(func(s *queryStats) { s.postingsTouchedSizeSum = 500 })
 	assert.Equal(t, int64(540), indexBytes(stats), "lists read from the cache are touched and not fetched")
 }
-

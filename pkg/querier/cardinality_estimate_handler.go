@@ -69,7 +69,7 @@ type estimateResponse struct {
 }
 
 // NewCardinalityEstimateHandler serves series counts from the store-gateways or the ingesters without loading chunks (see CardinalityEstimator.Estimate).
-// It takes start, end, match[], group_by (default __name__), min_count and limit.
+// It takes start, end, match[], group_by (default __name__), mode (exact by default, or bounds), min_count and limit.
 // The table is sorted largest first.
 // start is moved up to -querier.max-query-lookback and -compactor.blocks-retention-period, and a window wholly before them is answered with no groups.
 // Errors: 400 when the endpoint is disabled or the request can't be answered as asked, 422 when a limit refused it, 503 past -querier.timeout or when every source asked was at its limit of concurrent counts, 500 otherwise, each with a Prometheus API error body.
@@ -126,6 +126,10 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 				return timedOutEstimate(cfg.Timeout, err)
 			}
 			return err
+		}
+		if req.Bounds {
+			e.serveBounds(ctx, w, r, tenantID, req, opts, start, timedOut)
+			return
 		}
 		// A window the tenant's queries can't read is answered empty, as a query over it is.
 		res := CardinalityEstimateResult{Source: SourceBlocks, Read: ReadFullIndex, Counts: map[string][]int64{}}
@@ -267,6 +271,13 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 		if len(req.Matchers) == 0 {
 			req.Matchers = nil
 		}
+	}
+	switch mode := r.FormValue("mode"); mode {
+	case "", "exact":
+	case "bounds":
+		req.Bounds = true
+	default:
+		return req, opts, fmt.Errorf("mode must be exact or bounds, not %q", mode)
 	}
 	req.GroupBy = r.FormValue("group_by")
 	if req.GroupBy == "" {

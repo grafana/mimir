@@ -58,6 +58,10 @@ message SeriesCountsRequest {
   // distinct values of group_by than this, from the index-header's samples; and after counting when the groups are
   // more. 0 means no limit.
   int64 max_groups = 3;
+  // If set, every block is counted on its own from the group-by label's postings offsets table alone, whatever the
+  // window, and each group carries its block_id. No postings and no series entries are read. Not allowed with
+  // matchers or hashes; max_groups then applies to each block.
+  bool per_block = 4;
 }
 
 message SeriesCountsResponse {
