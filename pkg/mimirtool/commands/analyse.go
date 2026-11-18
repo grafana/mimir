@@ -64,6 +64,15 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 	prometheusAnalyzeCmd.Flag("output", "The path for the output file").
 		Default("prometheus-metrics.json").
 		StringVar(&paCmd.outputFile)
+	prometheusAnalyzeCmd.Flag("backoff-min-period", "Minimum delay when backing off.").
+		Default("100ms").
+		DurationVar(&paCmd.backoffConfig.MinBackoff)
+	prometheusAnalyzeCmd.Flag("backoff-max-period", "Maximum delay when backing off.").
+		Default("10s").
+		DurationVar(&paCmd.backoffConfig.MaxBackoff)
+	prometheusAnalyzeCmd.Flag("backoff-retries", "Number of times to backoff and retry before failing.").
+		Default("10").
+		IntVar(&paCmd.backoffConfig.MaxRetries)
 
 	gaCmd := &GrafanaAnalyzeCommand{}
 	grafanaAnalyzeCmd := analyzeCmd.Command("grafana", "Analyze and output the metrics used in Grafana Dashboards.").PreAction(func(_ *kingpin.ParseContext) error {
