@@ -4,6 +4,12 @@
     'config:recommended',
     'schedule:daily'
   ],
+  customDatasources: {
+    'gvisor-go': {
+      defaultRegistryUrlTemplate: 'https://proxy.golang.org/gvisor.dev/gvisor/@v/go.info',
+      transformTemplates: ['{"releases": [{"version": Version}]}'],
+    },
+  },
   customManagers: [
     {
       customType: 'regex',
@@ -95,6 +101,14 @@
     'gomodUpdateImportPaths',
   ],
   packageRules: [
+    {
+      description: 'Track checklocks pseudo-versions from the gVisor go branch weekly',
+      matchDatasources: ['custom.gvisor-go'],
+      matchPackageNames: ['gvisor.dev/gvisor'],
+      versioning: 'semver',
+      ignoreUnstable: false,
+      schedule: ['* 0-4 * * 1'],
+    },
     {
       matchBaseBranches: [
         'release-3.2',
