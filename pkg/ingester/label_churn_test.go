@@ -5,7 +5,6 @@ package ingester
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -97,7 +96,6 @@ func TestIngester_LabelChurn(t *testing.T) {
 	db := i.getTSDB(userID)
 
 	router := mux.NewRouter()
-	router.HandleFunc("/ingester/tsdb/{tenant}/label_churn", i.LabelChurnPageHandler)
 	router.HandleFunc("/ingester/tsdb/{tenant}/label_churn.json", i.LabelChurnHandler)
 	serveLabelChurn := func(path string) *httptest.ResponseRecorder {
 		recorder := httptest.NewRecorder()
@@ -139,38 +137,6 @@ func TestIngester_LabelChurn(t *testing.T) {
 		}
 	})
 
-	t.Run("the page shows the scores with an explanation", func(t *testing.T) {
-		recorder := serveLabelChurn("/ingester/tsdb/test/label_churn?lookback=30m&limit=1")
-		require.Equal(t, http.StatusOK, recorder.Code)
-		require.Equal(t, "text/html; charset=utf-8", recorder.Header().Get("Content-Type"))
-
-		page := recorder.Body.String()
-		for _, heading := range []string{"What you see", "How the ingester collects the data", "How to read the data", "What the data is useful for"} {
-			require.Contains(t, page, "<h2>"+heading+"</h2>")
-		}
-		require.Contains(t, page, "<td>pod</td>")
-		require.Contains(t, page, `<td align="right">3</td>`)
-		require.Contains(t, page, fmt.Sprintf("up (%d), other (%d)", 2*labelChurnSampledSeriesPerValue, labelChurnSampledSeriesPerValue))
-		require.NotContains(t, page, "<td>"+model.MetricNameLabel+"</td>")
-		require.Contains(t, page, `<a href="label_churn.json?limit=1&amp;lookback=30m">Download as JSON</a>`)
-	})
-
-	t.Run("the page uses the default parameters", func(t *testing.T) {
-		recorder := serveLabelChurn("/ingester/tsdb/test/label_churn")
-		require.Equal(t, http.StatusOK, recorder.Code)
-
-		page := recorder.Body.String()
-		require.Contains(t, page, `name="lookback" value="30m"`)
-		require.Contains(t, page, `name="limit" value="30"`)
-		require.Contains(t, page, "<td>"+model.MetricNameLabel+"</td>")
-	})
-
-	t.Run("the page shows the error when the ingester has no record in the lookback window", func(t *testing.T) {
-		recorder := serveLabelChurn("/ingester/tsdb/test/label_churn?lookback=1s")
-		require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-		require.Contains(t, recorder.Body.String(), errLabelChurnNoRecord.Error())
-	})
-
 	t.Run("the time range starts after the last series removal", func(t *testing.T) {
 		db.lastSeriesRemovalMs.Store(now.Add(-4 * time.Minute).UnixMilli())
 
@@ -193,11 +159,6 @@ func TestIngester_LabelChurn(t *testing.T) {
 	t.Run("the handler rejects requests when label churn detection is disabled", func(t *testing.T) {
 		recorder := httptest.NewRecorder()
 		(&Ingester{}).LabelChurnHandler(recorder, httptest.NewRequest(http.MethodGet, "/ingester/tsdb/test/label_churn.json", nil))
-		require.Equal(t, http.StatusNotFound, recorder.Code)
-		require.Contains(t, recorder.Body.String(), errLabelChurnDisabled.Error())
-
-		recorder = httptest.NewRecorder()
-		(&Ingester{}).LabelChurnPageHandler(recorder, httptest.NewRequest(http.MethodGet, "/ingester/tsdb/test/label_churn", nil))
 		require.Equal(t, http.StatusNotFound, recorder.Code)
 		require.Contains(t, recorder.Body.String(), errLabelChurnDisabled.Error())
 	})
