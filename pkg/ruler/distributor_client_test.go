@@ -48,7 +48,7 @@ type mockDistributorServer struct {
 	errsByCall      map[int]error
 
 	blockUntilContextDone bool
-	onPush                func(calls int)
+	onPush                func(ctx context.Context, calls int)
 }
 
 func (m *mockDistributorServer) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
@@ -74,7 +74,7 @@ func (m *mockDistributorServer) Push(ctx context.Context, req *mimirpb.WriteRequ
 	})
 	calls := len(m.requests)
 	if m.onPush != nil {
-		m.onPush(calls)
+		m.onPush(ctx, calls)
 	}
 	if err := m.errsByCall[calls]; err != nil {
 		return nil, err
@@ -571,9 +571,12 @@ func TestDistributorGRPCClient(t *testing.T) {
 				status.Error(codes.Unavailable, "try again"),
 				status.Error(codes.Unavailable, "try again"),
 			},
-			onPush: func(calls int) {
+			onPush: func(ctx context.Context, calls int) {
 				if calls == 3 {
 					cancel()
+					// Wait until the cancellation reaches the server, so the client gets Canceled for this
+					// call rather than the Unavailable error returned below.
+					<-ctx.Done()
 				}
 			},
 		}
