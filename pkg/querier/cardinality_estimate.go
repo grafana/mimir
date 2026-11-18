@@ -167,7 +167,7 @@ func (e *CardinalityEstimator) blocksOnly(ctx context.Context, tenantID string, 
 		return CardinalityEstimateResult{}, err
 	}
 	if len(blocks) == 0 {
-		// No block is listed, so the empty table is a lower bound and is not cached.
+		// No block is listed, so the empty table is a lower bound.
 		return CardinalityEstimateResult{Source: SourceBlocks, Read: ReadFullIndex, Counts: map[string][]int64{}, LowerBound: true, CoverageGap: true}, nil
 	}
 	covered := blocksCover(blocks, req.MinT, req.MaxT)
