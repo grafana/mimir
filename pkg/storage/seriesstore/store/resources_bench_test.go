@@ -3,14 +3,17 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/prometheus/common/model"
 	promlabels "github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
 // BenchmarkEngineResourcesAppend is the steady-state cost of appending a round of samples to every series through
@@ -51,12 +54,30 @@ func BenchmarkEngineResourcesAppend(b *testing.B) {
 			require.NoError(b, err)
 			b.Cleanup(func() { _ = e.Close() })
 			e.SetNativeResources(withResources)
-			// The first round creates the series and the resources, which the timed rounds observe again.
-			appendRecords(b, e, records(1_000))
+			// The appender creates the series with their resources: a record's path appends only to series the
+			// engine has, and leaves the others to the caller.
+			app := e.Appender(context.Background())
+			for n, l := range series {
+				_, err := app.Append(0, l, 0, 1_000, 1, nil, nil, storage.AppendV2Options{Resource: asResourceContext(resources[n/seriesPerResource])})
+				require.NoError(b, err)
+			}
+			require.NoError(b, app.Commit())
+			ingested := 0
+			for _, content := range records(2_000) {
+				record, err := ReadRW2(content, ingest.V2CommonSymbols.GetSlice(), ingest.V2RecordSymbolOffset)
+				require.NoError(b, err)
+				leftover, n, err := e.AppendRW2(record, 0, 1<<62, 0, false, &rw2Sink{})
+				require.NoError(b, err)
+				require.Empty(b, leftover)
+				ingested += n
+				record.Release()
+			}
+			require.Equal(b, numSeries, ingested, "every series takes the record's path")
+
 			b.ReportAllocs()
 			for i := 0; b.Loop(); i++ {
 				b.StopTimer()
-				contents := records(int64(2_000 + i*1_000))
+				contents := records(int64(3_000 + i*1_000))
 				b.StartTimer()
 				appendRecords(b, e, contents)
 			}
