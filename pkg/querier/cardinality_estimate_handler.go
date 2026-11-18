@@ -33,8 +33,6 @@ type estimateGroup struct {
 	Count int64 `json:"count"`
 	// Counts, with step, is the group's count in each bucket, in time order.
 	Counts []int64 `json:"counts,omitempty"`
-	// Estimated is set when the count comes from an HLL sketch.
-	Estimated bool `json:"estimated,omitempty"`
 }
 
 // estimateWindow is the window actually counted, [Start, End) in milliseconds.
@@ -69,9 +67,8 @@ type estimateResponse struct {
 	// Total is the sum of every group's count, including those left out of the table. With step it sums each group's largest bucket.
 	Total int64 `json:"total"`
 	// Totals, with step, is the sum of every group's count in each bucket, including those left out.
-	Totals          []int64         `json:"totals,omitempty"`
-	EstimatedGroups int             `json:"estimated_groups"`
-	Groups          []estimateGroup `json:"groups"`
+	Totals []int64         `json:"totals,omitempty"`
+	Groups []estimateGroup `json:"groups"`
 }
 
 // NewCardinalityEstimateHandler serves series counts from the store-gateways or the ingesters without loading chunks (see CardinalityEstimator.Estimate).
@@ -158,11 +155,11 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 		out := estimateResponse{
 			Window: estimateWindow{Start: req.MinT, End: req.MaxT}, StepMS: req.Step, WindowMS: req.windowMs(), GroupBy: req.GroupBy, Read: res.Read,
 			Source: res.Source, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), MissingShards: res.MissingShards,
-			Dedup: res.Dedup, GroupCount: len(res.Counts), EstimatedGroups: len(res.Estimated),
+			Dedup: res.Dedup, GroupCount: len(res.Counts),
 			Groups: make([]estimateGroup, 0, len(res.Counts)),
 		}
 		for v, counts := range res.Counts {
-			g := estimateGroup{Value: v, Count: slices.Max(counts), Estimated: res.Estimated[v]}
+			g := estimateGroup{Value: v, Count: slices.Max(counts)}
 			if req.Step > 0 {
 				g.Counts = counts
 				if out.Totals == nil {
@@ -363,9 +360,6 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 	}
 	return req, opts, nil
 }
-
-// defaultSketchAbove is the sketch_above the querier sends its sources: a group with more series than this is sent as an HLL sketch instead of its hashes.
-const defaultSketchAbove = 10_000
 
 // matchesEveryName reports whether m is a matcher on __name__ that every series passes, such as =~".+". Read as a matcher it would fetch every name's postings instead of taking the no-matcher paths.
 func matchesEveryName(m *labels.Matcher) bool {

@@ -179,7 +179,7 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 		}, []string{"path", "source", "status"}),
 		estimateFlagged: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_querier_cardinality_estimate_answers_flagged_total",
-			Help: "Answered cardinality estimates that carry a flag, by path and flag: lower_bound, coverage_gap, missing_blocks, missing_shards or estimated_groups (some group was counted from a sketch). An answer with several flags counts once for each.",
+			Help: "Answered cardinality estimates that carry a flag, by path and flag: lower_bound, coverage_gap, missing_blocks or missing_shards. An answer with several flags counts once for each.",
 		}, []string{"path", "flag"}),
 		estimateRetries: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_querier_cardinality_estimate_retries_total",
@@ -204,7 +204,7 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 		}, []string{"path"}),
 		estimateBytes: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_querier_cardinality_estimate_bytes_total",
-			Help: "Bytes answered cardinality estimates read or received, by path and kind: index is the index bytes the store-gateways and ingesters read, postings_offsets_table the postings offsets table they walked, postings_fetched and series_fetched what the store-gateways fetched from the bucket, hashes and sketches the deduplication payload the querier received.",
+			Help: "Bytes answered cardinality estimates read or received, by path and kind: index is the index bytes the store-gateways and ingesters read, postings_offsets_table the postings offsets table they walked, postings_fetched and series_fetched what the store-gateways fetched from the bucket, hashes the deduplication payload the querier received.",
 		}, []string{"path", "kind"}),
 	}
 

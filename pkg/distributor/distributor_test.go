@@ -7135,6 +7135,9 @@ type mockIngester struct {
 	// seriesCountsDelay.
 	seriesCountsErr   error
 	seriesCountsDelay time.Duration
+	// seriesCountsSplitHashes has SeriesCounts send every hash of a group in a part of its own, as an
+	// ingester splits a group over the message size.
+	seriesCountsSplitHashes bool
 	// seriesCountsIndexBytes is what SeriesCounts answers as index_bytes
 	// when it counts.
 	seriesCountsIndexBytes int64
@@ -7816,6 +7819,20 @@ func (i *mockIngester) SeriesCounts(ctx context.Context, req *client.SeriesCount
 	resp, err := i.seriesCounts(ctx, req)
 	if err != nil {
 		return nil, err
+	}
+	i.Lock()
+	split := i.seriesCountsSplitHashes
+	i.Unlock()
+	if split {
+		var msgs []*client.SeriesCountsResponse
+		// A size of one byte puts one hash in each part.
+		if err := cardinalitypb.SendGroups(func(m *client.SeriesCountsResponse) error {
+			msgs = append(msgs, m)
+			return nil
+		}, resp, cardinalitypb.MessageGroups, 1); err != nil {
+			return nil, err
+		}
+		return &seriesCountsStream{results: msgs}, nil
 	}
 	// Two messages when there are groups, as the ingester streams them.
 	msgs := []*client.SeriesCountsResponse{resp}

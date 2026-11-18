@@ -238,12 +238,6 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 				out.Counts[v] = counts
 			}
 			counts[i] = c[0]
-			if res.Estimated[v] {
-				if out.Estimated == nil {
-					out.Estimated = map[string]bool{}
-				}
-				out.Estimated[v] = true
-			}
 		}
 		sources[res.Source] = true
 		for _, id := range res.Blocks {
@@ -281,7 +275,6 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		out.PostingsOffsetsTableBytes += res.PostingsOffsetsTableBytes
 		out.BlocksFromPostings += res.BlocksFromPostings
 		out.HashBytes += res.HashBytes
-		out.SketchBytes += res.SketchBytes
 		// Give back what the bucket's estimate holds beyond the table's groups.
 		if after := held(); after > before+tableCharge {
 			tracker.DecreaseMemoryConsumption(after-before-tableCharge, limiter.CardinalityEstimateGroups)
@@ -373,7 +366,6 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 			EndMs:         req.MaxT,
 			GroupBy:       req.GroupBy,
 			Hashes:        true,
-			SketchAbove:   defaultSketchAbove,
 			MaxIndexBytes: half,
 			MaxHashes:     halfHashes,
 			MaxGroups:     req.MaxGroups,
@@ -389,7 +381,7 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 	ingestersMinT := int64(0)
 	for _, resp := range sr.Responses {
 		for _, g := range resp.Groups {
-			if err := m.add("ingester", g.Value, g.Counts, g.Hashes, g.Sketch); err != nil {
+			if err := m.add("ingester", g.Value, g.Counts, g.Hashes); err != nil {
 				return CardinalityEstimateResult{}, err
 			}
 		}
@@ -432,7 +424,6 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 		StepMs:        req.Step,
 		WindowMs:      req.windowMs(),
 		GroupBy:       req.GroupBy,
-		SketchAbove:   defaultSketchAbove,
 		MaxIndexBytes: req.MaxIndexBytes,
 		MaxHashes:     req.MaxHashes,
 		MaxGroups:     req.MaxGroups,
@@ -449,7 +440,7 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 	var headMinT int64
 	for _, resp := range sr.Responses {
 		for _, g := range resp.Groups {
-			if err := m.add("ingester", g.Value, g.Counts, g.Hashes, g.Sketch); err != nil {
+			if err := m.add("ingester", g.Value, g.Counts, g.Hashes); err != nil {
 				return CardinalityEstimateResult{}, err
 			}
 		}

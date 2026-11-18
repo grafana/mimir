@@ -89,6 +89,28 @@ func TestSendSeriesCountsResponse(t *testing.T) {
 		require.NoError(t, SendSeriesCountsResponse(s, resp))
 		assert.Equal(t, 3, len(s.sent), "two groups would pass cardinalitypb.MessageBytes")
 	})
+
+	t.Run("a group of hashes over cardinalitypb.MessageBytes is sent in parts that hold all its hashes", func(t *testing.T) {
+		hashes := make([]uint64, 250_000) // about 2.5 MB at 10 bytes a hash
+		for i := range hashes {
+			hashes[i] = ^uint64(i)
+		}
+		resp := &SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: hashes}}}
+		s := &seriesCountsStreamMock{}
+		require.NoError(t, SendSeriesCountsResponse(s, resp))
+		require.Greater(t, len(s.sent), 2)
+		for _, msg := range s.sent {
+			assert.LessOrEqual(t, msg.Size(), cardinalitypb.MessageBytes)
+		}
+		got, err := cardinalitypb.ReceiveGroups((&seriesCountsRecvMock{msgs: s.sent}).Recv, nil)
+		require.NoError(t, err)
+		var all []uint64
+		for _, g := range got.Groups {
+			assert.Equal(t, "up", g.Value)
+			all = append(all, g.Hashes...)
+		}
+		assert.Equal(t, hashes, all)
+	})
 }
 
 func ioEOF() error { return io.EOF }

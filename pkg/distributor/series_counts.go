@@ -21,7 +21,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
-	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
@@ -58,7 +57,7 @@ func (r SeriesCountsResult) Release() {
 // ErrSeriesCountsOverMemoryLimit is wrapped by the error for answers that pass the limit of the context's memory consumption tracker.
 var ErrSeriesCountsOverMemoryLimit = errors.New("the ingester replies held pass the memory limit")
 
-// seriesCountsGroupBytes is what a group of an answer is charged on top of its value, counts, hashes and sketch.
+// seriesCountsGroupBytes is what a group of an answer is charged on top of its value, counts and hashes.
 const seriesCountsGroupBytes = 64
 
 // ErrSeriesCountsNeedOneIngesterPerZone is returned for per-bucket counts when counts can't be added up.
@@ -103,10 +102,6 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 		hashed = true
 		d.seriesCountsSwitchedToHashes.WithLabelValues("replication_sets").Inc()
 	}
-	// The distributor can turn a request for counts into one for hashes.
-	if hashed && req.SketchAbove <= 0 {
-		return SeriesCountsResult{}, grpcstatus.Error(codes.InvalidArgument, cardinality.ErrHashesNeedSketchAbove.Error())
-	}
 	// Only the ingesters know whether the shard size changed over the window.
 	checkShardSize := !hashed && d.cfg.IngestStorageConfig.Enabled && len(replicationSets) > 1
 
@@ -139,9 +134,6 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 		}
 		if req.StepMs > 0 {
 			return SeriesCountsResult{}, ErrSeriesCountsNeedOneIngesterPerZone
-		}
-		if req.SketchAbove <= 0 {
-			return SeriesCountsResult{}, grpcstatus.Error(codes.InvalidArgument, cardinality.ErrHashesNeedSketchAbove.Error())
 		}
 		hashed = true
 		d.seriesCountsSwitchedToHashes.WithLabelValues("shard_size_changed").Inc()
@@ -288,7 +280,7 @@ func (d *Distributor) seriesCountsCall(ctx context.Context, desc *ring.InstanceD
 	resp, err := cardinalitypb.ReceiveGroups(stream.Recv, func(msg *ingester_client.SeriesCountsResponse) error {
 		var b uint64
 		for _, g := range msg.Groups {
-			b += uint64(seriesCountsGroupBytes + len(g.Value) + 8*len(g.Counts) + 8*len(g.Hashes) + len(g.Sketch))
+			b += uint64(seriesCountsGroupBytes + len(g.Value) + 8*len(g.Counts) + 8*len(g.Hashes))
 		}
 		if err := charge.add(b); err != nil {
 			return fmt.Errorf("%w: %w", ErrSeriesCountsOverMemoryLimit, err)

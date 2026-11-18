@@ -853,10 +853,7 @@ func (s *BucketStore) walkCountBlocks(ctx context.Context, c *seriesCountsState,
 
 // finishResponse fills resp.
 func (c *seriesCountsState) finishResponse(resp *storegatewaypb.SeriesCountsResponse) error {
-	var err error
-	if resp.Groups, err = c.counter.Groups(); err != nil {
-		return status.Errorf(codes.Internal, "sketch: %v", err)
-	}
+	resp.Groups = c.counter.Groups()
 	resp.SeriesCounted = c.counter.Counted()
 	st := c.stats.export()
 	resp.PostingsFetchedBytes = int64(st.postingsFetchedSizeSum)

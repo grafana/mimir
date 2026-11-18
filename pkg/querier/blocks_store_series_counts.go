@@ -56,7 +56,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 		mtx.Lock()
 		defer mtx.Unlock()
 		for _, g := range resp.Groups {
-			if err := m.add("store-gateway", g.Value, g.Counts, g.Hashes, g.Sketch); err != nil {
+			if err := m.add("store-gateway", g.Value, g.Counts, g.Hashes); err != nil {
 				return withSourceAddr(addr, err)
 			}
 		}
@@ -98,7 +98,6 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 			GroupBy:       req.GroupBy,
 			Hashes:        res.Dedup,
 			MaxIndexBytes: perCall,
-			SketchAbove:   defaultSketchAbove,
 			MaxHashes:     maxHashes,
 			MaxGroups:     req.MaxGroups,
 		})
@@ -163,7 +162,7 @@ func receiveSeriesCounts(s storegatewaypb.StoreGateway_SeriesCountsClient, track
 		}
 		var b uint64
 		for _, g := range msg.Groups {
-			b += uint64(estimateGroupBytes + len(g.Value) + 8*len(g.Counts) + 8*len(g.Hashes) + len(g.Sketch))
+			b += uint64(estimateGroupBytes + len(g.Value) + 8*len(g.Counts) + 8*len(g.Hashes))
 		}
 		if err := tracker.IncreaseMemoryConsumption(b, limiter.CardinalityEstimateGroups); err != nil {
 			return refusedByLimit(refusedByMemory, "the store-gateway replies this estimate holds in the querier: %w", err)

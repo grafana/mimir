@@ -135,6 +135,28 @@ func TestSendAndReceiveSeriesCountsResponse(t *testing.T) {
 		assert.LessOrEqual(t, n, cardinalitypb.MessageBytes)
 	}
 
+	// A group over the message size arrives in parts of its value that hold all its hashes.
+	sent = nil
+	big := make([]uint64, 250_000)
+	for h := range big {
+		big[h] = math.MaxUint64 - uint64(h)
+	}
+	want = &SeriesCountsResponse{SeriesCounted: 250_000, Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: big}}}
+	stream, err = NewIngesterClient(conn).SeriesCounts(context.Background(), &SeriesCountsRequest{})
+	require.NoError(t, err)
+	got, err = ReceiveSeriesCountsResponse(stream)
+	require.NoError(t, err)
+	assert.Greater(t, len(got.Groups), 1)
+	var all []uint64
+	for _, g := range got.Groups {
+		assert.Equal(t, "up", g.Value)
+		all = append(all, g.Hashes...)
+	}
+	assert.Equal(t, big, all)
+	for _, n := range sent {
+		assert.LessOrEqual(t, n, cardinalitypb.MessageBytes)
+	}
+
 	// A response with no groups is still one message.
 	sent = nil
 	want = &SeriesCountsResponse{ShardSizeChanged: true}

@@ -8,7 +8,7 @@ import (
 )
 
 // A streamed answer is sent in messages of at most MessageGroups groups and
-// about MessageBytes. A group is never split, so one with hashes can exceed it.
+// about MessageBytes. A group with more hashes than fit in one message is split.
 const (
 	MessageGroups = 10_000
 	MessageBytes  = 1 << 20
@@ -22,8 +22,9 @@ type GroupsMessage interface {
 }
 
 // SendGroups streams response with send in batches of at most maxGroups groups
-// and about maxBytes. Other fields go on the first message, which is sent even
-// with no groups. response is not modified.
+// and about maxBytes. A group whose hashes are over maxBytes is sent as several
+// groups of the same value, each with some of the hashes. Other fields go on the
+// first message, which is sent even with no groups. response is not modified.
 func SendGroups[T any, M interface {
 	*T
 	GroupsMessage
@@ -33,21 +34,40 @@ func SendGroups[T any, M interface {
 	msg := M(&first)
 	msg.SetGroups(nil)
 	size := msg.Size()
-	for _, g := range groups {
-		// Own size plus field tag and length.
-		gs := g.Size()
-		gs += 1 + sovCardinality(uint64(gs))
-		if n := len(msg.GetGroups()); n > 0 && (size+gs > maxBytes || n >= maxGroups) {
-			if err := send(msg); err != nil {
-				return err
+	for _, whole := range groups {
+		for _, g := range splitHashes(whole, maxBytes) {
+			// Own size plus field tag and length.
+			gs := g.Size()
+			gs += 1 + sovCardinality(uint64(gs))
+			if n := len(msg.GetGroups()); n > 0 && (size+gs > maxBytes || n >= maxGroups) {
+				if err := send(msg); err != nil {
+					return err
+				}
+				msg = M(new(T))
+				size = 0
 			}
-			msg = M(new(T))
-			size = 0
+			msg.SetGroups(append(msg.GetGroups(), g))
+			size += gs
 		}
-		msg.SetGroups(append(msg.GetGroups(), g))
-		size += gs
 	}
 	return send(msg)
+}
+
+// splitHashes returns g, or for a group of hashes over maxBytes, parts of g's
+// value that each hold at most about maxBytes of its hashes. g is not modified.
+func splitHashes(g *SeriesCountGroup, maxBytes int) []*SeriesCountGroup {
+	// A packed hash takes at most 10 bytes.
+	perPart := max(1, (maxBytes-len(g.Value)-16)/10)
+	if len(g.Hashes) <= perPart {
+		return []*SeriesCountGroup{g}
+	}
+	parts := make([]*SeriesCountGroup, 0, (len(g.Hashes)+perPart-1)/perPart)
+	for hashes := g.Hashes; len(hashes) > 0; {
+		n := min(perPart, len(hashes))
+		parts = append(parts, &SeriesCountGroup{Value: g.Value, Hashes: hashes[:n:n]})
+		hashes = hashes[n:]
+	}
+	return parts
 }
 
 // ReceiveGroups reads recv until io.EOF and returns the first message with
