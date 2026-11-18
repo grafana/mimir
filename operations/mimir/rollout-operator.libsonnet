@@ -10,13 +10,15 @@
                               $._config.multi_zone_store_gateway_enabled ||
                               $._config.cortex_compactor_concurrent_rollout_enabled ||
                               $._config.ingest_storage_ingester_autoscaling_enabled ||
+                              $._config.usage_tracker_enabled ||
                               $._config.rollout_operator_webhooks_enabled,
 
     // Ignore these labels used for controlling webhook behavior when creating services.
     service_ignored_labels+:: ['grafana.com/no-downscale', 'grafana.com/prepare-downscale'],
 
-    rollout_operator_replica_template_access_enabled: $._config.ingest_storage_ingester_autoscaling_enabled || $._config.ingester_automated_downscale_v2_enabled,
-    replica_template_custom_resource_definition_enabled: $._config.ingest_storage_ingester_autoscaling_enabled || $._config.ingester_automated_downscale_v2_enabled,
+    // The usage-tracker StatefulSets always mirror their replicas from a ReplicaTemplate.
+    rollout_operator_replica_template_access_enabled: $._config.ingest_storage_ingester_autoscaling_enabled || $._config.ingester_automated_downscale_v2_enabled || $._config.usage_tracker_enabled,
+    replica_template_custom_resource_definition_enabled: $._config.ingest_storage_ingester_autoscaling_enabled || $._config.ingester_automated_downscale_v2_enabled || $._config.usage_tracker_enabled,
   },
 
   rollout_operator_container+:

@@ -229,6 +229,57 @@ metadata:
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  name: replicatemplates.rollout-operator.grafana.com
+spec:
+  group: rollout-operator.grafana.com
+  names:
+    categories:
+    - all
+    kind: ReplicaTemplate
+    plural: replicatemplates
+    singular: replicatemplate
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Status replicas
+      jsonPath: .status.replicas
+      name: StatusReplicas
+      type: string
+    - description: Spec replicas
+      jsonPath: .spec.replicas
+      name: SpecReplicas
+      type: string
+    name: v1
+    schema:
+      openAPIV3Schema:
+        properties:
+          spec:
+            properties:
+              labelSelector:
+                type: string
+              replicas:
+                default: 1
+                minimum: 0
+                type: integer
+            type: object
+          status:
+            properties:
+              replicas:
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      scale:
+        labelSelectorPath: .spec.labelSelector
+        specReplicasPath: .spec.replicas
+        statusReplicasPath: .status.replicas
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
   name: zoneawarepoddisruptionbudgets.rollout-operator.grafana.com
 spec:
   group: rollout-operator.grafana.com
@@ -368,6 +419,22 @@ rules:
   - get
   - update
   - create
+- apiGroups:
+  - rollout-operator.grafana.com
+  resources:
+  - replicatemplates
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - rollout-operator.grafana.com
+  resources:
+  - replicatemplates/scale
+  - replicatemplates/status
+  verbs:
+  - get
+  - patch
 - apiGroups:
   - rollout-operator.grafana.com
   resources:
@@ -1403,6 +1470,7 @@ spec:
       - args:
         - -kubernetes.namespace=default
         - -leader-election.enabled=false
+        - -replica-templates.watch-enabled=true
         - -server-tls.enabled=true
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
