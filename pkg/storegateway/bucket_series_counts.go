@@ -26,7 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
-	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -109,8 +108,6 @@ type seriesCountsState struct {
 	tableBytes atomic.Int64
 	// maxGroups caps the distinct group-by values, 0 for none.
 	maxGroups int64
-	// shard is the request's query shard, nil for none.
-	shard *sharding.ShardSelector
 	// lazyMatchers are the matchers planned by walking their label's postings offsets table.
 	lazyMatchers []*labels.Matcher
 	// matchersKey is matchers' key in the expanded postings cache.
@@ -196,8 +193,8 @@ func (c *seriesCountsState) measureLazyMatchers(ctx context.Context, o *countBlo
 const seriesEntryPlanningBytes = 128
 
 // postingsOnly reports whether a block's counts can come from postings alone.
-func (c *seriesCountsState) postingsOnly(m *block.Meta, shard *sharding.ShardSelector, pending []*labels.Matcher) bool {
-	return !c.opts.Hashes && shard == nil && len(pending) == 0 && m.MinTime >= c.opts.MinT && m.MaxTime <= c.opts.MaxT
+func (c *seriesCountsState) postingsOnly(m *block.Meta, pending []*labels.Matcher) bool {
+	return !c.opts.Hashes && len(pending) == 0 && m.MinTime >= c.opts.MinT && m.MaxTime <= c.opts.MaxT
 }
 
 // addCounts adds counts per group value, and without as the empty value.
@@ -369,12 +366,6 @@ func (s *BucketStore) newCountRequest(req *storegatewaypb.SeriesCountsRequest) (
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	// A __query_shard__ matcher, as sent to Series, counts only the series in that shard.
-	shard, matchers, err := sharding.RemoveShardFromMatchers(c.matchers)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	c.matchers, c.shard = matchers, shard
 	for _, m := range c.matchers {
 		if toRawPostingGroup(m).isLazy {
 			c.lazyMatchers = append(c.lazyMatchers, m)
@@ -423,7 +414,7 @@ func (c *seriesCountsState) checkBeforeLoad(blocks []countBlock, concurrency int
 		o.seriesCount = int64(o.b.meta.Stats.NumSeries)
 		all = append(all, o)
 		// The other blocks may be counted from the group-by label's postings.
-		if !c.postingsOnly(o.b.meta, c.shard, nil) {
+		if !c.postingsOnly(o.b.meta, nil) {
 			walked = append(walked, uint64(o.seriesCount))
 		}
 	}
@@ -496,10 +487,10 @@ func (s *BucketStore) loadCountBlocks(ctx context.Context, c *seriesCountsState,
 }
 
 // boundGroups refuses when one block alone is known to hold more groups than max_groups. It applies
-// only with no matchers and no query shard, to blocks inside the window.
+// only with no matchers, to blocks inside the window.
 func (c *seriesCountsState) boundGroups(ctx context.Context, loaded []countBlock) error {
 	maxGroups := c.maxGroups
-	if maxGroups <= 0 || len(c.matchers) > 0 || c.shard != nil {
+	if maxGroups <= 0 || len(c.matchers) > 0 {
 		return nil
 	}
 	for _, o := range loaded {
@@ -533,7 +524,7 @@ func (s *BucketStore) resolveCountPostings(ctx context.Context, c *seriesCountsS
 					return err
 				}
 			}
-			if !c.postingsOnly(o.b.meta, c.shard, o.pending) {
+			if !c.postingsOnly(o.b.meta, o.pending) {
 				return nil
 			}
 			// Skip when the offsets table alone costs more than reading the series entries.
@@ -617,12 +608,8 @@ func (c *seriesCountsState) holdPostings(o *countBlock, b uint64) error {
 
 // hashesLowerBound is a lower bound on the distinct series a request asking for hashes will hold, from
 // blocks inside the window with no pending matchers. Blocks of distinct shards add up; blocks without a
-// shard ID, such as replicas, may overlap, so the largest time range is taken. With a query shard
-// there is no bound before the walk: a shard may hold far fewer series than its even share.
+// shard ID, such as replicas, may overlap, so the largest time range is taken.
 func (c *seriesCountsState) hashesLowerBound(loaded []countBlock) int64 {
-	if c.shard != nil && c.shard.ShardCount > 1 {
-		return 0
-	}
 	type blockRange struct{ minT, maxT int64 }
 	shards := map[blockRange]map[string]int64{}
 	for _, o := range loaded {
@@ -683,7 +670,7 @@ func (s *BucketStore) walkCountBlocks(ctx context.Context, c *seriesCountsState,
 						return status.Errorf(codes.Internal, "block %s: expanded postings: %v", o.b.meta.ULID, err)
 					}
 				}
-				err = s.addBlockSeriesCounts(sctx, o.b, o.indexr, o.postings, o.pending, c.shard, c, &mtx, c.stats)
+				err = s.addBlockSeriesCounts(sctx, o.b, o.indexr, o.postings, o.pending, c, &mtx, c.stats)
 			}
 			// The block is counted, so what it resolved is not held while the others are.
 			o.postings, o.pending, o.groupOffsets = nil, nil, nil
@@ -717,14 +704,10 @@ func (c *seriesCountsState) finishResponse(resp *storegatewaypb.SeriesCountsResp
 }
 
 // addBlockSeriesCounts adds one block's matching series to c. Additions to c hold mtx.
-func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, indexr *bucketIndexReader, postings []storage.SeriesRef, pending []*labels.Matcher, shard *sharding.ShardSelector, c *seriesCountsState, mtx *sync.Mutex, stats *safeQueryStats) error {
-	hasher := cachedSeriesHasher{nil}
-	if shard != nil {
-		hasher = cachedSeriesHasher{s.seriesHashCache.GetBlockCache(b.meta.ULID.String())}
-	}
+func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, indexr *bucketIndexReader, postings []storage.SeriesRef, pending []*labels.Matcher, c *seriesCountsState, mtx *sync.Mutex, stats *safeQueryStats) error {
 	var it iterator[seriesChunkRefsSet] = newLoadingSeriesChunkRefsSetIterator(
 		ctx, newPostingsSetsIterator(postings, s.maxSeriesPerBatch), indexr, b.indexCache, stats, b.meta,
-		shard, hasher, c.strategy(b.meta), c.opts.MinT, c.opts.MaxT-1, b.userID, b.logger,
+		nil, cachedSeriesHasher{nil}, c.strategy(b.meta), c.opts.MinT, c.opts.MaxT-1, b.userID, b.logger,
 	)
 	if len(pending) > 0 {
 		it = newFilteringSeriesChunkRefsSetIterator(pending, it, stats)

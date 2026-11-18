@@ -36,6 +36,7 @@ func TestCounterForQuery(t *testing.T) {
 		"an empty window":            {q: cardinalitypb.CountQuery{StartMs: 10, EndMs: 10}, want: "must be after its start"},
 		"negative max_groups":        {q: cardinalitypb.CountQuery{EndMs: 10}, maxGroups: -1, want: "max_groups can't be negative"},
 		"an unknown matcher type":    {q: cardinalitypb.CountQuery{EndMs: 10, Matchers: []cardinalitypb.LabelMatcher{{Type: 7, Name: "job"}}}, want: "invalid matcher type 7"},
+		"a query shard":              {q: cardinalitypb.CountQuery{EndMs: 10, Matchers: []cardinalitypb.LabelMatcher{{Type: labels.MatchEqual, Name: "__query_shard__", Value: "1_of_2"}}}, want: "can't select a query shard"},
 		"a regex that doesn't parse": {q: cardinalitypb.CountQuery{EndMs: 10, Matchers: []cardinalitypb.LabelMatcher{{Type: labels.MatchRegexp, Name: "job", Value: "("}}}, want: "missing closing"},
 	} {
 		t.Run(name, func(t *testing.T) {

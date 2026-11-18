@@ -31,7 +31,6 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
-	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -1060,16 +1059,3 @@ func TestSeriesCounts_IndexBytesChargeFetchedPostings(t *testing.T) {
 	assert.Equal(t, int64(540), indexBytes(stats), "lists read from the cache are touched and not fetched")
 }
 
-// The series a query shard holds are not known before the walk, so no share of the matching series
-// is taken as a lower bound: a shard smaller than the even share would otherwise be counted as holding hashes it never holds.
-func TestSeriesCounts_HashesLowerBoundWithAQueryShard(t *testing.T) {
-	c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: 0, EndMs: 4 * hourMs, Hashes: true}, 0)
-	require.NoError(t, err)
-	meta := &block.Meta{}
-	meta.MinTime, meta.MaxTime = 0, 4*hourMs
-	loaded := []countBlock{{b: &bucketBlock{meta: meta}, seriesCount: 100}}
-	assert.Equal(t, int64(100), c.hashesLowerBound(loaded))
-
-	c.shard = &sharding.ShardSelector{ShardIndex: 0, ShardCount: 4}
-	assert.Zero(t, c.hashesLowerBound(loaded), "a shard of four may hold fewer than 25 of the 100 series")
-}
