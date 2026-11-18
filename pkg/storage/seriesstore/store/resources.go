@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/prometheus/prometheus/storage"
@@ -91,6 +92,64 @@ func readEncodedString(encoded string) (string, string) {
 	length, n := binary.Uvarint([]byte(encoded[:min(len(encoded), binary.MaxVarintLen64)]))
 	end := n + int(length)
 	return encoded[n:end], encoded[end:]
+}
+
+// decodeResourceEntry appends to into the attributes of a record's ResourceEntry, as its Unmarshal reads them, with
+// strings and bytes that refer to encoded: a record's resources are only read to intern them, which copies what it
+// keeps, so decoding one allocates nothing. It's false for a malformed entry.
+func decodeResourceEntry(encoded []byte, into []mimirpb.ResourceAttribute) ([]mimirpb.ResourceAttribute, bool) {
+	for len(encoded) > 0 {
+		field, wire, body, rest, ok := protoField(encoded)
+		if !ok {
+			return into, false
+		}
+		encoded = rest
+		switch {
+		case field == 1 && wire == 2:
+			var a mimirpb.ResourceAttribute
+			if !decodeResourceAttribute(body, &a) {
+				return into, false
+			}
+			into = append(into, a)
+		case field == 1:
+			return into, false
+		}
+	}
+	return into, true
+}
+
+// decodeResourceAttribute reads an attribute into a, which is zero: a known field of another wire type than its own
+// is malformed, and unknown fields are skipped, as by Unmarshal.
+func decodeResourceAttribute(encoded []byte, a *mimirpb.ResourceAttribute) bool {
+	for len(encoded) > 0 {
+		field, wire, body, rest, ok := protoField(encoded)
+		if !ok {
+			return false
+		}
+		encoded = rest
+		switch {
+		case field == 1 && wire == 2:
+			a.Key = unsafe.String(unsafe.SliceData(body), len(body))
+		case field == 2 && wire == 0:
+			v, _ := binary.Uvarint(body)
+			a.Type = mimirpb.ResourceAttribute_Type(v)
+		case field == 3 && wire == 2:
+			a.StringValue = unsafe.String(unsafe.SliceData(body), len(body))
+		case field == 4 && wire == 0:
+			v, _ := binary.Uvarint(body)
+			a.BoolValue = v != 0
+		case field == 5 && wire == 0:
+			v, _ := binary.Uvarint(body)
+			a.IntValue = int64(v)
+		case field == 6 && wire == 1:
+			a.DoubleValue = math.Float64frombits(binary.LittleEndian.Uint64(body))
+		case field == 7 && wire == 2:
+			a.BytesValue = body
+		case field >= 1 && field <= 7:
+			return false
+		}
+	}
+	return true
 }
 
 // resourceDictionary holds an engine's distinct values of one kind, identities or descriptions, each once as its
@@ -777,8 +836,13 @@ type resourceMemo struct {
 	scratch   []mimirpb.ResourceAttribute
 }
 
+// resourceMemos keep the memos' maps and buffers from batch to batch, which a memo of each batch's own would grow again.
+var resourceMemos = sync.Pool{New: func() any { return &resourceMemo{} }}
+
 func (e *Engine) newResourceMemo() *resourceMemo {
-	return &resourceMemo{r: e.resources}
+	m := resourceMemos.Get().(*resourceMemo)
+	m.r = e.resources
+	return m
 }
 
 // resolve interns attributes for an observation at t.
@@ -808,11 +872,11 @@ func (m *resourceMemo) byRecordRef(ref uint32, encoded []byte, t int64) *resourc
 		m.r.stats.memoHits.Add(1)
 		return o
 	}
-	var entry mimirpb.ResourceEntry
-	if err := entry.Unmarshal(encoded); err != nil {
+	var ok bool
+	if m.scratch, ok = decodeResourceEntry(encoded, m.scratch[:0]); !ok {
 		return nil
 	}
-	o := m.resolve(entry.Attributes, t)
+	o := m.resolve(m.scratch, t)
 	if m.byRef == nil {
 		m.byRef = map[uint32]*resourceObservation{}
 	}
@@ -858,6 +922,7 @@ func (m *resourceMemo) byResourceContext(rc *storage.ResourceContext, t int64) *
 	return o
 }
 
+// release gives back the memo's references and the memo, which can't be used after.
 func (m *resourceMemo) release() {
 	for _, o := range m.byRef {
 		m.releaseObservation(o)
@@ -871,6 +936,10 @@ func (m *resourceMemo) release() {
 	clear(m.byRef)
 	clear(m.byEntry)
 	clear(m.byContext)
+	// The scratch refers to the batch's records and requests, which the pool mustn't keep.
+	clear(m.scratch[:cap(m.scratch)])
+	m.r = nil
+	resourceMemos.Put(m)
 }
 
 func (m *resourceMemo) releaseObservation(o *resourceObservation) {

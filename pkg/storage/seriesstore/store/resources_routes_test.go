@@ -49,7 +49,7 @@ func resourceRequest(at int64, attributes []mimirpb.ResourceAttribute, lbls ...p
 	return req
 }
 
-func recordContent(t *testing.T, req *mimirpb.WriteRequest) []byte {
+func recordContent(t testing.TB, req *mimirpb.WriteRequest) []byte {
 	records, _, err := ingest.RecordSerializerFromVersion(2).ToRecords("ingest", 0, "tenant", req, 64<<20)
 	require.NoError(t, err)
 	require.Len(t, records, 1)

@@ -463,8 +463,13 @@ type metadataMemo struct {
 	uncached []uint32
 }
 
+// metadataMemos keep the memos' maps from batch to batch, which a memo of each batch's own would grow again.
+var metadataMemos = sync.Pool{New: func() any { return &metadataMemo{} }}
+
 func (e *Engine) newMetadataMemo() *metadataMemo {
-	return &metadataMemo{dictionary: e.metricMetadata, stats: &e.metricMetadataStats}
+	m := metadataMemos.Get().(*metadataMemo)
+	m.dictionary, m.stats = e.metricMetadata, &e.metricMetadataStats
+	return m
 }
 
 // byRefs is the id of a record's metadata value, by its type and symbol references.
@@ -525,6 +530,7 @@ func (m *metadataMemo) byValue(value metadata.Metadata) uint32 {
 	return id
 }
 
+// release gives back the memo's references and the memo, which can't be used after.
 func (m *metadataMemo) release() {
 	for _, id := range m.refs {
 		if id != 0 {
@@ -541,6 +547,8 @@ func (m *metadataMemo) release() {
 	clear(m.content)
 	m.lastSet = false
 	m.uncached = m.uncached[:0]
+	m.dictionary, m.stats = nil, nil
+	metadataMemos.Put(m)
 }
 
 // observeMetadataLocked records that series has the value id from timestamp on, for a caller holding its shard's lock

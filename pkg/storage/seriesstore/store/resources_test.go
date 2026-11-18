@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"math"
 	"sync"
@@ -52,6 +53,50 @@ func TestEncodeResourceAttributes(t *testing.T) {
 	asString, _ := encodeResourceAttributes(nil, []mimirpb.ResourceAttribute{{Key: "cores", StringValue: "-8"}}, false, nil)
 	asInt, _ := encodeResourceAttributes(nil, []mimirpb.ResourceAttribute{{Key: "cores", Type: mimirpb.RESOURCE_ATTRIBUTE_INT, IntValue: -8}}, false, nil)
 	require.NotEqual(t, asString, asInt, "a value's type is part of it")
+}
+
+// A record's resource entry decodes in place to what Unmarshal reads: every type's field, past the fields a newer
+// writer adds, and a malformed entry is one Unmarshal refuses too.
+func TestDecodeResourceEntry(t *testing.T) {
+	entry := mimirpb.ResourceEntry{Attributes: []mimirpb.ResourceAttribute{
+		{Key: "service.name", StringValue: "frontend"},
+		{Key: "debug", Type: mimirpb.RESOURCE_ATTRIBUTE_BOOL, BoolValue: true},
+		{Key: "cores", Type: mimirpb.RESOURCE_ATTRIBUTE_INT, IntValue: -8},
+		{Key: "ratio", Type: mimirpb.RESOURCE_ATTRIBUTE_DOUBLE, DoubleValue: 0.5},
+		{Key: "id", Type: mimirpb.RESOURCE_ATTRIBUTE_BYTES, BytesValue: []byte{1, 2}},
+	}}
+	every, err := entry.Marshal()
+	require.NoError(t, err)
+	tag := func(into []byte, field, wire uint64) []byte { return binary.AppendUvarint(into, field<<3|wire) }
+	bytesField := func(into []byte, field uint64, value []byte) []byte {
+		return append(binary.AppendUvarint(tag(into, field, 2), uint64(len(value))), value...)
+	}
+	attribute, err := entry.Attributes[0].Marshal()
+	require.NoError(t, err)
+	unknown := binary.AppendUvarint(tag(bytesField(nil, 1, bytesField(attribute, 15, []byte("x"))), 16, 0), 1)
+	// One byte where a double's eight are read.
+	doubleAsVarint := bytesField(nil, 1, binary.AppendUvarint(tag(nil, 6, 0), 1))
+
+	for _, c := range []struct {
+		name      string
+		encoded   []byte
+		malformed bool
+	}{
+		{name: "every type", encoded: every},
+		{name: "unknown fields", encoded: unknown},
+		{name: "truncated", encoded: every[:len(every)-1], malformed: true},
+		{name: "double as a varint", encoded: doubleAsVarint, malformed: true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var want mimirpb.ResourceEntry
+			require.Equal(t, c.malformed, want.Unmarshal(c.encoded) != nil, "Unmarshal")
+			got, ok := decodeResourceEntry(c.encoded, nil)
+			require.Equal(t, !c.malformed, ok)
+			if ok {
+				require.Equal(t, want.Attributes, got)
+			}
+		})
+	}
 }
 
 func TestEngineKeepsSeriesResourcesOnEveryPath(t *testing.T) {
