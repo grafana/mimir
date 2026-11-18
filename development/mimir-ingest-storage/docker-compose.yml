@@ -106,7 +106,7 @@ services:
     command:
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=continuous-test -activity-tracker.filepath=/activity/continuous-test -tests.run-interval=1m -tests.write-endpoint=http://distributor-1:8080 -tests.read-endpoint=http://query-frontend:8080/prometheus -tests.tenant-id=mimir-continuous-test -tests.write-read-series-test.max-query-age=1h -tests.write-read-series-test.num-series=100 -tests.explore.enabled=true -tests.explore.pace=dev"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=continuous-test -activity-tracker.filepath=/activity/continuous-test -tests.run-interval=1m -tests.write-endpoint=http://distributor-1:8080 -tests.read-endpoint=http://query-frontend:8080/prometheus -tests.tenant-id=mimir-continuous-test -tests.write-read-series-test.max-query-age=1h -tests.write-read-series-test.num-series=100 -tests.explore.enabled=true -tests.explore.write-interval=1s"
     depends_on:
       distributor-1:
         condition: "service_started"

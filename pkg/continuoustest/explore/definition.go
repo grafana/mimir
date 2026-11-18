@@ -10,7 +10,6 @@ import (
 	"os"
 	"slices"
 	"strconv"
-	"time"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -40,6 +39,25 @@ func (p Protocol) writeProtocol() continuoustest.WriteProtocol {
 		return "prometheus"
 	}
 }
+
+// Family is a family of series, with its own sample format and dimensions.
+type Family string
+
+const (
+	FamilyFloat           Family = "float"
+	FamilyNativeHistogram Family = "native_histogram"
+)
+
+// MetricType is the metric type of a float series.
+type MetricType string
+
+const (
+	MetricTypeCounter  MetricType = "counter"
+	MetricTypeGauge    MetricType = "gauge"
+	MetricTypeUnknown  MetricType = "unknown"
+	MetricTypeInfo     MetricType = "info"
+	MetricTypeStateset MetricType = "stateset"
+)
 
 // Charset is the set of characters that the names of metrics and labels are made of.
 type Charset string
@@ -79,26 +97,38 @@ const (
 	LayoutZeroOnly Layout = "zero_only"
 )
 
-// Definition describes the behavior space to explore and the paces at which it can be explored.
+// Definition describes the behavior space to explore.
 type Definition struct {
 	// Protocols and WriteSizes are what each write picks from: a protocol, and how many series to
 	// write a sample of.
 	Protocols  []Protocol `yaml:"protocols"`
 	WriteSizes []int      `yaml:"write_sizes"`
 
-	// Charsets and NativeHistograms define the dimensions of the series.
-	Charsets         []Charset                  `yaml:"charsets"`
-	NativeHistograms NativeHistogramsDefinition `yaml:"native_histograms"`
-
-	Paces map[string]Pace `yaml:"paces"`
+	// Charsets is a dimension of the series of every family. Floats and NativeHistograms define the
+	// other dimensions of the series of each family. A family without a definition isn't explored.
+	Charsets         []Charset                   `yaml:"charsets"`
+	Floats           *FloatsDefinition           `yaml:"floats"`
+	NativeHistograms *NativeHistogramsDefinition `yaml:"native_histograms"`
 }
 
-// dimensions returns the dimensions of the series in a fixed order. With a given seed, the order
-// determines which series each write picks.
-func (d Definition) dimensions() []dimension {
+// families returns the dimensions of the series of each explored family, in a fixed order. With a
+// given seed, the order determines which series each write picks.
+func (d Definition) families() [][]dimension {
+	var families [][]dimension
+	if d.Floats != nil {
+		families = append(families, d.familyDimensions(FamilyFloat, d.Floats.dimensions()))
+	}
+	if d.NativeHistograms != nil {
+		families = append(families, d.familyDimensions(FamilyNativeHistogram, d.NativeHistograms.dimensions()))
+	}
+	return families
+}
+
+func (d Definition) familyDimensions(family Family, dims []dimension) []dimension {
 	return append([]dimension{
+		newDimension(labelFamily, []Family{family}),
 		newDimension(labelCharset, d.Charsets),
-	}, d.NativeHistograms.dimensions()...)
+	}, dims...)
 }
 
 func newDimension[T ~string](name string, values []T) dimension {
@@ -110,10 +140,15 @@ func newDimension[T ~string](name string, values []T) dimension {
 }
 
 // exclusions returns the pairs of values that can't be written together, when writing to a tenant
-// with the given name validation scheme. The protocol of a write counts as a dimension.
+// with the given name validation scheme. The protocol of a write counts as a dimension. A pair only
+// excludes the series that have both dimensions.
 func exclusions(scheme model.ValidationScheme) []exclusion {
 	custom := strconv.Itoa(int(histogram.CustomBucketsSchema))
 	excl := []exclusion{
+		// OTLP has neither unknown, info nor stateset metrics, so they would be written as gauges.
+		{dim1: labelProtocol, value1: string(ProtocolOTLP), dim2: labelType, value2: string(MetricTypeUnknown)},
+		{dim1: labelProtocol, value1: string(ProtocolOTLP), dim2: labelType, value2: string(MetricTypeInfo)},
+		{dim1: labelProtocol, value1: string(ProtocolOTLP), dim2: labelType, value2: string(MetricTypeStateset)},
 		// OTLP exponential histograms only have integer counts.
 		{dim1: labelProtocol, value1: string(ProtocolOTLP), dim2: labelSampleType, value2: string(SampleTypeFloat)},
 		// OTLP has no gauge histograms, so a gauge would be written as a cumulative histogram.
@@ -135,25 +170,26 @@ func exclusions(scheme model.ValidationScheme) []exclusion {
 	return excl
 }
 
+// FloatsDefinition lists the values of each dimension of float series to explore.
+type FloatsDefinition struct {
+	Types []MetricType `yaml:"types"`
+}
+
+func (d FloatsDefinition) validate() error {
+	return validateValues("types", d.Types, []MetricType{MetricTypeCounter, MetricTypeGauge, MetricTypeUnknown, MetricTypeInfo, MetricTypeStateset})
+}
+
+// dimensions returns the float dimensions in a fixed order.
+func (d FloatsDefinition) dimensions() []dimension {
+	return []dimension{newDimension(labelType, d.Types)}
+}
+
 // NativeHistogramsDefinition lists the values of each native histogram dimension to explore.
 type NativeHistogramsDefinition struct {
 	SampleTypes []SampleType `yaml:"sample_types"`
 	Kinds       []Kind       `yaml:"kinds"`
 	Schemas     []int32      `yaml:"schemas"`
 	Layouts     []Layout     `yaml:"layouts"`
-}
-
-// Pace controls how quickly the behavior space is explored.
-type Pace struct {
-	// WriteInterval is how often the test writes samples and reads them back.
-	WriteInterval time.Duration `yaml:"write_interval"`
-}
-
-func (p Pace) validate() error {
-	if p.WriteInterval < time.Second || p.WriteInterval%time.Second != 0 {
-		return errors.New("write_interval must be a positive number of seconds")
-	}
-	return nil
 }
 
 func (d NativeHistogramsDefinition) validate() error {
@@ -227,15 +263,17 @@ func ParseDefinition(data []byte) (Definition, error) {
 	if err := validateValues("charsets", def.Charsets, []Charset{CharsetLegacy, CharsetUTF8}); err != nil {
 		return Definition{}, err
 	}
-	if err := def.NativeHistograms.validate(); err != nil {
-		return Definition{}, fmt.Errorf("native_histograms: %w", err)
+	if def.Floats == nil && def.NativeHistograms == nil {
+		return Definition{}, errors.New("at least one of floats and native_histograms is required")
 	}
-	if len(def.Paces) == 0 {
-		return Definition{}, errors.New("paces: at least one pace is required")
+	if def.Floats != nil {
+		if err := def.Floats.validate(); err != nil {
+			return Definition{}, fmt.Errorf("floats: %w", err)
+		}
 	}
-	for name, p := range def.Paces {
-		if err := p.validate(); err != nil {
-			return Definition{}, fmt.Errorf("paces: %s: %w", name, err)
+	if def.NativeHistograms != nil {
+		if err := def.NativeHistograms.validate(); err != nil {
+			return Definition{}, fmt.Errorf("native_histograms: %w", err)
 		}
 	}
 	return def, nil

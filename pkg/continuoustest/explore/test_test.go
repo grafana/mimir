@@ -29,26 +29,29 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-// testDefinition has 64 combinations of series dimension values. With the legacy name validation
-// scheme, v1 and v2 each write the 28 series with legacy names: every sample type and kind, with
-// 3 exponential schemas and 2 layouts, or with custom buckets and the gaps layout. OTLP writes the
-// 12 int counters with exponential buckets of both charsets. That makes 34 distinct series. With
-// the UTF-8 scheme, v1 and v2 each write 56 series, which are all the series.
+// testDefinition has 10 float and 64 native histogram combinations of series dimension values.
+// With the legacy name validation scheme, v1 and v2 each write the 33 series with legacy names:
+// the 5 float types, and the 28 native histograms of every sample type and kind, with 3
+// exponential schemas and 2 layouts, or with custom buckets and the gaps layout. OTLP writes the
+// float counters and gauges, and the 12 native histogram int counters with exponential buckets,
+// of both charsets, so 16 series. That makes 41 distinct series. With the UTF-8 scheme, v1 and v2
+// each write 66 series, which are all the series.
 const testDefinition = `
 protocols: [v1, v2, otlp]
 write_sizes: [1, 2, 5, 10]
 charsets: [legacy, utf8]
+floats:
+  types: [counter, gauge, unknown, info, stateset]
 native_histograms:
   sample_types: [int, float]
   kinds: [counter, gauge]
   schemas: [-4, 0, 8, -53]
   layouts: [gaps, negative]
-paces:
-  test:
-    write_interval: 10s
 `
 
-// testStart is a multiple of the write interval.
+// testWriteInterval is the write interval of the tests, and testStart is a multiple of it.
+const testWriteInterval = 10 * time.Second
+
 var testStart = time.Unix(1_800_000_000, 0).UTC()
 
 func TestTest_Run(t *testing.T) {
@@ -65,6 +68,10 @@ func TestTest_Run(t *testing.T) {
 	samples := 0
 	for i, w := range client.writes {
 		require.Equal(t, testStart.Add(time.Duration(i+1)*10*time.Second).UnixMilli(), w.ts, "write %d", i)
+		for _, s := range w.series {
+			require.Equal(t, "10s", s.Get(labelWriteInterval), "write %d", i)
+			require.Equal(t, "1", s.Get(labelSeed), "write %d", i)
+		}
 		samples += len(w.series)
 	}
 	require.Equal(t, float64(60), sumCounters(test.metrics.writesTotal))
@@ -75,14 +82,33 @@ func TestTest_Run(t *testing.T) {
 	require.Equal(t, testutil.CollectAndCount(test.metrics.queryResultChecksTotal), testutil.CollectAndCount(test.metrics.queryResultChecksFailedTotal))
 }
 
+func TestTest_WriteInterval(t *testing.T) {
+	client := newFakeClient()
+	test := newTestTestWithConfig(t, client, false, prometheus.NewPedanticRegistry(), func(cfg *Config) { cfg.WriteInterval = time.Minute })
+	require.NoError(t, test.Run(context.Background(), testStart))
+	runFor(t, test, testStart.Add(30*time.Second), 10*time.Minute)
+
+	require.Len(t, client.writes, 10)
+	for i, w := range client.writes {
+		require.Equal(t, testStart.Add(time.Duration(i+1)*time.Minute).UnixMilli(), w.ts, "write %d", i)
+		for _, s := range w.series {
+			require.Equal(t, "1m", s.Get(labelWriteInterval), "write %d", i)
+		}
+	}
+}
+
 func TestTest_MetricLabelsAreTheDimensions(t *testing.T) {
 	def, err := LoadDefinition("")
 	require.NoError(t, err)
 	var names []string
-	for _, d := range def.dimensions() {
-		names = append(names, d.name)
+	for _, dims := range def.families() {
+		for _, d := range dims {
+			if !slices.Contains(names, d.name) {
+				names = append(names, d.name)
+			}
+		}
 	}
-	require.Equal(t, names, dimensionNames())
+	require.ElementsMatch(t, names, dimensionNames())
 }
 
 func TestTest_WritesPickProtocolsSizesAndSeries(t *testing.T) {
@@ -98,9 +124,7 @@ func TestTest_WritesPickProtocolsSizesAndSeries(t *testing.T) {
 		sizes[len(w.series)] = true
 		for _, s := range w.series {
 			if protocol == "otlp" {
-				require.Equal(t, "int", s.Get(labelSampleType), "series %s", s)
-				require.Equal(t, "counter", s.Get(labelKind), "series %s", s)
-				require.NotEqual(t, "-53", s.Get(labelSchema), "series %s", s)
+				requireOTLPCanWrite(t, s)
 			} else {
 				require.Equal(t, "legacy", s.Get(labelCharset), "series %s", s)
 			}
@@ -117,6 +141,21 @@ func TestTest_WritesPickProtocolsSizesAndSeries(t *testing.T) {
 	for _, p := range []string{"v1", "v2", "otlp"} {
 		require.Positive(t, testutil.ToFloat64(test.metrics.samplesTotal.WithLabelValues(labelProtocol, p)), "protocol %s", p)
 	}
+	for _, f := range []Family{FamilyFloat, FamilyNativeHistogram} {
+		require.Positive(t, testutil.ToFloat64(test.metrics.samplesTotal.WithLabelValues(labelFamily, string(f))), "family %s", f)
+	}
+}
+
+// requireOTLPCanWrite checks that OTLP can write the series: OTLP writes float counters and
+// gauges, and native histogram int counters with exponential buckets.
+func requireOTLPCanWrite(t *testing.T, s labels.Labels) {
+	if s.Get(labelFamily) == string(FamilyFloat) {
+		require.Contains(t, []string{"counter", "gauge"}, s.Get(labelType), "series %s", s)
+		return
+	}
+	require.Equal(t, "int", s.Get(labelSampleType), "series %s", s)
+	require.Equal(t, "counter", s.Get(labelKind), "series %s", s)
+	require.NotEqual(t, "-53", s.Get(labelSchema), "series %s", s)
 }
 
 func TestTest_SeriesAreLongLived(t *testing.T) {
@@ -124,7 +163,7 @@ func TestTest_SeriesAreLongLived(t *testing.T) {
 	test := newTestTest(t, client, false, prometheus.NewPedanticRegistry())
 	runFor(t, test, testStart, time.Hour)
 
-	require.Len(t, client.series, 34, "every series has been picked")
+	require.Len(t, client.series, 41, "every series has been picked")
 	mixedProtocols := 0
 	for _, s := range client.series {
 		require.Greater(t, len(s.samples), 1, "series %s should have been picked more than once", s.labels)
@@ -145,7 +184,7 @@ func TestTest_NewSeriesWithCachedMatchingSeries(t *testing.T) {
 	test := newTestTest(t, client, false, prometheus.NewPedanticRegistry())
 	runFor(t, test, testStart, time.Hour)
 
-	require.Len(t, client.series, 34, "every series has been created, most of them after earlier queries")
+	require.Len(t, client.series, 41, "every series has been created, most of them after earlier queries")
 	require.Zero(t, sumCounters(test.metrics.queryResultChecksFailedTotal))
 }
 
@@ -171,13 +210,14 @@ func TestTest_UTF8NamesWithTheLegacyScheme(t *testing.T) {
 			continue
 		}
 		utf8Series++
-		require.Equal(t, counterMetricName, s.labels.Get(model.MetricNameLabel), "OTLP escapes the metric name")
+		name := s.labels.Get(model.MetricNameLabel)
+		require.True(t, strings.HasPrefix(name, metricNamePrefix), "OTLP escapes the metric name %s", name)
 		require.Equal(t, utf8LabelValue, s.labels.Get(escapedUTF8LabelName), "OTLP escapes the label name")
 		for _, sample := range s.samples {
 			require.Equal(t, continuoustest.WriteProtocol("otlp-http"), sample.protocol, "only OTLP accepts UTF-8 names")
 		}
 	}
-	require.Equal(t, 6, utf8Series)
+	require.Equal(t, 8, utf8Series, "the float counter and gauge, and the 6 native histogram int counters with exponential buckets")
 }
 
 func TestTest_UTF8NamesWithTheUTF8Scheme(t *testing.T) {
@@ -187,14 +227,14 @@ func TestTest_UTF8NamesWithTheUTF8Scheme(t *testing.T) {
 		cfg.NameValidationScheme = model.UTF8Validation
 	})
 	require.NoError(t, test.Run(context.Background(), testStart))
-	require.Len(t, client.series, 56)
+	require.Len(t, client.series, 66)
 
 	protocols := map[continuoustest.WriteProtocol]bool{}
 	for _, s := range client.series {
 		if s.labels.Get(labelCharset) != "utf8" {
 			continue
 		}
-		require.Contains(t, []string{utf8CounterMetricName, utf8GaugeMetricName}, s.labels.Get(model.MetricNameLabel))
+		require.True(t, strings.HasPrefix(s.labels.Get(model.MetricNameLabel), utf8MetricNamePrefix), "series %s", s.labels)
 		require.Equal(t, utf8LabelValue, s.labels.Get(utf8LabelName))
 		for _, sample := range s.samples {
 			protocols[sample.protocol] = true
@@ -212,6 +252,16 @@ func TestTest_DetectsWrongResults(t *testing.T) {
 	err := test.Run(context.Background(), testStart.Add(30*time.Second))
 	require.ErrorContains(t, err, "expected histogram")
 	require.Positive(t, sumCounters(test.metrics.queryResultChecksFailedTotal))
+}
+
+func TestTest_DetectsWrongFloats(t *testing.T) {
+	client := newFakeClient()
+	client.corruptFloat = func(v float64) float64 { return v + 0.25 }
+	test := newTestTest(t, client, true, prometheus.NewPedanticRegistry())
+	err := test.Run(context.Background(), testStart)
+	require.ErrorContains(t, err, "expected float")
+	require.NotContains(t, err.Error(), "expected histogram")
+	require.Positive(t, testutil.ToFloat64(test.metrics.queryResultChecksFailedTotal.WithLabelValues("v1", "float", "legacy", "gauge", "", "", "", "")))
 }
 
 func TestTest_DetectsWrongLabels(t *testing.T) {
@@ -329,16 +379,16 @@ func TestTest_SmokeTest(t *testing.T) {
 			now := testStart.Add(1500 * time.Millisecond)
 			require.NoError(t, test.Run(context.Background(), now))
 
-			// Writes of 1, 2, 5, 10, 1, 2, 5 and 2 series write the 28 series of v1 and of v2, and
-			// writes of 1, 2, 5 and 4 series write the 12 series of OTLP.
+			// Writes of 1, 2, 5, 10, 1, 2, 5 and 7 series write the 33 series of v1 and of v2, and
+			// writes of 1, 2, 5 and 8 series write the 16 series of OTLP.
 			require.Len(t, client.writes, 20)
 			samples := map[continuoustest.WriteProtocol]int{}
 			for i, w := range client.writes {
 				require.Equal(t, now.Truncate(time.Second).Add(time.Duration(i-19)*time.Second).UnixMilli(), w.ts, "write %d", i)
 				samples[w.protocol] += len(w.series)
 			}
-			require.Equal(t, map[continuoustest.WriteProtocol]int{"prometheus": 28, "prometheus2": 28, "otlp-http": 12}, samples)
-			require.Len(t, client.series, 34)
+			require.Equal(t, map[continuoustest.WriteProtocol]int{"prometheus": 33, "prometheus2": 33, "otlp-http": 16}, samples)
+			require.Len(t, client.series, 41)
 		})
 	}
 }
@@ -346,7 +396,7 @@ func TestTest_SmokeTest(t *testing.T) {
 func TestTest_InitErrors(t *testing.T) {
 	path := writeDefinition(t)
 
-	cfg := Config{DefinitionFile: path, Pace: "test", Seed: 1, RandomSource: RandomSourceSeed, NameValidationScheme: model.LegacyValidation}
+	cfg := Config{DefinitionFile: path, WriteInterval: testWriteInterval, Seed: 1, RandomSource: RandomSourceSeed, NameValidationScheme: model.LegacyValidation}
 	managerCfg := continuoustest.ManagerConfig{RunInterval: 30 * time.Second}
 
 	noOTLP := newFakeClient()
@@ -354,10 +404,12 @@ func TestTest_InitErrors(t *testing.T) {
 	test := NewTest(cfg, noOTLP, managerCfg, log.NewNopLogger(), nil)
 	require.ErrorContains(t, test.Init(context.Background(), time.Now()), "creating the client of protocol otlp")
 
-	missingPace := cfg
-	missingPace.Pace = "missing"
-	test = NewTest(missingPace, newFakeClient(), managerCfg, log.NewNopLogger(), nil)
-	require.ErrorContains(t, test.Init(context.Background(), time.Now()), `pace "missing" is not defined`)
+	for _, interval := range []time.Duration{0, 500 * time.Millisecond, 1500 * time.Millisecond} {
+		invalidInterval := cfg
+		invalidInterval.WriteInterval = interval
+		test = NewTest(invalidInterval, newFakeClient(), managerCfg, log.NewNopLogger(), nil)
+		require.ErrorContains(t, test.Init(context.Background(), time.Now()), fmt.Sprintf("write interval %s is not a positive number of seconds", interval))
+	}
 
 	unknownSource := cfg
 	unknownSource.RandomSource = "dice"
@@ -383,8 +435,7 @@ func TestTest_AntithesisSource_Run(t *testing.T) {
 		protocols[w.protocol] = true
 		for _, s := range w.series {
 			if w.protocol == "otlp-http" {
-				require.Equal(t, "int", s.Get(labelSampleType), "series %s", s)
-				require.Equal(t, "counter", s.Get(labelKind), "series %s", s)
+				requireOTLPCanWrite(t, s)
 			} else {
 				require.Equal(t, "legacy", s.Get(labelCharset), "series %s", s)
 			}
@@ -405,7 +456,7 @@ func newTestTest(t *testing.T, client *fakeClient, smokeTest bool, reg prometheu
 }
 
 func newTestTestWithConfig(t *testing.T, client *fakeClient, smokeTest bool, reg prometheus.Registerer, modify func(*Config)) *Test {
-	cfg := Config{DefinitionFile: writeDefinition(t), Pace: "test", Seed: 1, RandomSource: RandomSourceSeed, NameValidationScheme: model.LegacyValidation}
+	cfg := Config{DefinitionFile: writeDefinition(t), WriteInterval: testWriteInterval, Seed: 1, RandomSource: RandomSourceSeed, NameValidationScheme: model.LegacyValidation}
 	modify(&cfg)
 	test := NewTest(cfg, client, continuoustest.ManagerConfig{SmokeTest: smokeTest, RunInterval: 30 * time.Second}, log.NewNopLogger(), reg)
 	require.NoError(t, test.Init(context.Background(), time.Now()))
@@ -433,6 +484,8 @@ type fakeClient struct {
 	writes []fakeWrite
 	// corrupt, if set, modifies every histogram returned by queries.
 	corrupt func(*prompb.Histogram)
+	// corruptFloat, if set, modifies every float value returned by queries.
+	corruptFloat func(float64) float64
 	// corruptMetric, if set, modifies the labels of every series returned by queries.
 	corruptMetric func(model.Metric)
 	// extraSeries is whether queries return a series that wasn't written, with the first sample.
@@ -458,8 +511,17 @@ type fakeSeries struct {
 }
 
 type fakeSample struct {
-	histogram prompb.Histogram
+	// histogram is nil for float samples.
+	histogram *prompb.Histogram
+	value     float64
 	protocol  continuoustest.WriteProtocol
+}
+
+func (s fakeSample) String() string {
+	if s.histogram != nil {
+		return fmt.Sprintf("%s %s", s.protocol, s.histogram)
+	}
+	return fmt.Sprintf("%s %v", s.protocol, s.value)
 }
 
 type fakeWrite struct {
@@ -535,19 +597,25 @@ func (c *fakeClient) write(series []prompb.TimeSeries, metadata []prompb.MetricM
 			s = &fakeSeries{labels: lbls, samples: map[int64]fakeSample{}}
 			c.series[lbls.String()] = s
 		}
+		samples := map[int64]fakeSample{}
+		for _, sample := range ts.Samples {
+			samples[sample.Timestamp] = fakeSample{value: sample.Value, protocol: protocol}
+		}
 		for _, h := range ts.Histograms {
-			w.ts = h.Timestamp
-			if h.Timestamp < c.oldestStored.UnixMilli() {
+			samples[h.Timestamp] = fakeSample{histogram: &h, protocol: protocol}
+		}
+		for timestamp, sample := range samples {
+			w.ts = timestamp
+			if timestamp < c.oldestStored.UnixMilli() {
 				continue
 			}
 			// Like Mimir, a sample with the timestamp of an existing one is rejected unless they are
 			// identical. Different protocols can store the same histogram differently, for example
 			// with more empty buckets.
-			sample := fakeSample{histogram: h, protocol: protocol}
-			if existing, ok := s.samples[h.Timestamp]; ok && (existing.histogram.String() != h.String() || existing.protocol != protocol) {
-				return 400, fmt.Errorf("duplicate sample for timestamp %d", h.Timestamp)
+			if existing, ok := s.samples[timestamp]; ok && existing.String() != sample.String() {
+				return 400, fmt.Errorf("duplicate sample for timestamp %d", timestamp)
 			}
-			s.samples[h.Timestamp] = sample
+			s.samples[timestamp] = sample
 		}
 	}
 	for _, m := range metadata {
@@ -637,22 +705,35 @@ func (c *fakeClient) eval(expr parser.Expr, ts time.Time) (model.Vector, error) 
 		if !ok {
 			continue
 		}
-		h := sample.histogram
-		if c.corrupt != nil {
-			c.corrupt(&h)
-		}
-		var fh = h.ToFloatHistogram()
-		if !h.IsFloatHistogram() {
-			fh = h.ToIntHistogram().ToFloat(nil)
-		}
 		metric := model.Metric{}
 		s.labels.Range(func(l labels.Label) { metric[model.LabelName(l.Name)] = model.LabelValue(l.Value) })
 		if c.corruptMetric != nil {
 			c.corruptMetric(metric)
 		}
-		out = append(out, &model.Sample{Metric: metric, Timestamp: model.TimeFromUnixNano(ts.UnixNano()), Histogram: mimirpb.FromFloatHistogramToPromHistogram(fh)})
+		out = append(out, c.querySample(metric, ts, sample))
 	}
 	return out, nil
+}
+
+func (c *fakeClient) querySample(metric model.Metric, ts time.Time, sample fakeSample) *model.Sample {
+	out := &model.Sample{Metric: metric, Timestamp: model.TimeFromUnixNano(ts.UnixNano())}
+	if sample.histogram == nil {
+		out.Value = model.SampleValue(sample.value)
+		if c.corruptFloat != nil {
+			out.Value = model.SampleValue(c.corruptFloat(sample.value))
+		}
+		return out
+	}
+	h := *sample.histogram
+	if c.corrupt != nil {
+		c.corrupt(&h)
+	}
+	var fh = h.ToFloatHistogram()
+	if !h.IsFloatHistogram() {
+		fh = h.ToIntHistogram().ToFloat(nil)
+	}
+	out.Histogram = mimirpb.FromFloatHistogramToPromHistogram(fh)
+	return out
 }
 
 func (c *fakeClient) seriesMatching(selector *parser.VectorSelector) []*fakeSeries {

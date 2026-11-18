@@ -13,10 +13,12 @@ import (
 func TestExplorer_DefaultDefinition(t *testing.T) {
 	type counts struct{ v1, v2, otlp, series int }
 	for scheme, expected := range map[model.ValidationScheme]counts{
-		// Remote write writes every legacy combination but the 8 of custom buckets with negative or
-		// zero buckets, and OTLP writes the 52 int counters with exponential buckets of each charset.
-		model.LegacyValidation: {v1: 216, v2: 216, otlp: 104, series: 216 + 52},
-		model.UTF8Validation:   {v1: 432, v2: 432, otlp: 104, series: 432},
+		// Remote write writes the 5 float types and every native histogram combination but the 8 of
+		// custom buckets with negative or zero buckets, of the legacy charset. OTLP writes the float
+		// counters and gauges, and the 52 native histogram int counters with exponential buckets, of
+		// each charset.
+		model.LegacyValidation: {v1: 5 + 216, v2: 5 + 216, otlp: 4 + 104, series: 5 + 216 + 2 + 52},
+		model.UTF8Validation:   {v1: 10 + 432, v2: 10 + 432, otlp: 4 + 104, series: 10 + 432},
 	} {
 		t.Run(scheme.String(), func(t *testing.T) {
 			e := testDefaultExplorer(t, scheme)
@@ -30,7 +32,9 @@ func TestExplorer_DefaultDefinition(t *testing.T) {
 					if histogram.IsCustomBucketsSchema(s.Schema) {
 						require.Contains(t, []Layout{LayoutContiguous, LayoutGaps}, s.Layout, "series %s", s)
 					}
-					if p == ProtocolOTLP {
+					if p == ProtocolOTLP && s.Family == FamilyFloat {
+						require.Contains(t, []MetricType{MetricTypeCounter, MetricTypeGauge}, s.Type, "series %s", s)
+					} else if p == ProtocolOTLP {
 						require.Equal(t, SampleTypeInt, s.SampleType, "series %s", s)
 						require.Equal(t, KindCounter, s.Kind, "series %s", s)
 						require.False(t, histogram.IsCustomBucketsSchema(s.Schema), "series %s", s)
@@ -125,12 +129,10 @@ func testDefaultExplorer(t *testing.T, scheme model.ValidationScheme) *explorer 
 }
 
 // testDefinitionWith parses a definition made of the given protocols, write sizes and charsets,
-// int and float counters with schema 0 and the gaps layout, and a single pace.
+// and int and float counters with schema 0 and the gaps layout.
 func testDefinitionWith(t *testing.T, head string) Definition {
 	def, err := ParseDefinition([]byte(head + `
 native_histograms: {sample_types: [int, float], kinds: [counter], schemas: [0], layouts: [gaps]}
-paces:
-  test: {write_interval: 10s}
 `))
 	require.NoError(t, err)
 	return def

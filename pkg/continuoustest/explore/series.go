@@ -16,25 +16,24 @@ import (
 )
 
 const (
-	counterMetricName = "mimir_continuous_test_explore_native_histogram_counter"
-	gaugeMetricName   = "mimir_continuous_test_explore_native_histogram_gauge"
-
 	// The names of UTF-8 series escape to the names of legacy series, or to escapedUTF8LabelName,
 	// regardless of how the OTLP endpoint is configured to handle underscores.
-	utf8CounterMetricName = "mimir.continuous_test.explore.native_histogram.counter"
-	utf8GaugeMetricName   = "mimir.continuous_test.explore.native_histogram.gauge"
-	utf8LabelName         = "explore.label.café"
-	escapedUTF8LabelName  = "explore_label_caf_"
-	utf8LabelValue        = "ünïcödé ✓"
+	metricNamePrefix     = "mimir_continuous_test_explore_"
+	utf8MetricNamePrefix = "mimir.continuous_test.explore."
+	utf8LabelName        = "explore.label.café"
+	escapedUTF8LabelName = "explore_label_caf_"
+	utf8LabelValue       = "ünïcödé ✓"
 
-	labelCharset    = "charset"
-	labelSampleType = "sample_type"
-	labelKind       = "kind"
-	labelSchema     = "schema"
-	labelLayout     = "layout"
-	labelSeed       = "seed"
-	labelPace       = "pace"
-	labelProtocol   = "protocol"
+	labelFamily        = "family"
+	labelCharset       = "charset"
+	labelType          = "type"
+	labelSampleType    = "sample_type"
+	labelKind          = "kind"
+	labelSchema        = "schema"
+	labelLayout        = "layout"
+	labelSeed          = "seed"
+	labelWriteInterval = "write_interval"
+	labelProtocol      = "protocol"
 
 	zeroThreshold = 0x1p-128
 	// metadataUnit is the unit of the metadata written with remote write. OTLP writes no unit,
@@ -48,10 +47,17 @@ type Series struct {
 	// Seed determines the bucket layout of the series and the values of its samples.
 	Seed uint64
 
-	// Dimensions holds the dimension values of the series as labels, in the order of dimensions.
+	// Dimensions holds the dimension values of the series as labels, in the order of the
+	// dimensions of its family.
 	Dimensions []prompb.Label
 
-	Charset    Charset
+	Family  Family
+	Charset Charset
+
+	// Type is the metric type of float series.
+	Type MetricType
+
+	// SampleType, Kind, Schema and Layout are the dimensions of native histogram series.
 	SampleType SampleType
 	Kind       Kind
 	Schema     int32
@@ -69,8 +75,12 @@ func newSeries(seed uint64, dims []dimension, values []string) (Series, error) {
 		s.Dimensions = append(s.Dimensions, prompb.Label{Name: d.name, Value: v})
 		_, _ = fmt.Fprintf(h, "%s=%s\x00", d.name, v)
 		switch d.name {
+		case labelFamily:
+			s.Family = Family(v)
 		case labelCharset:
 			s.Charset = Charset(v)
+		case labelType:
+			s.Type = MetricType(v)
 		case labelSampleType:
 			s.SampleType = SampleType(v)
 		case labelKind:
@@ -101,16 +111,33 @@ func (s Series) String() string {
 
 // MetricName returns the name of the metric of the series.
 func (s Series) MetricName() string {
-	switch {
-	case s.Kind == KindGauge && s.Charset == CharsetUTF8:
-		return utf8GaugeMetricName
-	case s.Kind == KindGauge:
-		return gaugeMetricName
-	case s.Charset == CharsetUTF8:
-		return utf8CounterMetricName
-	default:
-		return counterMetricName
+	return s.metricName(s.Charset)
+}
+
+// metricName returns the name of the metric of the series with names of the given charset, such
+// as mimir_continuous_test_explore_float_gauge, or mimir.continuous_test.explore.float.gauge. The
+// names of counters of float samples end with _total, which the OTLP endpoint doesn't add again.
+func (s Series) metricName(charset Charset) string {
+	prefix, separator := metricNamePrefix, "_"
+	if charset == CharsetUTF8 {
+		prefix, separator = utf8MetricNamePrefix, "."
 	}
+	if s.Family == FamilyFloat {
+		name := prefix + string(FamilyFloat) + separator + string(s.Type)
+		if s.Type == MetricTypeCounter {
+			name += "_total"
+		}
+		return name
+	}
+	return prefix + string(FamilyNativeHistogram) + separator + string(s.Kind)
+}
+
+var floatMetadataTypes = map[MetricType]prompb.MetricMetadata_MetricType{
+	MetricTypeCounter:  prompb.MetricMetadata_COUNTER,
+	MetricTypeGauge:    prompb.MetricMetadata_GAUGE,
+	MetricTypeUnknown:  prompb.MetricMetadata_UNKNOWN,
+	MetricTypeInfo:     prompb.MetricMetadata_INFO,
+	MetricTypeStateset: prompb.MetricMetadata_STATESET,
 }
 
 // Metadata returns the metadata written with the series by the given protocol. Its help identifies
@@ -122,13 +149,49 @@ func (s Series) Metadata(protocol Protocol) prompb.MetricMetadata {
 		Help:             fmt.Sprintf("A native histogram %s written by the continuous-test explore test with protocol %s.", s.Kind, protocol),
 		Unit:             metadataUnit,
 	}
-	if s.Kind == KindGauge {
+	switch {
+	case s.Family == FamilyFloat:
+		m.Type = floatMetadataTypes[s.Type]
+		m.Help = fmt.Sprintf("A float %s written by the continuous-test explore test with protocol %s.", s.Type, protocol)
+	case s.Kind == KindGauge:
 		m.Type = prompb.MetricMetadata_GAUGEHISTOGRAM
 	}
 	if protocol == ProtocolOTLP {
 		m.Unit = ""
 	}
 	return m
+}
+
+// TimeSeries returns the series with its sample at the given time, as it is written. commonLabels
+// identify the test instance writing the series.
+func (s Series) TimeSeries(ts time.Time, commonLabels []prompb.Label) prompb.TimeSeries {
+	series := prompb.TimeSeries{Labels: s.Labels(commonLabels)}
+	if s.Family == FamilyFloat {
+		series.Samples = []prompb.Sample{{Value: s.Float(ts), Timestamp: ts.UnixMilli()}}
+	} else {
+		series.Histograms = []prompb.Histogram{s.Sample(ts)}
+	}
+	return series
+}
+
+// Float returns the value of a float series at the given time, which only depends on the second it
+// falls in. Values are multiples of a quarter, which are exactly representable, so they survive
+// the round trip unchanged.
+func (s Series) Float(ts time.Time) float64 {
+	sec := ts.Unix()
+	switch s.Type {
+	case MetricTypeCounter:
+		// Like native histogram counters, counters grow at a constant rate per second since the Unix
+		// epoch, so any write can append a sample.
+		rate := int64(1 + s.Seed%100)
+		return float64(rate*sec) / 4
+	case MetricTypeInfo:
+		return 1
+	case MetricTypeStateset:
+		return float64(mix(s.Seed, uint64(sec)) % 2)
+	default:
+		return float64(int64(mix(s.Seed, uint64(sec))%40001)-20000) / 4
+	}
 }
 
 // Labels returns the sorted labels of the series. commonLabels identify the test instance writing
@@ -145,7 +208,7 @@ func (s Series) Labels(commonLabels []prompb.Label) []prompb.Label {
 	return lbls
 }
 
-// Sample returns the sample of the series at the given time, as it is written.
+// Sample returns the sample of a native histogram series at the given time, as it is written.
 func (s Series) Sample(ts time.Time) prompb.Histogram {
 	h, fh := s.Histogram(ts)
 	if h != nil {
@@ -154,8 +217,9 @@ func (s Series) Sample(ts time.Time) prompb.Histogram {
 	return prompb.FromFloatHistogram(ts.UnixMilli(), fh)
 }
 
-// Histogram returns the value of the series at the given time, which only depends on the second
-// it falls in. Exactly one of the returned histograms is non-nil, depending on the sample type.
+// Histogram returns the value of a native histogram series at the given time, which only depends on
+// the second it falls in. Exactly one of the returned histograms is non-nil, depending on the
+// sample type.
 func (s Series) Histogram(ts time.Time) (*histogram.Histogram, *histogram.FloatHistogram) {
 	sec := ts.Unix()
 	l := newLayout(s.Seed, s.Layout, histogram.IsCustomBucketsSchema(s.Schema))

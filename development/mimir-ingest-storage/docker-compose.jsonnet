@@ -197,7 +197,7 @@ std.manifestYamlDoc({
         '-tests.write-read-series-test.max-query-age=1h',
         '-tests.write-read-series-test.num-series=100',
         '-tests.explore.enabled=true',
-        '-tests.explore.pace=dev',
+        '-tests.explore.write-interval=1s',
       ],
     }),
   },

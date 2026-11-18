@@ -44,7 +44,7 @@ const (
 type Config struct {
 	Enabled              bool
 	DefinitionFile       string
-	Pace                 string
+	WriteInterval        time.Duration
 	Seed                 uint64
 	RandomSource         string
 	NameValidationScheme model.ValidationScheme
@@ -52,8 +52,8 @@ type Config struct {
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "tests.explore.enabled", false, "Set to true to run the explore test, which repeatedly writes samples of series drawn from a definition of the behavior space to explore, and reads them back. Its series are independent from the series of other tests.")
-	f.StringVar(&cfg.DefinitionFile, "tests.explore.definition-file", "", "Path to a YAML file defining the behavior space and the paces at which to explore it. If empty, the built-in definition is used.")
-	f.StringVar(&cfg.Pace, "tests.explore.pace", "production", "Name of the pace, from the definition, at which to explore the behavior space.")
+	f.StringVar(&cfg.DefinitionFile, "tests.explore.definition-file", "", "Path to a YAML file defining the behavior space to explore. If empty, the built-in definition is used.")
+	f.DurationVar(&cfg.WriteInterval, "tests.explore.write-interval", time.Minute, "How often the explore test writes samples and reads them back. Must be a whole number of seconds. Series are labeled with the write interval, so tests with different write intervals write different series.")
 	f.Uint64Var(&cfg.Seed, "tests.explore.seed", 1, "Seed of the explore test. With the same seed and definition, series have the same bucket layouts and values, and each write interval writes the same series with the same protocol. Set to 0 to pick a random seed at startup.")
 	f.StringVar(&cfg.RandomSource, "tests.explore.random-source", RandomSourceSeed, fmt.Sprintf("Source of the random choices of each write: its protocol, how many series it writes, and which. With %q, the choices are determined by the seed and the time of the write. With %q, they are drawn from the Antithesis SDK, so that Antithesis can guide the exploration. Outside Antithesis, the draws come from crypto/rand.", RandomSourceSeed, RandomSourceAntithesis))
 	cfg.NameValidationScheme = model.LegacyValidation
@@ -79,7 +79,6 @@ type Test struct {
 	logger          log.Logger
 	metrics         *metrics
 
-	pace         Pace
 	seed         uint64
 	explorer     *explorer
 	commonLabels []prompb.Label
@@ -139,9 +138,8 @@ func (t *Test) Init(_ context.Context, _ time.Time) error {
 	if err != nil {
 		return err
 	}
-	pace, ok := def.Paces[t.cfg.Pace]
-	if !ok {
-		return fmt.Errorf("pace %q is not defined", t.cfg.Pace)
+	if i := t.cfg.WriteInterval; i < time.Second || i%time.Second != 0 {
+		return fmt.Errorf("write interval %s is not a positive number of seconds", i)
 	}
 	if s := t.cfg.RandomSource; s != RandomSourceSeed && s != RandomSourceAntithesis {
 		return fmt.Errorf("unknown random source %q, supported values are %q and %q", s, RandomSourceSeed, RandomSourceAntithesis)
@@ -154,7 +152,6 @@ func (t *Test) Init(_ context.Context, _ time.Time) error {
 	if t.seed == 0 {
 		t.seed = rand.Uint64()
 	}
-	t.pace = pace
 	t.explorer, err = newExplorer(t.seed, def, exclusions(t.cfg.NameValidationScheme))
 	if err != nil {
 		return err
@@ -168,11 +165,11 @@ func (t *Test) Init(_ context.Context, _ time.Time) error {
 		t.writers[p] = w
 	}
 	t.commonLabels = []prompb.Label{
-		{Name: labelPace, Value: t.cfg.Pace},
+		{Name: labelWriteInterval, Value: model.Duration(t.cfg.WriteInterval).String()},
 		{Name: labelSeed, Value: strconv.FormatUint(t.seed, 10)},
 	}
 
-	level.Info(t.logger).Log("msg", "Initialized explore test", "random_source", t.cfg.RandomSource, "seed", t.seed, "pace", t.cfg.Pace, "write_interval", pace.WriteInterval, "name_validation_scheme", t.cfg.NameValidationScheme, "series", t.explorer.numSeries())
+	level.Info(t.logger).Log("msg", "Initialized explore test", "random_source", t.cfg.RandomSource, "seed", t.seed, "write_interval", t.cfg.WriteInterval, "name_validation_scheme", t.cfg.NameValidationScheme, "series", t.explorer.numSeries())
 	return nil
 }
 
@@ -195,7 +192,7 @@ func (t *Test) Run(ctx context.Context, now time.Time) error {
 
 // runWrites does the write of every write interval since the previous run.
 func (t *Test) runWrites(ctx context.Context, now time.Time) error {
-	latest := now.UnixNano() / int64(t.pace.WriteInterval)
+	latest := now.UnixNano() / int64(t.cfg.WriteInterval)
 	if !t.started {
 		// A previous process may have done the write of the latest step, with other choices if they
 		// were drawn from Antithesis. Mimir rejects a sample with the same timestamp as an existing
@@ -244,12 +241,12 @@ func (t *Test) runSmokeTest(ctx context.Context, now time.Time) error {
 // samples that are too old, and with ingest storage it does so after the write request succeeded,
 // so after a pause the test skips ahead instead of catching up.
 func (t *Test) firstWritableStep(now time.Time) int64 {
-	interval := int64(t.pace.WriteInterval)
+	interval := int64(t.cfg.WriteInterval)
 	return (now.Add(-2*t.runInterval).UnixNano() + interval - 1) / interval
 }
 
 func (t *Test) stepTime(step int64) time.Time {
-	return time.Unix(0, step*int64(t.pace.WriteInterval)).UTC()
+	return time.Unix(0, step*int64(t.cfg.WriteInterval)).UTC()
 }
 
 // newWrite chooses the protocol and the series of the write of the given step.
@@ -282,10 +279,7 @@ func (t *Test) writeSamples(ctx context.Context, w write) error {
 	timeseries := make([]prompb.TimeSeries, 0, len(w.series))
 	var metadata []prompb.MetricMetadata
 	for _, s := range w.series {
-		timeseries = append(timeseries, prompb.TimeSeries{
-			Labels:     s.Labels(t.commonLabels),
-			Histograms: []prompb.Histogram{s.Sample(w.ts)},
-		})
+		timeseries = append(timeseries, s.TimeSeries(w.ts, t.commonLabels))
 		m := s.Metadata(w.protocol)
 		if !slices.ContainsFunc(metadata, func(o prompb.MetricMetadata) bool { return o.MetricFamilyName == m.MetricFamilyName }) {
 			metadata = append(metadata, m)
@@ -341,6 +335,12 @@ func (t *Test) verify(ctx context.Context, w write) error {
 		switch {
 		case !ok:
 			checkErrs[i] = fmt.Errorf("expected a sample of series %s but got none", expected)
+		case s.Family == FamilyFloat && sample.Histogram != nil:
+			checkErrs[i] = fmt.Errorf("expected float %v but got histogram %s", s.Float(w.ts), sample.Histogram)
+		case s.Family == FamilyFloat:
+			if want := s.Float(w.ts); float64(sample.Value) != want {
+				checkErrs[i] = fmt.Errorf("expected float %v but got %s", want, sample.Value)
+			}
 		case sample.Histogram == nil:
 			checkErrs[i] = fmt.Errorf("expected a histogram but got float %s", sample.Value)
 		default:
@@ -358,7 +358,7 @@ func (t *Test) verify(ctx context.Context, w write) error {
 
 	metadata := map[string][]v1.Metadata{}
 	for i, s := range w.series {
-		name := t.storedName(w.protocol, s.MetricName())
+		name := t.storedMetricName(w.protocol, s)
 		want := expectedMetadata(s, w.protocol)
 		got, ok := metadata[name]
 		if !ok {
@@ -420,22 +420,19 @@ func expectedMetadata(s Series, protocol Protocol) v1.Metadata {
 	return v1.Metadata{Type: v1.MetricType(strings.ToLower(m.Type.String())), Help: m.Help, Unit: m.Unit}
 }
 
-// storedName returns the name that a metric or label name written with the given protocol is
-// stored with. Unless the tenant accepts UTF-8 names, the OTLP endpoint escapes them.
-func (t *Test) storedName(protocol Protocol, name string) string {
-	if protocol != ProtocolOTLP || t.cfg.NameValidationScheme == model.UTF8Validation {
-		return name
+// escapesNames returns whether names written with the given protocol are stored escaped. Unless
+// the tenant accepts UTF-8 names, the OTLP endpoint escapes them.
+func (t *Test) escapesNames(protocol Protocol) bool {
+	return protocol == ProtocolOTLP && t.cfg.NameValidationScheme != model.UTF8Validation
+}
+
+// storedMetricName returns the name that the metric of the series is stored with, after a write
+// with the given protocol.
+func (t *Test) storedMetricName(protocol Protocol, s Series) string {
+	if t.escapesNames(protocol) {
+		return s.metricName(CharsetLegacy)
 	}
-	switch name {
-	case utf8CounterMetricName:
-		return counterMetricName
-	case utf8GaugeMetricName:
-		return gaugeMetricName
-	case utf8LabelName:
-		return escapedUTF8LabelName
-	default:
-		return name
-	}
+	return s.MetricName()
 }
 
 // expectedMetric returns the labels that the series is expected to be read back with, after a
@@ -443,11 +440,14 @@ func (t *Test) storedName(protocol Protocol, name string) string {
 func (t *Test) expectedMetric(protocol Protocol, s Series) model.Metric {
 	m := model.Metric{}
 	for _, l := range s.Labels(t.commonLabels) {
-		value := l.Value
-		if l.Name == model.MetricNameLabel {
-			value = t.storedName(protocol, value)
+		name, value := l.Name, l.Value
+		switch {
+		case name == model.MetricNameLabel:
+			value = t.storedMetricName(protocol, s)
+		case name == utf8LabelName && t.escapesNames(protocol):
+			name = escapedUTF8LabelName
 		}
-		m[model.LabelName(t.storedName(protocol, l.Name))] = model.LabelValue(value)
+		m[model.LabelName(name)] = model.LabelValue(value)
 	}
 	return m
 }
@@ -485,18 +485,25 @@ func histogramsEqual(actual, expected *model.SampleHistogram) bool {
 	return true
 }
 
-// dimensionNames returns the names of the series dimensions, in the order of Definition.dimensions.
+// dimensionNames returns the names of the dimensions of every family of series, in the order of
+// Definition.families.
 func dimensionNames() []string {
-	return []string{labelCharset, labelSampleType, labelKind, labelSchema, labelLayout}
+	return []string{labelFamily, labelCharset, labelType, labelSampleType, labelKind, labelSchema, labelLayout}
 }
 
 // checkLabelValues returns the values of the labels of the check metrics: the protocol, then the
-// dimension values of the series.
+// value of each dimension of the series, or an empty value for the dimensions of other families.
 func checkLabelValues(protocol Protocol, s Series) []string {
-	values := make([]string, 0, len(s.Dimensions)+1)
+	values := make([]string, 0, len(dimensionNames())+1)
 	values = append(values, string(protocol))
-	for _, l := range s.Dimensions {
-		values = append(values, l.Value)
+	for _, name := range dimensionNames() {
+		value := ""
+		for _, l := range s.Dimensions {
+			if l.Name == name {
+				value = l.Value
+			}
+		}
+		values = append(values, value)
 	}
 	return values
 }

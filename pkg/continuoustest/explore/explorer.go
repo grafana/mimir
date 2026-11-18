@@ -28,16 +28,17 @@ type explorer struct {
 }
 
 func newExplorer(seed uint64, def Definition, exclusions []exclusion) (*explorer, error) {
-	dims := def.dimensions()
 	e := &explorer{protocols: def.Protocols, writeSizes: def.WriteSizes, series: map[Protocol][]Series{}}
-	for _, values := range allCombinations(dims) {
-		s, err := newSeries(seed, dims, values)
-		if err != nil {
-			return nil, err
-		}
-		for _, p := range def.Protocols {
-			if allowed(exclusions, p, s) {
-				e.series[p] = append(e.series[p], s)
+	for _, dims := range def.families() {
+		for _, values := range allCombinations(dims) {
+			s, err := newSeries(seed, dims, values)
+			if err != nil {
+				return nil, err
+			}
+			for _, p := range def.Protocols {
+				if allowed(exclusions, p, s) {
+					e.series[p] = append(e.series[p], s)
+				}
 			}
 		}
 	}
