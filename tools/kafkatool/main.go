@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/alecthomas/kingpin/v2"
@@ -11,6 +12,14 @@ import (
 	"github.com/twmb/franz-go/pkg/sasl"
 	"github.com/twmb/franz-go/pkg/sasl/plain"
 )
+
+// commandsNotRequiringKafkaAddress lists the full command paths that don't contact a Kafka
+// broker, so they shouldn't require --kafka-address to be set.
+var commandsNotRequiringKafkaAddress = map[string]bool{
+	"dump analyse":         true,
+	"dump print":           true,
+	"dump find-duplicates": true,
+}
 
 func main() {
 	var (
@@ -22,13 +31,22 @@ func main() {
 	)
 
 	app := kingpin.New("kafkatool", "A command-line tool to manage Kafka.")
-	app.Flag("kafka-address", "Kafka broker address.").Required().StringVar(&kafkaAddress)
+	app.Flag("kafka-address", "Kafka broker address.").StringVar(&kafkaAddress)
 	app.Flag("kafka-client-id", "Kafka client ID.").StringVar(&kafkaClientID)
 	app.Flag("kafka-sasl-username", "SASL username. SASL plain authentication is enabled when both username and password are set.").StringVar(&kafkaSASLUsername)
 	app.Flag("kafka-sasl-password", "SASL password. SASL plain authentication is enabled when both username and password are set.").StringVar(&kafkaSASLPassword)
 
-	// Create the Kafka client before any command is executed.
-	app.Action(func(_ *kingpin.ParseContext) error {
+	// Create the Kafka client before any command is executed, unless the selected command
+	// doesn't talk to Kafka at all, in which case --kafka-address isn't required.
+	app.Action(func(pc *kingpin.ParseContext) error {
+		if pc.SelectedCommand != nil && commandsNotRequiringKafkaAddress[pc.SelectedCommand.FullCommand()] {
+			return nil
+		}
+
+		if kafkaAddress == "" {
+			return fmt.Errorf("required flag --kafka-address not provided")
+		}
+
 		var err error
 		var auth sasl.Mechanism
 
