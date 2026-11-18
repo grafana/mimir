@@ -721,7 +721,7 @@ spec:
             memory: 4Gi
           requests:
             cpu: "2"
-            ephemeral-storage: 50Mi
+            ephemeral-storage: 128Mi
             memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -825,7 +825,7 @@ spec:
             memory: 24Gi
           requests:
             cpu: "1"
-            ephemeral-storage: 50Mi
+            ephemeral-storage: 128Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -917,7 +917,7 @@ spec:
             memory: 4Gi
           requests:
             cpu: "2"
-            ephemeral-storage: 50Mi
+            ephemeral-storage: 128Mi
             memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -994,7 +994,7 @@ spec:
             memory: 2Gi
           requests:
             cpu: "2"
-            ephemeral-storage: 50Mi
+            ephemeral-storage: 128Mi
             memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -1193,7 +1193,7 @@ spec:
             memory: 24Gi
           requests:
             cpu: "1"
-            ephemeral-storage: 50Mi
+            ephemeral-storage: 128Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -1285,7 +1285,7 @@ spec:
             memory: 4Gi
           requests:
             cpu: "2"
-            ephemeral-storage: 50Mi
+            ephemeral-storage: 128Mi
             memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -1362,7 +1362,7 @@ spec:
             memory: 2Gi
           requests:
             cpu: "2"
-            ephemeral-storage: 50Mi
+            ephemeral-storage: 128Mi
             memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -1536,7 +1536,7 @@ spec:
             memory: 6Gi
           requests:
             cpu: 1
-            ephemeral-storage: 50Mi
+            ephemeral-storage: 128Mi
             memory: 6Gi
         volumeMounts:
         - mountPath: /data
@@ -1648,7 +1648,7 @@ spec:
             memory: 25Gi
           requests:
             cpu: "4"
-            ephemeral-storage: 50Mi
+            ephemeral-storage: 128Mi
             memory: 15Gi
         volumeMounts:
         - mountPath: /data
@@ -2075,7 +2075,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
-            ephemeral-storage: 50Mi
+            ephemeral-storage: 128Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data

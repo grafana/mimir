@@ -9,7 +9,7 @@ require (
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
-	github.com/antithesishq/antithesis-sdk-go v0.7.2-default-no-op
+	github.com/antithesishq/antithesis-sdk-go v0.9.0-default-no-op
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.104.0
 	github.com/benbjohnson/clock v1.3.5
 	github.com/cespare/xxhash/v2 v2.3.0
@@ -347,7 +347,7 @@ replace github.com/prometheus/alertmanager => github.com/prometheus/alertmanager
 // WarpStream agents close the connection and do not try v4 again.
 replace github.com/twmb/franz-go => github.com/twmb/franz-go v1.21.7
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261113142535-4819bfb31f7c
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261116173000-acc619d1422f
 
 // Replace memberlist with our fork which includes some changes that haven't been
 // merged upstream yet for years and we don't expect to change anytime soon.
