@@ -7426,6 +7426,17 @@
         },
         {
           "kind": "field",
+          "name": "ruler_home_zone_ownership_enabled",
+          "required": false,
+          "desc": "True to give each rule group of the tenant a home zone, and to evaluate the rule group on a ruler in that zone. Each zone is the home zone of an equal share of the rule groups. This setting has an effect only when -ruler.ring.zone-awareness-enabled is true.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ruler.home-zone-ownership-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "store_gateway_tenant_shard_size",
           "required": false,
           "desc": "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.",
@@ -17406,6 +17417,39 @@
               "fieldFlag": "ruler.ring.num-tokens",
               "fieldType": "int",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "zone_awareness_enabled",
+              "required": false,
+              "desc": "True to enable zone-awareness. Each tenant's shuffle shard then takes the same number of rulers from each availability zone, and takes more rulers from the other zones when a zone has too few.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler.ring.zone-awareness-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "instance_availability_zone",
+              "required": false,
+              "desc": "The availability zone where this instance is running. Required if zone-awareness is enabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.ring.instance-availability-zone",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "excluded_zones",
+              "required": false,
+              "desc": "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring. The list can't contain the ruler's own zone.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.ring.excluded-zones",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

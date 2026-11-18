@@ -59,6 +59,8 @@ var (
 	errInvalidTenantShardSize                                 = errors.New("invalid tenant shard size, the value must be greater or equal to 0")
 	errInnvalidRuleEvaluationConcurrencyMinDurationPercentage = errors.New("invalid tenant minimum duration percentage for rule evaluation concurrency, the value must be greater or equal to 0")
 	errInvalidRingChangeMaxDebounce                           = errors.New("invalid ring change debounce, the value must be less than the ring change max debounce")
+	errZoneAwarenessEnabledWithoutZoneInfo                    = errors.New("the configured ruler has zone awareness enabled but zone is not set")
+	errExcludedZonesContainInstanceZone                       = errors.New("the configured ruler ring excludes the ruler's own zone")
 )
 
 const (
@@ -180,6 +182,15 @@ type ClientConfig struct {
 func (cfg *Config) Validate(limits validation.Limits) error {
 	if limits.RulerTenantShardSize < 0 {
 		return errInvalidTenantShardSize
+	}
+
+	if cfg.Ring.ZoneAwarenessEnabled && cfg.Ring.InstanceZone == "" {
+		return errZoneAwarenessEnabledWithoutZoneInfo
+	}
+
+	// A ruler doesn't finish starting when it can't see itself in the ring.
+	if slices.Contains(cfg.Ring.ExcludedZones, cfg.Ring.InstanceZone) {
+		return errExcludedZonesContainInstanceZone
 	}
 
 	if err := cfg.ClientTLSConfig.Validate(); err != nil {
@@ -565,15 +576,22 @@ func tokenForGroup(g *rulespb.RuleGroupDesc) uint32 {
 	return ringHasher.Sum32()
 }
 
-func instanceOwnsRuleGroup(r ring.ReadRing, g *rulespb.RuleGroupDesc, instanceAddr string, reason rulesSyncReason) (bool, error) {
+func instanceOwnsRuleGroup(r ring.ReadRing, g *rulespb.RuleGroupDesc, instanceAddr string, reason rulesSyncReason, homeZone bool) (bool, error) {
 	hash := tokenForGroup(g)
-	var rlrs ring.ReplicationSet
-	var err error
+	op := RuleEvalRingOp
 	if reason == rulerSyncReasonInitial {
-		rlrs, err = r.Get(hash, RuleSyncRingOp, nil, nil, nil)
-	} else {
-		rlrs, err = r.Get(hash, RuleEvalRingOp, nil, nil, nil)
+		op = RuleSyncRingOp
 	}
+
+	if homeZone {
+		owner, err := homeZoneOwner(r, hash, op)
+		if err != nil {
+			return false, errors.Wrap(err, "error reading ring to verify rule group home zone ownership")
+		}
+		return owner.Addr == instanceAddr, nil
+	}
+
+	rlrs, err := r.Get(hash, op, nil, nil, nil)
 	if err != nil {
 		return false, errors.Wrap(err, "error reading ring to verify rule group ownership")
 	}
@@ -808,7 +826,7 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 		}
 
 		if shardSize := r.limits.RulerTenantShardSize(userID); shardSize > 0 {
-			subRing := r.ring.ShuffleShard(userID, shardSize)
+			subRing := tenantShard(r.ring, userID, shardSize, r.cfg.Ring.ZoneAwarenessEnabled)
 
 			// Include the user only if it belongs to this ruler shard.
 			if subRing.HasInstance(r.lifecycler.GetInstanceID()) {
@@ -853,7 +871,8 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 					return errors.Wrapf(err, "failed to fetch rule groups for user %s", userID)
 				}
 
-				filtered := filterRuleGroupsByOwnership(userID, groups, userRings[userID], r.lifecycler.GetInstanceAddr(), r.logger, r.metrics.ringCheckErrors, reason)
+				homeZone := r.cfg.Ring.ZoneAwarenessEnabled && r.limits.RulerHomeZoneOwnershipEnabled(userID)
+				filtered := filterRuleGroupsByOwnership(userID, groups, userRings[userID], r.lifecycler.GetInstanceAddr(), r.logger, r.metrics.ringCheckErrors, reason, homeZone)
 				if len(filtered) == 0 {
 					continue
 				}
@@ -876,11 +895,11 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 //
 // Reason why this function is not a method on Ruler is to make sure we don't accidentally use r.ring,
 // but only ring passed as parameter.
-func filterRuleGroupsByOwnership(userID string, ruleGroups []*rulespb.RuleGroupDesc, ring ring.ReadRing, instanceAddr string, log log.Logger, ringCheckErrors prometheus.Counter, reason rulesSyncReason) []*rulespb.RuleGroupDesc {
+func filterRuleGroupsByOwnership(userID string, ruleGroups []*rulespb.RuleGroupDesc, ring ring.ReadRing, instanceAddr string, log log.Logger, ringCheckErrors prometheus.Counter, reason rulesSyncReason, homeZone bool) []*rulespb.RuleGroupDesc {
 	// Prune the rule group to only contain rules that this ruler is responsible for, based on ring.
 	var result []*rulespb.RuleGroupDesc
 	for _, g := range ruleGroups {
-		owned, err := instanceOwnsRuleGroup(ring, g, instanceAddr, reason)
+		owned, err := instanceOwnsRuleGroup(ring, g, instanceAddr, reason, homeZone)
 		if err != nil {
 			ringCheckErrors.Inc()
 			level.Error(log).Log("msg", "failed to check if the ruler replica owns the rule group", "user", userID, "namespace", g.Namespace, "group", g.Name, "err", err)
@@ -1153,7 +1172,7 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) (*RulesResponse,
 	rr := ring.ReadRing(r.ring)
 
 	if shardSize := r.limits.RulerTenantShardSize(userID); shardSize > 0 {
-		rr = r.ring.ShuffleShard(userID, shardSize)
+		rr = tenantShard(r.ring, userID, shardSize, r.cfg.Ring.ZoneAwarenessEnabled)
 	}
 
 	ctx, err = user.InjectIntoGRPCRequest(ctx)

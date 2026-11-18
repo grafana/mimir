@@ -211,6 +211,7 @@ type RulesLimits interface {
 	RulerAlertmanagerClientConfig(userID string) notifierCfg.AlertmanagerClientConfig
 	RulerMinRuleEvaluationInterval(userID string) time.Duration
 	RulerMaxRuleEvaluationResults(userID string) int
+	RulerHomeZoneOwnershipEnabled(userID string) bool
 	NameValidationScheme(userID string) model.ValidationScheme
 }
 

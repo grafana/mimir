@@ -269,6 +269,48 @@ When you enable ruler shuffle sharding by setting `-ruler.tenant-shard-size` (or
 
 You can override the ruler shard size on a per-tenant basis by setting `ruler_tenant_shard_size` in the overrides section of the runtime configuration.
 
+When you enable zone-awareness by setting `-ruler.ring.zone-awareness-enabled`, each tenant shard holds the same number of rulers in each availability zone.
+Grafana Mimir rounds the per-zone count up.
+When the shard size isn't a multiple of the number of zones, the shard holds more rulers than the shard size.
+When a zone has fewer rulers than its share, Grafana Mimir takes the missing rulers from the other zones.
+The shard then holds at least the shard size, or all rulers.
+When the short zone gets rulers back, the extra rulers leave the shard again.
+
+Zone-awareness changes which rulers are in a tenant shard.
+It doesn't change which ruler in the shard evaluates a rule group, so a rule group can still move to a ruler in another zone.
+
+To keep each rule group in one zone, also set `-ruler.home-zone-ownership-enabled`.
+To set it for one tenant, set `ruler_home_zone_ownership_enabled` in the runtime configuration.
+Each rule group of the tenant then gets a home zone, and a ruler in that zone evaluates the rule group.
+Each zone is the home zone of an equal share of the rule groups.
+This is also true when the zones have different numbers of rulers in the shard.
+Then each ruler in a zone with fewer rulers evaluates more rule groups.
+For example, a shard of 12 rulers with 9 rulers in zone-a and 3 rulers in zone-b splits the rule groups as follows:
+
+| Zone   | Rulers in the shard | Share of the rule groups | Share for each ruler |
+| ------ | ------------------- | ------------------------ | -------------------- |
+| zone-a | 9                   | 1/2                      | 1/18                 |
+| zone-b | 3                   | 1/2                      | 1/6                  |
+
+When a ruler joins or leaves, its rule groups move only to rulers in the same zone.
+When a ruler stops heartbeating, a different ruler in the same zone takes its rule groups after the heartbeat timeout.
+When a zone has no healthy rulers, its rule groups move to the other zones.
+Rulers apply a change to this limit at their next periodic sync, set by `-ruler.poll-interval`.
+Until each ruler syncs, two rulers can evaluate the same rule group, or no ruler evaluates it.
+
+To enable it, first set `-ruler.ring.instance-availability-zone` on all rulers.
+Then set `-ruler.ring.zone-awareness-enabled` on all rulers.
+Until the second rollout completes, rulers with different settings can disagree on which ruler owns a rule group.
+A ruler without an availability zone counts as a separate zone.
+
+To stop rule evaluation in one zone, set `-ruler.ring.excluded-zones` on the rulers in the other zones.
+Also scale the rulers in the excluded zone down to zero.
+A ruler rejects a configuration that excludes its own zone, because it can't find itself in the ring.
+
+{{< admonition type="note" >}}
+Ruler zone-awareness and home-zone ownership are experimental. When you enable zone-awareness, most tenants with a shard size smaller than the number of rulers move to a different set of rulers once. When you enable home-zone ownership for a tenant, most of its rule groups move to a different ruler once.
+{{< /admonition >}}
+
 ### Compactor shuffle sharding
 
 By default, tenant blocks can be compacted by any Grafana Mimir compactor.

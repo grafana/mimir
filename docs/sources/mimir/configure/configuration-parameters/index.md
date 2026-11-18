@@ -3168,6 +3168,23 @@ ring:
   # CLI flag: -ruler.ring.num-tokens
   [num_tokens: <int> | default = 128]
 
+  # (experimental) True to enable zone-awareness. Each tenant's shuffle shard
+  # then takes the same number of rulers from each availability zone, and takes
+  # more rulers from the other zones when a zone has too few.
+  # CLI flag: -ruler.ring.zone-awareness-enabled
+  [zone_awareness_enabled: <boolean> | default = false]
+
+  # (experimental) The availability zone where this instance is running.
+  # Required if zone-awareness is enabled.
+  # CLI flag: -ruler.ring.instance-availability-zone
+  [instance_availability_zone: <string> | default = ""]
+
+  # (experimental) Comma-separated list of zones to exclude from the ring.
+  # Instances in excluded zones will be filtered out from the ring. The list
+  # can't contain the ruler's own zone.
+  # CLI flag: -ruler.ring.excluded-zones
+  [excluded_zones: <string> | default = ""]
+
 # Enable the ruler config API.
 # CLI flag: -ruler.enable-api
 [enable_api: <boolean> | default = true]
@@ -5559,6 +5576,13 @@ ruler_alertmanager_client_config:
 # recording rule respectively can produce. 0 is no limit.
 # CLI flag: -ruler.max-rule-evaluation-results
 [ruler_max_rule_evaluation_results: <int> | default = 0]
+
+# (experimental) True to give each rule group of the tenant a home zone, and to
+# evaluate the rule group on a ruler in that zone. Each zone is the home zone of
+# an equal share of the rule groups. This setting has an effect only when
+# -ruler.ring.zone-awareness-enabled is true.
+# CLI flag: -ruler.home-zone-ownership-enabled
+[ruler_home_zone_ownership_enabled: <boolean> | default = false]
 
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
