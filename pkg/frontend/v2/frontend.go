@@ -1149,7 +1149,7 @@ func (f *Frontend) extractTouchedQueryComponentsForHTTPRequest(
 	}
 
 	switch {
-	case querymiddleware.IsRangeQuery(httpRequest.URL.Path), querymiddleware.IsInstantQuery(httpRequest.URL.Path):
+	case querymiddleware.IsRangeQuery(httpRequest.URL.Path), querymiddleware.IsInstantQuery(httpRequest.URL.Path), querymiddleware.IsQueryCostQuery(httpRequest.URL.Path):
 		decodedRequest, err := f.codec.DecodeMetricsQueryRequest(httpRequest.Context(), httpRequest)
 		if err != nil {
 			return nil, err

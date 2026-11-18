@@ -9,11 +9,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -211,116 +211,38 @@ func TestQueryCostAPIErrors(t *testing.T) {
 		{name: "canceled", timeout: time.Minute, storageErr: context.Canceled, code: 499, errorType: "canceled"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var cfg querier.Config
-			flagext.DefaultValues(&cfg)
-			cfg.ExperimentalQueryCostAPIEnabled = true
-			cfg.EngineConfig.Timeout = tc.timeout
-			q := &costTestQuerier{selectFn: func(ctx context.Context, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
-				if tc.storageErr != nil {
-					return storage.ErrSeriesSet(tc.storageErr)
-				}
-				<-ctx.Done()
-				return storage.ErrSeriesSet(ctx.Err())
-			}}
-			handler := newCostTestHandler(t, cfg, q, nil)
-			params := tc.params
-			if params == nil {
-				params = url.Values{}
-			}
-			params.Set("query", "up")
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, costTestRequest(t, http.MethodGet, "query_cost", params))
-			require.Equal(t, tc.code, rec.Code, rec.Body.String())
-			var response struct {
-				ErrorType string          `json:"errorType"`
-				Data      json.RawMessage `json:"data"`
-			}
-			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
-			require.Equal(t, tc.errorType, response.ErrorType)
-			require.Empty(t, response.Data)
-			require.True(t, q.closed.Load())
-		})
-	}
-}
-
-func TestQueryCostEngineConcurrency(t *testing.T) {
-	engine := &queryCostEngine{slots: make(chan struct{}, 1)}
-	release, err := engine.AcquireQuerySlot(t.Context(), "up")
-	require.NoError(t, err)
-	ctx, cancel := context.WithTimeout(t.Context(), time.Millisecond)
-	defer cancel()
-	noRelease, err := engine.AcquireQuerySlot(ctx, "up")
-	noRelease()
-	require.ErrorIs(t, err, context.DeadlineExceeded)
-	release()
-	release, err = engine.AcquireQuerySlot(t.Context(), "up")
-	require.NoError(t, err)
-	release()
-}
-
-func TestQueryCostAPISharedConcurrency(t *testing.T) {
-	for _, tc := range []struct{ configured, effective int }{{1, 4}, {6, 6}} {
-		t.Run(strconv.Itoa(tc.configured), func(t *testing.T) {
-			var cfg querier.Config
-			flagext.DefaultValues(&cfg)
-			cfg.ExperimentalQueryCostAPIEnabled = true
-			cfg.EngineConfig.MaxConcurrent = tc.configured
-
-			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-			var requests sync.WaitGroup
-			defer func() {
-				cancel()
-				requests.Wait()
-			}()
-			started := make(chan struct{}, tc.effective+1)
-			release := make(chan struct{})
-			q := &costTestQuerier{selectFn: func(ctx context.Context, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
-				started <- struct{}{}
-				select {
-				case <-release:
-					return storage.EmptySeriesSet()
-				case <-ctx.Done():
+			// The fake clock only advances when storage blocks on the deadline, so the
+			// deadline cannot expire before the querier is opened.
+			synctest.Test(t, func(t *testing.T) {
+				var cfg querier.Config
+				flagext.DefaultValues(&cfg)
+				cfg.ExperimentalQueryCostAPIEnabled = true
+				cfg.EngineConfig.Timeout = tc.timeout
+				q := &costTestQuerier{selectFn: func(ctx context.Context, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+					if tc.storageErr != nil {
+						return storage.ErrSeriesSet(tc.storageErr)
+					}
+					<-ctx.Done()
 					return storage.ErrSeriesSet(ctx.Err())
+				}}
+				handler := newCostTestHandler(t, cfg, q, nil)
+				params := tc.params
+				if params == nil {
+					params = url.Values{}
 				}
-			}}
-			handler := newCostTestHandler(t, cfg, q, nil)
-			params := url.Values{"query": {"up"}, "start": {"600"}, "end": {"1200"}, "step": {"60"}}
-			completed := make(chan *httptest.ResponseRecorder, tc.effective)
-			for range tc.effective {
-				req := costTestRequest(t, http.MethodGet, "query_cost", params).WithContext(user.InjectOrgID(ctx, "tenant-a"))
-				requests.Go(func() {
-					rec := httptest.NewRecorder()
-					handler.ServeHTTP(rec, req)
-					completed <- rec
-				})
-				select {
-				case <-started:
-				case <-ctx.Done():
-					t.Fatal("timed out filling the estimation slots")
+				params.Set("query", "up")
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, costTestRequest(t, http.MethodGet, "query_cost", params))
+				require.Equal(t, tc.code, rec.Code, rec.Body.String())
+				var response struct {
+					ErrorType string          `json:"errorType"`
+					Data      json.RawMessage `json:"data"`
 				}
-			}
-
-			// The range endpoint shares the instant endpoint's slots. Its deadline
-			// must expire while queued, before it opens a storage selection.
-			params.Set("timeout", "1ms")
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, costTestRequest(t, http.MethodPost, "query_range_cost", params))
-			require.Equal(t, http.StatusServiceUnavailable, rec.Code, rec.Body.String())
-			require.Contains(t, rec.Body.String(), `"errorType":"timeout"`)
-			require.Empty(t, started, "a queued request must not enumerate storage")
-
-			close(release)
-			for range tc.effective {
-				rec := <-completed
-				require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-			}
-
-			// A queued timeout must not consume a slot or prevent subsequent work.
-			params.Del("timeout")
-			rec = httptest.NewRecorder()
-			handler.ServeHTTP(rec, costTestRequest(t, http.MethodPost, "query_range_cost", params))
-			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-			require.Len(t, started, 1)
+				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+				require.Equal(t, tc.errorType, response.ErrorType)
+				require.Empty(t, response.Data)
+				require.True(t, q.closed.Load())
+			})
 		})
 	}
 }
@@ -380,26 +302,19 @@ func TestQueryCostAPIDoesNotEnableExecutionCost(t *testing.T) {
 	}
 }
 
-func TestQueryCostAPINonpositiveTimeout(t *testing.T) {
+func TestQueryCostAPIDeadline(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
 		engine       string
 		timeout      time.Duration
 		params       url.Values
-		wantTimeout  bool
 		wantDeadline bool
 	}{
-		{name: "Prometheus negative", engine: querier.PrometheusEngine, timeout: -time.Second, wantTimeout: true},
-		{name: "Prometheus zero", engine: querier.PrometheusEngine, wantTimeout: true},
 		{name: "Prometheus positive", engine: querier.PrometheusEngine, timeout: time.Minute, wantDeadline: true},
-		{name: "Prometheus zero with request timeout", engine: querier.PrometheusEngine, params: url.Values{"timeout": {"15s"}}, wantTimeout: true},
-		{name: "Prometheus zero with duration override", engine: querier.PrometheusEngine, params: url.Values{"max_query_duration": {"15s"}}, wantTimeout: true},
-		{name: "MQE negative", engine: querier.MimirEngine, timeout: -time.Second, wantTimeout: true},
 		{name: "MQE zero", engine: querier.MimirEngine},
 		{name: "MQE positive", engine: querier.MimirEngine, timeout: time.Minute, wantDeadline: true},
 		{name: "MQE zero with request timeout", engine: querier.MimirEngine, params: url.Values{"timeout": {"15s"}}, wantDeadline: true},
 		{name: "MQE zero with duration override", engine: querier.MimirEngine, params: url.Values{"max_query_duration": {"15s"}}, wantDeadline: true},
-		{name: "MQE negative with request timeout", engine: querier.MimirEngine, timeout: -time.Second, params: url.Values{"timeout": {"15s"}}, wantTimeout: true},
 	} {
 		for _, endpoint := range []string{"query_cost", "query_range_cost"} {
 			t.Run(tc.name+"/"+endpoint, func(t *testing.T) {
@@ -426,30 +341,71 @@ func TestQueryCostAPINonpositiveTimeout(t *testing.T) {
 				rec := httptest.NewRecorder()
 				handler.ServeHTTP(rec, costTestRequest(t, http.MethodGet, endpoint, params))
 
-				if tc.wantTimeout {
-					require.Equal(t, http.StatusServiceUnavailable, rec.Code, rec.Body.String())
-					require.JSONEq(t, `{"status":"error","errorType":"timeout","error":"cost estimation exceeded the query duration limit: context deadline exceeded"}`, rec.Body.String())
-					require.False(t, selected, "an expired query must not enumerate storage")
-				} else {
-					require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-					require.JSONEq(t, `{"status":"success","data":{"estimate":{"seriesTouched":0,"samplesRead":0}}}`, rec.Body.String())
-					require.True(t, selected)
-					require.True(t, q.closed.Load())
-				}
+				require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+				require.JSONEq(t, `{"status":"success","data":{"estimate":{"seriesTouched":0,"samplesRead":0}}}`, rec.Body.String())
+				require.True(t, selected)
+				require.True(t, q.closed.Load())
 			})
 		}
 	}
 }
 
-func TestQueryCostEngineCanceledContext(t *testing.T) {
-	for _, timeoutImmediately := range []bool{false, true} {
-		engine := &queryCostEngine{slots: make(chan struct{}, 1), timeoutImmediately: timeoutImmediately}
-		ctx, cancel := context.WithCancel(t.Context())
-		cancel()
+// costTestQueryTracker records the queries that are active in a promql.Engine.
+type costTestQueryTracker struct {
+	mtx    sync.Mutex
+	active map[int]string
+	next   int
+}
 
-		release, err := engine.AcquireQuerySlot(ctx, "up")
-		release()
-		require.ErrorIs(t, err, context.Canceled)
-		require.Empty(t, engine.slots)
+func (*costTestQueryTracker) GetMaxConcurrent() int { return -1 }
+func (*costTestQueryTracker) Close() error          { return nil }
+
+func (tr *costTestQueryTracker) Insert(_ context.Context, query string) (int, error) {
+	tr.mtx.Lock()
+	defer tr.mtx.Unlock()
+	tr.next++
+	tr.active[tr.next] = query
+	return tr.next, nil
+}
+
+func (tr *costTestQueryTracker) Delete(insertIndex int) {
+	tr.mtx.Lock()
+	defer tr.mtx.Unlock()
+	delete(tr.active, insertIndex)
+}
+
+func (tr *costTestQueryTracker) queries() []string {
+	tr.mtx.Lock()
+	defer tr.mtx.Unlock()
+	queries := make([]string, 0, len(tr.active))
+	for _, query := range tr.active {
+		queries = append(queries, query)
+	}
+	return queries
+}
+
+func TestQueryCostAPIActivityTracking(t *testing.T) {
+	var cfg querier.Config
+	flagext.DefaultValues(&cfg)
+	cfg.ExperimentalQueryCostAPIEnabled = true
+	tracker := &costTestQueryTracker{active: map[int]string{}}
+	promEngine := promql.NewEngine(promql.EngineOpts{Timeout: time.Minute, MaxSamples: 100, ActiveQueryTracker: tracker})
+	t.Cleanup(func() { require.NoError(t, promEngine.Close()) })
+
+	var activeDuringSelect []string
+	q := &costTestQuerier{selectFn: func(context.Context, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+		activeDuringSelect = tracker.queries()
+		return storage.EmptySeriesSet()
+	}}
+	// Mimir wraps the Prometheus engine, so the wrapper must expose its query slots.
+	handler := newCostTestHandler(t, cfg, q, limiter.NewUnlimitedMemoryTrackerPromQLEngine(promEngine))
+	for _, endpoint := range []string{"query_cost", "query_range_cost"} {
+		activeDuringSelect = nil
+		params := url.Values{"query": {"up"}, "time": {"600"}, "start": {"600"}, "end": {"1200"}, "step": {"60"}}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, costTestRequest(t, http.MethodGet, endpoint, params))
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		require.Equal(t, []string{"up"}, activeDuringSelect)
+		require.Empty(t, tracker.queries())
 	}
 }

@@ -336,17 +336,11 @@ func NewQuerierHandler(
 	if querierCfg.ExperimentalQueryCostAPIEnabled {
 		// Use a separate API instance so estimation does not enable Prometheus-only
 		// execution cost reporting and limits on Mimir's normal query endpoints.
-		costEngine := &queryCostEngine{
-			QueryEngine: engine,
-			slots:       make(chan struct{}, max(4, querierCfg.EngineConfig.MaxConcurrent)),
-			// The upstream estimation API only applies positive timeouts. Preserve
-			// immediate expiry for negative values and for zero with the Prometheus
-			// engine; MQE treats zero as unlimited.
-			timeoutImmediately: querierCfg.EngineConfig.Timeout < 0 || (querierCfg.EngineConfig.Timeout == 0 && querierCfg.QueryEngine == querier.PrometheusEngine),
-		}
+		// The querier worker bounds concurrent estimates, as it bounds queries. The engine
+		// records each estimate in the activity tracker through promql.QuerySlotAcquirer.
 		costRouter := route.New().WithPrefix(promPrefix)
 		// Remote read metrics are already registered by the main API instance.
-		newAPI(costEngine, nil, true).Register(costRouter)
+		newAPI(engine, nil, true).Register(costRouter)
 		costHandler := unlimitedMemoryTrackerMiddleware.Wrap(costRouter)
 		for _, endpoint := range []string{"query_cost", "query_range_cost"} {
 			usage := usagestats.NewRequestsMiddleware("querier_" + endpoint + "_requests")

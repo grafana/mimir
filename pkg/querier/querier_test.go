@@ -2099,3 +2099,33 @@ func TestConfig_QueryCost(t *testing.T) {
 		})
 	}
 }
+
+func TestConfig_QueryCostTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		engine    string
+		timeout   time.Duration
+		enabled   bool
+		expectErr string
+	}{
+		{engine: PrometheusEngine, timeout: -time.Second, enabled: true, expectErr: "querier.timeout must not be negative when the query cost API is enabled"},
+		{engine: PrometheusEngine, timeout: 0, enabled: true, expectErr: "querier.timeout must be positive when the query cost API is enabled with the Prometheus engine"},
+		{engine: PrometheusEngine, timeout: time.Minute, enabled: true},
+		{engine: PrometheusEngine, timeout: 0, enabled: false},
+		{engine: MimirEngine, timeout: -time.Second, enabled: true, expectErr: "querier.timeout must not be negative when the query cost API is enabled"},
+		{engine: MimirEngine, timeout: 0, enabled: true},
+		{engine: MimirEngine, timeout: -time.Second, enabled: false},
+	} {
+		t.Run(fmt.Sprintf("%s/%s/enabled=%t", tc.engine, tc.timeout, tc.enabled), func(t *testing.T) {
+			var cfg Config
+			flagext.DefaultValues(&cfg)
+			cfg.ExperimentalQueryCostAPIEnabled = tc.enabled
+			cfg.QueryEngine = tc.engine
+			cfg.EngineConfig.Timeout = tc.timeout
+			if tc.expectErr != "" {
+				require.EqualError(t, cfg.Validate(), tc.expectErr)
+			} else {
+				require.NoError(t, cfg.Validate())
+			}
+		})
+	}
+}
