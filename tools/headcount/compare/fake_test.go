@@ -17,7 +17,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
@@ -188,30 +187,9 @@ func (f *fakeFrontend) estimate(w http.ResponseWriter, r *http.Request) {
 	in := func(start, end int64) func(labels.Labels) bool {
 		return func(s labels.Labels) bool { return f.chunkOverlaps(s, start, end) }
 	}
-	if s := r.FormValue("step"); s != "" {
-		d, err := model.ParseDuration(s)
-		require.NoError(f.t, err)
-		res.StepMS = time.Duration(d).Milliseconds()
-		buckets := int((res.Window.End - res.Window.Start) / res.StepMS)
-		counts := map[string][]int64{}
-		for i := range buckets {
-			start := res.Window.Start + int64(i)*res.StepMS
-			for v, c := range f.countBy(ms, res.GroupBy, in(start, start+res.StepMS)) {
-				if counts[v] == nil {
-					counts[v] = make([]int64, buckets)
-				}
-				counts[v][i] = c
-			}
-		}
-		for v, cs := range counts {
-			res.Groups = append(res.Groups, estimateGroup{Value: v, Count: slices.Max(cs), Counts: cs})
-			res.Total += slices.Max(cs)
-		}
-	} else {
-		for v, c := range f.countBy(ms, res.GroupBy, in(res.Window.Start, res.Window.End)) {
-			res.Groups = append(res.Groups, estimateGroup{Value: v, Count: c})
-			res.Total += c
-		}
+	for v, c := range f.countBy(ms, res.GroupBy, in(res.Window.Start, res.Window.End)) {
+		res.Groups = append(res.Groups, estimateGroup{Value: v, Count: c})
+		res.Total += c
 	}
 	res.GroupCount = len(res.Groups)
 	slices.SortFunc(res.Groups, func(a, b estimateGroup) int {
@@ -370,7 +348,6 @@ func newTestRunner(srv *httptest.Server) (*runner, *metrics) {
 	m := newMetrics(prometheus.NewRegistry(), time.Minute)
 	return &runner{
 		client:        &client{baseURL: srv.URL, tenant: "test-tenant", http: srv.Client()},
-		cfg:           classifyConfig{sketchSigmas: 3},
 		m:             m,
 		logger:        log.NewNopLogger(),
 		edgeSlack:     time.Minute,

@@ -102,10 +102,8 @@ func (c *client) get(ctx context.Context, path string, params url.Values, strong
 
 // estimateGroup and estimateResponse mirror the route's answer (pkg/querier/cardinality_estimate_handler.go).
 type estimateGroup struct {
-	Value     string  `json:"value"`
-	Count     int64   `json:"count"`
-	Counts    []int64 `json:"counts,omitempty"`
-	Estimated bool    `json:"estimated,omitempty"`
+	Value string `json:"value"`
+	Count int64  `json:"count"`
 }
 
 type estimateResponse struct {
@@ -113,22 +111,21 @@ type estimateResponse struct {
 		Start int64 `json:"start"`
 		End   int64 `json:"end"`
 	} `json:"window"`
-	StepMS          int64           `json:"step_ms,omitempty"`
-	GroupBy         string          `json:"group_by"`
-	Read            string          `json:"read"`
-	Source          string          `json:"source"`
-	HeadMinTime     int64           `json:"head_min_time,omitempty"`
-	CoverageGap     bool            `json:"coverage_gap,omitempty"`
-	LowerBound      bool            `json:"lower_bound"`
-	MissingBlocks   []string        `json:"missing_blocks,omitempty"`
-	MissingShards   []missingShard  `json:"missing_shards,omitempty"`
-	HasMore         bool            `json:"has_more"`
-	Dedup           bool            `json:"dedup"`
-	GroupCount      int             `json:"group_count"`
-	Total           int64           `json:"total"`
-	Totals          []int64         `json:"totals,omitempty"`
-	EstimatedGroups int             `json:"estimated_groups"`
-	Groups          []estimateGroup `json:"groups"`
+	GroupBy     string `json:"group_by"`
+	Read        string `json:"read"`
+	Source      string `json:"source"`
+	HeadMinTime int64  `json:"head_min_time,omitempty"`
+	CoverageGap bool   `json:"coverage_gap,omitempty"`
+	LowerBound  bool   `json:"lower_bound"`
+	// UpperBound is set when head counts of several partitions were added up, so a series may count twice.
+	UpperBound    bool            `json:"upper_bound,omitempty"`
+	MissingBlocks []string        `json:"missing_blocks,omitempty"`
+	MissingShards []missingShard  `json:"missing_shards,omitempty"`
+	HasMore       bool            `json:"has_more"`
+	Dedup         bool            `json:"dedup"`
+	GroupCount    int             `json:"group_count"`
+	Total         int64           `json:"total"`
+	Groups        []estimateGroup `json:"groups"`
 }
 
 // missingShard is a compactor shard no block holds, over its block range [start, end).
@@ -187,6 +184,7 @@ func (r *estimateResponse) flags() []string {
 	}{
 		{"lower_bound", r.LowerBound},
 		{"coverage_gap", r.CoverageGap},
+		{"upper_bound", r.UpperBound},
 		{"head_min_time", r.HeadMinTime != 0},
 		{"missing_blocks", len(r.MissingBlocks) > 0},
 		{"missing_shards", len(r.MissingShards) > 0},
@@ -202,16 +200,13 @@ func (r *estimateResponse) flags() []string {
 
 func formatTime(ms int64) string { return strconv.FormatFloat(float64(ms)/1000, 'f', 3, 64) }
 
-// estimate asks the route for the series per groupBy value of selector over [startMS, endMS), cut into buckets of step when step > 0.
-func (c *client) estimate(ctx context.Context, selector, groupBy string, startMS, endMS int64, step time.Duration, limit int) (*estimateResponse, time.Duration, error) {
+// estimate asks the route for the series per groupBy value of selector over [startMS, endMS).
+func (c *client) estimate(ctx context.Context, selector, groupBy string, startMS, endMS int64, limit int) (*estimateResponse, time.Duration, error) {
 	params := url.Values{
 		"match[]":  {selector},
 		"group_by": {groupBy},
 		"start":    {formatTime(startMS)},
 		"end":      {formatTime(endMS)},
-	}
-	if step > 0 {
-		params.Set("step", fmt.Sprintf("%ds", int64(step.Seconds())))
 	}
 	if limit > 0 {
 		params.Set("limit", strconv.Itoa(limit))

@@ -4,21 +4,18 @@ package main
 
 import (
 	"errors"
-	"fmt"
-	"math"
 	"net/http"
 	"sort"
 	"strings"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/cardinality"
 )
 
 // Outcomes of a pair or a group.
 const (
 	outcomePass      = "pass"      // the estimate equals the truth
 	outcomeTolerated = "tolerated" // a mismatch inside a named class's tolerance
-	outcomeFlagged   = "flagged"   // a mismatch in the direction the answer's own flags allow, of a size they don't bound
+	outcomeFlagged   = "flagged"   // a mismatch in the direction the answer's own flags allow (lower_bound, coverage_gap, upper_bound), of a size they don't bound
 	outcomeMismatch  = "mismatch"  // a mismatch no class explains: file a Bug issue
 	outcomeRefusal   = "refusal"   // one side refused or failed
 	outcomeAnswered  = "answered"  // with -estimate-only, the estimate answered; nothing was compared
@@ -28,10 +25,9 @@ const (
 const (
 	classExact           = "exact"
 	classEmpty           = "empty"                 // both sides have no series in the window
-	classSketch          = "sketch"                // an HLL group within the sketch's error bound
-	classSketchSmall     = "sketch_small"          // a group marked estimated whose truth is at or below sketchAbove, which the route counts exactly
 	classIncomplete      = "incomplete"            // the answer is flagged as leaving out series, and is below the truth but not below a truth over the part of the window it says it covered
 	classIncompleteUnder = "incomplete_undercount" // an incomplete answer below a truth over the part of the window it says it covered
+	classUpperBound      = "upper_bound"           // the answer is flagged upper_bound, and is above the truth
 	classGroupCountHigh  = "group_count_excess"    // a tenant-wide table truthed one group at a time whose group_count is above the label's values in the index over the window
 	classAnswerChanged   = "answer_changed"        // the group mismatched, the rerun agrees, and the truth changed between the runs: compaction or late out-of-order blocks between the calls
 	classUnstable        = "estimate_unstable"     // the group mismatched and the rerun agrees, but only the estimate changed between the runs
@@ -39,68 +35,42 @@ const (
 	classWindowEcho      = "window_echo"           // the route counted another window than the one asked for
 	classUnclassified    = "unclassified"
 
-	classNoCountRPC      = "no_count_rpc"      // a component without the count RPCs answered
-	classIndexBytesLimit = "index_bytes_limit" // the estimate refused the request on max_index_bytes (422)
-	classEstimateRefused = "estimate_refused"  // the estimate refused the request on another limit (422) or another 4xx
-	classPromQLLimit     = "promql_limit"      // the truth hit a fetched-series, chunk or other query limit (422 with a limit's error ID)
-	classBadRequest      = "bad_request"       // the request is invalid (400): it fails the same way every round
-	classThrottled       = "throttled"         // the query-frontend is throttling the tenant (429)
-	classBusy            = "busy"              // every store-gateway or ingester asked was at its count limit (503 unavailable); safe to retry
-	classError           = "error"             // any other failure
+	classNoCountRPC      = "no_count_rpc"     // a component without the count RPCs answered
+	classMemoryLimit     = "memory_limit"     // the estimate refused the request on the cardinality estimate memory limit (422)
+	classGroupsLimit     = "groups_limit"     // the estimate refused the request on max_groups (422)
+	classEstimateRefused = "estimate_refused" // the estimate refused the request on another limit (422) or another 4xx
+	classPromQLLimit     = "promql_limit"     // the truth hit a fetched-series, chunk or other query limit (422 with a limit's error ID)
+	classBadRequest      = "bad_request"      // the request is invalid (400): it fails the same way every round
+	classThrottled       = "throttled"        // the query-frontend is throttling the tenant (429)
+	classBusy            = "busy"             // every store-gateway or ingester asked was at its count limit (503 unavailable); safe to retry
+	classError           = "error"            // any other failure
 )
 
 // promQLLimitIDPrefix starts the error ID of every per-query limit, such as err-mimir-max-series-per-query.
 const promQLLimitIDPrefix = "err-mimir-max-"
 
-// sketchStdError is the relative standard error of a HyperLogLog at the route's precision, 1.04/sqrt(2^p).
-var sketchStdError = 1.04 / math.Sqrt(float64(uint64(1)<<cardinality.SketchPrecision))
-
-// sketchAbove mirrors the route's sketch threshold (defaultSketchAbove in pkg/querier): a group with at most this many series is counted exactly.
-const sketchAbove = 10_000
-
-// classifyConfig holds the tolerances.
-type classifyConfig struct {
-	// sketchSigmas is how many standard errors a sketched group may be off by.
-	sketchSigmas float64
-}
-
-func (c classifyConfig) sketchBound() float64 { return c.sketchSigmas * sketchStdError }
-
 // groupDiff is one group whose estimate and truth differ.
 type groupDiff struct {
-	Value     string `json:"value"`
-	Estimate  int64  `json:"estimate"`
-	Truth     int64  `json:"truth"`
-	Estimated bool   `json:"estimated,omitempty"`
-	Outcome   string `json:"outcome"`
-	Class     string `json:"class"`
+	Value    string `json:"value"`
+	Estimate int64  `json:"estimate"`
+	Truth    int64  `json:"truth"`
+	Outcome  string `json:"outcome"`
+	Class    string `json:"class"`
 }
 
-// answer is one side's counts per group. Bucketed answers key each group as value@bucket.
+// answer is one side's counts per group.
 type answer struct {
-	counts    map[string]int64
-	estimated map[string]bool
+	counts map[string]int64
 }
 
-// estimateAnswer flattens the route's table, with buckets keyed as value@i.
+// estimateAnswer flattens the route's table.
 func estimateAnswer(r *estimateResponse) answer {
-	a := answer{counts: map[string]int64{}, estimated: map[string]bool{}}
+	a := answer{counts: make(map[string]int64, len(r.Groups))}
 	for _, g := range r.Groups {
-		if g.Counts == nil {
-			a.counts[g.Value] = g.Count
-			a.estimated[g.Value] = g.Estimated
-			continue
-		}
-		for i, c := range g.Counts {
-			k := bucketKey(g.Value, i)
-			a.counts[k] = c
-			a.estimated[k] = g.Estimated
-		}
+		a.counts[g.Value] = g.Count
 	}
 	return a
 }
-
-func bucketKey(value string, i int) string { return fmt.Sprintf("%s@%d", value, i) }
 
 // Pseudo-groups compare the table's summary fields when the table was cut.
 const (
@@ -109,7 +79,7 @@ const (
 )
 
 // compareAnswers diffs the estimate against the truth group by group and classifies each difference. With has_more, only the groups in the table are compared, plus group_count and total against the whole truth. restrict, when set, limits the comparison to those groups, for a truth answered one group at a time.
-func compareAnswers(r *estimateResponse, est, truth answer, restrict map[string]bool, cfg classifyConfig) []groupDiff {
+func compareAnswers(r *estimateResponse, est, truth answer, restrict map[string]bool) []groupDiff {
 	keys := map[string]bool{}
 	for k := range est.counts {
 		keys[k] = true
@@ -125,24 +95,24 @@ func compareAnswers(r *estimateResponse, est, truth answer, restrict map[string]
 			continue
 		}
 		e, t := est.counts[k], truth.counts[k]
-		if e == t && !sketchedSmall(r, est.estimated[k], t) {
+		if e == t {
 			continue
 		}
-		d := groupDiff{Value: k, Estimate: e, Truth: t, Estimated: est.estimated[k]}
-		d.Outcome, d.Class = classify(r, d, cfg)
+		d := groupDiff{Value: k, Estimate: e, Truth: t}
+		d.Outcome, d.Class = classify(r, d)
 		diffs = append(diffs, d)
 	}
-	if r.HasMore && restrict == nil && r.StepMS == 0 {
+	if r.HasMore && restrict == nil {
 		var sum int64
 		for _, v := range truth.counts {
 			sum += v
 		}
 		for _, d := range []groupDiff{
 			{Value: groupCountKey, Estimate: int64(r.GroupCount), Truth: int64(len(truth.counts))},
-			{Value: totalKey, Estimate: r.Total, Truth: sum, Estimated: r.EstimatedGroups > 0},
+			{Value: totalKey, Estimate: r.Total, Truth: sum},
 		} {
 			if d.Estimate != d.Truth {
-				d.Outcome, d.Class = classify(r, d, cfg)
+				d.Outcome, d.Class = classify(r, d)
 				diffs = append(diffs, d)
 			}
 		}
@@ -152,41 +122,14 @@ func compareAnswers(r *estimateResponse, est, truth answer, restrict map[string]
 }
 
 // classify names the class that explains one group's difference, checking the sign each class allows.
-func classify(r *estimateResponse, d groupDiff, cfg classifyConfig) (outcome, class string) {
+func classify(r *estimateResponse, d groupDiff) (outcome, class string) {
 	switch {
-	case sketchedSmall(r, d.Estimated, d.Truth):
-		return outcomeMismatch, classSketchSmall
-	case withinSketch(d, cfg):
-		return outcomeTolerated, classSketch
 	case r.incomplete() && d.Estimate < d.Truth:
 		return outcomeFlagged, classIncomplete
+	case r.UpperBound && d.Estimate > d.Truth:
+		return outcomeFlagged, classUpperBound
 	}
 	return outcomeMismatch, classUnclassified
-}
-
-// withinSketch reports whether an estimated group is within the sketch's error bound of its truth.
-func withinSketch(d groupDiff, cfg classifyConfig) bool {
-	return d.Estimated && d.Truth > 0 && math.Abs(float64(d.Estimate-d.Truth)) <= cfg.sketchBound()*float64(d.Truth)
-}
-
-// sketchedSmall reports whether a group is marked estimated although its truth is small enough to be counted exactly. A step's buckets share their group's mark, so they are not checked.
-func sketchedSmall(r *estimateResponse, estimated bool, truth int64) bool {
-	return estimated && r.StepMS == 0 && truth <= sketchAbove
-}
-
-// sketchGroups are the estimated groups of an answer with their truth, equal or not, so their relative errors can be observed. A step's buckets are left out, as in sketchedSmall.
-func sketchGroups(r *estimateResponse, est, truth answer, restrict map[string]bool) []groupDiff {
-	if r.StepMS != 0 {
-		return nil
-	}
-	var out []groupDiff
-	for k, ok := range est.estimated {
-		if ok && (restrict == nil || restrict[k]) {
-			out = append(out, groupDiff{Value: k, Estimate: est.counts[k], Truth: truth.counts[k], Estimated: true})
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Value < out[j].Value })
-	return out
 }
 
 // classifyRefusal names why a request failed, from its status and its error text.
@@ -210,8 +153,14 @@ func classifyRefusal(side string, err error) string {
 		if isBusy(he) {
 			return classBusy
 		}
-		if he.status == http.StatusUnprocessableEntity && strings.Contains(body, "max_index_bytes") {
-			return classIndexBytesLimit
+		if he.status == http.StatusUnprocessableEntity {
+			// The limit's flag or its message names it: the source's message ends "the tenant's cardinality estimate memory limit", the querier's tracker error "estimated amount of memory consumed by a single query".
+			switch {
+			case strings.Contains(body, "cardinality-estimate-max-memory-bytes") || strings.Contains(body, "cardinality estimate memory limit") || strings.Contains(body, "amount of memory consumed by a single query"):
+				return classMemoryLimit
+			case strings.Contains(body, "max_groups") || strings.Contains(body, "cardinality-estimate-max-groups"):
+				return classGroupsLimit
+			}
 		}
 		if he.status >= 400 && he.status < 500 {
 			return classEstimateRefused

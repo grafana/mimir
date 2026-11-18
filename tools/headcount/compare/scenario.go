@@ -29,7 +29,6 @@ type scenario struct {
 	Windows  []string `yaml:"windows"`
 	Kinds    []string `yaml:"kinds"`
 	Limit    int      `yaml:"limit"`
-	Steps    int      `yaml:"steps"`
 
 	matchers []*labels.Matcher
 	lengths  []time.Duration
@@ -87,8 +86,8 @@ func (s *scenario) check() error {
 			return fmt.Errorf("unknown window kind %q, want one of %v", k, allWindowKinds)
 		}
 	}
-	if s.Limit < 0 || s.Steps < 0 {
-		return errors.New("limit and steps must not be negative")
+	if s.Limit < 0 {
+		return errors.New("limit must not be negative")
 	}
 	return nil
 }
@@ -105,9 +104,6 @@ func scenarioPairs(scenarios []scenario, wcfg windowConfig, now time.Time, rng *
 			if len(s.Kinds) > 0 && !slices.Contains(s.Kinds, w.kind) {
 				continue
 			}
-			if s.Steps > 0 && (w.length()%time.Duration(s.Steps) != 0 || (w.length()/time.Duration(s.Steps))%time.Second != 0) {
-				continue
-			}
 			fits = append(fits, w)
 		}
 		if len(fits) == 0 {
@@ -119,7 +115,6 @@ func scenarioPairs(scenarios []scenario, wcfg windowConfig, now time.Time, rng *
 			matchers: s.matchers,
 			groupBy:  s.GroupBy,
 			window:   fits[rng.IntN(len(fits))],
-			steps:    s.Steps,
 			limit:    s.Limit,
 		})
 	}

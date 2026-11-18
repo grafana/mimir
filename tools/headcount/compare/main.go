@@ -39,7 +39,6 @@ type config struct {
 	windows                 windowConfig
 	targets                 targetConfig
 	pairs                   pairConfig
-	classify                classifyConfig
 	edgeSlack               time.Duration
 	fallbackNames           int
 	seed                    uint64
@@ -69,10 +68,8 @@ func (c *config) register(f *flag.FlagSet) {
 	f.IntVar(&c.targets.names, "top-names", 5, "largest metric names to draw from each round")
 	f.IntVar(&c.targets.labels, "top-labels", 5, "highest-cardinality labels to draw from for each name")
 	f.StringVar(&c.targets.matcherLabel, "matcher-label", "job", "label whose largest values serve as the arbitrary matcher, and which the tenant-wide label table groups by")
-	f.IntVar(&c.pairs.steps, "steps", 4, "buckets of the per-step query")
 	f.IntVar(&c.pairs.tableLimit, "table-limit", 50, "limit on the tenant-wide tables; 0 asks for the whole table. Groups left out are checked through group_count and total")
 	f.Int64Var(&c.pairs.maxReferenceSeries, "max-reference-series", 100_000, "when the tenant has more series than this over the last hour, the tenant-wide tables skip their grouped PromQL truth and count the -fallback-names largest groups one at a time; set it to the tenant's max fetched series per query. 0 never skips")
-	f.Float64Var(&c.classify.sketchSigmas, "sketch-sigmas", 3, "standard errors of the HLL sketch a sketched group may be off by")
 	f.DurationVar(&c.edgeSlack, "edge-slack", 5*time.Minute, "how far before the window the edge probe looks for series counted without a sample in it; set it to the tenant's largest scrape interval. 0 disables the probe")
 	f.IntVar(&c.fallbackNames, "fallback-names", 5, "when PromQL refuses a table on a per-query limit, how many of its largest groups to count one at a time instead")
 	f.Uint64Var(&c.seed, "seed", 0, "seed for drawing targets and pairs; 0 uses the time")
@@ -116,8 +113,8 @@ func (c *config) validate() error {
 	if c.interval < 0 || c.gap < 0 || c.edgeSlack < 0 {
 		return errors.New("-interval, -request-gap and -edge-slack must not be negative")
 	}
-	if c.pairs.tableLimit < 0 || c.pairs.steps < 0 || c.pairs.maxReferenceSeries < 0 {
-		return errors.New("-table-limit, -steps and -max-reference-series must not be negative")
+	if c.pairs.tableLimit < 0 || c.pairs.maxReferenceSeries < 0 {
+		return errors.New("-table-limit and -max-reference-series must not be negative")
 	}
 	if c.burst < 0 || c.burst > maxBurst {
 		return fmt.Errorf("-burst must be between 0 and %d", maxBurst)
@@ -195,7 +192,6 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 	rng := rand.New(rand.NewPCG(seed, seed))
 	r := &runner{
 		client:        &client{baseURL: strings.TrimRight(cfg.address, "/"), tenant: cfg.tenant, clusterLabel: cfg.clusterLabel, http: &http.Client{Timeout: cfg.timeout}, eventualEstimates: cfg.estimateOnly},
-		cfg:           cfg.classify,
 		m:             m,
 		logger:        logger,
 		gap:           cfg.gap,

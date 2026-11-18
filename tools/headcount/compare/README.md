@@ -24,7 +24,7 @@ Both requests load the cell's read path, and the truth queries count against the
 3. For each pair, send the estimate and the truth, alternating which goes first, and label each `first` or `second`. The first may warm caches for the second, but neither starts cold: target picking and earlier pairs have read the same indexes. A cold index-header cost needs its own run after a store-gateway restart or a cache flush, read from the store-gateway's metrics.
 4. Diff the two tables group by group, and classify each differing group. Rerun a pair with an unexplained group once; the rerun's diff is the result. A group that mismatched and no longer does is `answer_changed` when its truth changed between the runs, and `estimate_unstable` when only its estimate did. One that still mismatches stays a mismatch.
 
-The truth is an instant query `count by (<label>) (last_over_time(<selector>[<window>]))` at the window's end minus 1 ms. The estimate counts `[start, end)` and a PromQL range at `t` selects `(t - window, t]`, so at `end - 1ms` both cover the same milliseconds. With a step, each bucket gets its own truth query with the step as the window.
+The truth is an instant query `count by (<label>) (last_over_time(<selector>[<window>]))` at the window's end minus 1 ms. The estimate counts `[start, end)` and a PromQL range at `t` selects `(t - window, t]`, so at `end - 1ms` both cover the same milliseconds.
 
 ## Burst
 
@@ -45,8 +45,7 @@ With `-estimate-only`, each drawn and scenario pair sends only its estimate, wit
   windows: [24h]                         # default -windows
   kinds: [recent]                        # default every kind: blocks, ingesters, boundary, recent
   limit: 20                              # default 0, the whole table
-  steps: 0                               # default 0, no buckets
-```
+  ```
 
 Keep a scenario file that names a tenant's metrics and labels outside the repository.
 
@@ -58,7 +57,6 @@ Keep a scenario file that names a tenant's metrics and labels outside the reposi
 | `metric_by_label` | one large metric | one of its high-cardinality labels; `group_count` gives the label's distinct values |
 | `matcher_by_name` | `{<matcher-label>="<a large value>"}` | `__name__` |
 | `metric_total` | one large metric | `__name__` |
-| `metric_steps` | one large metric, with `step` = window / `-steps` | `__name__` |
 | `tenant_by_label` | `{__name__=~".+"}` | `-matcher-label` |
 | `tenant_label_vals` | `{__name__=~".+"}` | the tenant's highest-cardinality label |
 | `name_regex` | `{__name__=~"<prefix>.*"}`, the prefix being a large name up to its first `_` | `__name__` |
@@ -74,18 +72,18 @@ Each pair and each differing group has an outcome: `pass`, `tolerated` (a class 
 |---|---|---|
 | `exact` | pass | every group equal |
 | `empty` | pass | both sides have no series in the window |
-| `sketch` | tolerated | the group is `estimated` and within `-sketch-sigmas` (default 3) standard errors of the HLL sketch, 1.04/√2^p at the route's precision |
-| `sketch_small` | mismatch | the group is `estimated` although its truth and its edge series (see `edge`) add up to at most 10,000. A store-gateway or an ingester sends a sketch for a group when it holds more than 10,000 of the group's series, counted by chunk overlap, so a group whose edge series lift it above 10,000 is judged as a sketched group instead. With `-edge-slack 0` the edge series are not counted. Checked without a step only, since a step's buckets share their group's mark |
-| `incomplete` | flagged | the answer has `lower_bound` or `coverage_gap`, and the group is below the truth but not below a truth over the part of the window the answer says it counted in full. That part starts at `head_min_time` when the answer has it, since the ingesters hold everything after it; otherwise it is the longest part of the window outside every `missing_shards` range. An answer with `missing_blocks` or a `coverage_gap` and no `head_min_time` doesn't say which part it left out, and a step pair isn't probed, so those groups are flagged unbounded |
+| `incomplete` | flagged | the answer has `lower_bound` or `coverage_gap`, and the group is below the truth but not below a truth over the part of the window the answer says it counted in full. That part starts at `head_min_time` when the answer has it, since the ingesters hold everything after it; otherwise it is the longest part of the window outside every `missing_shards` range. An answer with `missing_blocks` or a `coverage_gap` and no `head_min_time` doesn't say which part it left out, so those groups are flagged unbounded |
+| `upper_bound` | flagged | the answer has `upper_bound`, which the route sets when head counts of several partitions were added up so a series may count twice, and the group is above the truth. The flag allows that direction and bounds neither the size nor the cause |
 | `answer_changed` | tolerated | the group mismatched, the rerun agrees, and the truth changed between the runs: compaction or late out-of-order blocks between the calls |
-| `edge` | tolerated | the group is above the truth by no more than its series with a sample in the `-edge-slack` before the window and none in it, counted as `count by (<label>) (last_over_time(<selector>[<slack>] offset <window>) unless last_over_time(<selector>[<window>]))`. The estimate counts a series when one of its chunks overlaps the window, which such a series can do with its staleness marker in the window, which PromQL drops, or with a gap across the window. A series that starts after the window has no chunk in it, so the probe doesn't look there. Step pairs probe each bucket over the step. Set `-edge-slack` (default 5m) to the tenant's largest scrape interval |
+| `edge` | tolerated | the group is above the truth by no more than its series with a sample in the `-edge-slack` before the window and none in it, counted as `count by (<label>) (last_over_time(<selector>[<slack>] offset <window>) unless last_over_time(<selector>[<window>]))`. The estimate counts a series when one of its chunks overlaps the window, which such a series can do with its staleness marker in the window, which PromQL drops, or with a gap across the window. A series that starts after the window has no chunk in it, so the probe doesn't look there. Set `-edge-slack` (default 5m) to the tenant's largest scrape interval |
 | `incomplete_undercount` | mismatch | an `incomplete` group below a truth over the part of the window the answer says it counted in full |
 | `group_count_excess` | mismatch | a tenant-wide table truthed one group at a time has a `group_count` above the label's values over the window in `/api/v1/label/<label>/values`, plus one for the `""` group of series without the label (see below) |
 | `estimate_unstable` | mismatch | the group mismatched and the rerun agrees, but only the estimate changed between the runs: the estimate is not deterministic |
 | `window_echo` | mismatch | the route counted another window than the one asked for |
 | `unclassified` | mismatch | anything else |
 | `no_count_rpc` | refusal | a store-gateway or an ingester without the count RPCs answered (422, "does not support cardinality estimates") |
-| `index_bytes_limit` | refusal | the estimate refused the request on `max_index_bytes` (422) |
+| `memory_limit` | refusal | the estimate refused the request on `-querier.cardinality-estimate-max-memory-bytes` (422), from a store-gateway, an ingester or the querier. Recognised by the error text: the flag name, "cardinality estimate memory limit" (source messages) or "amount of memory consumed by a single query" (the querier's tracker) |
+| `groups_limit` | refusal | the estimate refused the request on `max_groups` (422), recognised by `max_groups` or `-querier.cardinality-estimate-max-groups` in the error text |
 | `estimate_refused` | refusal | the estimate refused the request on another limit (422), or another 4xx |
 | `promql_limit` | refusal | the truth hit a per-query limit (422 with an `err-mimir-max-*` error ID) |
 | `bad_request` | refusal | either side answered 400: the request fails the same way every round |
@@ -95,7 +93,7 @@ Each pair and each differing group has an outcome: `pass`, `tolerated` (a class 
 
 A refusal is classed by its status and its error text: the `error` field of a Prometheus API error body (`status`, `errorType`, `error`), which the route sends for every error status, or the whole body otherwise.
 
-With `has_more`, only the groups in the table are compared, plus `group_count` and `total` against the whole truth. The tenant-wide tables ask for `-table-limit` (default 50) groups. When the truth of a table without a step hits a per-query limit (`promql_limit`), the refusal is counted and the estimate's `-fallback-names` (default 5) largest groups are counted one at a time instead, each with an equality matcher on the group's label in place of the selector's matchers on it; `total` and the other groups are then not checked, and `group_count` only for a tenant-wide table (see below). A 429 or a 5xx does not start the fallback.
+With `has_more`, only the groups in the table are compared, plus `group_count` and `total` against the whole truth. The tenant-wide tables ask for `-table-limit` (default 50) groups. When the truth of a table hits a per-query limit (`promql_limit`), the refusal is counted and the estimate's `-fallback-names` (default 5) largest groups are counted one at a time instead, each with an equality matcher on the group's label in place of the selector's matchers on it; `total` and the other groups are then not checked, and `group_count` only for a tenant-wide table (see below). A 429 or a 5xx does not start the fallback.
 
 When the tenant had more than `-max-reference-series` (default 100,000) series over the last hour at target picking, `tenant_by_name`, `tenant_by_label` and `tenant_label_vals` skip the grouped truth, which a per-query series limit would refuse after loading the cell, and go straight to the per-group truth. Those pairs always send the estimate first, since the truth needs its groups. Set `-max-reference-series` to the tenant's max fetched series per query; 0 never skips.
 
@@ -106,10 +104,9 @@ A tenant-wide table truthed one group at a time, after the skip or the fallback,
 One log line per pair, with the differing groups of a mismatch. With `-interval 0` the tool runs one round and exits 1 if a pair mismatched, 3 if no pair passed, was tolerated or, with `-estimate-only`, answered (every pair refused or flagged), and 0 otherwise. With `-listen`, `/metrics` serves:
 
 - `cardinality_estimate_compare_pairs_total{query, window, order, outcome, class, read, source}`, where `read` and `source` are the estimate's, empty when it didn't answer
-- `cardinality_estimate_compare_flags_total{query, flag}`, one per answered estimate of a pair for each flag set: `lower_bound`, `coverage_gap`, `head_min_time`, `missing_blocks`, `missing_shards`, `has_more` or `dedup`. The log line of each pair has `read`, `source` and `flags` too
+- `cardinality_estimate_compare_flags_total{query, flag}`, one per answered estimate of a pair for each flag set: `lower_bound`, `coverage_gap`, `head_min_time`, `missing_blocks`, `missing_shards`, `upper_bound`, `has_more` or `dedup`. The log line of each pair has `read`, `source` and `flags` too
 - `cardinality_estimate_compare_groups_total{query, outcome, class}`
 - `cardinality_estimate_compare_refusals_total{query, side, class}`
-- `cardinality_estimate_compare_request_duration_seconds{query, window, length, side, position, reference, read, source}`, client-side latency of each side of a pair that answered, once per pair: a refused or failed request is not observed, and a truth asked one value or one bucket at a time is the sum of its queries. `position` is `first`, `second`, or `alone` with `-estimate-only`, `reference` is `grouped`, `per_value`, `per_bucket`, or `none` with `-estimate-only`, and `read` and `source` are the estimate's for both sides. Reruns and probes are not observed. The top bucket is above `-timeout`
-- `cardinality_estimate_compare_sketch_relative_error{group_by}`, `|estimate - truth| / truth` of every `estimated` group, equal or not, with `group_by` `metric` for a table by `__name__` and `label_value` otherwise, to read a percentile of the sketch's error from. The `sketch` class is a per-group pass or fail at `-sketch-sigmas`; this histogram is what a percentile target is checked against. Step pairs are left out. Each pair's log line lists its estimated groups
+- `cardinality_estimate_compare_request_duration_seconds{query, window, length, side, position, reference, read, source}`, client-side latency of each side of a pair that answered, once per pair: a refused or failed request is not observed, and a truth asked one value at a time is the sum of its queries. `position` is `first`, `second`, or `alone` with `-estimate-only`, `reference` is `grouped`, `per_value`, or `none` with `-estimate-only`, and `read` and `source` are the estimate's for both sides. Reruns and probes are not observed. The top bucket is above `-timeout`
 - `cardinality_estimate_compare_rounds_total{result}` and `cardinality_estimate_compare_last_round_timestamp_seconds`
 - `cardinality_estimate_compare_bursts_total`, `cardinality_estimate_compare_burst_requests_total{query, status}` and `cardinality_estimate_compare_burst_request_duration_seconds{status}`, where `status` is the HTTP status, `busy` for a 503 whose sources were all at their count limit, `timeout` or `error`

@@ -9,7 +9,6 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -23,37 +22,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSketchStdError(t *testing.T) {
-	// p=11: 1.04/sqrt(2048).
-	assert.InDelta(t, 0.02298, sketchStdError, 0.00001)
-}
-
 func TestCompareAnswers(t *testing.T) {
-	cfg := classifyConfig{sketchSigmas: 3}
 	truth := answer{counts: map[string]int64{"a": 100000, "b": 10, "c": 5}}
 	tests := map[string]struct {
-		resp      estimateResponse
-		est       map[string]int64
-		estimated map[string]bool
-		want      []groupDiff
+		resp estimateResponse
+		est  map[string]int64
+		want []groupDiff
 	}{
 		"exact": {
 			est: map[string]int64{"a": 100000, "b": 10, "c": 5},
-		},
-		"sketch within the bound, either sign": {
-			est:       map[string]int64{"a": 106000, "b": 10, "c": 5},
-			estimated: map[string]bool{"a": true},
-			want:      []groupDiff{{Value: "a", Estimate: 106000, Truth: 100000, Estimated: true, Outcome: outcomeTolerated, Class: classSketch}},
-		},
-		"sketch outside the bound": {
-			est:       map[string]int64{"a": 110000, "b": 10, "c": 5},
-			estimated: map[string]bool{"a": true},
-			want:      []groupDiff{{Value: "a", Estimate: 110000, Truth: 100000, Estimated: true, Outcome: outcomeMismatch, Class: classUnclassified}},
-		},
-		"estimated at or below sketchAbove, even when equal": {
-			est:       map[string]int64{"a": 100000, "b": 10, "c": 5},
-			estimated: map[string]bool{"b": true},
-			want:      []groupDiff{{Value: "b", Estimate: 10, Truth: 10, Estimated: true, Outcome: outcomeMismatch, Class: classSketchSmall}},
 		},
 		"an exact group off by one": {
 			est:  map[string]int64{"a": 100000, "b": 11, "c": 5},
@@ -72,6 +49,16 @@ func TestCompareAnswers(t *testing.T) {
 			est:  map[string]int64{"a": 100001, "b": 10, "c": 5},
 			want: []groupDiff{{Value: "a", Estimate: 100001, Truth: 100000, Outcome: outcomeMismatch, Class: classUnclassified}},
 		},
+		"upper bound above the truth": {
+			resp: estimateResponse{UpperBound: true},
+			est:  map[string]int64{"a": 100003, "b": 10, "c": 5},
+			want: []groupDiff{{Value: "a", Estimate: 100003, Truth: 100000, Outcome: outcomeFlagged, Class: classUpperBound}},
+		},
+		"upper bound below the truth": {
+			resp: estimateResponse{UpperBound: true},
+			est:  map[string]int64{"a": 99999, "b": 10, "c": 5},
+			want: []groupDiff{{Value: "a", Estimate: 99999, Truth: 100000, Outcome: outcomeMismatch, Class: classUnclassified}},
+		},
 		"has_more ignores groups left out of the table": {
 			resp: estimateResponse{HasMore: true, GroupCount: 3, Total: 100015},
 			est:  map[string]int64{"a": 100000},
@@ -84,11 +71,7 @@ func TestCompareAnswers(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			est := answer{counts: tc.est, estimated: tc.estimated}
-			if est.estimated == nil {
-				est.estimated = map[string]bool{}
-			}
-			assert.Equal(t, tc.want, compareAnswers(&tc.resp, est, truth, nil, cfg))
+			assert.Equal(t, tc.want, compareAnswers(&tc.resp, answer{counts: tc.est}, truth, nil))
 		})
 	}
 }
@@ -153,89 +136,13 @@ func TestCovered(t *testing.T) {
 	}
 }
 
-func TestSketchGroups(t *testing.T) {
-	est := answer{counts: map[string]int64{"a": 20500, "b": 30000, "c": 7}, estimated: map[string]bool{"a": true, "b": true}}
-	truth := answer{counts: map[string]int64{"a": 20000, "b": 30000, "c": 7}}
-	// Equal groups are kept, so the relative error's distribution isn't biased high; restrict and steps leave groups out.
-	assert.Equal(t, []groupDiff{{Value: "a", Estimate: 20500, Truth: 20000, Estimated: true}, {Value: "b", Estimate: 30000, Truth: 30000, Estimated: true}}, sketchGroups(&estimateResponse{}, est, truth, nil))
-	assert.Equal(t, []groupDiff{{Value: "b", Estimate: 30000, Truth: 30000, Estimated: true}}, sketchGroups(&estimateResponse{}, est, truth, map[string]bool{"b": true}))
-	assert.Empty(t, sketchGroups(&estimateResponse{StepMS: 1}, est, truth, nil))
-}
-
-func TestRunnerSketchRelativeError(t *testing.T) {
-	series := testSeries()
-	for i := range 2 * sketchAbove {
-		series = append(series, labels.FromStrings("__name__", "big", "pod", strconv.Itoa(i)))
-	}
-	f, srv := newFakeFrontend(t, series...)
-	f.estimateHook = func(_ int, r *estimateResponse) {
-		for i := range r.Groups {
-			if r.Groups[i].Value == "big" {
-				r.Groups[i].Estimated, r.Groups[i].Count = true, r.Groups[i].Count+200
-			}
-		}
-	}
-	r, m := newTestRunner(srv)
-	res := r.run(context.Background(), pair{query: queryTenantByName, matchers: allSeriesMatchers(), groupBy: "__name__", window: testWindow})
-	assert.Equal(t, outcomeTolerated, res.Outcome)
-	assert.Equal(t, classSketch, res.Class)
-	assert.Equal(t, []groupDiff{{Value: "big", Estimate: 2*sketchAbove + 200, Truth: 2 * sketchAbove, Estimated: true}}, res.Estimated)
-	assert.Equal(t, 1, testutil.CollectAndCount(m.sketchError))
-	assert.Equal(t, 0.0, testutil.ToFloat64(m.groups.WithLabelValues(queryTenantByName, outcomeMismatch, classSketchSmall)))
-}
-
-// TestRunnerSketchSmallEdge: a group whose truth is at or below sketchAbove may be estimated when its edge series lift it above, and is then judged as a sketched group; without them it stays sketch_small.
-func TestRunnerSketchSmallEdge(t *testing.T) {
-	start := testWindow.start
-	const sec = int64(1000)
-	run := func(edgeSeries int) pairResult {
-		series := testSeries()
-		for i := range sketchAbove - 1 {
-			series = append(series, labels.FromStrings("__name__", "big", "pod", strconv.Itoa(i)))
-		}
-		var stopped []labels.Labels
-		for i := range edgeSeries {
-			stopped = append(stopped, labels.FromStrings("__name__", "big", "pod", "stopped-"+strconv.Itoa(i)))
-		}
-		f, srv := newFakeFrontend(t, append(series, stopped...)...)
-		// Last sample 30s before the window, staleness marker 30s into it: the estimate counts the series, the window's truth doesn't.
-		for _, s := range stopped {
-			f.spans[s.String()] = seriesSpan{samples: []int64{start - 30*sec}, stale: start + 30*sec}
-		}
-		f.estimateHook = func(_ int, r *estimateResponse) {
-			for i := range r.Groups {
-				if r.Groups[i].Value == "big" {
-					r.Groups[i].Estimated = true
-				}
-			}
-		}
-		r, _ := newTestRunner(srv)
-		return r.run(context.Background(), pair{query: queryTenantByName, matchers: allSeriesMatchers(), groupBy: "__name__", window: testWindow})
-	}
-
-	// 9,999 series in the window and 2 edge series: a source may have held 10,001 and sent a sketch.
-	res := run(2)
-	assert.Equal(t, outcomeTolerated, res.Outcome)
-	assert.Equal(t, classSketch, res.Class)
-
-	// 9,999 series and no edge series: no source held more than sketchAbove.
-	res = run(0)
-	assert.Equal(t, outcomeMismatch, res.Outcome)
-	assert.Equal(t, classSketchSmall, res.Class)
-}
-
-func TestEstimateAnswerBuckets(t *testing.T) {
-	r := estimateResponse{StepMS: 1, Groups: []estimateGroup{{Value: "a", Count: 3, Counts: []int64{1, 3}}}}
-	assert.Equal(t, map[string]int64{"a@0": 1, "a@1": 3}, estimateAnswer(&r).counts)
-}
-
 func TestWorst(t *testing.T) {
 	o, c := worst(nil)
 	assert.Equal(t, []string{outcomePass, classExact}, []string{o, c})
-	o, c = worst([]groupDiff{{Outcome: outcomeTolerated, Class: classSketch}, {Outcome: outcomeMismatch, Class: classUnclassified}, {Outcome: outcomeTolerated, Class: classEdge}})
+	o, c = worst([]groupDiff{{Outcome: outcomeTolerated, Class: classAnswerChanged}, {Outcome: outcomeMismatch, Class: classUnclassified}, {Outcome: outcomeTolerated, Class: classEdge}})
 	assert.Equal(t, []string{outcomeMismatch, classUnclassified}, []string{o, c})
-	o, c = worst([]groupDiff{{Outcome: outcomeTolerated, Class: classSketch}, {Outcome: outcomeTolerated, Class: classEdge}})
-	assert.Equal(t, []string{outcomeTolerated, classEdge}, []string{o, c})
+	o, c = worst([]groupDiff{{Outcome: outcomeTolerated, Class: classAnswerChanged}, {Outcome: outcomeTolerated, Class: classEdge}})
+	assert.Equal(t, []string{outcomeTolerated, classAnswerChanged}, []string{o, c}, "the first class by name")
 }
 
 func TestTruthQuery(t *testing.T) {
@@ -313,15 +220,15 @@ func TestRunnerLatencyOncePerSide(t *testing.T) {
 	f, srv := newFakeFrontend(t, testSeries()...)
 	f.estimateHook = func(_ int, r *estimateResponse) { r.Read, r.Source = "index_header", "blocks" }
 	r, m := newTestRunner(srv)
-	p := pair{query: queryMetricSteps, matchers: metricPair("").matchers, groupBy: "__name__", window: testWindow, steps: 4}
+	p := pair{query: queryTenantByName, matchers: allSeriesMatchers(), groupBy: "__name__", window: testWindow, perValue: true}
 	r.run(context.Background(), p)
 	assert.Equal(t, 2, testutil.CollectAndCount(m.duration))
 	assert.Equal(t, 1.0, counterSum(m.pairs, map[string]string{"read": "index_header", "source": "blocks", "outcome": outcomePass}))
 	ch := make(chan prometheus.Metric, 10)
-	m.duration.WithLabelValues(queryMetricSteps, windowBlocks, "1h", sideTruth, positionSecond, referencePerBucket, "index_header", "blocks").(prometheus.Histogram).Collect(ch)
+	m.duration.WithLabelValues(queryTenantByName, windowBlocks, "1h", sideTruth, positionSecond, referencePerValue, "index_header", "blocks").(prometheus.Histogram).Collect(ch)
 	var pb dto.Metric
 	require.NoError(t, (<-ch).Write(&pb))
-	assert.Equal(t, uint64(1), pb.GetHistogram().GetSampleCount(), "four bucket queries, one observation")
+	assert.Equal(t, uint64(1), pb.GetHistogram().GetSampleCount(), "one query per name, one observation")
 
 	m = newMetrics(prometheus.NewRegistry(), time.Minute)
 	r.m = m
@@ -484,25 +391,6 @@ func TestRunnerEdgeFromSampleTimes(t *testing.T) {
 	assert.Contains(t, res.Diffs, groupDiff{Value: "db-late", Estimate: 1, Outcome: outcomeMismatch, Class: classUnclassified})
 }
 
-// TestRunnerStepsFromSampleTimes: a series that stops halfway is counted in the buckets it has samples in.
-func TestRunnerStepsFromSampleTimes(t *testing.T) {
-	half := labels.FromStrings("__name__", "up", "job", "db", "pod", "db-half")
-	f, srv := newFakeFrontend(t, append(testSeries(), half)...)
-	minute := time.Minute.Milliseconds()
-	f.spans[half.String()] = seriesSpan{samples: []int64{testWindow.start + minute, testWindow.start + 29*minute}}
-	r, _ := newTestRunner(srv)
-	p := pair{query: queryMetricSteps, matchers: metricPair("").matchers, groupBy: "__name__", window: testWindow, steps: 4}
-	res := r.run(context.Background(), p)
-	assert.Equal(t, outcomePass, res.Outcome, "%+v", res.Diffs)
-	// The estimate's buckets did see the series stop.
-	f.estimateHook = func(_ int, r *estimateResponse) {
-		for _, g := range r.Groups {
-			assert.Equal(t, []int64{7, 7, 6, 6}, g.Counts)
-		}
-	}
-	r.run(context.Background(), p)
-}
-
 // TestRunnerEdgeGroupCount: an extra group in a cut table is an edge only when an edge series is in a group the window's truth lacks.
 func TestRunnerEdgeGroupCount(t *testing.T) {
 	f, srv := newFakeFrontend(t, testSeries()...)
@@ -524,24 +412,6 @@ func TestRunnerEdgeGroupCount(t *testing.T) {
 	res = r.run(context.Background(), p)
 	assert.Equal(t, outcomeTolerated, res.Outcome, "%+v", res.Diffs)
 	assert.Equal(t, classEdge, res.Class)
-}
-
-// TestRunnerEdgeProbePerBucket: each bucket of a step pair gets its own edge probe, over the step.
-func TestRunnerEdgeProbePerBucket(t *testing.T) {
-	f, srv := newFakeFrontend(t, testSeries()...)
-	f.truthHook = func(q string, _ time.Duration, counts map[string]int64) int {
-		if strings.Contains(q, "unless") {
-			counts["up"] = 1
-		}
-		return 0
-	}
-	f.estimateHook = func(_ int, r *estimateResponse) { r.Groups[0].Counts[2]++ }
-	r, _ := newTestRunner(srv)
-	p := pair{query: queryMetricSteps, matchers: metricPair("").matchers, groupBy: "__name__", window: testWindow, steps: 4}
-	res := r.run(context.Background(), p)
-	assert.Equal(t, outcomeTolerated, res.Outcome, "%+v", res.Diffs)
-	assert.Equal(t, classEdge, res.Class)
-	assert.Contains(t, f.queries, `count by (__name__) (last_over_time({__name__="up"}[1m] offset 15m) unless last_over_time({__name__="up"}[15m]))`)
 }
 
 func TestRunnerUnexplainedMismatch(t *testing.T) {
@@ -569,10 +439,13 @@ func TestRunnerNoCountRPC(t *testing.T) {
 func TestRunnerEstimateRefused(t *testing.T) {
 	f, srv := newFakeFrontend(t, testSeries()...)
 	f.estimateError = func() (int, string) {
-		return http.StatusUnprocessableEntity, "the estimate would read more than max_index_bytes"
+		return http.StatusUnprocessableEntity, "the request would hold more than 5 bytes in the store-gateway while counting, the tenant's cardinality estimate memory limit"
 	}
-	r, _ := newTestRunner(srv)
-	assert.Equal(t, classIndexBytesLimit, r.run(context.Background(), metricPair("pod")).Class)
+	r, m := newTestRunner(srv)
+	res := r.run(context.Background(), metricPair("pod"))
+	assert.Equal(t, outcomeRefusal, res.Outcome)
+	assert.Equal(t, classMemoryLimit, res.Class)
+	assert.Equal(t, 1.0, testutil.ToFloat64(m.refusals.WithLabelValues(queryMetricByLabel, sideEstimate, classMemoryLimit)))
 }
 
 func TestClassifyRefusal(t *testing.T) {
@@ -586,9 +459,12 @@ func TestClassifyRefusal(t *testing.T) {
 		expect string
 	}{
 		"no count RPC":         {sideEstimate, 422, apiError("execution", "a store-gateway does not support cardinality estimates yet, it may run an older version"), classNoCountRPC},
-		"index bytes":          {sideEstimate, 422, apiError("execution", "the request would read about 5 index bytes, more than max_index_bytes 4"), classIndexBytesLimit},
-		"index bytes no JSON":  {sideEstimate, 422, "the request would read about 5 index bytes, more than max_index_bytes 4", classIndexBytesLimit},
-		"other estimate limit": {sideEstimate, 422, apiError("execution", "the request would hash 5 matching series, more than max_hashes 4"), classEstimateRefused},
+		"memory, source":       {sideEstimate, 422, apiError("execution", "the request would hold more than 5 bytes in the ingester while counting, the tenant's cardinality estimate memory limit"), classMemoryLimit},
+		"memory, querier":      {sideEstimate, 422, apiError("execution", "the groups and hashes this estimate holds in the querier: the query exceeded the maximum allowed estimated amount of memory consumed by a single query (limit: 5 bytes)"), classMemoryLimit},
+		"memory, flag name":    {sideEstimate, 422, "over -querier.cardinality-estimate-max-memory-bytes", classMemoryLimit},
+		"max groups":           {sideEstimate, 422, apiError("execution", "the blocks of one range hold more than 4 distinct values of pod (the -querier.cardinality-estimate-max-groups limit)"), classGroupsLimit},
+		"max groups, source":   {sideEstimate, 422, apiError("execution", "the blocks hold 5 distinct values of pod, more than max_groups 4"), classGroupsLimit},
+		"other estimate limit": {sideEstimate, 422, apiError("execution", "something else was refused"), classEstimateRefused},
 		"estimate bad request": {sideEstimate, 400, apiError("bad_data", "group_by: invalid label name"), classBadRequest},
 		"estimate throttled":   {sideEstimate, 429, "too many outstanding requests", classThrottled},
 		"estimate timeout":     {sideEstimate, 503, apiError("timeout", "cardinality estimate timed out after 2m0s (-querier.timeout)"), classError},
@@ -609,9 +485,9 @@ func TestClassifyRefusal(t *testing.T) {
 }
 
 func TestNewHTTPError(t *testing.T) {
-	e := newHTTPError(422, []byte(`{"status":"error","errorType":"execution","error":"more than max_index_bytes 4"}`))
-	assert.Equal(t, &httpError{status: 422, errorType: "execution", body: "more than max_index_bytes 4"}, e)
-	assert.Equal(t, "HTTP 422 (execution): more than max_index_bytes 4", e.Error())
+	e := newHTTPError(422, []byte(`{"status":"error","errorType":"execution","error":"more than max_groups 4"}`))
+	assert.Equal(t, &httpError{status: 422, errorType: "execution", body: "more than max_groups 4"}, e)
+	assert.Equal(t, "HTTP 422 (execution): more than max_groups 4", e.Error())
 
 	e = newHTTPError(502, []byte("bad gateway\n"))
 	assert.Equal(t, &httpError{status: 502, body: "bad gateway"}, e)
@@ -756,23 +632,6 @@ func TestRunnerWindowEcho(t *testing.T) {
 	assert.Equal(t, classWindowEcho, res.Class)
 }
 
-func TestRunnerSteps(t *testing.T) {
-	f, srv := newFakeFrontend(t, testSeries()...)
-	r, _ := newTestRunner(srv)
-	p := pair{query: queryMetricSteps, matchers: metricPair("").matchers, groupBy: "__name__", window: testWindow, steps: 4}
-	res := r.run(context.Background(), p)
-	assert.Equal(t, outcomePass, res.Outcome, "%+v", res.Diffs)
-	assert.Len(t, f.queries, 4)
-	assert.Equal(t, `count by (__name__) (last_over_time({__name__="up"}[15m]))`, f.queries[0])
-
-	// A bucket off by one is a mismatch on that bucket only.
-	f.estimateHook = func(_ int, r *estimateResponse) { r.Groups[0].Counts[2]++ }
-	res = r.run(context.Background(), p)
-	assert.Equal(t, outcomeMismatch, res.Outcome)
-	require.Len(t, res.Diffs, 1)
-	assert.Equal(t, "up@2", res.Diffs[0].Value)
-}
-
 // TestRunOneRound runs a whole round against an honest fake: every query shape on every window agrees.
 func TestRunOneRound(t *testing.T) {
 	f, srv := newFakeFrontend(t, testSeries()...)
@@ -780,11 +639,11 @@ func TestRunOneRound(t *testing.T) {
 	m := newMetrics(reg, time.Minute)
 	cfg := config{
 		address: srv.URL, tenant: "test-tenant", pairsPerRound: 1000, timeout: time.Minute,
-		queries:  allQueries,
-		windows:  windowConfig{lengths: []time.Duration{time.Hour, 24 * time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
-		targets:  targetConfig{names: 3, labels: 3, matcherLabel: "job"},
-		pairs:    pairConfig{steps: 4, tableLimit: 2},
-		classify: classifyConfig{sketchSigmas: 3}, edgeSlack: time.Minute, fallbackNames: 2, seed: 1,
+		queries:   allQueries,
+		windows:   windowConfig{lengths: []time.Duration{time.Hour, 24 * time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
+		targets:   targetConfig{names: 3, labels: 3, matcherLabel: "job"},
+		pairs:     pairConfig{tableLimit: 2},
+		edgeSlack: time.Minute, fallbackNames: 2, seed: 1,
 	}
 	now := func() time.Time { return time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC) }
 	sum, err := run(context.Background(), cfg, m, log.NewNopLogger(), now)
@@ -817,10 +676,10 @@ func TestRunNothingCompared(t *testing.T) {
 	f.truthHook = func(string, time.Duration, map[string]int64) int { return http.StatusInternalServerError }
 	cfg := config{
 		address: srv.URL, tenant: "test-tenant", pairsPerRound: 1000, timeout: time.Minute,
-		queries:  []string{queryMetricTotal},
-		windows:  windowConfig{lengths: []time.Duration{time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
-		targets:  targetConfig{names: 3, labels: 3, matcherLabel: "job"},
-		classify: classifyConfig{sketchSigmas: 3}, seed: 1,
+		queries: []string{queryMetricTotal},
+		windows: windowConfig{lengths: []time.Duration{time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
+		targets: targetConfig{names: 3, labels: 3, matcherLabel: "job"},
+		seed:    1,
 	}
 	now := func() time.Time { return time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC) }
 	sum, err := run(context.Background(), cfg, newMetrics(prometheus.NewRegistry(), time.Minute), log.NewNopLogger(), now)
@@ -853,10 +712,10 @@ func TestRunFacetProbeRefused(t *testing.T) {
 	m := newMetrics(prometheus.NewRegistry(), time.Minute)
 	cfg := config{
 		address: srv.URL, tenant: "test-tenant", pairsPerRound: 1000, timeout: time.Minute,
-		queries:  []string{queryMetricTotal, queryMetricNotEqual},
-		windows:  windowConfig{lengths: []time.Duration{time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
-		targets:  targetConfig{names: 3, labels: 3, matcherLabel: "job"},
-		classify: classifyConfig{sketchSigmas: 3}, seed: 1,
+		queries: []string{queryMetricTotal, queryMetricNotEqual},
+		windows: windowConfig{lengths: []time.Duration{time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
+		targets: targetConfig{names: 3, labels: 3, matcherLabel: "job"},
+		seed:    1,
 	}
 	now := func() time.Time { return time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC) }
 	sum, err := run(context.Background(), cfg, m, log.NewNopLogger(), now)
@@ -966,11 +825,11 @@ func TestRunBurstOncePerInterval(t *testing.T) {
 	m := newMetrics(prometheus.NewRegistry(), time.Minute)
 	cfg := config{
 		address: srv.URL, tenant: "test-tenant", pairsPerRound: 1, timeout: time.Minute,
-		queries:  []string{queryMetricTotal},
-		windows:  windowConfig{lengths: []time.Duration{time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
-		targets:  targetConfig{names: 3, labels: 3, matcherLabel: "job"},
-		classify: classifyConfig{sketchSigmas: 3}, seed: 1,
-		burst: 4, burstInterval: time.Hour, interval: time.Millisecond,
+		queries: []string{queryMetricTotal},
+		windows: windowConfig{lengths: []time.Duration{time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
+		targets: targetConfig{names: 3, labels: 3, matcherLabel: "job"},
+		seed:    1,
+		burst:   4, burstInterval: time.Hour, interval: time.Millisecond,
 	}
 	// Each round reads the clock at its start and at its end. Three rounds, 40 minutes apart; the run stops after the third.
 	at := func(m int) time.Time { return time.Date(2026, 1, 2, 12, m, 0, 0, time.UTC) }
@@ -1049,7 +908,7 @@ func TestRunEstimateOnly(t *testing.T) {
 		windowLengths: []string{"1h"},
 		windows:       windowConfig{queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
 		targets:       targetConfig{names: 3, labels: 3, matcherLabel: "job"},
-		classify:      classifyConfig{sketchSigmas: 3}, seed: 1, fallbackNames: 5,
+		seed:          1, fallbackNames: 5,
 		estimateOnly: true,
 		scenarioPath: writeScenarios(t, `
 - {name: api_by_pod, selector: '{__name__="up", job="api"}', group_by: pod}

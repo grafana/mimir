@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"net"
 	"slices"
 	"sort"
@@ -35,10 +34,9 @@ const (
 	orderEstimateOnly = "estimate_only"
 
 	// How the truth was asked for.
-	referenceGrouped   = "grouped"    // one query for the whole table
-	referencePerValue  = "per_value"  // one query per group, for a table whose grouped truth was refused
-	referencePerBucket = "per_bucket" // one query per bucket of a step
-	referenceNone      = "none"       // no truth was sent
+	referenceGrouped  = "grouped"   // one query for the whole table
+	referencePerValue = "per_value" // one query per group, for a table whose grouped truth was refused
+	referenceNone     = "none"      // no truth was sent
 
 	// queryFacetProbe labels the refusals of facet probes during target picking.
 	queryFacetProbe = "facet_probe"
@@ -46,7 +44,6 @@ const (
 
 type runner struct {
 	client *client
-	cfg    classifyConfig
 	m      *metrics
 	logger log.Logger
 	// gap separates consecutive requests, the rate agreed with the cell's owners.
@@ -65,8 +62,6 @@ type pairResult struct {
 	Class    string      `json:"class"`
 	Refusals []string    `json:"refusals,omitempty"`
 	Diffs    []groupDiff `json:"diffs,omitempty"`
-	// Estimated holds every estimated group, equal to its truth or not.
-	Estimated []groupDiff `json:"estimated,omitempty"`
 	// Read, Source and Flags are the estimate's, when it answered.
 	Read   string   `json:"read,omitempty"`
 	Source string   `json:"source,omitempty"`
@@ -130,10 +125,7 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 	}()
 	res.reference = referenceGrouped
 	first := truthSet{fromEstimate: p.perValue}
-	switch {
-	case p.steps > 0:
-		res.reference = referencePerBucket
-	case p.perValue:
+	if p.perValue {
 		res.reference = referencePerValue
 	}
 
@@ -146,7 +138,7 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 		res.Refusals = append(res.Refusals, refusal.side+":"+refusal.class)
 		res.refused = append(res.refused, [2]string{refusal.side, refusal.class})
 		// The grouped truth hit a per-query limit: count the largest groups one at a time, on the same window.
-		if refusal.side == sideTruth && refusal.class == classPromQLLimit && set.values == nil && p.steps == 0 && est != nil {
+		if refusal.side == sideTruth && refusal.class == classPromQLLimit && set.values == nil && est != nil {
 			set = r.largestSet(p, est)
 			res.reference = referencePerValue
 			r.sleep(ctx)
@@ -174,14 +166,12 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 	}
 
 	estA := estimateAnswer(est)
-	diffs := compareAnswers(est, estA, truth, set.restrict(), r.cfg)
+	diffs := compareAnswers(est, estA, truth, set.restrict())
 	if hasMismatch(diffs) {
 		est, truth, diffs = r.explain(ctx, p, estimateFirst, set, est, truth, diffs, &res)
-		estA = estimateAnswer(est)
 	}
-	res.Estimated = sketchGroups(est, estA, truth, set.restrict())
 	// A tenant-wide table truthed one group at a time checks neither group_count nor total against a truth. Every group it counts has its value in the index of a block or head over the window, so group_count can't be above the label's values there, plus the "" group of series without the label. total has no such cheap reference: any count of it reads every series.
-	if set.values != nil && p.steps == 0 && p.selector() == allSeries {
+	if set.values != nil && p.selector() == allSeries {
 		allowed := 0
 		if set.label != model.MetricNameLabel {
 			allowed = 1
@@ -196,7 +186,7 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 		}
 	}
 	// An incomplete answer still counts every series of the part of the window it says it covered, so it can't be below a truth over that part.
-	if est.incomplete() && p.steps == 0 && slices.ContainsFunc(diffs, func(d groupDiff) bool { return d.Class == classIncomplete }) {
+	if est.incomplete() && slices.ContainsFunc(diffs, func(d groupDiff) bool { return d.Class == classIncomplete }) {
 		if from, to, ok := est.covered(p.window.start, p.window.end); ok {
 			r.sleep(ctx)
 			part := p
@@ -232,7 +222,7 @@ func (r *runner) explain(ctx context.Context, p pair, estimateFirst bool, set tr
 	} else {
 		est, truth = est2, truth2
 		// The rerun is what counts. A group that mismatched and no longer does changed between the calls: the data did if its truth changed, and the estimate isn't deterministic if only the estimate did. One that still mismatches stays a mismatch, with the rerun's counts.
-		rerun := compareAnswers(est2, estimateAnswer(est2), truth2, set.restrict(), r.cfg)
+		rerun := compareAnswers(est2, estimateAnswer(est2), truth2, set.restrict())
 		still := map[string]bool{}
 		for _, d := range rerun {
 			still[d.Value] = true
@@ -268,16 +258,6 @@ func (r *runner) explain(ctx context.Context, p pair, estimateFirst bool, set tr
 						}
 					}
 				}
-				// A source sketches a group when it holds more than sketchAbove of the group's series, counted by chunk overlap, so a group its edge series lift above sketchAbove may be estimated: judge it as a sketched group.
-				if d.Class == classSketchSmall && d.Truth+allowed > sketchAbove {
-					if d.Estimate == d.Truth {
-						continue
-					}
-					d.Outcome, d.Class = outcomeMismatch, classUnclassified
-					if withinSketch(d, r.cfg) {
-						d.Outcome, d.Class = outcomeTolerated, classSketch
-					}
-				}
 				if d.Class == classUnclassified && d.Estimate > d.Truth && d.Estimate-d.Truth <= allowed {
 					d.Outcome, d.Class = outcomeTolerated, classEdge
 				}
@@ -304,7 +284,7 @@ func (r *runner) both(ctx context.Context, p pair, estimateFirst bool, set truth
 		truthErr error
 	)
 	doEstimate := func(pos string) {
-		est, lat.estimate, estErr = r.client.estimate(ctx, p.selector(), p.groupBy, p.window.start, p.window.end, p.step(), p.limit)
+		est, lat.estimate, estErr = r.client.estimate(ctx, p.selector(), p.groupBy, p.window.start, p.window.end, p.limit)
 		lat.estimateOK, lat.estimatePos = estErr == nil, pos
 	}
 	doTruth := func(pos string) {
@@ -366,31 +346,14 @@ func (r *runner) truth(ctx context.Context, p pair, set truthSet, edgeSlack time
 		}
 		return out, total, nil
 	}
-	if p.steps == 0 {
-		counts, err := query(build(p.matchers, p.groupBy, p.window.length()), p.groupBy, p.window.end-1)
-		out.counts = counts
-		return out, total, err
-	}
-	step := p.step()
-	for i := 0; i < p.steps; i++ {
-		if i > 0 {
-			r.sleep(ctx)
-		}
-		end := p.window.start + int64(i+1)*step.Milliseconds()
-		counts, err := query(build(p.matchers, p.groupBy, step), p.groupBy, end-1)
-		if err != nil {
-			return out, total, err
-		}
-		for v, c := range counts {
-			out.counts[bucketKey(v, i)] = c
-		}
-	}
-	return out, total, nil
+	counts, err := query(build(p.matchers, p.groupBy, p.window.length()), p.groupBy, p.window.end-1)
+	out.counts = counts
+	return out, total, err
 }
 
 // estimateOnly sends only the pair's estimate, without its truth, and records its latency, flags or refusal. It returns the outcome.
 func (r *runner) estimateOnly(ctx context.Context, p pair) string {
-	est, latency, err := r.client.estimate(ctx, p.selector(), p.groupBy, p.window.start, p.window.end, p.step(), p.limit)
+	est, latency, err := r.client.estimate(ctx, p.selector(), p.groupBy, p.window.start, p.window.end, p.limit)
 	if ctx.Err() != nil {
 		return ""
 	}
@@ -426,7 +389,7 @@ func (r *runner) burst(ctx context.Context, cands []pair, n int) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			est, latency, err := r.client.estimate(ctx, p.selector(), p.groupBy, p.window.start, p.window.end, p.step(), p.limit)
+			est, latency, err := r.client.estimate(ctx, p.selector(), p.groupBy, p.window.start, p.window.end, p.limit)
 			results[i] = answered{p.query, burstStatus(est, err), latency}
 		}()
 	}
@@ -489,20 +452,8 @@ func (r *runner) record(p pair, res *pairResult) {
 	for _, d := range res.Diffs {
 		r.m.groups.WithLabelValues(p.query, d.Outcome, d.Class).Inc()
 	}
-	groupBy := "label_value"
-	if p.groupBy == model.MetricNameLabel {
-		groupBy = "metric"
-	}
-	for _, d := range res.Estimated {
-		if d.Truth > 0 {
-			r.m.sketchError.WithLabelValues(groupBy).Observe(math.Abs(float64(d.Estimate-d.Truth)) / float64(d.Truth))
-		}
-	}
 	const maxLogged = 20
 	logger := log.With(r.logger, "pair", res.Pair, "order", res.Order, "outcome", res.Outcome, "class", res.Class, "read", res.Read, "source", res.Source, "flags", strings.Join(res.Flags, ","))
-	if len(res.Estimated) > 0 {
-		logger = log.With(logger, "estimated_groups", len(res.Estimated), "estimated", fmt.Sprintf("%+v", res.Estimated[:min(len(res.Estimated), maxLogged)]))
-	}
 	switch res.Outcome {
 	case outcomeAnswered:
 		level.Info(logger).Log("msg", "estimated")
@@ -528,10 +479,10 @@ func hasMismatch(diffs []groupDiff) bool {
 	return false
 }
 
-// needsEdgeProbe reports whether a group is above the truth unexplained, or marked estimated at or below sketchAbove, which edge series may explain.
+// needsEdgeProbe reports whether a group is above the truth unexplained, which edge series may explain.
 func needsEdgeProbe(diffs []groupDiff) bool {
 	for _, d := range diffs {
-		if d.Class == classSketchSmall || (d.Class == classUnclassified && d.Estimate > d.Truth) {
+		if d.Class == classUnclassified && d.Estimate > d.Truth {
 			return true
 		}
 	}

@@ -11,15 +11,13 @@ import (
 )
 
 type metrics struct {
-	pairs    *prometheus.CounterVec
-	flags    *prometheus.CounterVec
-	groups   *prometheus.CounterVec
-	refusals *prometheus.CounterVec
-	duration *prometheus.HistogramVec
-	// sketchError is the relative error of each estimated group.
-	sketchError *prometheus.HistogramVec
-	rounds      *prometheus.CounterVec
-	lastRound   prometheus.Gauge
+	pairs     *prometheus.CounterVec
+	flags     *prometheus.CounterVec
+	groups    *prometheus.CounterVec
+	refusals  *prometheus.CounterVec
+	duration  *prometheus.HistogramVec
+	rounds    *prometheus.CounterVec
+	lastRound prometheus.Gauge
 
 	bursts        prometheus.Counter
 	burstRequests *prometheus.CounterVec
@@ -57,14 +55,9 @@ func newMetrics(reg prometheus.Registerer, timeout time.Duration) *metrics {
 		}, []string{"query", "side", "class"}),
 		duration: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "cardinality_estimate_compare_request_duration_seconds",
-			Help:    "Client-side latency of each side of a pair that answered, once per pair, summed over the side's queries, by query, window kind and length, side, position (first, second, or alone with -estimate-only), reference (grouped, per_value, per_bucket, or none with -estimate-only), and the estimate's read and source.",
+			Help:    "Client-side latency of each side of a pair that answered, once per pair, summed over the side's queries, by query, window kind and length, side, position (first, second, or alone with -estimate-only), reference (grouped, per_value, or none with -estimate-only), and the estimate's read and source.",
 			Buckets: latencyBuckets,
 		}, []string{"query", "window", "length", "side", "position", "reference", "read", "source"}),
-		sketchError: f.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "cardinality_estimate_compare_sketch_relative_error",
-			Help:    "Relative error |estimate - truth| / truth of each group the route marked estimated, equal or not, by group_by: metric when grouped by __name__, label_value otherwise. Step pairs are left out.",
-			Buckets: []float64{0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.07, 0.1, 0.15, 0.2, 0.5},
-		}, []string{"group_by"}),
 		rounds: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "cardinality_estimate_compare_rounds_total",
 			Help: "Rounds run, by result: ok, or failed when the targets could not be picked.",

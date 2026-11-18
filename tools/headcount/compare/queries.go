@@ -6,13 +6,13 @@ import (
 	"context"
 	"fmt"
 	"math/rand/v2"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -23,7 +23,6 @@ const (
 	queryMetricByLabel   = "metric_by_label"    // series per value of one of a metric's high-cardinality labels, and its distinct values
 	queryMatcherByName   = "matcher_by_name"    // series per metric name under an arbitrary matcher
 	queryMetricTotal     = "metric_total"       // series of one metric
-	queryMetricSteps     = "metric_steps"       // series of one metric per step
 	queryTenantByLabel   = "tenant_by_label"    // series per value of one label across every metric
 	queryTenantLabelVals = "tenant_label_vals"  // distinct values of the tenant's highest-cardinality label
 	queryNameRegex       = "name_regex"         // series per metric name under a regex on a name prefix
@@ -32,7 +31,7 @@ const (
 	queryTwoMatchers     = "two_matchers"       // series of one metric with one value of a label, by another label
 )
 
-var allQueries = []string{queryTenantByName, queryMetricByLabel, queryMatcherByName, queryMetricTotal, queryMetricSteps, queryTenantByLabel, queryTenantLabelVals, queryNameRegex, queryMetricNotEqual, queryMetricRegex, queryTwoMatchers}
+var allQueries = []string{queryTenantByName, queryMetricByLabel, queryMatcherByName, queryMetricTotal, queryTenantByLabel, queryTenantLabelVals, queryNameRegex, queryMetricNotEqual, queryMetricRegex, queryTwoMatchers}
 
 // Window kinds: which components answer.
 const (
@@ -140,7 +139,7 @@ func pickTargets(ctx context.Context, c *client, cfg targetConfig, w window, log
 		sent = true
 	}
 	next()
-	byName, _, err := c.estimate(ctx, allSeries, model.MetricNameLabel, w.start, w.end, 0, cfg.names)
+	byName, _, err := c.estimate(ctx, allSeries, model.MetricNameLabel, w.start, w.end, cfg.names)
 	if err != nil {
 		return nil, fmt.Errorf("largest metric names: %w", err)
 	}
@@ -176,7 +175,7 @@ func pickTargets(ctx context.Context, c *client, cfg targetConfig, w window, log
 	}
 	t.tenantLabels = withoutName(ls)
 	next()
-	byValue, _, err := c.estimate(ctx, allSeries, cfg.matcherLabel, w.start, w.end, 0, 3)
+	byValue, _, err := c.estimate(ctx, allSeries, cfg.matcherLabel, w.start, w.end, 3)
 	if err != nil {
 		return nil, fmt.Errorf("largest %s values: %w", cfg.matcherLabel, err)
 	}
@@ -200,7 +199,7 @@ func pickFacet(ctx context.Context, c *client, name string, ls []string, w windo
 	f := facet{label: ls[0]}
 	for _, l := range ls {
 		next()
-		lacking, _, err := c.estimate(ctx, selector(nameMatcher, labels.MustNewMatcher(labels.MatchEqual, l, "")), model.MetricNameLabel, w.start, w.end, 0, 1)
+		lacking, _, err := c.estimate(ctx, selector(nameMatcher, labels.MustNewMatcher(labels.MatchEqual, l, "")), model.MetricNameLabel, w.start, w.end, 1)
 		if err != nil {
 			return facet{}, false, fmt.Errorf("series of %q without %s: %w", name, l, err)
 		}
@@ -210,7 +209,7 @@ func pickFacet(ctx context.Context, c *client, name string, ls []string, w windo
 		}
 	}
 	next()
-	byValue, _, err := c.estimate(ctx, selector(nameMatcher), f.label, w.start, w.end, 0, facetValues+1)
+	byValue, _, err := c.estimate(ctx, selector(nameMatcher), f.label, w.start, w.end, facetValues+1)
 	if err != nil {
 		return facet{}, false, fmt.Errorf("largest %s values of %q: %w", f.label, name, err)
 	}
@@ -255,8 +254,6 @@ type pair struct {
 	matchers []*labels.Matcher
 	groupBy  string
 	window   window
-	// steps, when > 0, cuts the window into that many buckets, each compared on its own.
-	steps int
 	// limit caps the estimate's table; groups it leaves out are compared through group_count and total.
 	limit int
 	// perValue skips the grouped truth and counts the estimate's largest groups one at a time.
@@ -265,24 +262,12 @@ type pair struct {
 
 func (p pair) selector() string { return selector(p.matchers...) }
 
-func (p pair) step() time.Duration {
-	if p.steps == 0 {
-		return 0
-	}
-	return p.window.length() / time.Duration(p.steps)
-}
-
 func (p pair) String() string {
-	s := fmt.Sprintf("%s %s by %s over %s %s", p.query, p.selector(), p.groupBy, p.window.kind, model.Duration(p.window.length()))
-	if p.steps > 0 {
-		s += fmt.Sprintf(" step %s", model.Duration(p.step()))
-	}
-	return s
+	return fmt.Sprintf("%s %s by %s over %s %s", p.query, p.selector(), p.groupBy, p.window.kind, model.Duration(p.window.length()))
 }
 
 type pairConfig struct {
 	matcherLabel string
-	steps        int
 	// tableLimit caps the tenant-wide tables.
 	tableLimit int
 	// maxReferenceSeries, when > 0 and below the tenant's series, makes the tenant-wide tables skip their grouped truth.
@@ -321,11 +306,6 @@ func candidates(queries []string, t *targets, windows []window, cfg pairConfig, 
 				p.matchers, p.groupBy = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, cfg.matcherLabel, v)}, model.MetricNameLabel
 			case queryMetricTotal:
 				p.matchers, p.groupBy = []*labels.Matcher{nameMatcher}, model.MetricNameLabel
-			case queryMetricSteps:
-				if cfg.steps <= 0 || w.length()%time.Duration(cfg.steps) != 0 || (w.length()/time.Duration(cfg.steps))%time.Second != 0 {
-					continue
-				}
-				p.matchers, p.groupBy, p.steps = []*labels.Matcher{nameMatcher}, model.MetricNameLabel, cfg.steps
 			case queryTenantByLabel:
 				p.matchers, p.groupBy, p.limit, p.perValue = allSeriesMatchers(), cfg.matcherLabel, cfg.tableLimit, tenantPerValue
 			case queryTenantLabelVals:
