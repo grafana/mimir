@@ -957,6 +957,7 @@ func TestHandler_ActiveSeriesWriteTimeout(t *testing.T) {
 		requestDuration time.Duration
 		wantError       bool
 		wantCtxCancel   bool
+		ignoreCtxCancel bool
 	}{
 		{
 			name:            "deadline exceeded for non-streaming endpoint",
@@ -976,10 +977,25 @@ func TestHandler_ActiveSeriesWriteTimeout(t *testing.T) {
 			wantError:       true,
 			wantCtxCancel:   true,
 		},
+		{
+			// The request ignores the context cancellation and its response is written after the deadline, so only the
+			// write deadline can make the request fail. This checks the write deadline itself, which the case above can't
+			// do, because there the handler can write its error response before the write deadline takes effect.
+			name:            "write deadline exceeded for active series endpoint when the request ignores the context cancellation",
+			path:            "/api/v1/cardinality/active_series",
+			requestDuration: 200 * time.Millisecond,
+			wantError:       true,
+			ignoreCtxCancel: true,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 
 			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				if tt.ignoreCtxCancel {
+					time.Sleep(tt.requestDuration)
+					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+				}
+
 				// Simulate a request that takes longer than the server write timeout.
 				select {
 				case <-req.Context().Done():
@@ -1008,6 +1024,14 @@ func TestHandler_ActiveSeriesWriteTimeout(t *testing.T) {
 			require.NoError(t, err)
 			resp, err := http.DefaultClient.Do(req)
 			if tt.wantError {
+				if err == nil && tt.wantCtxCancel {
+					// The request context and the response write deadline expire at the same time. The handler can
+					// write its error response before the write deadline takes effect, so the client can get that
+					// response instead of a connection error.
+					defer func() { _ = resp.Body.Close() }()
+					require.Equal(t, http.StatusGatewayTimeout, resp.StatusCode)
+					return
+				}
 				require.Error(t, err)
 				return
 			}
