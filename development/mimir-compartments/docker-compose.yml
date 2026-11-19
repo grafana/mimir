@@ -81,7 +81,7 @@ services:
     command:
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder-scheduler -activity-tracker.filepath=/activity/block-builder-scheduler-rc-0 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic=mimir-ingest-rc-0"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder-scheduler -activity-tracker.filepath=/activity/block-builder-scheduler-rc-0 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic=mimir-ingest-rc-0 -block-builder-scheduler.consumer-group=block-builder-rc-0 -blocks-storage.s3.bucket-name=mimir-blocks-rc-0"
     depends_on:
       kafka-wc-0:
         condition: "service_healthy"
@@ -106,7 +106,7 @@ services:
     command:
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder-scheduler -activity-tracker.filepath=/activity/block-builder-scheduler-rc-1 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic=mimir-ingest-rc-1"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder-scheduler -activity-tracker.filepath=/activity/block-builder-scheduler-rc-1 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic=mimir-ingest-rc-1 -block-builder-scheduler.consumer-group=block-builder-rc-1 -blocks-storage.s3.bucket-name=mimir-blocks-rc-1"
     depends_on:
       kafka-wc-0:
         condition: "service_healthy"
