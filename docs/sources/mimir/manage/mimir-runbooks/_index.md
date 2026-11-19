@@ -1045,18 +1045,11 @@ How to **investigate**:
   ```
   sum(rate(thanos_objstore_bucket_operation_failures_total{namespace="<namespace>", component="compactor"}[$__rate_interval]))
   ```
-- Check how long the compactors take to discover tenants. Each compactor lists the bucket root to find its tenants before it updates any bucket index, so a slow listing delays the index updates of all its tenants. The cleanup run logs one message when it starts, then one message per tenant. The time between the run start and the first tenant message of the same `run_id` is the discovery time. A healthy discovery takes seconds. Find the start of the cleanup runs:
-  ```
-  {namespace="<namespace>", container="compactor", pod="<pod>"} |= "started blocks cleanup and maintenance" | logfmt | task="clean_up_users" | user=""
-  ```
-  Then find the first tenant message of a run:
-  ```
-  {namespace="<namespace>", container="compactor", pod="<pod>"} |= "started blocks cleanup and maintenance" | logfmt | run_id="<run_id>" | user!=""
-  ```
-- Check for slow `iter` operations on the bucket
+- Check for slow `iter` operations on the bucket. Compactors list the bucket root to discover tenants before they update any bucket index.
   ```
   histogram_quantile(1, sum(rate(thanos_objstore_bucket_operation_duration_seconds{namespace="<namespace>", component="compactor", operation="iter"}[$__rate_interval])))
   ```
+  Alternatively, check the compactor cleanup logs for the exact discovery time of a run: the gap between the run start and its first per-tenant message.
 
 How to **fix** it:
 
