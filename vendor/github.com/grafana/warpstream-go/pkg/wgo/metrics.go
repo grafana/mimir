@@ -3,7 +3,6 @@ package wgo
 import (
 	"regexp"
 	"runtime/debug"
-	"slices"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -63,6 +62,8 @@ type metrics struct {
 	routingMisses   [routingMissCount]prometheus.Counter
 
 	agentPoolExcludedLeaders    prometheus.Gauge
+	agentPoolAgentsUnique       prometheus.Gauge
+	agentPoolAgentsShared       prometheus.Gauge
 	metadataRefreshResultsTotal *prometheus.CounterVec
 
 	clusterStatsAvailable     prometheus.Gauge
@@ -240,6 +241,11 @@ const (
 	agentpoolChurnLabelRemoved = "removed"
 )
 
+const (
+	agentAddressLabelUnique = "unique"
+	agentAddressLabelShared = "shared"
+)
+
 func agentStateLabel(state AgentState) string {
 	if state == AgentStateDemoted {
 		return agentStateDemoted
@@ -361,6 +367,11 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 		Help: "NodeIDs added to or removed from the AgentPool on a successful live Metadata refresh, by direction. Constructor initialization is excluded. An address-only or leader-only change is not membership churn.",
 	}, []string{"direction"})
 
+	agentpoolAgents := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		Name: "warpstream_agentpool_agents",
+		Help: "Number of Agents (NodeIDs) in the last successful Metadata refresh, by agent_address: unique (no other NodeID advertises the same Host and Port) or shared (at least one other NodeID does). The sum is the total number of Agents. Agents on a shared address are not reachable individually, so routing and hedging to different NodeIDs may land on the same Agent. Both series are always exported. Set on every successful refresh, including the constructor refresh; a failed refresh keeps the previous values.",
+	}, []string{"agent_address"})
+
 	version, franzGoVersion := clientBuildInfo()
 	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 		Name:        "warpstream_client_build_info",
@@ -462,6 +473,8 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 			Name: "warpstream_produce_records_rejected_total",
 			Help: "Total number of records rejected by the client before any wire dispatch, by reason (record_too_large, no_agent_assigned).",
 		}, []string{"reason"}),
+		agentPoolAgentsUnique: agentpoolAgents.WithLabelValues(agentAddressLabelUnique),
+		agentPoolAgentsShared: agentpoolAgents.WithLabelValues(agentAddressLabelShared),
 		agentPoolExcludedLeaders: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "warpstream_agentpool_excluded_leaders",
 			Help: "Number of partitions whose named leader NodeID was absent from the broker list of the last successful Metadata refresh, so the AgentPool excluded that leader. Produces to these partitions go to a stand-in while the pool has any agent; with an empty broker list they are rejected instead. 0 when no leader is excluded. Set on every successful refresh, including the constructor refresh; a failed refresh keeps the previous value. Topic-level Metadata errors and a partition Leader below 0 are not counted.",
@@ -520,7 +533,7 @@ func (m *metrics) observeMetadataRefresh(trigger metadataRefreshTrigger, before,
 	switch {
 	case err != nil:
 		result = metadataRefreshResultFailed
-	case !slices.Equal(before, after):
+	case membershipChanged(before, after):
 		result = metadataRefreshResultMembershipChanged
 	}
 	m.metadataRefreshResultsTotal.WithLabelValues(string(trigger), result).Inc()
@@ -534,6 +547,12 @@ func (m *metrics) observeMetadataRefresh(trigger metadataRefreshTrigger, before,
 	if removed > 0 {
 		m.agentpoolAgentsChanged[agentpoolChurnRemoved].Add(float64(removed))
 	}
+}
+
+// observeAgentAddresses publishes the address split of a successful refresh.
+func (m *metrics) observeAgentAddresses(a addressStats) {
+	m.agentPoolAgentsUnique.Set(float64(a.agents - a.shared))
+	m.agentPoolAgentsShared.Set(float64(a.shared))
 }
 
 func (m *metrics) observeAttempt(role attemptRole, stats produceRequestStats) {
