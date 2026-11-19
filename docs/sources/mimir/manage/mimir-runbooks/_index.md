@@ -1049,7 +1049,7 @@ How to **investigate**:
   ```
   histogram_quantile(1, sum(rate(thanos_objstore_bucket_operation_duration_seconds{namespace="<namespace>", component="compactor", operation="iter"}[$__rate_interval])))
   ```
-  Alternatively, check the compactor cleanup logs for the exact discovery time of a run: the gap between the run start and its first per-tenant message.
+  For more precision, check the compactor cleanup logs for the discovery time of a run: the gap between the run start and its first per-tenant message.
 
 How to **fix** it:
 
