@@ -10784,7 +10784,7 @@ func testIngesterOutOfOrder(t *testing.T,
 		`
 	metricNames := []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total", "cortex_ingester_tsdb_sample_out_of_order_delta_seconds"}
 	// The TSDB head's out-of-order metrics, which the seriesstore engine doesn't have.
-	if testEngine != mimir_tsdb.EngineSeriesstore {
+	if testEngine() != mimir_tsdb.EngineSeriesstore {
 		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 	}
 
@@ -10814,7 +10814,7 @@ func testIngesterOutOfOrder(t *testing.T,
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 20
 		`
 	// The TSDB head's out-of-order metrics, which the seriesstore engine doesn't have.
-	if testEngine != mimir_tsdb.EngineSeriesstore {
+	if testEngine() != mimir_tsdb.EngineSeriesstore {
 		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 	}
 
@@ -10841,7 +10841,7 @@ func testIngesterOutOfOrder(t *testing.T,
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 51
 		`
 	// The TSDB head's out-of-order metrics, which the seriesstore engine doesn't have.
-	if testEngine != mimir_tsdb.EngineSeriesstore {
+	if testEngine() != mimir_tsdb.EngineSeriesstore {
 		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 	}
 
@@ -10867,7 +10867,7 @@ func testIngesterOutOfOrder(t *testing.T,
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 71
 		`
 	// The TSDB head's out-of-order metrics, which the seriesstore engine doesn't have.
-	if testEngine != mimir_tsdb.EngineSeriesstore {
+	if testEngine() != mimir_tsdb.EngineSeriesstore {
 		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 	}
 
@@ -10899,7 +10899,7 @@ func testIngesterOutOfOrder(t *testing.T,
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 91
 		`
 	// The TSDB head's out-of-order metrics, which the seriesstore engine doesn't have.
-	if testEngine != mimir_tsdb.EngineSeriesstore {
+	if testEngine() != mimir_tsdb.EngineSeriesstore {
 		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 	}
 
@@ -10931,7 +10931,7 @@ func testIngesterOutOfOrder(t *testing.T,
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 111
 		`
 	// The TSDB head's out-of-order metrics, which the seriesstore engine doesn't have.
-	if testEngine != mimir_tsdb.EngineSeriesstore {
+	if testEngine() != mimir_tsdb.EngineSeriesstore {
 		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 	}
 

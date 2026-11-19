@@ -239,7 +239,7 @@ func TestValidateSeriesstoreEngine(t *testing.T) {
 func TestIngester_SeriesstoreCostAttributionMatchesTracker(t *testing.T) {
 	attributed := func(native bool) []map[string]float64 {
 		previous := testNoNativeActive
-		testNoNativeActive = !native
+		testNoNativeActive = func() bool { return !native }
 		t.Cleanup(func() { testNoNativeActive = previous })
 
 		ctx := user.InjectOrgID(context.Background(), userID)

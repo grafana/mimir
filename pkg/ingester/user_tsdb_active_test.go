@@ -81,7 +81,7 @@ func TestActiveSeriesBetweenPurgesAsTheTracker(t *testing.T) {
 	const idle = time.Hour
 	activeAt := func(engine string) (purged, kept bool) {
 		previous := testEngine
-		testEngine = engine
+		testEngine = func() string { return engine }
 		t.Cleanup(func() { testEngine = previous })
 
 		cfg := defaultIngesterTestConfig(t)

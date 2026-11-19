@@ -330,7 +330,7 @@ func withoutRefLeaksInstrumentation(b *testing.B) {
 // The ingest reader passes records as they are only to an ingester whose engine reads them: it decodes them for the
 // Prometheus TSDB, which then takes them on as many goroutines as it has shards.
 func TestIngester_AcceptsRecordsOnlyForAnEngineThatReadsThem(t *testing.T) {
-	if testEngine != "" {
+	if testEngine() != "" {
 		t.Skip("the engine is the test's")
 	}
 	for _, c := range []struct {
