@@ -7,6 +7,7 @@ package v2
 
 import (
 	"context"
+	"math/rand/v2" //#nosec G404 -- Only spreads queue reservation retries over query-schedulers, no need for a CSPRNG -- nosemgrep: math-random-used
 	"sync"
 	"time"
 
@@ -218,6 +219,33 @@ func (f *frontendSchedulerWorkers) InstanceChanged(instance servicediscovery.Ins
 	}
 }
 
+// pickReservationWorker returns a random worker with a stream that supports queue reservation and
+// whose scheduler address is not in rejected. It returns nil when no worker qualifies. allRejected
+// is true when the scheduler address of every worker is in rejected.
+func (f *frontendSchedulerWorkers) pickReservationWorker(rejected map[string]struct{}) (picked *frontendSchedulerWorker, allRejected bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	allRejected = true
+	candidates := make([]*frontendSchedulerWorker, 0, len(f.workers))
+	for addr, w := range f.workers {
+		if _, ok := rejected[addr]; ok {
+			continue
+		}
+		allRejected = false
+		select {
+		case <-w.reservationStreams.gone():
+			continue
+		default:
+		}
+		candidates = append(candidates, w)
+	}
+	if len(candidates) == 0 {
+		return nil, allRejected
+	}
+	return candidates[rand.IntN(len(candidates))], false
+}
+
 // Get number of workers.
 func (f *frontendSchedulerWorkers) getWorkersCount() int {
 	f.mu.Lock()
@@ -271,6 +299,10 @@ type frontendSchedulerWorker struct {
 	// allReservationStreams is shared between all frontend workers.
 	allReservationStreams *reservationStreamCount
 
+	// targetedReserveCh takes a reservation that must go to this scheduler, for example a retry
+	// that must avoid the schedulers that rejected it.
+	targetedReserveCh chan *reserveRequest
+
 	// Reserved sub-requests must reach the scheduler that granted their reservation, so they do not
 	// use the shared requestsCh.
 	reservedRequestsCh chan *frontendRequest
@@ -305,6 +337,7 @@ func newFrontendSchedulerWorker(
 		cancelCh:              make(chan cancelRequest, schedulerWorkerCancelChanCapacity),
 		reserveCh:             reserveCh,
 		allReservationStreams: allReservationStreams,
+		targetedReserveCh:     make(chan *reserveRequest),
 		reservedRequestsCh:    make(chan *frontendRequest),
 		reservationStreams:    newReservationStreamCount(),
 		enqueueDuration:       enqueueDuration,
@@ -389,11 +422,12 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 
 	// A nil channel is never ready, so a stream to a query-scheduler without queue reservation
 	// never takes a reservation message.
-	var reserveCh <-chan *reserveRequest
+	var reserveCh, targetedReserveCh <-chan *reserveRequest
 	var reservedRequestsCh chan *frontendRequest
 	var streamsGone <-chan struct{}
 	if resp.QueueReservationSupported {
 		reserveCh = w.reserveCh
+		targetedReserveCh = w.targetedReserveCh
 		reservedRequestsCh = w.reservedRequestsCh
 		w.reservationStreams.add()
 		defer w.reservationStreams.remove()
@@ -427,6 +461,11 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 			}
 
 		case req := <-reserveCh:
+			if err := w.reserve(loop, req, streamsGone); err != nil {
+				return err
+			}
+
+		case req := <-targetedReserveCh:
 			if err := w.reserve(loop, req, streamsGone); err != nil {
 				return err
 			}

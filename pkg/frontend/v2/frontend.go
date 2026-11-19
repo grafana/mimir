@@ -163,7 +163,8 @@ type Frontend struct {
 	// maxInflight is nil when -query-frontend.max-inflight-dispatched-metrics-enabled is false.
 	maxInflight *inflight.MaxInflightCollector
 
-	queueReservations *prometheus.CounterVec
+	queueReservations       *prometheus.CounterVec
+	queueReservationRetries prometheus.Counter
 }
 
 // queryResultWithBody contains the result for a query and optionally a streaming version of the response body.
@@ -291,6 +292,10 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 			Name: "cortex_query_frontend_queue_reservations_total",
 			Help: "Total number of queue reservation attempts that the query-frontend sent to a query-scheduler, by outcome. An attempt that the query cancels before the reply does not count.",
 		}, []string{"outcome"}),
+		queueReservationRetries: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_query_frontend_queue_reservation_retries_total",
+			Help: "Total number of times the query-frontend retried a queue reservation on another query-scheduler, because a query-scheduler rejected it for too many outstanding requests from the tenant.",
+		}),
 	}
 	f.enqueueRequests.WithLabelValues("enqueued")
 	f.enqueueRequests.WithLabelValues("too_many_requests")

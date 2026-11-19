@@ -27,7 +27,10 @@ const (
 	reservationOutcomeSendFailed      = "send_failed"
 )
 
-var errNoReservationStreams = errors.New("no query-scheduler stream supports queue reservation")
+var (
+	errNoReservationStreams  = errors.New("no query-scheduler stream supports queue reservation")
+	errReservationTargetGone = errors.New("the chosen query-scheduler has no stream that supports queue reservation")
+)
 
 type reserveRequest struct {
 	userID        string
@@ -144,18 +147,47 @@ func (f *Frontend) newQueueReservation(ctx context.Context, userID string, group
 // query-scheduler. After a transport error, a SHUTTING_DOWN or an unknown status, it sends a new
 // RESERVE with a new reservation ID. It makes as many attempts as a plain sub-request makes.
 //
-// TOO_MANY_REQUESTS_PER_TENANT is final. When all attempts fail, each sub-request fails.
-// After ERROR, or when no stream supports queue reservation any more, the sub-requests use the
-// plain path.
+// The per-tenant limit applies per query-scheduler. So after TOO_MANY_REQUESTS_PER_TENANT, each
+// later attempt goes to a random query-scheduler that did not return it for this reservation. When
+// every query-scheduler returned it, or all attempts fail after one returned it, each sub-request
+// fails with too many requests. When all attempts fail for other reasons, each sub-request fails.
+// After ERROR, when no stream supports queue reservation any more, or when no query-scheduler that
+// did not return TOO_MANY_REQUESTS_PER_TENANT has such a stream, the sub-requests use the plain path.
 func (r *queueReservation) run(ctx context.Context) {
 	defer close(r.done)
 
+	// rejected has the addresses of the query-schedulers that returned TOO_MANY_REQUESTS_PER_TENANT.
+	var rejected map[string]struct{}
+	// retryAfterTooManyRequests is true when the last attempt got TOO_MANY_REQUESTS_PER_TENANT.
+	var retryAfterTooManyRequests bool
+
 	maxAttempts := r.f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
-	for range maxAttempts {
+	for attempt := 0; attempt < maxAttempts; {
+		var target *frontendSchedulerWorker
+		if len(rejected) > 0 {
+			var allRejected bool
+			if target, allRejected = r.f.schedulerWorkers.pickReservationWorker(rejected); target == nil {
+				if allRejected {
+					break
+				}
+				// For example, the other query-schedulers restarted without queue reservation, or their
+				// streams reconnect. No sub-request uses the reservation yet, so the plain path cannot
+				// queue a sub-request twice.
+				level.Warn(r.f.log).Log(rootqueryid.AppendLogFields([]any{"msg", "no query-scheduler that did not reject the queue reservation has a stream that supports queue reservation, sub-requests use the plain path", "user", r.userID}, r.rootQueryID)...)
+				r.plainPath = true
+				return
+			}
+		}
+
 		// Each attempt needs a new ID. With the same ID, the abort of a failed attempt could close the
 		// next reservation, or the next RESERVE could get the duplicate rejection.
 		reservationID := uuid.NewString()
-		res, err := r.reserve(ctx, reservationID)
+		res, err := r.reserve(ctx, reservationID, target)
+		if errors.Is(err, errReservationTargetGone) {
+			// No RESERVE went out, so this is not an attempt. The next pick skips target.
+			continue
+		}
+		attempt++
 		if errors.Is(err, errNoReservationStreams) {
 			// For example, the query-schedulers restarted without queue reservation. No sub-request
 			// uses the reservation yet, so the plain path cannot queue a sub-request twice.
@@ -167,6 +199,10 @@ func (r *queueReservation) run(ctx context.Context) {
 			r.err = err
 			r.errOutcome = "cancelled"
 			return
+		}
+		if retryAfterTooManyRequests {
+			r.f.queueReservationRetries.Inc()
+			retryAfterTooManyRequests = false
 		}
 
 		// No sub-request uses the reservation yet, so another attempt cannot queue a sub-request twice.
@@ -194,9 +230,14 @@ func (r *queueReservation) run(ctx context.Context) {
 		case res.status == schedulerpb.TOO_MANY_REQUESTS_PER_TENANT:
 			r.f.queueReservations.WithLabelValues(reservationOutcomeTooManyRequests).Inc()
 			level.Warn(r.logger(res.worker, reservationID)).Log("msg", "query-scheduler rejected queue reservation because the tenant has too many outstanding requests")
-			r.err = apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests")
-			r.errOutcome = "too_many_requests"
-			return
+			// The query-scheduler did not open the reservation, and no sub-request uses it yet, so
+			// another query-scheduler cannot queue a sub-request twice.
+			if rejected == nil {
+				rejected = map[string]struct{}{}
+			}
+			rejected[res.worker.schedulerAddr] = struct{}{}
+			retryAfterTooManyRequests = true
+			continue
 
 		case res.status == schedulerpb.SHUTTING_DOWN:
 			r.f.queueReservations.WithLabelValues(reservationOutcomeShuttingDown).Inc()
@@ -223,6 +264,11 @@ func (r *queueReservation) run(ctx context.Context) {
 		}
 	}
 
+	if len(rejected) > 0 {
+		r.err = apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests")
+		r.errOutcome = "too_many_requests"
+		return
+	}
 	r.err = apierror.New(apierror.TypeInternal, "failed to enqueue request")
 	r.errOutcome = "retries_exhausted"
 }
@@ -231,10 +277,13 @@ func (r *queueReservation) logger(w *frontendSchedulerWorker, reservationID stri
 	return log.With(r.f.log, rootqueryid.AppendLogFields([]any{"user", r.userID, "scheduler_address", w.schedulerAddr, "reservation_id", reservationID, "slots", r.slots}, r.rootQueryID)...)
 }
 
-// reserve sends one RESERVE on the first free stream that takes it. Like a plain sub-request, it
-// waits for a stream until ctx is done. It returns errNoReservationStreams when no stream supports
-// queue reservation any more, and the cause of ctx when ctx is done.
-func (r *queueReservation) reserve(ctx context.Context, reservationID string) (reserveResult, error) {
+// reserve sends one RESERVE. When target is nil, the first free stream of any query-scheduler takes
+// it, and reserve returns errNoReservationStreams when no stream supports queue reservation any
+// more. Otherwise, the first free stream of target takes it, and reserve returns
+// errReservationTargetGone when target stops or has no stream that supports queue reservation any
+// more. Like a plain sub-request, it waits for a stream until ctx is done, and then returns the
+// cause of ctx.
+func (r *queueReservation) reserve(ctx context.Context, reservationID string, target *frontendSchedulerWorker) (reserveResult, error) {
 	req := &reserveRequest{
 		userID:        r.userID,
 		rootQueryID:   r.rootQueryID,
@@ -243,12 +292,24 @@ func (r *queueReservation) reserve(ctx context.Context, reservationID string) (r
 		reply:         make(chan reserveResult, 1),
 	}
 
-	select {
-	case <-ctx.Done():
-		return reserveResult{}, context.Cause(ctx)
-	case <-r.allStreamsGone:
-		return reserveResult{}, errNoReservationStreams
-	case r.f.reserveCh <- req:
+	if target == nil {
+		select {
+		case <-ctx.Done():
+			return reserveResult{}, context.Cause(ctx)
+		case <-r.allStreamsGone:
+			return reserveResult{}, errNoReservationStreams
+		case r.f.reserveCh <- req:
+		}
+	} else {
+		select {
+		case <-ctx.Done():
+			return reserveResult{}, context.Cause(ctx)
+		case <-target.ctx.Done():
+			return reserveResult{}, errReservationTargetGone
+		case <-target.reservationStreams.gone():
+			return reserveResult{}, errReservationTargetGone
+		case target.targetedReserveCh <- req:
+		}
 	}
 
 	select {
