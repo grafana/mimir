@@ -1495,7 +1495,7 @@ func TestMultitenantAlertmanager_LoadValidationAppliesToTenantConfigOnly(t *test
 	am.fallbackConfig = configThatFailsValidation
 
 	t.Run("tenant with an empty stored config loads the fallback", func(t *testing.T) {
-		require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{User: "user1"}))
+		require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{User: "user1"}))
 		require.NoError(t, am.loadAndSyncConfigs(ctx, reasonPeriodic))
 
 		_, exists := am.alertmanagers["user1"]
@@ -1513,13 +1513,13 @@ func TestMultitenantAlertmanager_LoadValidationAppliesToTenantConfigOnly(t *test
 	})
 
 	t.Run("tenant with a stored config that fails validation does not load", func(t *testing.T) {
-		require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{User: "user3", RawConfig: configThatFailsValidation}))
+		require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{User: "user3", RawConfig: configThatFailsValidation}))
 		require.NoError(t, am.loadAndSyncConfigs(ctx, reasonPeriodic))
 
 		_, exists := am.alertmanagers["user3"]
 		require.False(t, exists)
 
-		_, err := am.setConfig(&alertspb.AlertConfigDesc{User: "user3", RawConfig: configThatFailsValidation})
+		_, err := am.setConfig(alertspb.AlertConfigDesc{User: "user3", RawConfig: configThatFailsValidation})
 		require.ErrorIs(t, err, errFileNotAllowed)
 	})
 }
