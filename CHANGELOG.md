@@ -202,6 +202,7 @@
 * [BUGFIX] MQE: Fix `quantile`, `quantile_over_time` and `mad_over_time` returning a value with a rounding error, or `0` for very small values, when the quantile falls between two identical values. MQE now returns that value exactly, the same as the Prometheus engine. #17444
 * [BUGFIX] Query-frontend: Fix retried POST requests to the label names, label values, series, cardinality and active series endpoints being sent without their body. Retries dropped the parameters sent in the body, such as `match[]`, so a retried label names or label values request could return results for all series. #17445
 * [BUGFIX] Ingester: Fix the partition reader logging an error and waiting for the full backoff when the Kafka client reports that a broker connection died. This error is now retried immediately, as intended. #17495
+* [BUGFIX] Ruler: Fix a race where a periodic rule sync could read a stale rule group listing from the cache and revert a rule group change that was just applied. The ruler storage cache now stores the listing synchronously when it is refreshed after a rule group change. #17424
 
 ### Mixin
 
