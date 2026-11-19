@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
@@ -67,4 +68,36 @@ func TestUsersScanner_ScanUsers_ShouldNotReturnPrefixedUsedByMimirInternals(t *t
 	actual, _, err := s.ScanUsers(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, []string{"user-1", "user-2"}, actual)
+}
+
+func TestListUsersInBuckets(t *testing.T) {
+	t.Run("reports the buckets of each user", func(t *testing.T) {
+		newBucket := &bucket.ClientMock{}
+		newBucket.MockIter("", []string{"user-1/", "user-3/", bucket.MimirInternalsPrefix + "/"}, nil)
+		oldBucket := &bucket.ClientMock{}
+		oldBucket.MockIter("", []string{"user-1/", "user-2/"}, nil)
+		emptyBucket := &bucket.ClientMock{}
+		emptyBucket.MockIter("", nil, nil)
+
+		actual, err := ListUsersInBuckets(t.Context(), []objstore.Bucket{newBucket, emptyBucket, oldBucket})
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int{
+			"user-1": {0, 2},
+			"user-2": {2},
+			"user-3": {0},
+		}, actual)
+	})
+
+	t.Run("fails if it can't list one of the buckets", func(t *testing.T) {
+		listErr := errors.New("failed to list")
+
+		newBucket := &bucket.ClientMock{}
+		newBucket.MockIter("", []string{"user-1/"}, nil)
+		oldBucket := &bucket.ClientMock{}
+		oldBucket.MockIter("", nil, listErr)
+
+		actual, err := ListUsersInBuckets(t.Context(), []objstore.Bucket{newBucket, oldBucket})
+		require.ErrorIs(t, err, listErr)
+		assert.Nil(t, actual)
+	})
 }
