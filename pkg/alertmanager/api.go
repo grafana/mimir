@@ -197,7 +197,7 @@ func validateUserConfig(logger log.Logger, cfg *alertspb.AlertConfigDesc, limits
 	}
 
 	// Validate the config recursively scanning it.
-	if err := validateAlertmanagerConfig(amCfg, alertmanagerConfig); err != nil {
+	if err := validateUserAlertmanagerConfig(amCfg, alertmanagerConfig); err != nil {
 		return err
 	}
 
@@ -313,10 +313,10 @@ func (am *MultitenantAlertmanager) ListAllConfigs(w http.ResponseWriter, r *http
 	<-done
 }
 
-// validateAlertmanagerConfig recursively scans the input config looking for data types for which
+// validateUserAlertmanagerConfig recursively scans the input config looking for data types for which
 // we have a specific validation and, whenever encountered, it runs their validation. Returns the
 // first error or nil if validation succeeds.
-func validateAlertmanagerConfig(cfg interface{}, alertmanagerConfig *MultitenantAlertmanagerConfig) error {
+func validateUserAlertmanagerConfig(cfg interface{}, alertmanagerConfig *MultitenantAlertmanagerConfig) error {
 	v := reflect.ValueOf(cfg)
 
 	// Skip invalid, the zero value or a nil pointer (checked by zero value).
@@ -367,7 +367,7 @@ func validateAlertmanagerConfig(cfg interface{}, alertmanagerConfig *Multitenant
 
 			// Skip any field value which can't be converted to interface (eg. primitive types).
 			if fieldValue.CanInterface() {
-				if err := validateAlertmanagerConfig(fieldValue.Interface(), alertmanagerConfig); err != nil {
+				if err := validateUserAlertmanagerConfig(fieldValue.Interface(), alertmanagerConfig); err != nil {
 					return err
 				}
 			}
@@ -380,7 +380,7 @@ func validateAlertmanagerConfig(cfg interface{}, alertmanagerConfig *Multitenant
 
 			// Skip any field value which can't be converted to interface (eg. primitive types).
 			if fieldValue.CanInterface() {
-				if err := validateAlertmanagerConfig(fieldValue.Interface(), alertmanagerConfig); err != nil {
+				if err := validateUserAlertmanagerConfig(fieldValue.Interface(), alertmanagerConfig); err != nil {
 					return err
 				}
 			}
@@ -393,7 +393,7 @@ func validateAlertmanagerConfig(cfg interface{}, alertmanagerConfig *Multitenant
 
 			// Skip any field value which can't be converted to interface (eg. primitive types).
 			if fieldValue.CanInterface() {
-				if err := validateAlertmanagerConfig(fieldValue.Interface(), alertmanagerConfig); err != nil {
+				if err := validateUserAlertmanagerConfig(fieldValue.Interface(), alertmanagerConfig); err != nil {
 					return err
 				}
 			}
