@@ -43,6 +43,12 @@ The block-builder-scheduler is a singleton process: there must be only one activ
 
 On a restart, the scheduler first reconstructs its state from Kafka consumer group offsets and pings from active block-builder workers.
 
+The scheduler also records its committed offsets in a marker object in the blocks storage bucket, at `__mimir_cluster/block-builder-scheduler/<topic>/<consumer-group>.json`.
+A background writer writes it, so a slow object store never delays scheduling or the Kafka commits.
+The marker is a record of the scheduler's progress that doesn't depend on Kafka retaining the consumer group's committed offsets. The scheduler doesn't resume from it yet: on startup it still uses the Kafka committed offsets.
+This needs the scheduler to have write access to the blocks storage bucket.
+If it doesn't, the marker writes fail and are counted in `cortex_blockbuilder_scheduler_offset_marker_write_failures_total`, and scheduling is not affected.
+
 The block-builders are stateless workers. They use local disk only as a disposable working area to build TSDB blocks.
 If a worker fails to process its job, the scheduler assigns the unfinished job to be reprocessed by another worker.
 
