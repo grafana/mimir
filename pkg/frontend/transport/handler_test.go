@@ -1301,6 +1301,61 @@ func TestHandler_RootQueryID(t *testing.T) {
 		})
 	}
 }
+
+// The native metadata prototype's lookups and fallbacks are in the response stats only for a query that made them, as
+// in the "query stats" log line: the prober tells from them whether a native info() answer was the join.
+func TestHandler_ResponseQueryStatsNativeLookups(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		lookupResponseBytes, lookupSeriesVisited, targetInfoFallbacks uint64
+		expectedFields                                                []string
+	}{
+		"query with native lookups": {
+			lookupResponseBytes: 1234,
+			lookupSeriesVisited: 56,
+			expectedFields:      []string{"native_lookup_response_bytes;val=1234", "native_lookup_series_visited;val=56"},
+		},
+		// A limited lookup: it was made, and its answer then fell back to the join.
+		"query whose lookup fell back": {
+			lookupResponseBytes: 1234,
+			lookupSeriesVisited: 56,
+			targetInfoFallbacks: 1,
+			expectedFields:      []string{"native_lookup_response_bytes;val=1234", "native_lookup_series_visited;val=56", "native_target_info_fallbacks;val=1"},
+		},
+		// An unbounded select: it fell back without a lookup.
+		"query that fell back without a lookup": {
+			targetInfoFallbacks: 2,
+			expectedFields:      []string{"native_target_info_fallbacks;val=2"},
+		},
+		"query without native lookups": {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				// The queriers' stats, as they reach the query-frontend.
+				querierStats := querydetails.QueryDetailsFromContext(req.Context()).QuerierStats
+				querierStats.AddNativeLookupResponseBytes(testCase.lookupResponseBytes)
+				querierStats.AddNativeLookupSeriesVisited(testCase.lookupSeriesVisited)
+				querierStats.AddNativeTargetInfoFallbacks(testCase.targetInfoFallbacks)
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+			})
+			handler := NewHandler(HandlerConfig{MaxBodySize: 1024}, roundTripper, &testLogger{}, prometheus.NewPedanticRegistry())
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=info(up)", nil)
+			req.Header.Set(responseQueryStatsHeaderName, "true")
+			req = req.WithContext(user.InjectOrgID(t.Context(), "12345"))
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+
+			var nativeFields []string
+			for _, field := range strings.Split(resp.Header().Get(ServiceTimingHeaderName), ", ") {
+				if strings.HasPrefix(field, "native_") {
+					nativeFields = append(nativeFields, field)
+				}
+			}
+			require.Equal(t, testCase.expectedFields, nativeFields)
+		})
+	}
+}
+
 func TestHandler_SlowQueryLogReportsRootQueryID(t *testing.T) {
 	// The slow query line is gated on its own threshold rather than on query stats, so it needs the
 	// ID independently.

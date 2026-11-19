@@ -459,12 +459,15 @@ func (f *Handler) reportQueryStats(
 		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
 		"retries", stats.LoadRetries(),
 	}
-	// The native metadata prototype's lookups, which only its queries make.
+	// The native metadata prototype's lookups and fallbacks, which only its queries make.
 	if responseBytes := stats.LoadNativeLookupResponseBytes(); responseBytes > 0 {
 		logMessage = append(logMessage,
 			"native_lookup_response_bytes", responseBytes,
 			"native_lookup_series_visited", stats.LoadNativeLookupSeriesVisited(),
 		)
+	}
+	if fallbacks := stats.LoadNativeTargetInfoFallbacks(); fallbacks > 0 {
+		logMessage = append(logMessage, "native_target_info_fallbacks", fallbacks)
 	}
 	if fields.fetchedSeries {
 		logMessage = append(logMessage, fetchedSeriesCount, numSeries)
@@ -822,6 +825,19 @@ func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes i
 	if rootQueryID != "" {
 		// Reported so that a caller can quote this value when it asks about a query it ran.
 		statsResponse = append(statsResponse, statsValue(rootqueryid.FieldName, rootQueryID))
+	}
+
+	// The native metadata prototype's lookups and fallbacks, as in the "query stats" log line: a caller comparing
+	// native info() with the join tells from them whether a native answer was native, or the join, either because
+	// the native target_info fell back or because MQE's fallback ran the query on Prometheus' engine.
+	if responseBytes := stats.LoadNativeLookupResponseBytes(); responseBytes > 0 {
+		statsResponse = append(statsResponse,
+			statsValue("native_lookup_response_bytes", responseBytes),
+			statsValue("native_lookup_series_visited", stats.LoadNativeLookupSeriesVisited()),
+		)
+	}
+	if fallbacks := stats.LoadNativeTargetInfoFallbacks(); fallbacks > 0 {
+		statsResponse = append(statsResponse, statsValue("native_target_info_fallbacks", fallbacks))
 	}
 
 	return statsResponse
