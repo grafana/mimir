@@ -131,7 +131,7 @@ type prepareStoreConfig struct {
 	numBlocks            int
 	bucketStoreConfig    mimir_tsdb.BucketStoreConfig
 
-	// Optionally wrap objstore.Bucket for caching (e.g. NewStoreCachingBucket) or to inject test instrumentation.
+	// Optionally wrap objstore.Bucket for caching (e.g. with NewStoreCachingBucketConfig) or to inject test instrumentation.
 	wrapBucket func(tb testing.TB, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error)
 }
 

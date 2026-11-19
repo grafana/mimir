@@ -176,7 +176,7 @@ func (g *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 	pageBlocks := opts.pageBlocks(matched, page)
 
 	if !data.metasAreComplete && opts.needsBlockDetails() {
-		details, err := listblocks.LoadMetaFilesForBlocks(req.Context(), g.stores.bucket, tenantID, blocksPageIDs(pageBlocks))
+		details, err := listblocks.LoadMetaFilesForBlocks(req.Context(), g.stores.writeBucketClient(), tenantID, blocksPageIDs(pageBlocks))
 		if err != nil {
 			util.WriteTextResponse(w, fmt.Sprintf("Failed to read block metadata: %s", err))
 			return
@@ -477,7 +477,7 @@ func (g *StoreGateway) loadBlocksPageData(ctx context.Context, tenantID string, 
 }
 
 func (g *StoreGateway) loadBlocksFromBucketIndex(ctx context.Context, tenantID string, opts blocksPageOptions) (blocksPageData, error) {
-	idx, err := bucketindex.ReadIndex(ctx, g.stores.bucket, tenantID, g.stores.limits, g.logger)
+	idx, err := bucketindex.ReadIndex(ctx, g.stores.writeBucketClient(), tenantID, g.stores.limits, g.logger)
 	if err != nil {
 		return blocksPageData{}, err
 	}
@@ -500,7 +500,7 @@ func (g *StoreGateway) loadBlocksFromBucketIndex(ctx context.Context, tenantID s
 	}
 
 	if opts.ShowNoCompact {
-		if data.noCompactMarks, err = listblocks.LoadNoCompactMarks(ctx, g.stores.bucket, tenantID); err != nil {
+		if data.noCompactMarks, err = listblocks.LoadNoCompactMarks(ctx, g.stores.writeBucketClient(), tenantID); err != nil {
 			return blocksPageData{}, err
 		}
 	}
@@ -509,7 +509,7 @@ func (g *StoreGateway) loadBlocksFromBucketIndex(ctx context.Context, tenantID s
 }
 
 func (g *StoreGateway) scanBlocksFromBucket(ctx context.Context, tenantID string, opts blocksPageOptions) (blocksPageData, error) {
-	metas, deleteMarks, noCompactMarks, err := listblocks.LoadMetaFilesAndMarkers(ctx, g.stores.bucket, tenantID, opts.ShowDeleted, opts.CreatedAfter.Time)
+	metas, deleteMarks, noCompactMarks, err := listblocks.LoadMetaFilesAndMarkers(ctx, g.stores.writeBucketClient(), tenantID, opts.ShowDeleted, opts.CreatedAfter.Time)
 	if err != nil {
 		return blocksPageData{}, err
 	}

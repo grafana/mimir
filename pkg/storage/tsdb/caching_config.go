@@ -206,44 +206,27 @@ func NewIndexHeaderCacheClient(
 	return indexHeaderCache, nil
 }
 
-// NewStoreCachingBucket creates a single caching bucket that handles metadata, index-header, and chunks caching.
-// Cache clients may be passed as nil to disable the corresponding bucket cache. cacheBucketID prefixes
-// every cache key.
+// NewStoreCachingBucketConfig creates the caching config of the store-gateway caching buckets. The
+// config handles metadata, index-header, and chunks caching. Cache clients may be passed as nil to
+// disable the corresponding bucket cache. It returns nil if all cache clients are nil. Several caching
+// buckets can use the same config.
 //
 //   - Index-header config matches isBlockIndexFile to cache GetRange calls.
 //   - Chunks config matches isTSDBChunkFile to cache GetRange calls.
 //   - Metadata caching is shared with across index-header and chunks caching buckets if enabled,
 //     otherwise each cache handles its own metadata storage.
-func NewStoreCachingBucket(
-	cacheBucketID string,
+func NewStoreCachingBucketConfig(
 	cfg BlocksStorageConfig,
 	metadataCache cache.Cache,
 	indexHeaderCache cache.Cache,
 	chunksCache cache.Cache,
-	bkt objstore.Bucket,
 	logger log.Logger,
 	reg prometheus.Registerer,
-) (objstore.Bucket, error) {
-	cachingBucketCfg := bucketcache.NewCachingBucketConfig()
-	return newStoreCachingBucket(
-		cachingBucketCfg, cacheBucketID, cfg, metadataCache, indexHeaderCache, chunksCache, bkt, logger, reg,
-	)
-}
-
-func newStoreCachingBucket(
-	cachingBucketCfg *bucketcache.CachingBucketConfig,
-	cacheBucketID string,
-	cfg BlocksStorageConfig,
-	metadataCache cache.Cache,
-	indexHeaderCache cache.Cache,
-	chunksCache cache.Cache,
-	bkt objstore.Bucket,
-	logger log.Logger,
-	reg prometheus.Registerer,
-) (objstore.Bucket, error) {
+) (*bucketcache.CachingBucketConfig, error) {
 	var (
 		err               error
 		cachingConfigured = false
+		cachingBucketCfg  = bucketcache.NewCachingBucketConfig()
 	)
 
 	if metadataCache != nil {
@@ -335,10 +318,10 @@ func newStoreCachingBucket(
 	}
 
 	if !cachingConfigured {
-		return bkt, nil
+		return nil, nil
 	}
 
-	return bucketcache.NewCachingBucket(cacheBucketID, cfg.Bucket.BucketName(), bkt, cachingBucketCfg, logger, reg)
+	return cachingBucketCfg, nil
 }
 
 var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)

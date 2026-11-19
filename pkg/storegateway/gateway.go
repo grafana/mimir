@@ -253,7 +253,12 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		cacheBucketID = compartments.WithReadCompartmentSuffix("blocks", gatewayCfg.ReadCompartmentID)
 	}
 
-	g.stores, err = NewBucketStores(storageCfg, cacheBucketID, shardingStrategy, bucketClient, allowedTenants, limits, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
+	bucketSet, err := bucket.NewBlocksBucketSet(bucket.BlocksBucket{Name: storageCfg.Bucket.BucketName(), Client: bucketClient}, nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "create blocks bucket set")
+	}
+
+	g.stores, err = NewBucketStores(storageCfg, cacheBucketID, shardingStrategy, bucketSet, allowedTenants, limits, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
 	if err != nil {
 		return nil, errors.Wrap(err, "create bucket stores")
 	}

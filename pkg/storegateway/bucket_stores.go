@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -33,6 +34,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -57,7 +59,7 @@ type BucketStores struct {
 	logger             log.Logger
 	cfg                tsdb.BlocksStorageConfig
 	limits             *validation.Overrides
-	bucket             objstore.Bucket
+	readBuckets        []cachingReadBucket
 	bucketStoreMetrics *BucketStoreMetrics
 	metaFetcherMetrics *MetadataFetcherMetrics
 	shardingStrategy   ShardingStrategy
@@ -94,8 +96,15 @@ type BucketStores struct {
 	blocksLoadedSizeBytes *prometheus.Desc
 }
 
-// NewBucketStores makes a new BucketStores.
-func NewBucketStores(cfg tsdb.BlocksStorageConfig, cacheBucketID string, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, allowedTenants *util.AllowList, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
+// cachingReadBucket is a read bucket of the blocks storage. Its client caches the bucket operations.
+type cachingReadBucket struct {
+	name   string
+	client objstore.Bucket
+}
+
+// NewBucketStores makes a new BucketStores. It discovers tenants and loads blocks from all read buckets
+// of the bucketSet.
+func NewBucketStores(cfg tsdb.BlocksStorageConfig, cacheBucketID string, shardingStrategy ShardingStrategy, bucketSet *bucket.BlocksBucketSet, allowedTenants *util.AllowList, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
 	var err error
 
 	// Init index cache.
@@ -119,11 +128,31 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, cacheBucketID string, shardin
 		return nil, err
 	}
 
-	// Configure caching bucket to cover configured metadata, index-header, and chunks caching.
+	// Configure caching buckets to cover configured metadata, index-header, and chunks caching.
 	// Bucket caches for index-header and chunks share the metadata cache for object attributes.
-	cachingBucket, err := tsdb.NewStoreCachingBucket(cacheBucketID, cfg, metadataCache, indexHeaderCacheClient, chunksCacheClient, bucketClient, logger, reg)
+	cachingBucketCfg, err := tsdb.NewStoreCachingBucketConfig(cfg, metadataCache, indexHeaderCacheClient, chunksCacheClient, logger, reg)
 	if err != nil {
-		return nil, errors.Wrapf(err, "create caching bucket")
+		return nil, errors.Wrapf(err, "create caching bucket config")
+	}
+
+	readBuckets := make([]cachingReadBucket, 0, len(bucketSet.ReadBuckets()))
+	for _, readBucket := range bucketSet.ReadBuckets() {
+		readBucketClient := readBucket.Client
+		if cachingBucketCfg != nil {
+			// A block has the same index and chunks in each bucket, so all read buckets share the cache
+			// entries of the object ranges. When there is more than one read bucket, the other cache keys
+			// are scoped by bucket.
+			keyScopes := bucketcache.KeyScopes{Metadata: cacheBucketID, ObjectRanges: cacheBucketID}
+			if readBucket.MetadataCacheID != "" {
+				keyScopes.Metadata = readBucket.MetadataCacheID
+			}
+
+			readBucketClient, err = bucketcache.NewCachingBucketWithKeyScopes(keyScopes, readBucket.Name, readBucket.Client, cachingBucketCfg, logger, reg)
+			if err != nil {
+				return nil, errors.Wrapf(err, "create caching bucket")
+			}
+		}
+		readBuckets = append(readBuckets, cachingReadBucket{name: readBucket.Name, client: readBucketClient})
 	}
 
 	gateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
@@ -153,7 +182,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, cacheBucketID string, shardin
 		logger:             logger,
 		cfg:                cfg,
 		limits:             limits,
-		bucket:             cachingBucket,
+		readBuckets:        readBuckets,
 		indexCache:         indexCache,
 		shardingStrategy:   shardingStrategy,
 		allowedTenants:     allowedTenants,
@@ -470,22 +499,33 @@ func (u *BucketStores) SearchLabelValues(req *storepb.SearchLabelValuesRequest, 
 	})
 }
 
-// scanUsers in the bucket and return the list of found users, respecting any specifically
+// scanUsers in all read buckets and return the sorted list of found users, respecting any specifically
 // enabled or disabled users.
 func (u *BucketStores) scanUsers(ctx context.Context) ([]string, error) {
-	users, err := tsdb.ListUsers(ctx, u.bucket)
+	bucketClients := make([]objstore.Bucket, 0, len(u.readBuckets))
+	for _, readBucket := range u.readBuckets {
+		bucketClients = append(bucketClients, readBucket.client)
+	}
+
+	bucketsPerUser, err := tsdb.ListUsersInBuckets(ctx, bucketClients)
 	if err != nil {
 		return nil, err
 	}
 
-	filtered := make([]string, 0, len(users))
-	for _, user := range users {
+	filtered := make([]string, 0, len(bucketsPerUser))
+	for user := range bucketsPerUser {
 		if u.allowedTenants.IsAllowed(user) {
 			filtered = append(filtered, user)
 		}
 	}
+	slices.Sort(filtered)
 
 	return filtered, nil
+}
+
+// writeBucketClient returns the client of the write bucket, which is the first read bucket.
+func (u *BucketStores) writeBucketClient() objstore.Bucket {
+	return u.readBuckets[0].client
 }
 
 func (u *BucketStores) getStore(userID string) *BucketStore {
@@ -585,29 +625,47 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 
 	level.Info(userLogger).Log("msg", "creating user bucket store")
 
-	var userBkt objstore.InstrumentedBucketReader
-	if u.cfg.BucketStore.IndexHeader.Version == indexheader.BinaryFormatV2 {
-		userBkt = objstoretracing.WrapWithTraces(bucket.NewUserBucketClient(userID, u.bucket, u.limits), tracer)
-	} else {
-		userBkt = bucket.NewUserBucketClient(userID, u.bucket, u.limits)
-	}
-
 	fetcherReg := prometheus.NewRegistry()
-	fetcherMetrics := NewBucketIndexBlockMetadataFetcherMetrics(fetcherReg, u.bucketStoreMetrics)
 
-	// The sharding strategy filter MUST be before the ones we create here (order matters).
-	filters := []block.MetadataFilter{
-		NewShardingMetadataFilterAdapter(userID, u.shardingStrategy),
-		newMinTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin),
-		// Use our own custom implementation.
-		NewIgnoreDeletionMarkFilter(userLogger, userBkt, u.cfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay, u.cfg.BucketStore.MetaSyncConcurrency),
-		// The duplicate filter has been intentionally omitted because it could cause troubles with
-		// the consistency check done on the querier. The duplicate filter removes redundant blocks
-		// but if the store-gateway removes redundant blocks before the querier discovers them, the
-		// consistency check on the querier will fail.
+	// Each read bucket has its own loader, filters and fetcher, because the loader and the filters keep
+	// the state of their bucket.
+	loaders := make([]*BucketIndexLoader, 0, len(u.readBuckets))
+	fetchers := make([]BlockMetadataFetcher, 0, len(u.readBuckets))
+	for _, readBucket := range u.readBuckets {
+		var userBkt objstore.InstrumentedBucketReader
+		if u.cfg.BucketStore.IndexHeader.Version == indexheader.BinaryFormatV2 {
+			userBkt = objstoretracing.WrapWithTraces(bucket.NewUserBucketClient(userID, readBucket.client, u.limits), tracer)
+		} else {
+			userBkt = bucket.NewUserBucketClient(userID, readBucket.client, u.limits)
+		}
+
+		fetcherMetricsReg := prometheus.Registerer(fetcherReg)
+		if len(u.readBuckets) > 1 {
+			fetcherMetricsReg = prometheus.WrapRegistererWith(prometheus.Labels{"bucket": readBucket.name}, fetcherReg)
+		}
+		fetcherMetrics := NewBucketIndexBlockMetadataFetcherMetrics(fetcherMetricsReg, u.bucketStoreMetrics)
+
+		// The sharding strategy filter MUST be before the ones we create here (order matters).
+		filters := []block.MetadataFilter{
+			NewShardingMetadataFilterAdapter(userID, u.shardingStrategy),
+			newMinTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin),
+			// Use our own custom implementation.
+			NewIgnoreDeletionMarkFilter(userLogger, userBkt, u.cfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay, u.cfg.BucketStore.MetaSyncConcurrency),
+			// The duplicate filter has been intentionally omitted because it could cause troubles with
+			// the consistency check done on the querier. The duplicate filter removes redundant blocks
+			// but if the store-gateway removes redundant blocks before the querier discovers them, the
+			// consistency check on the querier will fail.
+		}
+		loader := NewBucketIndexLoader(userID, readBucket.client, u.limits, u.logger)
+		loaders = append(loaders, loader)
+		fetchers = append(fetchers, newSingleBucketBlockMetadataFetcher(NewBucketIndexBlockMetadataFetcher(userID, loader, u.logger, fetcherMetrics, filters), userBkt))
 	}
-	loader := NewBucketIndexLoader(userID, u.bucket, u.limits, u.logger)
-	fetcher := NewBucketIndexBlockMetadataFetcher(userID, loader, u.logger, fetcherMetrics, filters)
+
+	fetcher := fetchers[0]
+	if len(fetchers) > 1 {
+		fetcher = newMultiBucketBlockMetadataFetcher(fetchers)
+	}
+
 	bucketStoreOpts := []BucketStoreOption{
 		WithLogger(userLogger),
 		WithIndexCache(u.indexCache),
@@ -617,8 +675,8 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 
 	bs, err := NewBucketStore(
 		userID,
-		newBucketIndexMetadataReaderFromLoader(loader),
-		newSingleBucketBlockMetadataFetcher(fetcher, userBkt),
+		newBucketIndexMetadataReaderFromLoaders(loaders),
+		fetcher,
 		u.syncDirForUser(userID),
 		u.cfg.BucketStore,
 		worstCaseFetchedDataStrategy{postingListActualSizeFactor: u.cfg.BucketStore.SeriesFetchPreference},

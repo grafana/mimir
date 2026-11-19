@@ -195,22 +195,33 @@ func (f *BucketIndexBlockMetadataFetcher) Fetch(ctx context.Context) (metas map[
 }
 
 type bucketIndexMetadataReader struct {
-	indexReader interface {
-		Index() *bucketindex.Index
-	}
+	loaders []*BucketIndexLoader
 }
 
-// newBucketIndexMetadataReaderFromLoader is an adapter from BucketIndexLoader to BucketIndexMetadataReader.
-func newBucketIndexMetadataReaderFromLoader(loader *BucketIndexLoader) BucketIndexMetadataReader {
+// newBucketIndexMetadataReaderFromLoaders is an adapter from one BucketIndexLoader for each bucket to
+// BucketIndexMetadataReader.
+func newBucketIndexMetadataReaderFromLoaders(loaders []*BucketIndexLoader) BucketIndexMetadataReader {
 	return &bucketIndexMetadataReader{
-		indexReader: loader,
+		loaders: loaders,
 	}
 }
 
+// Metadata returns the metadata of the bucket index that has the oldest update time. It ignores the
+// loaders that have not read a bucket index.
 func (r *bucketIndexMetadataReader) Metadata() *bucketindex.Metadata {
-	idx := r.indexReader.Index()
-	if idx == nil {
+	var oldestMetadata *bucketindex.Metadata
+	for _, loader := range r.loaders {
+		idx := loader.Index()
+		if idx == nil {
+			continue
+		}
+		if metadata := idx.Metadata(); oldestMetadata == nil || metadata.UpdatedAt < oldestMetadata.UpdatedAt {
+			oldestMetadata = metadata
+		}
+	}
+
+	if oldestMetadata == nil {
 		return &bucketindex.Metadata{}
 	}
-	return idx.Metadata()
+	return oldestMetadata
 }

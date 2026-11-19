@@ -434,7 +434,7 @@ func prepareStoreGatewayForBlocksPageWithBucketIndex(t *testing.T, blocks []bloc
 
 	return &StoreGateway{
 		logger: log.NewNopLogger(),
-		stores: &BucketStores{bucket: bkt, limits: validation.NewOverrides(limits, nil)},
+		stores: &BucketStores{readBuckets: []cachingReadBucket{{client: bkt}}, limits: validation.NewOverrides(limits, nil)},
 	}, ids
 }
 

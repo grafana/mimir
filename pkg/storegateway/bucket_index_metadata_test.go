@@ -247,6 +247,36 @@ func TestBucketIndexLoader(t *testing.T) {
 	require.Equal(t, idx2, loader.Index())
 }
 
+func TestBucketIndexMetadataReader_Metadata(t *testing.T) {
+	const userID = "user-1"
+
+	now := time.Now()
+
+	newLoader := func(t *testing.T, idx *bucketindex.Index) *BucketIndexLoader {
+		bkt := objstore.NewInMemBucket()
+		loader := NewBucketIndexLoader(userID, bkt, nil, log.NewNopLogger())
+		if idx != nil {
+			require.NoError(t, bucketindex.WriteIndex(t.Context(), bkt, userID, nil, idx))
+			_, err := loader.FetchIndex(t.Context())
+			require.NoError(t, err)
+		}
+		return loader
+	}
+
+	recentIndex := &bucketindex.Index{Version: bucketindex.IndexVersion1, UpdatedAt: now.Unix()}
+	oldIndex := &bucketindex.Index{Version: bucketindex.IndexVersion1, UpdatedAt: now.Add(-time.Hour).Unix()}
+
+	t.Run("returns the metadata of the bucket index with the oldest update time", func(t *testing.T) {
+		reader := newBucketIndexMetadataReaderFromLoaders([]*BucketIndexLoader{newLoader(t, recentIndex), newLoader(t, nil), newLoader(t, oldIndex)})
+		require.Equal(t, oldIndex.Metadata(), reader.Metadata())
+	})
+
+	t.Run("returns empty metadata if no loader has read a bucket index", func(t *testing.T) {
+		reader := newBucketIndexMetadataReaderFromLoaders([]*BucketIndexLoader{newLoader(t, nil), newLoader(t, nil)})
+		require.Equal(t, &bucketindex.Metadata{}, reader.Metadata())
+	})
+}
+
 // noShardingStrategy is a no-op strategy. When this strategy is used, no tenant/block is filtered out.
 type noShardingStrategy struct{}
 
