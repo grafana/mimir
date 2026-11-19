@@ -477,8 +477,10 @@ func TestMapIterate(t *testing.T) {
 					got[key] = value
 					yielded++
 					if yielded == 1 {
-						require.True(t, m.TryLock(), "yield should be called with the lock released")
-						m.Unlock()
+						if !m.TryLock() {
+							t.Fatal("yield should be called with the lock released")
+						}
+						m.Unlock() // +checklocksforce: checklocks does not track TryLock.
 					}
 				})
 				require.Equal(t, want, got)

@@ -212,9 +212,13 @@ func currentSeriesLimit(series uint64, limit uint64, zonesCount uint64) uint64 {
 	return series + allowance
 }
 
-// getOrCreateTenant returns the trackedTenant for the given userID, with shards for the limit provided.
-// The tenant returned is RLock'ed() and needs to be RUnlocked() after use.
-func (t *trackerStore) getOrCreateTenant(tenantID string) *trackedTenant {
+// getOrCreateTenant returns the trackedTenant for the given tenantID with its read lock held.
+// The caller must RUnlock it after use. The store lock protects the handoff from cleanup.
+//
+// Checklocks verifies the lock on each result, but compares different lookup and allocation
+// values as distinct locks when merging return states.
+// +checklocksacquireread:tenant.RWMutex
+func (t *trackerStore) getOrCreateTenant(tenantID string) (tenant *trackedTenant) { // +checklocksignore
 	limit := zeroAsNoLimit(t.limiter.localSeriesLimit(tenantID))
 	zonesCount := t.limiter.zonesCount()
 
@@ -234,7 +238,7 @@ func (t *trackerStore) getOrCreateTenant(tenantID string) *trackedTenant {
 	}
 
 	// Let's prepare a tenant with all shards instead of doing it while locked.
-	tenant := &trackedTenant{
+	tenant = &trackedTenant{
 		series:        atomic.NewUint64(0),
 		currentLimit:  atomic.NewUint64(currentSeriesLimit(0, limit, zonesCount)),
 		seriesCreated: atomic.NewUint64(0),

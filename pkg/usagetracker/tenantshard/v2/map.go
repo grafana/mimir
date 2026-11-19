@@ -439,8 +439,9 @@ type iterateChunk struct {
 
 var iterateChunkPool = sync.Pool{New: func() any { return new(iterateChunk) }}
 
-// Iterate calls yield for every series in the map. Unlike every other method, the caller must NOT hold the
-// lock: Iterate takes it for a few groups at a time, and calls yield with the lock released.
+// Iterate calls yield for every series in the map. The caller must NOT hold the
+// lock: Iterate copies a few groups at a time while the arrays are active, and
+// calls yield with the lock released.
 // A series put or removed while Iterate runs may or may not be yielded. A series removed after its group was
 // copied and put again into a group not yet copied is yielded twice, once with each value.
 func (m *Map) Iterate(yield func(key uint64, value clock.Minutes)) {
@@ -458,19 +459,20 @@ func (m *Map) iterate(groupsPerLock int, yield func(key uint64, value clock.Minu
 
 	rehashed := false
 	for b := 0; b < len(srcData); b += groupsPerLock {
+		end := min(b+groupsPerLock, len(srcData))
+		chunkKeys, chunkData := srcKeys[b:end], srcData[b:end]
 		if !rehashed {
 			m.Lock()
-			// A rehash moves the series to new arrays and never writes the old ones again,
-			// so once it happens the rest of them can be read without the lock.
-			rehashed = m.rehashes != rehashes
-			if rehashed {
-				m.Unlock()
+			if m.rehashes == rehashes {
+				bufKeys, bufData := buf.keys[:end-b], buf.data[:end-b]
+				copy(bufKeys, chunkKeys)
+				copy(bufData, chunkData)
+				chunkKeys, chunkData = bufKeys, bufData
+			} else {
+				// Rehash replaces the arrays and never writes to the old ones
+				// again, so yield directly from them for the remaining chunks.
+				rehashed = true
 			}
-		}
-		// Copying the chunk holds the lock for a tenth of the time that finding its occupied slots takes.
-		chunkKeys := copyChunk(buf.keys[:groupsPerLock], srcKeys[b:])
-		chunkData := copyChunk(buf.data[:groupsPerLock], srcData[b:])
-		if !rehashed {
 			m.Unlock()
 		}
 		for g := range chunkData {
@@ -481,9 +483,4 @@ func (m *Map) iterate(groupsPerLock int, yield func(key uint64, value clock.Minu
 			}
 		}
 	}
-}
-
-// copyChunk copies as many elements of src as fit into dst, and returns the part of dst that was written.
-func copyChunk[T any](dst, src []T) []T {
-	return dst[:copy(dst, src)]
 }
