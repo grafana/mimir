@@ -113,11 +113,18 @@ func (h *nativeInfoHarness) startIngester(t testing.TB, cfg Config, kafkaAddr st
 // restart stops the partition's ingester and starts another on its data, which consumes the partition from where the
 // first left off, as an ingester's restart does.
 func (h *nativeInfoHarness) restart(t testing.TB, partition int) {
+	h.restartWith(t, partition, func(*Config) {})
+}
+
+// restartWith is restart with the new ingester's config changed by change, which runs between the two, on the data
+// as the first ingester left it.
+func (h *nativeInfoHarness) restartWith(t testing.TB, partition int, change func(cfg *Config)) {
 	old := h.ingesters[partition]
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), old.ingester))
 	old.server.Stop()
 	cfg := old.cfg
 	cfg.IngestStorageConfig.KafkaConfig.ConsumeFromPositionAtStartup = "last-offset"
+	change(&cfg)
 	h.ingesters[partition] = h.startIngester(t, cfg, cfg.IngestStorageConfig.KafkaConfig.Address[0])
 	// The distributor finds the ingester at its new address in the ring.
 	addr := fmt.Sprintf("127.0.0.1:%d", h.ingesters[partition].cfg.IngesterRing.InstancePort)
