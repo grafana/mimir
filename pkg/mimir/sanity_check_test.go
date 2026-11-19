@@ -116,6 +116,29 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 			},
 			expected: errObjectStorage,
 		},
+		"should check each additional read bucket": {
+			setup: func(cfg *Config) {
+				cfg.BlocksStorage.Bucket.Backend = bucket.GCS
+				cfg.BlocksStorage.Bucket.GCS.BucketName = "invalid"
+				cfg.BlocksStorage.AdditionalReadBuckets.BucketNames = []string{"invalid-old"}
+			},
+			expected: `additional read bucket "invalid-old"`,
+		},
+		"should check the additional read buckets of each read compartment": {
+			setup: func(cfg *Config) {
+				cfg.IngestStorage.Enabled = true
+				cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"localhost:9092"}
+				cfg.IngestStorage.KafkaConfig.Topic = "mimir-ingest-rc-<read-compartment-id>"
+				cfg.IngestStorage.KafkaConfig.AutoCreateTopicEnabled = false
+				cfg.Compartments.Enabled = true
+				cfg.Compartments.Read.NumCompartments = 2
+				cfg.Compartments.Write.NumCompartments = 1
+				cfg.BlocksStorage.Bucket.Backend = bucket.GCS
+				cfg.BlocksStorage.Bucket.GCS.BucketName = "invalid-<read-compartment-id>"
+				cfg.BlocksStorage.AdditionalReadBuckets.BucketNames = []string{"1:invalid-old-1"}
+			},
+			expected: `additional read bucket "invalid-old-1"`,
+		},
 		"should fail on invalid Azure config": {
 			setup: func(cfg *Config) {
 				require.NoError(t, cfg.Target.Set("all,alertmanager"))

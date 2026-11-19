@@ -196,6 +196,16 @@ func TestBucketIndexBlocksFinder_GetBlocks_BucketIndexIsTooOld(t *testing.T) {
 
 func prepareBucketIndexBlocksFinder(t testing.TB, bkt objstore.Bucket) *BucketIndexBlocksFinder {
 	ctx := context.Background()
+	finder := newBucketIndexBlocksFinderForTest(bkt)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, finder))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, finder))
+	})
+
+	return finder
+}
+
+func newBucketIndexBlocksFinderForTest(bkt objstore.Bucket) *BucketIndexBlocksFinder {
 	cfg := BucketIndexBlocksFinderConfig{
 		IndexLoader: bucketindex.LoaderConfig{
 			CheckInterval:         time.Minute,
@@ -207,13 +217,7 @@ func prepareBucketIndexBlocksFinder(t testing.TB, bkt objstore.Bucket) *BucketIn
 		IgnoreDeletionMarksDelay: time.Hour,
 	}
 
-	finder := NewBucketIndexBlocksFinder(cfg, bkt, nil, log.NewNopLogger(), nil)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, finder))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, finder))
-	})
-
-	return finder
+	return NewBucketIndexBlocksFinder(cfg, bkt, nil, log.NewNopLogger(), nil)
 }
 
 func TestBlocksFinderBucketIndexErrMsgs(t *testing.T) {
