@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
 
@@ -303,7 +304,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		return nil, errors.Wrap(err, "failed to create store-gateway ring backend")
 	}
 
-	// Shared by every read compartment: their cache keys are already scoped by cacheBucketID below.
+	// Shared by every read compartment and every read bucket: their cache keys are scoped by bucket ID.
 	componentReg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg)
 	metadataCache, err := mimir_tsdb.NewMetadataCacheClient(storageCfg.BucketStore.MetadataCache.BackendConfig, logger, componentReg)
 	if err != nil {
@@ -314,31 +315,31 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	storesRings := make([]*ring.Ring, numCompartments)
 	for idx := 0; idx < numCompartments; idx++ {
 		var (
-			bucketCfg = storageCfg.Bucket
-			ringName  = storegateway.RingNameForClient
-			ringKey   = storegateway.RingKey
+			ringName = storegateway.RingNameForClient
+			ringKey  = storegateway.RingKey
+			finder   BlocksFinder
+			err      error
 		)
-
-		// cacheBucketID prefixes every metadata cache key. It should be "blocks", but without compartments
-		// we keep it empty to not cause a massive cache invalidation when rolling out the Mimir version
-		// introducing the bucket ID; this is fine as far as every other caching bucket uses its own unique
-		// ID.
-		//
-		// With compartments each compartment reads a different bucket but the cache could be shared, so its
-		// keys must be scoped by a compartment-specific ID to avoid collisions and subtle bugs.
-		cacheBucketID := ""
 
 		if compartmentsCfg.Enabled {
 			// Each read compartment has its own bucket and store-gateway ring within this single process.
 			// The finder's metrics are scoped by bucket, so all compartments share one "component"; the ring
 			// name/key have no such scope and are suffixed instead.
-			bucketCfg = storageCfg.Bucket.ReadCompartmentConfig(idx)
-			cacheBucketID = compartments.WithReadCompartmentSuffix("blocks", idx)
+			//
+			// Each compartment reads a different bucket but the cache could be shared, so its keys must be
+			// scoped by a compartment-specific ID to avoid collisions and subtle bugs.
+			cacheBucketID := compartments.WithReadCompartmentSuffix("blocks", idx)
+			finder, err = newBlocksStoreQueryableFinder(cacheBucketID, metadataCache, storageCfg.Bucket.ReadCompartmentConfig(idx), storageCfg, limits, logger, reg)
 			ringName = compartments.WithReadCompartmentSuffix(ringName, idx)
 			ringKey = compartments.WithReadCompartmentSuffix(ringKey, idx)
+		} else {
+			var bucketSet *bucket.BlocksBucketSet
+			bucketSet, err = bucket.NewBlocksBucketSetFromConfigs(context.Background(), storageCfg.Bucket, nil, "querier", logger, reg)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to create blocks bucket set")
+			}
+			finder, err = newBlocksBucketSetFinder(bucketSet, metadataCache, storageCfg, limits, logger, reg)
 		}
-
-		finder, err := newBlocksStoreQueryableFinder(cacheBucketID, metadataCache, bucketCfg, storageCfg, limits, logger, reg)
 		if err != nil {
 			return nil, err
 		}
@@ -387,11 +388,36 @@ func newBlocksStoreQueryableFinder(cacheBucketID string, metadataCache cache.Cac
 		return nil, errors.Wrap(err, "failed to create bucket client")
 	}
 
+	return newBucketIndexBlocksFinderForBucket(cacheBucketID, bucketCfg.BucketName(), bucketClient, metadataCache, storageCfg, limits, logger, reg)
+}
+
+// newBlocksBucketSetFinder creates one BucketIndexBlocksFinder for each read bucket of the set. When the
+// set has more than one read bucket, the returned finder merges the blocks of all read buckets.
+func newBlocksBucketSetFinder(bucketSet *bucket.BlocksBucketSet, metadataCache cache.Cache, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (BlocksFinder, error) {
+	readBuckets := bucketSet.ReadBuckets()
+	finders := make([]BlocksFinder, 0, len(readBuckets))
+	for _, readBucket := range readBuckets {
+		finder, err := newBucketIndexBlocksFinderForBucket(readBucket.MetadataCacheID, readBucket.Name, readBucket.Client, metadataCache, storageCfg, limits, logger, reg)
+		if err != nil {
+			return nil, err
+		}
+		finders = append(finders, finder)
+	}
+
+	if len(finders) == 1 {
+		return finders[0], nil
+	}
+	return newMultiBucketBlocksFinder(finders)
+}
+
+// newBucketIndexBlocksFinderForBucket creates a BucketIndexBlocksFinder over the given bucket client. Its
+// metrics are scoped by bucket, so one finder per bucket can share a registry.
+func newBucketIndexBlocksFinderForBucket(cacheBucketID, bucketName string, bucketClient objstore.Bucket, metadataCache cache.Cache, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (BlocksFinder, error) {
 	componentReg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg)
 
 	cachingBucket, err := mimir_tsdb.NewMetadataCachingBucket(
 		cacheBucketID,
-		bucketCfg.BucketName(),
+		bucketName,
 		metadataCache,
 		storageCfg.BucketStore.MetadataCache,
 		bucketClient,
@@ -403,7 +429,7 @@ func newBlocksStoreQueryableFinder(cacheBucketID string, metadataCache cache.Cac
 	}
 
 	// The bucket index loader metrics have no bucket label of their own.
-	loaderReg := prometheus.WrapRegistererWith(prometheus.Labels{"bucket": bucketCfg.BucketName()}, componentReg)
+	loaderReg := prometheus.WrapRegistererWith(prometheus.Labels{"bucket": bucketName}, componentReg)
 
 	return NewBucketIndexBlocksFinder(BucketIndexBlocksFinderConfig{
 		IndexLoader: bucketindex.LoaderConfig{
