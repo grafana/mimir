@@ -422,7 +422,27 @@ func (r *runner) estimateOnly(ctx context.Context, p pair) string {
 
 // burst sends n estimates at once, drawn in turn from cands, without their truth, so the count limits fill. It records how each was answered and how long it took.
 func (r *runner) burst(ctx context.Context, cands []pair, n int) {
-	if len(cands) == 0 || n <= 0 {
+	if len(cands) == 0 {
+		return
+	}
+	r.sendBurst(n, func(i int) (string, error, time.Duration) {
+		p := cands[i%len(cands)]
+		_, latency, err := r.client.estimate(ctx, p.selector(), p.groupBy, p.window.start, p.window.end, p.limit)
+		return p.query, err, latency
+	})
+}
+
+// burstBounds sends n bounds requests over w at once, without their truth. Their head rows go through the ingesters' label values cardinality RPC, so they fill the store-gateways' count limit and not the ingesters'.
+func (r *runner) burstBounds(ctx context.Context, w window, n int) {
+	r.sendBurst(n, func(int) (string, error, time.Duration) {
+		_, latency, err := r.client.bounds(ctx, model.MetricNameLabel, w.start, w.end, 0)
+		return queryBoundsBurst, err, latency
+	})
+}
+
+// sendBurst runs send for 0 to n-1 at once and records how each request was answered and how long it took.
+func (r *runner) sendBurst(n int, send func(i int) (query string, err error, latency time.Duration)) {
+	if n <= 0 {
 		return
 	}
 	type answered struct {
@@ -432,12 +452,11 @@ func (r *runner) burst(ctx context.Context, cands []pair, n int) {
 	results := make([]answered, n)
 	var wg sync.WaitGroup
 	for i := range n {
-		p := cands[i%len(cands)]
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			est, latency, err := r.client.estimate(ctx, p.selector(), p.groupBy, p.window.start, p.window.end, p.limit)
-			results[i] = answered{p.query, burstStatus(est, err), latency}
+			query, err, latency := send(i)
+			results[i] = answered{query, burstStatus(err), latency}
 		}()
 	}
 	wg.Wait()
@@ -451,11 +470,11 @@ func (r *runner) burst(ctx context.Context, cands []pair, n int) {
 		slowest = max(slowest, a.latency)
 	}
 	r.m.bursts.Inc()
-	level.Info(r.logger).Log("msg", "burst", "requests", n, "statuses", fmt.Sprint(statuses), "slowest", slowest)
+	level.Info(r.logger).Log("msg", "burst", "query", results[0].query, "requests", n, "statuses", fmt.Sprint(statuses), "slowest", slowest)
 }
 
-// burstStatus is how one estimate of a burst was answered.
-func burstStatus(est *estimateResponse, err error) string {
+// burstStatus is how one request of a burst was answered.
+func burstStatus(err error) string {
 	var he *httpError
 	var ne net.Error
 	switch {

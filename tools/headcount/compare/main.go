@@ -48,6 +48,7 @@ type config struct {
 	fallbackNames           int
 	seed                    uint64
 	burst                   int
+	burstBounds             int
 	burstInterval           time.Duration
 	scenarioPath            string
 	estimateOnly            bool
@@ -85,6 +86,7 @@ func (c *config) register(f *flag.FlagSet) {
 	f.IntVar(&c.boundsChecks, "bounds-checks", 1, "bounds checks each round, each on a block or boundary window: a bounds request, with PromQL checked on the window of each range it answers, and the names at -name-ranks checked against the exact route; 0 sends none")
 	f.IntVar(&c.boundsMaxRanges, "bounds-max-ranges", 4, "most block ranges of a bounds answer checked, the newest ones")
 	f.IntVar(&c.burst, "burst", 0, "estimates sent at once, without their truth, to fill the count limits of the store-gateways and ingesters; 0 sends no burst")
+	f.IntVar(&c.burstBounds, "burst-bounds", 0, "bounds requests sent at once over a block window, without their truth, with each -burst; they fill the store-gateways' count limit only, since their head rows don't walk the ingesters. 0 sends none")
 	f.DurationVar(&c.burstInterval, "burst-interval", time.Hour, "time between bursts; the first round sends one")
 	f.BoolVar(&c.estimateOnly, "estimate-only", false, "send only the estimate of each pair, without its PromQL truth, to measure the estimate's latency and cost apart from PromQL's, sent without X-Read-Consistency: strong as a dashboard sends them; nothing is compared")
 	f.StringVar(&c.scenarioPath, "scenario", "", "YAML file of hand-written pairs, each run every round next to the drawn ones; see the README")
@@ -149,8 +151,8 @@ func (c *config) validate() error {
 	if c.boundsChecks < 0 || (c.boundsChecks > 0 && c.boundsMaxRanges <= 0) {
 		return errors.New("-bounds-checks must not be negative, and -bounds-max-ranges must be positive")
 	}
-	if c.burst < 0 || c.burst > maxBurst {
-		return fmt.Errorf("-burst must be between 0 and %d", maxBurst)
+	if c.burst < 0 || c.burst > maxBurst || c.burstBounds < 0 || c.burstBounds > maxBurst {
+		return fmt.Errorf("-burst and -burst-bounds must be between 0 and %d", maxBurst)
 	}
 	c.scenarios = nil
 	if c.scenarioPath != "" {
@@ -257,9 +259,13 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 			}
 			cands := candidates(cfg.queries, targets, cfg.windows.windows(t), pcfg, rng)
 			rng.Shuffle(len(cands), func(i, j int) { cands[i], cands[j] = cands[j], cands[i] })
-			if cfg.burst > 0 && (lastBurst.IsZero() || t.Sub(lastBurst) >= cfg.burstInterval) {
+			if (cfg.burst > 0 || cfg.burstBounds > 0) && (lastBurst.IsZero() || t.Sub(lastBurst) >= cfg.burstInterval) {
 				r.sleep(ctx)
 				r.burst(ctx, cands, cfg.burst)
+				if w, ok := firstWindow(cfg.windows.windows(t), windowBlocks); ok && cfg.burstBounds > 0 {
+					r.sleep(ctx)
+					r.burstBounds(ctx, w, cfg.burstBounds)
+				}
 				lastBurst = t
 			}
 			if len(cands) > cfg.pairsPerRound {
@@ -323,4 +329,14 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 		case <-time.After(cfg.interval):
 		}
 	}
+}
+
+// firstWindow is the first window of kind in ws.
+func firstWindow(ws []window, kind string) (window, bool) {
+	for _, w := range ws {
+		if w.kind == kind {
+			return w, true
+		}
+	}
+	return window{}, false
 }

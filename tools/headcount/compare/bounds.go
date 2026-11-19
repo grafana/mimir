@@ -18,6 +18,7 @@ import (
 const (
 	queryBoundsCheck = "bounds_check"       // the bounds answer against PromQL, on the window of each range answered
 	queryBoundsExact = "bounds_exact_check" // the bounds answer against the exact route, for sampled names
+	queryBoundsBurst = "bounds_burst"       // a bounds request of a burst, sent without its truth
 )
 
 // Classes of a group of a bounds check. A group within the bounds of its range is a pass, and one outside them a mismatch unless the range or the edge explains it.

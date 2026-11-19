@@ -814,6 +814,17 @@ func TestRunnerBurst(t *testing.T) {
 	assert.Equal(t, 2.0, refused)
 }
 
+// TestRunnerBurstBounds: a bounds burst sends its requests at once, without truth, and records them under their own query.
+func TestRunnerBurstBounds(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	r, m := newTestRunner(srv)
+	r.burstBounds(context.Background(), testWindow, 4)
+	assert.Equal(t, 4, f.boundsCalls)
+	assert.Empty(t, f.queries, "a burst sends no truth")
+	assert.Equal(t, 4.0, testutil.ToFloat64(m.burstRequests.WithLabelValues(queryBoundsBurst, "200")))
+	assert.Equal(t, 1.0, testutil.ToFloat64(m.bursts))
+}
+
 // TestRunnerPerValueSkipsRefusedName: a tenant-wide table truthed one name at a time compares the names PromQL answers and records the refused one.
 func TestRunnerPerValueSkipsRefusedName(t *testing.T) {
 	f, srv := newFakeFrontend(t, testSeries()...)
@@ -832,12 +843,12 @@ func TestRunnerPerValueSkipsRefusedName(t *testing.T) {
 }
 
 func TestBurstStatus(t *testing.T) {
-	assert.Equal(t, "200", burstStatus(&estimateResponse{}, nil))
-	assert.Equal(t, "422", burstStatus(nil, &httpError{status: 422}))
-	assert.Equal(t, "busy", burstStatus(nil, &httpError{status: 503, errorType: "unavailable"}))
-	assert.Equal(t, "503", burstStatus(nil, &httpError{status: 503, errorType: "timeout"}))
-	assert.Equal(t, "timeout", burstStatus(nil, context.DeadlineExceeded))
-	assert.Equal(t, "error", burstStatus(nil, errors.New("connection refused")))
+	assert.Equal(t, "200", burstStatus(nil))
+	assert.Equal(t, "422", burstStatus(&httpError{status: 422}))
+	assert.Equal(t, "busy", burstStatus(&httpError{status: 503, errorType: "unavailable"}))
+	assert.Equal(t, "503", burstStatus(&httpError{status: 503, errorType: "timeout"}))
+	assert.Equal(t, "timeout", burstStatus(context.DeadlineExceeded))
+	assert.Equal(t, "error", burstStatus(errors.New("connection refused")))
 }
 
 // TestRunBurstOncePerInterval: the first round sends a burst, and the next one only after -burst-interval.
