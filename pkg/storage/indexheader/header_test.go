@@ -286,6 +286,63 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 	}
 }
 
+func TestStreamBinaryReader_CardinalityThreshold(t *testing.T) {
+	const factor = 4
+	sampling := streamindex.SamplingConfig{
+		Factor: factor,
+		// A threshold of 2*factor caps every label with more than 2 sampled entries,
+		// so lookups have to scan long, unevenly spaced sections of the table.
+		CardinalityThreshold: 2 * factor,
+	}
+
+	for name, cfg := range map[string]Config{
+		"bucket reader disabled": testIndexHeaderV1Config(),
+		"bucket reader enabled":  {Version: BinaryFormatV2}, // test that bucket reads, bounded by sampled entries, cover unevenly spaced entries
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			tmpDir := t.TempDir()
+			ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+			require.NoError(t, err)
+			requireCleanup(t, ubkt.Close)
+			bkt := objstore.WithNoopInstr(ubkt)
+
+			m := prepareIndexV2Block(t, tmpDir, bkt)
+			noopMetrics := NewStreamBinaryReaderMetrics(nil)
+
+			// The first reader builds the sparse index-header from the full index-header and writes it to disk (the cardinality threshold is unset here).
+			uncapped, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, cfg, streamindex.SamplingConfig{Factor: factor}, log.NewNopLogger(), noopMetrics)
+			require.NoError(t, err)
+			requireCleanup(t, uncapped.Close)
+
+			// The second reader loads it from disk, which is the path that applies the threshold.
+			capped, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, cfg, sampling, log.NewNopLogger(), noopMetrics)
+			require.NoError(t, err)
+			requireCleanup(t, capped.Close)
+
+			uncappedTbl := uncapped.postingsOffsetTable.(*streamindex.PostingsOffsetsTableV2).SparsePostingsOffsets
+			cappedTbl := capped.postingsOffsetTable.(*streamindex.PostingsOffsetsTableV2).SparsePostingsOffsets
+			uncappedProto := streamindex.SparsePostingsOffsetsTableToProto(uncappedTbl, factor)
+			cappedProto := streamindex.SparsePostingsOffsetsTableToProto(cappedTbl, factor)
+
+			anyCapped := false
+			for lname, u := range uncappedProto.Postings {
+				if len(cappedProto.Postings[lname].GetOffsets()) < len(u.Offsets) {
+					anyCapped = true
+					break
+				}
+			}
+			require.True(t, anyCapped, "threshold didn't cap any label; the test doesn't exercise capped lookups")
+
+			indexFile, err := fileutil.OpenMmapFile(filepath.Join(tmpDir, m.ULID.String(), block.IndexFilename))
+			require.NoError(t, err)
+			requireCleanup(t, indexFile.Close)
+
+			compareIndexToHeader(t, realByteSlice(indexFile.Bytes()), capped)
+		})
+	}
+}
+
 func compareIndexToHeaderPostings(t *testing.T, indexByteSlice index.ByteSlice, sbr *StreamBinaryReader) {
 	ir, err := index.NewReader(indexByteSlice, index.DecodePostingsRaw)
 	require.NoError(t, err)
