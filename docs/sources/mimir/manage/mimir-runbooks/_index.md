@@ -1045,6 +1045,14 @@ How to **investigate**:
   ```
   sum(rate(thanos_objstore_bucket_operation_failures_total{namespace="<namespace>", component="compactor"}[$__rate_interval]))
   ```
+- Check how long the compactors take to discover tenants. Each compactor lists the bucket root to find its tenants before it updates any bucket index, so a slow listing delays the index updates of all its tenants. Compare the timestamps of the two messages for each compactor pod. A healthy discovery takes seconds.
+  ```
+  {namespace="<namespace>", container="compactor"} |= "users from bucket" | logfmt | msg=~"discovering users from bucket|discovered users from bucket"
+  ```
+- Check for slow `iter` operations on the bucket
+  ```
+  histogram_quantile(1, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{namespace="<namespace>", component="compactor", operation="iter"}[$__rate_interval])))
+  ```
 
 How to **fix** it:
 
