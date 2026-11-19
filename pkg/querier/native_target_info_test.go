@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/mimir/pkg/distributor"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -163,6 +164,7 @@ func TestNativeTargetInfoQuerier_Select(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "tenant")
 
 	t.Run("target_info, stitched at the cutover", func(t *testing.T) {
+		queryStats, ctx := stats.ContextWithEmptyStats(ctx)
 		got, next, metrics := selectWith(t, ctx, &fakeNativeLookups{resources: resources}, targetInfo, job)
 		// The stored series' samples before the cutover, then the native series' from it, at every 150s, its version's
 		// half of the lookback delta, and at its end.
@@ -172,6 +174,7 @@ func TestNativeTargetInfoQuerier_Select(t *testing.T) {
 		}, got)
 		require.Len(t, next.selected, 1, "only the stored target_info before the cutover")
 		require.Equal(t, 1.0, testutil.ToFloat64(metrics.lookups))
+		require.Zero(t, queryStats.LoadNativeTargetInfoFallbacks())
 	})
 
 	t.Run("every info metric", func(t *testing.T) {
@@ -190,7 +193,8 @@ func TestNativeTargetInfoQuerier_Select(t *testing.T) {
 		require.Zero(t, testutil.ToFloat64(metrics.lookups))
 	})
 
-	// Each reason to fall back answers with the stored target_info, and is counted.
+	// Each reason to fall back answers with the stored target_info, and is counted, in the querier's metrics and in
+	// the query's stats, which tell its caller the answer is the join's.
 	for reason, tc := range map[string]struct {
 		lookups  *fakeNativeLookups
 		matchers []*labels.Matcher
@@ -201,9 +205,11 @@ func TestNativeTargetInfoQuerier_Select(t *testing.T) {
 		nativeTargetInfoFallbackUnbounded: {lookups: &fakeNativeLookups{resources: resources}, matchers: []*labels.Matcher{targetInfo, labels.MustNewMatcher(labels.MatchRegexp, "job", ".*")}},
 	} {
 		t.Run("falls back: "+reason, func(t *testing.T) {
+			queryStats, ctx := stats.ContextWithEmptyStats(ctx)
 			got, _, metrics := selectWith(t, ctx, tc.lookups, tc.matchers...)
 			require.Equal(t, map[string][]int64{storedLabels.String(): {100_000, 400_000}}, got)
 			require.Equal(t, 1.0, testutil.ToFloat64(metrics.fallbacks.WithLabelValues(reason)))
+			require.Equal(t, uint64(1), queryStats.LoadNativeTargetInfoFallbacks())
 		})
 	}
 }

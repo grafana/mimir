@@ -352,6 +352,22 @@ func (s *SafeStats) LoadNativeLookupSeriesVisited() uint64 {
 	return atomic.LoadUint64(&s.NativeLookupSeriesVisited)
 }
 
+func (s *SafeStats) AddNativeTargetInfoFallbacks(selects uint64) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddUint64(&s.NativeTargetInfoFallbacks, selects)
+}
+
+func (s *SafeStats) LoadNativeTargetInfoFallbacks() uint64 {
+	if s == nil {
+		return 0
+	}
+
+	return atomic.LoadUint64(&s.NativeTargetInfoFallbacks)
+}
+
 // AddSeenSelectorCardinality records the cardinality of a single selector.
 //
 // The caller must not mutate sc, or any slice or string it references, after calling this method.
@@ -442,6 +458,7 @@ func (s *SafeStats) Merge(other *SafeStats) {
 	s.AddRetries(other.LoadRetries())
 	s.AddNativeLookupResponseBytes(other.LoadNativeLookupResponseBytes())
 	s.AddNativeLookupSeriesVisited(other.LoadNativeLookupSeriesVisited())
+	s.AddNativeTargetInfoFallbacks(other.LoadNativeTargetInfoFallbacks())
 
 	for _, sc := range other.LoadSeenSelectorCardinalities() {
 		s.AddSeenSelectorCardinality(sc)

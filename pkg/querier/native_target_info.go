@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/distributor"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util/propagation"
 )
@@ -145,6 +146,8 @@ func (q *nativeTargetInfoQuerier) Select(ctx context.Context, sortSeries bool, h
 	}
 	if reason != "" {
 		q.metrics.fallbacks.WithLabelValues(reason).Inc()
+		// Per query too, so that a caller comparing native with the join tells a native answer that is the join.
+		stats.FromContext(ctx).AddNativeTargetInfoFallbacks(1)
 		return q.Querier.Select(ctx, sortSeries, hints, matchers...)
 	}
 	q.metrics.lookups.Inc()
