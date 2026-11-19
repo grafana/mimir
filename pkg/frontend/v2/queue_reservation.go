@@ -182,12 +182,13 @@ func (r *queueReservation) run(ctx context.Context) {
 		// Each attempt needs a new ID. With the same ID, the abort of a failed attempt could close the
 		// next reservation, or the next RESERVE could get the duplicate rejection.
 		reservationID := uuid.NewString()
-		res, err := r.reserve(ctx, reservationID, target)
+		res, err := r.reserve(ctx, reservationID, target, retryAfterTooManyRequests)
 		if errors.Is(err, errReservationTargetGone) {
 			// No RESERVE went out, so this is not an attempt. The next pick skips target.
 			continue
 		}
 		attempt++
+		retryAfterTooManyRequests = false
 		if errors.Is(err, errNoReservationStreams) {
 			// For example, the query-schedulers restarted without queue reservation. No sub-request
 			// uses the reservation yet, so the plain path cannot queue a sub-request twice.
@@ -199,10 +200,6 @@ func (r *queueReservation) run(ctx context.Context) {
 			r.err = err
 			r.errOutcome = "cancelled"
 			return
-		}
-		if retryAfterTooManyRequests {
-			r.f.queueReservationRetries.Inc()
-			retryAfterTooManyRequests = false
 		}
 
 		// No sub-request uses the reservation yet, so another attempt cannot queue a sub-request twice.
@@ -282,8 +279,8 @@ func (r *queueReservation) logger(w *frontendSchedulerWorker, reservationID stri
 // more. Otherwise, the first free stream of target takes it, and reserve returns
 // errReservationTargetGone when target stops or has no stream that supports queue reservation any
 // more. Like a plain sub-request, it waits for a stream until ctx is done, and then returns the
-// cause of ctx.
-func (r *queueReservation) reserve(ctx context.Context, reservationID string, target *frontendSchedulerWorker) (reserveResult, error) {
+// cause of ctx. When retry is true, reserve counts the RESERVE as a retry when a stream takes it.
+func (r *queueReservation) reserve(ctx context.Context, reservationID string, target *frontendSchedulerWorker, retry bool) (reserveResult, error) {
 	req := &reserveRequest{
 		userID:        r.userID,
 		rootQueryID:   r.rootQueryID,
@@ -310,6 +307,10 @@ func (r *queueReservation) reserve(ctx context.Context, reservationID string, ta
 			return reserveResult{}, errReservationTargetGone
 		case target.targetedReserveCh <- req:
 		}
+	}
+	if retry {
+		// A retry that the query cancels before the reply also counts.
+		r.f.queueReservationRetries.Inc()
 	}
 
 	select {

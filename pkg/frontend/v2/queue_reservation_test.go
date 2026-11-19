@@ -844,8 +844,40 @@ func TestQueueReservation_TargetedReserveStopsWhenTheQueryContextEnds(t *testing
 	cause := errors.New("query cancelled")
 	cancel(cause)
 
-	_, err := r.reserve(ctx, "reservation", target)
+	_, err := r.reserve(ctx, "reservation", target, true)
 	require.ErrorIs(t, err, cause)
+	require.Zero(t, testutil.ToFloat64(r.f.queueReservationRetries), "no stream took the retry")
+}
+
+func TestQueueReservation_RetryCountsWhenTheQueryEndsBeforeTheReply(t *testing.T) {
+	rejecting := newTestReservationWorker(t, "rejecting", true)
+	target := newTestReservationWorker(t, "target", true)
+	f := newTargetedTestFrontend(map[string]*frontendSchedulerWorker{
+		rejecting.schedulerAddr: rejecting,
+		target.schedulerAddr:    target,
+	})
+	r := &queueReservation{f: f, userID: reservationTestUserID, slots: 1, allStreamsGone: make(chan struct{}), done: make(chan struct{})}
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cause := errors.New("query cancelled")
+
+	go func() {
+		req := <-f.reserveCh
+		req.reply <- reserveResult{worker: rejecting, status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+	}()
+	retried := make(chan *reserveRequest, 1)
+	go func() {
+		req := <-target.targetedReserveCh
+		// The query ends after the stream takes the retry and before the reply.
+		cancel(cause)
+		retried <- req
+	}()
+	r.run(ctx)
+
+	require.ErrorIs(t, r.err, cause)
+	require.Equal(t, "cancelled", r.errOutcome)
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservationRetries))
+	// The late reply ends the goroutine in reserve that waits for it.
+	(<-retried).reply <- reserveResult{worker: target, status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 }
 
 func TestQueueReservation_ErrorUsesPlainPath(t *testing.T) {
