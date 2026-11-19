@@ -301,7 +301,7 @@ func TestQueueReservation_AllSubRequestsGoToOneScheduler(t *testing.T) {
 		cortex_query_frontend_queue_reservations_total{outcome="send_failed"} 0
 		cortex_query_frontend_queue_reservations_total{outcome="shutting_down"} 0
 		cortex_query_frontend_queue_reservations_total{outcome="too_many_requests"} 0
-		# HELP cortex_query_frontend_queue_reservation_retries_total Total number of times the query-frontend retried a queue reservation on another query-scheduler, because a query-scheduler rejected it for too many outstanding requests from the tenant.
+		# HELP cortex_query_frontend_queue_reservation_retries_total Total number of times the query-frontend retried a queue reservation right after a query-scheduler rejected it for too many outstanding requests from the tenant.
 		# TYPE cortex_query_frontend_queue_reservation_retries_total counter
 		cortex_query_frontend_queue_reservation_retries_total 0
 	`), "cortex_query_frontend_queue_reservations_total", "cortex_query_frontend_queue_reservation_retries_total"))

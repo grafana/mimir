@@ -294,7 +294,7 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 		}, []string{"outcome"}),
 		queueReservationRetries: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_query_frontend_queue_reservation_retries_total",
-			Help: "Total number of times the query-frontend retried a queue reservation on another query-scheduler, because a query-scheduler rejected it for too many outstanding requests from the tenant.",
+			Help: "Total number of times the query-frontend retried a queue reservation right after a query-scheduler rejected it for too many outstanding requests from the tenant.",
 		}),
 	}
 	f.enqueueRequests.WithLabelValues("enqueued")
