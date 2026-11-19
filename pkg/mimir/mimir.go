@@ -349,7 +349,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.MemberlistKV.Validate(); err != nil {
 		return errors.Wrap(err, "invalid memberlist config")
 	}
-	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics); err != nil {
+	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics, c.Compartments); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
 	}
 	if err := c.Distributor.Validate(c.LimitsConfig, c.Compartments); err != nil {

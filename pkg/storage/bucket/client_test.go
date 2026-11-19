@@ -68,6 +68,24 @@ func TestConfig_ReadCompartmentConfig(t *testing.T) {
 	})
 }
 
+func TestConfig_WithBucketName(t *testing.T) {
+	for _, backend := range []string{S3, GCS, Azure, Swift, Filesystem} {
+		t.Run(backend, func(t *testing.T) {
+			var cfg Config
+			cfg.Backend = backend
+			cfg = cfg.WithBucketName("old-blocks")
+			cfg.S3.Endpoint = "s3.example.com"
+
+			got := cfg.WithBucketName("new-blocks")
+			assert.Equal(t, "new-blocks", got.BucketName())
+			assert.Equal(t, "s3.example.com", got.S3.Endpoint)
+
+			// The original config is unchanged.
+			assert.Equal(t, "old-blocks", cfg.BucketName())
+		})
+	}
+}
+
 const (
 	configWithS3Backend = `
 backend: s3
