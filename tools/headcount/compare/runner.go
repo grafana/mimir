@@ -53,7 +53,9 @@ type runner struct {
 	edgeSlack time.Duration
 	// fallbackNames is how many of the estimate's largest names the truth counts one at a time when the grouped truth is refused.
 	fallbackNames int
-	pairs         int
+	// maxTruthSeries, when > 0, is the most series a PromQL truth may count, going by the estimate. A truth over it is not sent: query sharding keeps each shard under the per-query limits, so nothing else stops a count of millions of series from filling the queriers.
+	maxTruthSeries int64
+	pairs          int
 }
 
 type pairResult struct {
@@ -122,19 +124,19 @@ func skippedRefusals(truth answer) [][2]string {
 	return out
 }
 
-// largestSet asks for the estimate's -fallback-names largest groups one at a time.
+// largestSet asks for the estimate's -fallback-names largest groups one at a time, leaving out the groups over -max-truth-series.
 func (r *runner) largestSet(p pair, est *estimateResponse) truthSet {
 	label := p.groupBy
 	if label == "" {
 		label = model.MetricNameLabel
 	}
-	return truthSet{label: label, values: largest(est, r.fallbackNames)}
+	return truthSet{label: label, values: largest(est, r.fallbackNames, r.maxTruthSeries)}
 }
 
 // run compares one pair, reruns it once if it mismatches, and records the result.
 func (r *runner) run(ctx context.Context, p pair) pairResult {
-	// A table asked for one group at a time needs the estimate's groups first.
-	estimateFirst := r.pairs%2 == 0 || p.perValue
+	// A table asked for one group at a time needs the estimate's groups first, and so does the check against -max-truth-series.
+	estimateFirst := r.pairs%2 == 0 || p.perValue || r.maxTruthSeries > 0
 	r.pairs++
 	res := pairResult{Pair: p.String(), Order: "estimate_first"}
 	if !estimateFirst {
@@ -160,8 +162,8 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 	if refusal != nil {
 		res.Refusals = append(res.Refusals, refusal.side+":"+refusal.class)
 		res.refused = append(res.refused, [2]string{refusal.side, refusal.class})
-		// The grouped truth hit a per-query limit: count the largest groups one at a time, on the same window.
-		if refusal.side == sideTruth && refusal.class == classPromQLLimit && set.values == nil && est != nil {
+		// The grouped truth hit a per-query limit or is over -max-truth-series: count the largest groups that fit one at a time, on the same window.
+		if refusal.side == sideTruth && (refusal.class == classPromQLLimit || refusal.class == classTruthTooLarge) && set.values == nil && est != nil && len(r.largestSet(p, est).values) > 0 {
 			set = r.largestSet(p, est)
 			res.reference = referencePerValue
 			r.sleep(ctx)
@@ -327,6 +329,13 @@ func (r *runner) both(ctx context.Context, p pair, estimateFirst bool, set truth
 				return
 			}
 			set = r.largestSet(p, est)
+			if len(set.values) == 0 {
+				truthErr = errTruthTooLarge
+				return
+			}
+		} else if set.values == nil && r.maxTruthSeries > 0 && est != nil && est.Total > r.maxTruthSeries {
+			truthErr = errTruthTooLarge
+			return
 		}
 		truth, lat.truth, truthErr = r.truth(ctx, p, set, 0)
 		lat.truthOK, lat.truthPos = truthErr == nil, pos
@@ -448,6 +457,7 @@ func (r *runner) sendBurst(n int, send func(i int) (query string, err error, lat
 	type answered struct {
 		query, status string
 		latency       time.Duration
+		err           error
 	}
 	results := make([]answered, n)
 	var wg sync.WaitGroup
@@ -456,7 +466,7 @@ func (r *runner) sendBurst(n int, send func(i int) (query string, err error, lat
 		go func() {
 			defer wg.Done()
 			query, err, latency := send(i)
-			results[i] = answered{query, burstStatus(err), latency}
+			results[i] = answered{query, burstStatus(err), latency, err}
 		}()
 	}
 	wg.Wait()
@@ -471,6 +481,14 @@ func (r *runner) sendBurst(n int, send func(i int) (query string, err error, lat
 	}
 	r.m.bursts.Inc()
 	level.Info(r.logger).Log("msg", "burst", "query", results[0].query, "requests", n, "statuses", fmt.Sprint(statuses), "slowest", slowest)
+	// One line per status that isn't 200, with the first error of it, so a refusal's reason is in the log.
+	logged := map[string]bool{}
+	for _, a := range results {
+		if a.err != nil && !logged[a.status] {
+			logged[a.status] = true
+			level.Warn(r.logger).Log("msg", "burst request failed", "query", a.query, "status", a.status, "requests", statuses[a.status], "err", truncate(a.err.Error(), 400))
+		}
+	}
 }
 
 // burstStatus is how one request of a burst was answered.
@@ -566,11 +584,15 @@ func needsEdgeProbe(diffs []groupDiff) bool {
 }
 
 // largest returns up to n of the table's values, largest first, without the pseudo-groups.
-func largest(r *estimateResponse, n int) []string {
-	var out []string
+// largest returns the first n groups of r with at most maxSeries series, or of any size when maxSeries is 0. It is never nil, since a nil set asks for the grouped truth.
+func largest(r *estimateResponse, n int, maxSeries int64) []string {
+	out := []string{}
 	for _, g := range r.Groups {
 		if len(out) == n {
 			break
+		}
+		if maxSeries > 0 && g.Count > maxSeries {
+			continue
 		}
 		out = append(out, g.Value)
 	}
@@ -585,4 +607,12 @@ func withoutMatchersOn(ms []*labels.Matcher, label string) []*labels.Matcher {
 		}
 	}
 	return out
+}
+
+// truncate cuts s to at most n bytes.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }

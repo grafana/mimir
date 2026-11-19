@@ -215,18 +215,35 @@ func rangeValues(rng boundsRange) []string {
 	return values
 }
 
+// rankedNames returns the range's names at ranks that PromQL may count: a name whose upper is over -max-truth-series is left out and recorded as a refusal of the truth. It is never nil, since a nil set asks for the grouped truth.
+func (r *runner) rankedNames(rng boundsRange, ranks []int, a *boundsAnswer) []string {
+	upper := map[string]int64{}
+	for _, g := range rng.Groups {
+		upper[g.Value] = g.Upper
+	}
+	out := []string{}
+	for _, n := range namesByRank(rangeValues(rng), ranks) {
+		if r.maxTruthSeries > 0 && upper[n] > r.maxTruthSeries {
+			a.refuse(sideTruth, classTruthTooLarge, "truth "+n+" "+rangeKey(rng))
+			continue
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
 // checkRangeAgainstPromQL counts with PromQL the series of every group of the range over the range's own window and checks lower <= truth <= upper. It returns the truth's latency, and whether it answered.
 func (r *runner) checkRangeAgainstPromQL(ctx context.Context, w window, rng boundsRange, cfg boundsConfig, a *boundsAnswer, res *pairResult) (latency time.Duration, ok bool) {
 	rp := pair{query: queryBoundsCheck, matchers: allSeriesMatchers(), groupBy: model.MetricNameLabel, window: window{kind: w.kind, start: rng.Start, end: rng.End}}
 	set := truthSet{}
 	if cfg.perValue {
-		set = truthSet{label: model.MetricNameLabel, values: namesByRank(rangeValues(rng), cfg.ranks)}
+		set = truthSet{label: model.MetricNameLabel, values: r.rankedNames(rng, cfg.ranks, a)}
 	}
 	truth, latency, err := r.truth(ctx, rp, set, 0)
 	if err != nil && set.values == nil && classifyRefusal(sideTruth, err) == classPromQLLimit {
 		// As a pair does, count the names at the ranks one at a time on the same window.
 		a.refuse(sideTruth, classPromQLLimit, "grouped truth "+rangeKey(rng))
-		set = truthSet{label: model.MetricNameLabel, values: namesByRank(rangeValues(rng), cfg.ranks)}
+		set = truthSet{label: model.MetricNameLabel, values: r.rankedNames(rng, cfg.ranks, a)}
 		res.reference = referencePerValue
 		r.sleep(ctx)
 		var more time.Duration

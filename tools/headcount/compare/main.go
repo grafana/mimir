@@ -50,6 +50,8 @@ type config struct {
 	burst                   int
 	burstBounds             int
 	burstInterval           time.Duration
+	burstQueries            flagext.StringSliceCSV
+	maxTruthSeries          int64
 	scenarioPath            string
 	estimateOnly            bool
 	scenarios               []scenario
@@ -88,6 +90,8 @@ func (c *config) register(f *flag.FlagSet) {
 	f.IntVar(&c.burst, "burst", 0, "estimates sent at once, without their truth, to fill the count limits of the store-gateways and ingesters; 0 sends no burst")
 	f.IntVar(&c.burstBounds, "burst-bounds", 0, "bounds requests sent at once over a block window, without their truth, with each -burst; they fill the store-gateways' count limit only, since their head rows don't walk the ingesters. 0 sends none")
 	f.DurationVar(&c.burstInterval, "burst-interval", time.Hour, "time between bursts; the first round sends one")
+	f.Var(&c.burstQueries, "burst-queries", "comma-separated queries a -burst draws its estimates from; empty draws from every query of -queries. A burst of tenant-wide tables reads every series of the tenant N times at once: name the single-metric queries on a large tenant")
+	f.Int64Var(&c.maxTruthSeries, "max-truth-series", 1_000_000, "most series a PromQL truth may count, going by the estimate, which is then always sent first. A grouped truth over it is replaced by the per-group truth of the largest groups that fit, a group or name over it is skipped, and a pair with nothing left is refused as truth_too_large without any PromQL query. Query sharding keeps each shard under the per-query limits, so without this a truth of millions of series can fill the queriers. 0 sends every truth")
 	f.BoolVar(&c.estimateOnly, "estimate-only", false, "send only the estimate of each pair, without its PromQL truth, to measure the estimate's latency and cost apart from PromQL's, sent without X-Read-Consistency: strong as a dashboard sends them; nothing is compared")
 	f.StringVar(&c.scenarioPath, "scenario", "", "YAML file of hand-written pairs, each run every round next to the drawn ones; see the README")
 }
@@ -150,6 +154,14 @@ func (c *config) validate() error {
 	}
 	if c.boundsChecks < 0 || (c.boundsChecks > 0 && c.boundsMaxRanges <= 0) {
 		return errors.New("-bounds-checks must not be negative, and -bounds-max-ranges must be positive")
+	}
+	for _, q := range c.burstQueries {
+		if !slices.Contains(allQueries, q) {
+			return fmt.Errorf("unknown query %q in -burst-queries, want one of %s", q, strings.Join(allQueries, ", "))
+		}
+	}
+	if c.maxTruthSeries < 0 {
+		return errors.New("-max-truth-series must not be negative")
 	}
 	if c.burst < 0 || c.burst > maxBurst || c.burstBounds < 0 || c.burstBounds > maxBurst {
 		return fmt.Errorf("-burst and -burst-bounds must be between 0 and %d", maxBurst)
@@ -226,12 +238,13 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 	}
 	rng := rand.New(rand.NewPCG(seed, seed))
 	r := &runner{
-		client:        &client{baseURL: strings.TrimRight(cfg.address, "/"), tenant: cfg.tenant, clusterLabel: cfg.clusterLabel, http: &http.Client{Timeout: cfg.timeout}, eventualEstimates: cfg.estimateOnly},
-		m:             m,
-		logger:        logger,
-		gap:           cfg.gap,
-		edgeSlack:     cfg.edgeSlack,
-		fallbackNames: cfg.fallbackNames,
+		client:         &client{baseURL: strings.TrimRight(cfg.address, "/"), tenant: cfg.tenant, clusterLabel: cfg.clusterLabel, http: &http.Client{Timeout: cfg.timeout}, eventualEstimates: cfg.estimateOnly},
+		m:              m,
+		logger:         logger,
+		gap:            cfg.gap,
+		edgeSlack:      cfg.edgeSlack,
+		fallbackNames:  cfg.fallbackNames,
+		maxTruthSeries: cfg.maxTruthSeries,
 	}
 	pcfg := cfg.pairs
 	pcfg.matcherLabel = cfg.targets.matcherLabel
@@ -261,7 +274,7 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 			rng.Shuffle(len(cands), func(i, j int) { cands[i], cands[j] = cands[j], cands[i] })
 			if (cfg.burst > 0 || cfg.burstBounds > 0) && (lastBurst.IsZero() || t.Sub(lastBurst) >= cfg.burstInterval) {
 				r.sleep(ctx)
-				r.burst(ctx, cands, cfg.burst)
+				r.burst(ctx, burstCandidates(cands, cfg.burstQueries), cfg.burst)
 				if w, ok := firstWindow(cfg.windows.windows(t), windowBlocks); ok && cfg.burstBounds > 0 {
 					r.sleep(ctx)
 					r.burstBounds(ctx, w, cfg.burstBounds)
@@ -339,4 +352,18 @@ func firstWindow(ws []window, kind string) (window, bool) {
 		}
 	}
 	return window{}, false
+}
+
+// burstCandidates are the pairs a burst draws from: those of the given queries, or all of them when none is given.
+func burstCandidates(cands []pair, queries []string) []pair {
+	if len(queries) == 0 {
+		return cands
+	}
+	var out []pair
+	for _, p := range cands {
+		if slices.Contains(queries, p.query) {
+			out = append(out, p)
+		}
+	}
+	return out
 }

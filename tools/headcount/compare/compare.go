@@ -39,6 +39,7 @@ const (
 	classMemoryLimit     = "memory_limit"     // the estimate refused the request on the cardinality estimate memory limit (422)
 	classGroupsLimit     = "groups_limit"     // the estimate refused the request on max_groups (422)
 	classEstimateRefused = "estimate_refused" // the estimate refused the request on another limit (422) or another 4xx
+	classTruthTooLarge   = "truth_too_large"  // the truth was not sent: the estimate counts more series for it than -max-truth-series
 	classPromQLLimit     = "promql_limit"     // the truth hit a fetched-series, chunk or other query limit (422 with a limit's error ID)
 	classBadRequest      = "bad_request"      // the request is invalid (400): it fails the same way every round
 	classThrottled       = "throttled"        // the query-frontend is throttling the tenant (429)
@@ -140,7 +141,13 @@ func classify(r *estimateResponse, d groupDiff) (outcome, class string) {
 }
 
 // classifyRefusal names why a request failed, from its status and its error text.
+// errTruthTooLarge is the refusal of a truth that -max-truth-series kept from being sent.
+var errTruthTooLarge = errors.New("the estimate counts more series than -max-truth-series; the PromQL truth was not sent")
+
 func classifyRefusal(side string, err error) string {
+	if errors.Is(err, errTruthTooLarge) {
+		return classTruthTooLarge
+	}
 	var te *truncatedError
 	if errors.As(err, &te) {
 		return classTruncated
