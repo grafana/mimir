@@ -61,7 +61,7 @@
 * [FEATURE] Ingester, Block-builder: Add the experimental `-blocks-storage.tsdb.histogram-chunk-encoding` flag (per-tenant `histogram_chunk_encoding` limit) to select the encoding used for new native histogram chunks (`histogram` or `histogram_st`). `histogram_st` selects the start-timestamp-capable encodings for both integer and float histogram chunks. The overrides-exporter can export it as a numeric value (`5` for `histogram`, `8` for `histogram_st`) when `histogram_chunk_encoding` is added to `-overrides-exporter.enabled-metrics`. #16705
 * [FEATURE] Query-frontend: Add the experimental `-query-frontend.cardinality-estimation-cache.*` flags to store cardinality estimates in a dedicated memcached cache instead of the results cache. Disabled by default. #17173
 * [FEATURE] Distributor: Ingest valid samples and native histograms even when other samples in the same series fail validation. Previously, the entire series was discarded. The metrics `cortex_discarded_samples_total` and `cortex_discarded_attributed_samples_total` now count each discarded sample or histogram. #17151
-* [FEATURE] Ingester: Add the experimental `/ingester/label_churn/{tenant}` endpoint, which returns the label names whose values created the most new series in the lookback window, set with the `lookback` parameter (default `30m`). The `limit` parameter (default `30`) sets the maximum number of returned label names. Enable it with `-ingester.label-churn-enabled`. #17080
+* [FEATURE] Ingester: Add experimental label churn detection, which shows the label names whose values create the most new series on the `/ingester/tsdb/{tenant}/label_churn` page. Enable it with `-ingester.label-churn-enabled`. #17080 #17403
 * [ENHANCEMENT] Ingester: The `/ingester/ring` page links each ingester to its `/ingester/tenants` page, set with the experimental `-ingester.ring.status-page-ingester-link-template`. The `/ingester/tenants` page shows and sorts by the head series of each tenant. The `/ingester/tsdb/{tenant}` page links to the label churn of the tenant when it's enabled. #17285
 * [ENHANCEMENT] API: OTLP translation headers (`-api.otlp-translation-headers-enabled`) are now stable and no longer experimental. The flag remains disabled by default. #17076
 * [ENHANCEMENT] Store-gateway: Emit exponential native histograms for `cortex_bucket_stores_blocks_sync_seconds` alongside existing classic buckets. #17077
@@ -121,6 +121,7 @@
 * [ENHANCEMENT] Query-scheduler: Add the `cortex_query_scheduler_max_outstanding_requests_per_tenant` metric, which exposes the value of `-query-scheduler.max-outstanding-requests-per-tenant`. #17299
 * [ENHANCEMENT] Store-gateway: Reduce the memory usage and garbage collection pressure of loaded sparse index-headers. #16266
 * [BUGFIX] Ruler: Fix the rule group API returning rule expressions with changed leading whitespace when they are YAML block scalars with an indentation indicator. The API now responds with YAML indented by 2 spaces instead of 4. #17400
+* [ENHANCEMENT] Compactor: Use the last tenant list for blocks cleanup when listing the bucket is slow or fails. #17335
 * [BUGFIX] Ruler: Count write requests rejected by the tenant request-rate, ingestion-rate or active-series limits as `client_error` in `cortex_ruler_write_requests_failed_total`, so they no longer trigger `MimirRulerTooManyFailedPushes`. Ingester overload is still counted as `server_error`. #17302
 * [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
 * [BUGFIX] Store-gateway: Allow cancelling prepare-shutdown when the sync directory does not exist. #16049
@@ -217,6 +218,8 @@
 * [ENHANCEMENT] Dashboards: Add the "Query-frontend – memcached-cardinality" row to the "Mimir / Queries" dashboard. Set `cache_cardinality_enabled: true` to show the row. #17275
 * [ENHANCEMENT] Dashboards: Add the "Sharded queries / sec" panel to the "Query-frontend – query sharding" row of the "Mimir / Queries" dashboard. #17275
 * [ENHANCEMENT] Dashboards: Add the "Query-scheduler reservations" row to the "Mimir / Queries" dashboard and add the "Reservation errors" panel to the "Query-frontend" row. Set `queue_reservation_enabled: true` to enable. #17296
+* [ENHANCEMENT] Dashboards: On the "Mimir / Top tenants" dashboard, add % of total columns and pie charts, and links to the "Mimir / Tenants" dashboard. #17406
+* [ENHANCEMENT] Alerts: Add `MimirCompactorNotDiscoveringTenants` alert. #17335
 * [BUGFIX] Alerts: Include ruler `server_error` failures in `MimirRulerTooManyFailedPushes` and `MimirRulerTooManyFailedQueries`, while retaining legacy failure labels. #16725
 * [BUGFIX] Alerts: `MimirMemberlistBridgeZoneUnavailable` fired for every zone whenever kube-state-metrics stopped exporting the memberlist-bridge Pod series, because it compared a Deployment-object series against Pod-object series with `unless`. It now compares the Deployment's ready replica count against its spec replica count, so both operands come from one object and a missing export suppresses the alert instead of firing it. #16774
 * [BUGFIX] Alerts: Support `keda_scaler_detail_errors_total` in `MimirAutoscalerKedaFailing`, with a fallback to `keda_scaler_errors` for older KEDA versions. #16739
@@ -238,6 +241,7 @@
 * [FEATURE] Enable active query tracking in read path components to keep track of running queries during crashes. #16876 #16981
 * [FEATURE] Allow common (`mimirComponentAnnotations`) and per-component annotations (`<component>_annotations`) to be set on each Mimir component. #17143
 * [FEATURE] Add the optional `memcached-cardinality` cache for query-frontend cardinality estimates. Set `cache_cardinality_enabled: true` to deploy it. Requires `cache_frontend_enabled`. #17173
+* [FEATURE] Add the experimental usage-tracker. Set `usage_tracker_enabled: true` and `usage_tracker_snapshots_bucket_name` to deploy it. Requires `ingest_storage_enabled`. Set `usage_tracker_hpa_enabled: true` to autoscale it with KEDA, and `usage_tracker_deletion_protection_enabled: true` to protect its StatefulSets from deletion. With `multi_zone_write_path_enabled`, each usage-tracker zone runs in its own availability zone. #17387
 * [ENHANCEMENT] Add `multi_zone_ingester_zpdb_cross_zone_eviction_delay` config option to set `crossZoneEvictionDelay` on the ingester `ZoneAwarePodDisruptionBudget`. Defaults to `20m` when `ingest_storage_enabled` is true, and to unset otherwise. #16271
 * [ENHANCEMENT] Compactor: Allow the drain autoscaler's speed estimates to be read from recording rules. #16283
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.39.0. #16440

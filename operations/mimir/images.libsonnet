@@ -20,6 +20,7 @@
     store_gateway: self.mimir,
     query_scheduler: self.mimir,
     overrides_exporter: self.mimir,
+    usage_tracker: self.mimir,
 
     query_tee: 'grafana/query-tee:3.2.5',
     continuous_test: self.mimir,

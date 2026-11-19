@@ -61,7 +61,7 @@ func TestIngester_TenantsHandlers(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, rec.Code)
 		require.Contains(t, rec.Body.String(), "<li>Number of series: 1</li>")
-		require.Contains(t, rec.Body.String(), fmt.Sprintf(`<a href="../label_churn/%s">Label churn</a>`, userID))
+		require.Contains(t, rec.Body.String(), fmt.Sprintf(`<a href="%s/label_churn">Label churn</a>`, userID))
 	})
 
 	t.Run("tenant TSDB for unknown tenant", func(t *testing.T) {

@@ -40,6 +40,7 @@ const (
 	defaultUpdateBlocksConcurrency       = 1
 	cleanUsersServiceStarting            = "clean_up_users_during_startup"
 	cleanUsersServiceTick                = "clean_up_users"
+	scanUsersMaxWait                     = 5 * time.Minute
 )
 
 type BlocksCleanerConfig struct {
@@ -91,7 +92,7 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 	c := &BlocksCleaner{
 		cfg:                   cfg,
 		bucketClient:          bucketClient,
-		usersScanner:          mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger),
+		usersScanner:          mimir_tsdb.NewUsersScanner(bucketClient, ownUser, scanUsersMaxWait, logger, prometheus.WrapRegistererWithPrefix("cortex_compactor_block_cleanup_", reg)),
 		cfgProvider:           cfgProvider,
 		singleFlight:          concurrency.NewLimitedConcurrencySingleFlight(cfg.CleanupConcurrency),
 		logger:                log.With(logger, "component", "cleaner"),
@@ -169,6 +170,7 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 }
 
 func (c *BlocksCleaner) stopping(error) error {
+	c.usersScanner.Stop()
 	c.singleFlight.Wait()
 	return nil
 }

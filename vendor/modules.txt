@@ -718,7 +718,7 @@ github.com/googleapis/gax-go/v2/iterator
 # github.com/gorilla/mux v1.8.1
 ## explicit; go 1.20
 github.com/gorilla/mux
-# github.com/grafana/dskit v0.0.0-20261113142543-e640b7cda9b5
+# github.com/grafana/dskit v0.0.0-20261118194849-a94746663b7a
 ## explicit; go 1.26.10
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -1366,7 +1366,7 @@ github.com/thanos-io/objstore/tracing/opentelemetry
 ## explicit; go 1.24
 github.com/tinylib/msgp/msgp
 github.com/tinylib/msgp/msgp/setof
-# github.com/tjhop/slog-gokit v0.2.0
+# github.com/tjhop/slog-gokit v0.2.2
 ## explicit; go 1.21
 github.com/tjhop/slog-gokit
 # github.com/tklauser/go-sysconf v0.4.0

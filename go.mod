@@ -32,7 +32,7 @@ require (
 	github.com/google/gopacket v1.1.19
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20261113142543-e640b7cda9b5
+	github.com/grafana/dskit v0.0.0-20261118194849-a94746663b7a
 	github.com/grafana/e2e v0.1.2-0.20261026011823-81b51f5a0481
 	github.com/grafana/gomemcache v0.0.0-20261112174412-3f2aa5dee9f7
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
@@ -68,7 +68,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
 	github.com/thanos-io/objstore v0.0.0-20260817070452-e42d91c337ee
-	github.com/tjhop/slog-gokit v0.2.0
+	github.com/tjhop/slog-gokit v0.2.2
 	github.com/twmb/franz-go v1.21.7
 	github.com/twmb/franz-go/pkg/kadm v1.18.1-0.20260529212035-11b03a277c72
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260820024614-9b174ed31afe

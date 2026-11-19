@@ -1094,7 +1094,9 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 		err := c.TrackSeriesAsync(t.Context(), "user-0", []uint64{series1Partition1})
 		require.NoError(t, err)
 
+		c.batcher.batchersMtx.RLock()
 		pb := c.batcher.batchers[partitions[0].Id]
+		c.batcher.batchersMtx.RUnlock()
 		require.NotNil(t, pb)
 		require.Equal(t, int64(0), pb.sizeThresholdExceeded.Load())
 
@@ -1765,6 +1767,9 @@ func TestUsageTrackerBatcherPartitionsGrowth(t *testing.T) {
 	// Create a batcher instance and verify that the batcher slice grows correctly as new partitions arrive.
 	batcher := newBatcher(1000, 1000*time.Hour, log.NewNopLogger(), nil)
 	t.Cleanup(batcher.stop)
+
+	batcher.batchersMtx.Lock()
+	defer batcher.batchersMtx.Unlock()
 
 	initialLength := len(batcher.batchers)
 	initialSlice := batcher.batchers
