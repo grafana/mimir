@@ -124,6 +124,17 @@ func skippedRefusals(truth answer) [][2]string {
 	return out
 }
 
+// truthSizeMargin is how much more a pair's window may hold than its name's series over the target window: a longer window adds the series that churned in and out.
+const truthSizeMargin = 4
+
+// truthFirstSafe reports whether the pair's truth may go before its estimate: with no -max-truth-series, or when the pair's name had at most a quarter of it over the target window.
+func (r *runner) truthFirstSafe(p pair) bool {
+	if r.maxTruthSeries == 0 {
+		return true
+	}
+	return p.knownSeries > 0 && p.knownSeries*truthSizeMargin <= r.maxTruthSeries
+}
+
 // largestSet asks for the estimate's -fallback-names largest groups one at a time, leaving out the groups over -max-truth-series.
 func (r *runner) largestSet(p pair, est *estimateResponse) truthSet {
 	label := p.groupBy
@@ -135,8 +146,8 @@ func (r *runner) largestSet(p pair, est *estimateResponse) truthSet {
 
 // run compares one pair, reruns it once if it mismatches, and records the result.
 func (r *runner) run(ctx context.Context, p pair) pairResult {
-	// A table asked for one group at a time needs the estimate's groups first, and so does the check against -max-truth-series.
-	estimateFirst := r.pairs%2 == 0 || p.perValue || r.maxTruthSeries > 0
+	// A table asked for one group at a time needs the estimate's groups first, and so does the check against -max-truth-series, unless the pair is known to be small.
+	estimateFirst := r.pairs%2 == 0 || p.perValue || !r.truthFirstSafe(p)
 	r.pairs++
 	res := pairResult{Pair: p.String(), Order: "estimate_first"}
 	if !estimateFirst {

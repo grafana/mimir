@@ -106,6 +106,8 @@ type targets struct {
 	facetRefusals []string
 	// tenantSeries is the tenant's series over the target window, the total of its name table.
 	tenantSeries int64
+	// nameSeries holds each name's series over the target window, when the source gives them.
+	nameSeries map[string]int64
 }
 
 // facet is a label of one metric name and its values with the most series.
@@ -148,6 +150,8 @@ type targetWindows struct {
 // rows are one label's values by series count, largest first.
 type rows struct {
 	values []string
+	// series holds each value's series: a bounds range's upper, or the heads' in-memory count. The label values endpoint leaves it empty.
+	series map[string]int64
 	// total is an upper value of the series the values count over window: a bounds range's upper total, or the heads' in-memory total.
 	total  int64
 	window window
@@ -173,9 +177,10 @@ func readRows(ctx context.Context, c *client, cfg targetConfig, tw targetWindows
 			if len(rng.Groups) == 0 {
 				continue
 			}
-			out := rows{total: rng.UpperTotal, window: window{kind: windowBlocks, start: rng.Start, end: rng.End}}
+			out := rows{total: rng.UpperTotal, window: window{kind: windowBlocks, start: rng.Start, end: rng.End}, series: map[string]int64{}}
 			for _, g := range rng.Groups {
 				out.values = append(out.values, g.Value)
+				out.series[g.Value] = g.Upper
 			}
 			return out, nil
 		}
@@ -189,9 +194,10 @@ func readRows(ctx context.Context, c *client, cfg targetConfig, tw targetWindows
 	if res.Head == nil {
 		return rows{}, fmt.Errorf("the window [%d, %d) doesn't reach the ingesters", tw.recent.start, tw.recent.end)
 	}
-	out := rows{total: res.Head.InMemoryTotal, window: tw.recent}
+	out := rows{total: res.Head.InMemoryTotal, window: tw.recent, series: map[string]int64{}}
 	for _, g := range res.Head.Groups {
 		out.values = append(out.values, g.Value)
+		out.series[g.Value] = g.InMemory
 	}
 	return out, nil
 }
@@ -237,6 +243,12 @@ func pickTargets(ctx context.Context, c *client, cfg targetConfig, tw targetWind
 	}
 	t.tenantSeries = byName.total
 	t.names = namesByRank(byName.values, cfg.ranks)
+	t.nameSeries = map[string]int64{}
+	for _, n := range t.names {
+		if s, ok := byName.series[n]; ok {
+			t.nameSeries[n] = s
+		}
+	}
 	if len(t.names) == 0 {
 		return nil, fmt.Errorf("the tenant has no series in [%d, %d)", byName.window.start, byName.window.end)
 	}
@@ -350,6 +362,8 @@ type pair struct {
 	limit int
 	// perValue skips the grouped truth and counts the estimate's largest groups one at a time.
 	perValue bool
+	// knownSeries is the series of the pair's metric name over the target window, 0 when unknown. It lets a pair small enough send its truth first.
+	knownSeries int64
 }
 
 func (p pair) selector() string { return selector(p.matchers...) }
@@ -431,10 +445,22 @@ func candidates(queries []string, t *targets, windows []window, cfg pairConfig, 
 			default:
 				continue
 			}
+			if usesName(q) {
+				p.knownSeries = t.nameSeries[name]
+			}
 			out = append(out, p)
 		}
 	}
 	return out
+}
+
+// usesName reports whether the query's selector is the drawn name's, alone or with more matchers, so it counts at most the name's series.
+func usesName(q string) bool {
+	switch q {
+	case queryMetricByLabel, queryMetricTotal, queryMetricNotEqual, queryMetricRegex, queryTwoMatchers:
+		return true
+	}
+	return false
 }
 
 func selector(ms ...*labels.Matcher) string {

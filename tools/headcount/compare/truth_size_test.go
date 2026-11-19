@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"math/rand/v2"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -87,4 +88,35 @@ func TestBurstCandidates(t *testing.T) {
 	assert.Equal(t, cands, burstCandidates(cands, nil))
 	assert.Equal(t, []pair{{query: queryMetricTotal}}, burstCandidates(cands, []string{queryMetricTotal}))
 	assert.Empty(t, burstCandidates(cands, []string{queryNameRegex}))
+}
+
+// TestRunnerAlternatesSmallPairs: a pair whose name is known to be small alternates its order; one of unknown or large size sends the estimate first.
+func TestRunnerAlternatesSmallPairs(t *testing.T) {
+	_, srv := newFakeFrontend(t, testSeries()...)
+	r, _ := newTestRunner(srv)
+	r.maxTruthSeries = 100
+	small := metricPair("pod")
+	small.knownSeries = 25
+	assert.Equal(t, "estimate_first", r.run(context.Background(), small).Order)
+	assert.Equal(t, "promql_first", r.run(context.Background(), small).Order)
+	large := metricPair("pod")
+	large.knownSeries = 26
+	r.pairs = 1
+	assert.Equal(t, "estimate_first", r.run(context.Background(), large).Order, "over a quarter of the limit")
+	unknown := metricPair("pod")
+	r.pairs = 1
+	assert.Equal(t, "estimate_first", r.run(context.Background(), unknown).Order, "size unknown")
+	r.maxTruthSeries = 0
+	r.pairs = 1
+	assert.Equal(t, "promql_first", r.run(context.Background(), unknown).Order, "no limit")
+}
+
+func TestCandidatesKnownSeries(t *testing.T) {
+	tg := &targets{names: []string{"up"}, labels: map[string][]string{"up": {"pod"}}, facets: map[string]facet{}, tenantLabels: []string{"pod"}, nameSeries: map[string]int64{"up": 6}}
+	cands := candidates([]string{queryMetricTotal, queryMetricByLabel, queryTenantByName}, tg, []window{testWindow}, pairConfig{}, rand.New(rand.NewPCG(1, 1)))
+	got := map[string]int64{}
+	for _, p := range cands {
+		got[p.query] = p.knownSeries
+	}
+	assert.Equal(t, map[string]int64{queryMetricTotal: 6, queryMetricByLabel: 6, queryTenantByName: 0}, got)
 }
