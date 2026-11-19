@@ -866,7 +866,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg *alertspb.AlertConfigDesc) (*Al
 	// The operator supplies the fallback config.
 	// Run the user config checks only on a config that the user stored.
 	if !usingFallbackConfig {
-		if validationErr := validateUserAlertmanagerConfig(amCfg, am.cfg); validationErr != nil {
+		if validationErr := validateUserSuppliedAlertmanagerConfig(amCfg, am.cfg); validationErr != nil {
 			if slices.Contains(am.cfg.TenantsExemptFromConfigValidationForExistingConfig, cfg.User) {
 				level.Warn(am.logger).Log("msg", "configuration failed validation during loading, this configuration should never have been accepted or the stored configuration is no longer considered valid, but the tenant is explicitly allowed to load invalid config", "user", cfg.User, "err", validationErr)
 			} else {

@@ -1330,7 +1330,7 @@ user2:
 	require.YAMLEq(t, expectedYaml, string(body))
 }
 
-func TestValidateUserAlertmanagerConfig(t *testing.T) {
+func TestValidateUserSuppliedAlertmanagerConfig(t *testing.T) {
 	tests := map[string]struct {
 		input                                 interface{}
 		requireExplicitSNSReceiverCredentials bool
@@ -1880,7 +1880,7 @@ func TestValidateUserAlertmanagerConfig(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			cfg := &MultitenantAlertmanagerConfig{}
 			cfg.RequireExplicitSNSReceiverCredentials = testData.requireExplicitSNSReceiverCredentials
-			err := validateUserAlertmanagerConfig(testData.input, cfg)
+			err := validateUserSuppliedAlertmanagerConfig(testData.input, cfg)
 			assert.ErrorIs(t, err, testData.expected)
 		})
 	}
