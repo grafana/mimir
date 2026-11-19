@@ -1705,6 +1705,44 @@ func TestMultitenantAlertmanager_LoadValidationAppliesToTenantConfigOnly(t *test
 	})
 }
 
+// A Grafana config takes the global section of the fallback config.
+// The result also holds the tenant receivers.
+// So the load-time checks must still run on it.
+func TestMultitenantAlertmanager_LoadValidationAppliesToGrafanaConfigWithFallbackGlobal(t *testing.T) {
+	const fallbackConfigWithGlobalFile = `
+global:
+  slack_api_url_file: /secrets
+receivers:
+- name: default-receiver
+route:
+  receiver: 'default-receiver'
+`
+
+	ctx := t.Context()
+	cfg := mockAlertmanagerConfig(t)
+	store := prepareInMemoryAlertStore()
+
+	am := setupSingleMultitenantAlertmanager(t, cfg, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
+	am.fallbackConfig = fallbackConfigWithGlobalFile
+
+	grafanaCfg := alertspb.GrafanaAlertConfigDesc{
+		User:        "user1",
+		RawConfig:   grafanaConfig,
+		Promoted:    true,
+		ExternalUrl: "http://test.grafana.com",
+	}
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, grafanaCfg))
+	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{User: "user1"}))
+	require.NoError(t, am.loadAndSyncConfigs(ctx, reasonPeriodic))
+
+	_, exists := am.alertmanagers["user1"]
+	require.False(t, exists)
+
+	mergedCfg, err := createUsableGrafanaConfig(am.logger, grafanaCfg, am.fallbackConfig)
+	require.NoError(t, err)
+	require.ErrorIs(t, am.setConfig(mergedCfg), errFileNotAllowed)
+}
+
 // This test checks that the fallback configuration does not overwrite a configuration
 // written to storage before it is picked up by the instance.
 func TestMultitenantAlertmanager_ServeHTTPBeforeSyncFailsIfConfigExists(t *testing.T) {
