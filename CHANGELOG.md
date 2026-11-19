@@ -1,5 +1,11 @@
 # Changelog
 
+## unreleased
+
+### Grafana Mimir
+
+* [BUGFIX] Alertmanager: Fix tenants without a configuration getting no Alertmanager when the fallback configuration (`-alertmanager.configs.fallback`) fails validation. For example, the fallback loads files or has an SNS receiver without explicit credentials. The load-time validation added in #17317 now checks tenant configuration only. #17437
+
 ## 2.17.12
 
 ### Grafana Mimir
