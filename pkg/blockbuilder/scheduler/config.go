@@ -23,6 +23,8 @@ type Config struct {
 	EnqueueInterval     time.Duration `yaml:"enqueue_interval" category:"experimental"`
 	JobFailuresAllowed  int           `yaml:"job_failures_allowed" category:"advanced"`
 
+	OffsetMarkerRefreshInterval time.Duration `yaml:"offset_marker_refresh_interval" category:"experimental"`
+
 	// Config parameters defined outside the block-builder-scheduler config and are injected dynamically.
 	Kafka        ingest.KafkaConfig  `yaml:"-"`
 	Compartments compartments.Config `yaml:"-"`
@@ -39,6 +41,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxJobsPerPartition, "block-builder-scheduler.max-jobs-per-partition", 1, "The maximum number of jobs that can be scheduled for a partition.")
 	f.DurationVar(&cfg.EnqueueInterval, "block-builder-scheduler.enqueue-interval", 2*time.Second, "How frequently to enqueue pending jobs.")
 	f.IntVar(&cfg.JobFailuresAllowed, "block-builder-scheduler.job-failures-allowed", 2, "The maximum number of times a job can fail before errors are emitted.")
+	f.DurationVar(&cfg.OffsetMarkerRefreshInterval, "block-builder-scheduler.offset-marker-refresh-interval", 1*time.Hour, "How often to rewrite the offset marker when no offset has changed.")
 }
 
 func (cfg *Config) Validate() error {
@@ -74,6 +77,9 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.JobFailuresAllowed < 0 {
 		return fmt.Errorf("job failures allowed (%d) must be non-negative", cfg.JobFailuresAllowed)
+	}
+	if cfg.OffsetMarkerRefreshInterval <= 0 {
+		return fmt.Errorf("offset marker refresh interval (%d) must be positive", cfg.OffsetMarkerRefreshInterval)
 	}
 	return nil
 }

@@ -62,7 +62,7 @@ func mustSchedulerWithKafkaAddrAndDialer(t *testing.T, addr string, dialer diale
 	}
 
 	reg := prometheus.NewPedanticRegistry()
-	sched, err := New(cfg, test.NewTestingLogger(t), reg)
+	sched, err := New(cfg, nil, test.NewTestingLogger(t), reg)
 	sched.adminClients = []*kadm.Client{kadm.NewClient(cli)}
 	require.NoError(t, err)
 	return sched, cli
@@ -110,7 +110,7 @@ func TestService(t *testing.T) {
 		}
 
 		reg := prometheus.NewPedanticRegistry()
-		sched, err := New(cfg, test.NewTestingLogger(t), reg)
+		sched, err := New(cfg, nil, test.NewTestingLogger(t), reg)
 		require.NoError(t, err)
 		sched.adminClients = []*kadm.Client{kadm.NewClient(cli)}
 
@@ -2757,7 +2757,7 @@ func mustMultiClusterSchedulerWithClusters(t *testing.T, clusters []testCluster)
 	}
 
 	reg := prometheus.NewPedanticRegistry()
-	sched, err := New(cfg, test.NewTestingLogger(t), reg)
+	sched, err := New(cfg, nil, test.NewTestingLogger(t), reg)
 	require.NoError(t, err)
 
 	clients := make([]*kgo.Client, len(clusters))

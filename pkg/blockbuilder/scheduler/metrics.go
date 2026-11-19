@@ -20,6 +20,13 @@ type schedulerMetrics struct {
 	jobGapDetected         *prometheus.CounterVec
 	startupJobsSkipped     prometheus.Counter
 
+	offsetMarkerWrites        prometheus.Counter
+	offsetMarkerWriteFailures prometheus.Counter
+	offsetMarkerReadFailures  prometheus.Counter
+	offsetMarkerLastWrite     prometheus.Gauge
+	offsetMarkerMismatches    *prometheus.CounterVec
+	lookbackFallbacks         prometheus.Counter
+
 	// perClusterMetrics holds one set of metrics per cluster, indexed by cluster ID.
 	perClusterMetrics []singleClusterMetrics
 }
@@ -66,11 +73,40 @@ func newSchedulerMetrics(reg prometheus.Registerer, compartmentsEnabled bool, nu
 			Name: "cortex_blockbuilder_scheduler_startup_jobs_skipped_total",
 			Help: "The total number of observed jobs skipped during startup recovery for unexpected reasons (excludes jobs skipped because they were already committed).",
 		}),
+
+		offsetMarkerWrites: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_blockbuilder_scheduler_offset_marker_writes_total",
+			Help: "The total number of times the offset marker object was written to object storage.",
+		}),
+		offsetMarkerWriteFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_blockbuilder_scheduler_offset_marker_write_failures_total",
+			Help: "The total number of times writing the offset marker object failed.",
+		}),
+		offsetMarkerReadFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_blockbuilder_scheduler_offset_marker_read_failures_total",
+			Help: "The total number of times reading the offset marker object failed, or found one that could not be used.",
+		}),
+		offsetMarkerLastWrite: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_blockbuilder_scheduler_offset_marker_last_write_timestamp_seconds",
+			Help: "The Unix timestamp of the last successful write of the offset marker object.",
+		}),
+		offsetMarkerMismatches: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_blockbuilder_scheduler_offset_marker_startup_mismatch_total",
+			Help: "The number of partitions, at startup, whose offset in the marker object disagrees with the Kafka committed offset, by reason.",
+		}, []string{"reason"}),
+		lookbackFallbacks: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_blockbuilder_scheduler_lookback_fallback_partitions_total",
+			Help: "The number of partitions, at startup, that had no committed or planned offset and resumed from the lookback-on-no-commit time, skipping records that were still in Kafka. Those records are never built into blocks.",
+		}),
 	}
 
 	// Make sure the gap detection counters are pre-initialized. This avoids misleading blanks in the series on restart.
 	scm.jobGapDetected.WithLabelValues(offsetNamePlanned)
 	scm.jobGapDetected.WithLabelValues(offsetNameCommitted)
+
+	for _, r := range mismatchReasons {
+		scm.offsetMarkerMismatches.WithLabelValues(r)
+	}
 
 	scm.perClusterMetrics = newClusterMetrics(reg, compartmentsEnabled, numClusters)
 

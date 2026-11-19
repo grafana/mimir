@@ -1706,7 +1706,13 @@ func (t *Mimir) initBlockBuilderScheduler() (services.Service, error) {
 	t.Cfg.BlockBuilderScheduler.Kafka = t.Cfg.IngestStorage.KafkaConfig
 	t.Cfg.BlockBuilderScheduler.Compartments = t.Cfg.Compartments
 
-	s, err := blockbuilderscheduler.New(t.Cfg.BlockBuilderScheduler, util_log.Logger, t.Registerer)
+	// The scheduler records its committed offsets in object storage, in the blocks storage bucket.
+	bkt, err := bucket.NewClient(context.Background(), t.Cfg.BlocksStorage.Bucket, "block-builder-scheduler", util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, errors.Wrap(err, "block-builder-scheduler bucket client")
+	}
+
+	s, err := blockbuilderscheduler.New(t.Cfg.BlockBuilderScheduler, bkt, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "block-builder-scheduler init")
 	}
