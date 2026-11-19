@@ -78,6 +78,8 @@ message Stats {
   uint64 native_lookup_response_bytes = 21;
   // The series with native metadata the ingesters' lookups matched, for the native metadata prototype.
   uint64 native_lookup_series_visited = 22;
+  // The selects of target_info that native info() made with the join instead, for the native metadata prototype.
+  uint64 native_target_info_fallbacks = 23;
 }
 
 // SelectorCardinality records the number of series selected by a single selector over a time range,
