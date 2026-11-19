@@ -66,6 +66,8 @@ type groupDiff struct {
 // answer is one side's counts per group.
 type answer struct {
 	counts map[string]int64
+	// skipped holds, for a truth asked one value at a time, the class of each value whose query a PromQL limit refused; those values have no truth.
+	skipped map[string]string
 }
 
 // estimateAnswer flattens the route's table.

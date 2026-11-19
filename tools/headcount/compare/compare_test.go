@@ -814,6 +814,23 @@ func TestRunnerBurst(t *testing.T) {
 	assert.Equal(t, 2.0, refused)
 }
 
+// TestRunnerPerValueSkipsRefusedName: a tenant-wide table truthed one name at a time compares the names PromQL answers and records the refused one.
+func TestRunnerPerValueSkipsRefusedName(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	f.truthHook = func(q string, _ time.Duration, _ map[string]int64) int {
+		if strings.Contains(q, `"http_requests_total"`) {
+			return http.StatusUnprocessableEntity
+		}
+		return 0
+	}
+	r, m := newTestRunner(srv)
+	p := pair{query: queryTenantByName, matchers: allSeriesMatchers(), groupBy: "__name__", window: testWindow, perValue: true}
+	res := r.run(context.Background(), p)
+	assert.Equal(t, outcomePass, res.Outcome)
+	assert.Contains(t, res.Refusals, sideTruth+"_per_value http_requests_total:"+classPromQLLimit)
+	assert.Equal(t, 1.0, counterSum(m.refusals, map[string]string{"query": queryTenantByName, "side": sideTruth, "class": classPromQLLimit}))
+}
+
 func TestBurstStatus(t *testing.T) {
 	assert.Equal(t, "200", burstStatus(&estimateResponse{}, nil))
 	assert.Equal(t, "422", burstStatus(nil, &httpError{status: 422}))

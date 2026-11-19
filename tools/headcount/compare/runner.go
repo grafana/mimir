@@ -40,6 +40,7 @@ const (
 
 	// queryFacetProbe labels the refusals of facet probes during target picking.
 	queryFacetProbe = "facet_probe"
+	queryTargets    = "targets" // the bounds requests target picking reads names and values from
 )
 
 type runner struct {
@@ -99,6 +100,25 @@ func (s truthSet) restrict() map[string]bool {
 	for _, n := range s.values {
 		out[n] = true
 	}
+	return out
+}
+
+// restrictFor is the set's values that truth answered: a value it skipped has no truth to compare with.
+func (s truthSet) restrictFor(truth answer) map[string]bool {
+	out := s.restrict()
+	for v := range truth.skipped {
+		delete(out, v)
+	}
+	return out
+}
+
+// skippedRefusals names the values truth skipped, each with its refusal class, sorted.
+func skippedRefusals(truth answer) [][2]string {
+	out := make([][2]string, 0, len(truth.skipped))
+	for v, class := range truth.skipped {
+		out = append(out, [2]string{v, class})
+	}
+	slices.SortFunc(out, func(x, y [2]string) int { return strings.Compare(x[0], y[0]) })
 	return out
 }
 
@@ -169,7 +189,11 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 	}
 
 	estA := estimateAnswer(est)
-	diffs := compareAnswers(est, estA, truth, set.restrict())
+	for _, s := range skippedRefusals(truth) {
+		res.Refusals = append(res.Refusals, sideTruth+"_per_value "+s[0]+":"+s[1])
+		res.refused = append(res.refused, [2]string{sideTruth, s[1]})
+	}
+	diffs := compareAnswers(est, estA, truth, set.restrictFor(truth))
 	if hasMismatch(diffs) {
 		est, truth, diffs = r.explain(ctx, p, estimateFirst, set, est, truth, diffs, &res)
 	}
@@ -227,7 +251,12 @@ func (r *runner) explain(ctx context.Context, p pair, estimateFirst bool, set tr
 	} else {
 		est, truth = est2, truth2
 		// The rerun is what counts. A group that mismatched and no longer does changed between the calls: the data did if its truth changed, and the estimate isn't deterministic if only the estimate did. One that still mismatches stays a mismatch, with the rerun's counts.
-		rerun := compareAnswers(est2, estimateAnswer(est2), truth2, set.restrict())
+		// A value either truth skipped has nothing to compare.
+		restrict := set.restrictFor(truth2)
+		for v := range truth.skipped {
+			delete(restrict, v)
+		}
+		rerun := compareAnswers(est2, estimateAnswer(est2), truth2, restrict)
 		still := map[string]bool{}
 		for _, d := range rerun {
 			still[d.Value] = true
@@ -337,6 +366,8 @@ func (r *runner) truth(ctx context.Context, p pair, set truthSet, edgeSlack time
 		return counts, err
 	}
 	if set.values != nil {
+		// A value over a PromQL limit is skipped, so the other values are still compared; the truth fails only when every value is.
+		var lastLimit error
 		for i, v := range set.values {
 			if i > 0 {
 				r.sleep(ctx)
@@ -345,9 +376,20 @@ func (r *runner) truth(ctx context.Context, p pair, set truthSet, edgeSlack time
 			ms := append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, set.label, v)}, withoutMatchersOn(p.matchers, set.label)...)
 			counts, err := query(build(ms, set.label, p.window.length()), set.label, p.window.end-1)
 			if err != nil {
+				if class := classifyRefusal(sideTruth, err); class == classPromQLLimit {
+					if out.skipped == nil {
+						out.skipped = map[string]string{}
+					}
+					out.skipped[v] = class
+					lastLimit = err
+					continue
+				}
 				return out, total, err
 			}
 			out.counts[v] = counts[v]
+		}
+		if len(set.values) > 0 && len(out.skipped) == len(set.values) {
+			return out, total, lastLimit
 		}
 		return out, total, nil
 	}

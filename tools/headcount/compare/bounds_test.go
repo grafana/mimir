@@ -400,3 +400,54 @@ func TestRunBoundsChecks(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, sum.mismatched)
 }
+
+// TestBoundsCheckPerValueSkipsRefusedName: a name whose PromQL truth a query limit refuses is skipped and recorded, and the other names are still checked.
+func TestBoundsCheckPerValueSkipsRefusedName(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	f.truthHook = func(q string, _ time.Duration, _ map[string]int64) int {
+		if strings.Contains(q, `"http_requests_total"`) {
+			return http.StatusUnprocessableEntity
+		}
+		return 0
+	}
+	r, m := newTestRunner(srv)
+	cfg := testBoundsConfig
+	cfg.ranks, cfg.perValue = []int{1, 2}, true
+	outcomes := r.boundsCheck(context.Background(), testWindow, cfg)
+	assert.Equal(t, []string{outcomePass, outcomePass}, outcomes)
+	assert.Equal(t, 1.0, boundsGroups(m, queryBoundsCheck, outcomePass, classWithinBounds), "up is checked")
+	assert.Equal(t, 1.0, counterSum(m.refusals, map[string]string{"query": queryBoundsCheck, "side": sideTruth, "class": classPromQLLimit}))
+	assert.Equal(t, 2.0, boundsGroups(m, queryBoundsExact, outcomePass, classWithinBounds), "the exact route needs no PromQL")
+
+	f.truthHook = func(string, time.Duration, map[string]int64) int { return http.StatusUnprocessableEntity }
+	outcomes = r.boundsCheck(context.Background(), testWindow, cfg)
+	assert.Equal(t, outcomeRefusal, outcomes[0], "every name refused refuses the check")
+}
+
+// TestLogBoundsAnswer: one line per range with its blocks, totals and width, and the run's first bounds request marked as cold.
+func TestLogBoundsAnswer(t *testing.T) {
+	var buf strings.Builder
+	logger := log.NewLogfmtLogger(&buf)
+	ans := &boundsResponse{Ranges: []boundsRange{{Start: 0, End: 7200000, MainSet: true, MainBlocks: 4, OtherBlocks: 2, GroupCount: 3, LowerTotal: 100, UpperTotal: 110}}, first: true}
+	logBoundsAnswer(logger, queryBoundsCheck, testWindow, ans, time.Second)
+	ans.first = false
+	logBoundsAnswer(logger, queryBoundsCheck, testWindow, ans, time.Second)
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	require.Len(t, lines, 2)
+	for _, want := range []string{`msg="bounds range"`, "purpose=bounds_check", "range=[0,7200000)", "main_blocks=4", "other_blocks=2", "lower_total=100", "upper_total=110", "total_width=0.1", "latency=1s", "first=true"} {
+		assert.Contains(t, lines[0], want)
+	}
+	assert.Contains(t, lines[1], "first=false")
+}
+
+// TestBoundsFirstRequest: only the run's first bounds request, whichever sent it, is marked first.
+func TestBoundsFirstRequest(t *testing.T) {
+	_, srv := newFakeFrontend(t, testSeries()...)
+	r, _ := newTestRunner(srv)
+	a, _, err := r.client.bounds(context.Background(), "__name__", testWindow.start, testWindow.end, 0)
+	require.NoError(t, err)
+	b, _, err := r.client.bounds(context.Background(), "__name__", testWindow.start, testWindow.end, 0)
+	require.NoError(t, err)
+	assert.True(t, a.first)
+	assert.False(t, b.first)
+}

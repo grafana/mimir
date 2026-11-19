@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/grafana/dskit/clusterutil"
@@ -31,6 +32,8 @@ type client struct {
 	clusterLabel string
 	// eventualEstimates sends estimates without X-Read-Consistency: strong, as a dashboard does, so their latency has no wait for the ingesters to catch up.
 	eventualEstimates bool
+	// boundsSent counts the bounds requests sent, so the run's first, read with cold caches, is told apart.
+	boundsSent atomic.Int64
 }
 
 // httpError is a non-200 answer. body is the error text of a Prometheus API error body, or else the body itself.
@@ -277,6 +280,9 @@ type boundsResponse struct {
 		End   int64 `json:"end"`
 	} `json:"not_covered,omitempty"`
 	Head *boundsHead `json:"head,omitempty"`
+
+	// first is set on the run's first bounds request.
+	first bool
 }
 
 // bounds asks the route in bounds mode for a lower and an upper count per groupBy value of each block range the window touches, and for the heads' counts when the window reaches the ingesters. Bounds mode takes no matchers. limit cuts each row set; 0 asks for all of it.
@@ -290,11 +296,13 @@ func (c *client) bounds(ctx context.Context, groupBy string, startMS, endMS int6
 	if limit > 0 {
 		params.Set("limit", strconv.Itoa(limit))
 	}
+	first := c.boundsSent.Add(1) == 1
 	var out boundsResponse
 	latency, err := c.get(ctx, "/prometheus/api/v1/cardinality/estimate", params, !c.eventualEstimates, &out)
 	if err != nil {
 		return nil, latency, err
 	}
+	out.first = first
 	return &out, latency, nil
 }
 

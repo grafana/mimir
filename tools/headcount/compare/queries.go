@@ -154,7 +154,7 @@ type rows struct {
 }
 
 // readRows reads up to limit values of groupBy with the most series from the configured source, calling next before each request.
-func readRows(ctx context.Context, c *client, cfg targetConfig, tw targetWindows, groupBy string, limit int, next func()) (rows, error) {
+func readRows(ctx context.Context, c *client, cfg targetConfig, tw targetWindows, groupBy string, limit int, logger log.Logger, next func()) (rows, error) {
 	if cfg.source == targetSourceLabelValues {
 		next()
 		values, total, err := c.labelValuesCardinality(ctx, groupBy, min(limit, cfg.labelValuesLimit))
@@ -162,10 +162,11 @@ func readRows(ctx context.Context, c *client, cfg targetConfig, tw targetWindows
 	}
 	if cfg.source != targetSourceHead {
 		next()
-		res, _, err := c.bounds(ctx, groupBy, tw.blocks.start, tw.blocks.end, limit)
+		res, latency, err := c.bounds(ctx, groupBy, tw.blocks.start, tw.blocks.end, limit)
 		if err != nil {
 			return rows{}, err
 		}
+		logBoundsAnswer(logger, queryTargets, tw.blocks, res, latency)
 		// The last range with groups is the newest one the store-gateways answered.
 		for i := len(res.Ranges) - 1; i >= 0; i-- {
 			rng := res.Ranges[i]
@@ -180,10 +181,11 @@ func readRows(ctx context.Context, c *client, cfg targetConfig, tw targetWindows
 		}
 	}
 	next()
-	res, _, err := c.bounds(ctx, groupBy, tw.recent.start, tw.recent.end, limit)
+	res, latency, err := c.bounds(ctx, groupBy, tw.recent.start, tw.recent.end, limit)
 	if err != nil {
 		return rows{}, err
 	}
+	logBoundsAnswer(logger, queryTargets, tw.recent, res, latency)
 	if res.Head == nil {
 		return rows{}, fmt.Errorf("the window [%d, %d) doesn't reach the ingesters", tw.recent.start, tw.recent.end)
 	}
@@ -229,7 +231,7 @@ func pickTargets(ctx context.Context, c *client, cfg targetConfig, tw targetWind
 		}
 		sent = true
 	}
-	byName, err := readRows(ctx, c, cfg, tw, model.MetricNameLabel, slices.Max(cfg.ranks), next)
+	byName, err := readRows(ctx, c, cfg, tw, model.MetricNameLabel, slices.Max(cfg.ranks), logger, next)
 	if err != nil {
 		return nil, fmt.Errorf("largest metric names: %w", err)
 	}
@@ -265,7 +267,7 @@ func pickTargets(ctx context.Context, c *client, cfg targetConfig, tw targetWind
 		return nil, fmt.Errorf("tenant label names: %w", err)
 	}
 	t.tenantLabels = withoutName(ls)
-	byValue, err := readRows(ctx, c, cfg, tw, cfg.matcherLabel, 3, next)
+	byValue, err := readRows(ctx, c, cfg, tw, cfg.matcherLabel, 3, logger, next)
 	if err != nil {
 		return nil, fmt.Errorf("largest %s values: %w", cfg.matcherLabel, err)
 	}

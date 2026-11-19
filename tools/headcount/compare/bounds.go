@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 )
@@ -89,6 +90,7 @@ func (r *runner) boundsCheck(ctx context.Context, w window, cfg boundsConfig) []
 		res.Source = "blocks+head"
 	}
 	res.latency = latencies{estimate: latency, estimateOK: true, estimatePos: positionFirst, truthOK: true, truthPos: positionSecond}
+	logBoundsAnswer(r.logger, queryBoundsCheck, w, ans, latency)
 
 	var ranges []boundsRange
 	for _, rng := range ans.Ranges {
@@ -123,6 +125,27 @@ func (r *runner) boundsCheck(ctx context.Context, w window, cfg boundsConfig) []
 		outcomes = append(outcomes, exactRes.Outcome)
 	}
 	return outcomes
+}
+
+// logBoundsAnswer logs one line per block range of a bounds answer, and one for its head rows: the blocks behind each range, its totals and their relative width, and the request's latency. purpose is what the request was sent for, and first marks the run's first bounds request, read with cold caches.
+func logBoundsAnswer(logger log.Logger, purpose string, w window, ans *boundsResponse, latency time.Duration) {
+	for _, rng := range ans.Ranges {
+		width := 0.0
+		if rng.LowerTotal > 0 {
+			width = float64(rng.UpperTotal-rng.LowerTotal) / float64(rng.LowerTotal)
+		}
+		level.Info(logger).Log("msg", "bounds range", "purpose", purpose, "window", w.kind, "window_length", model.Duration(w.length()), "range", rangeKey(rng),
+			"main_set", rng.MainSet, "main_blocks", rng.MainBlocks, "other_blocks", rng.OtherBlocks, "lower_bound", rng.LowerBound,
+			"group_count", rng.GroupCount, "lower_total", rng.LowerTotal, "upper_total", rng.UpperTotal, "total_width", width,
+			"has_more", rng.HasMore, "latency", latency, "first", ans.first)
+	}
+	if h := ans.Head; h != nil {
+		level.Info(logger).Log("msg", "bounds head", "purpose", purpose, "window", w.kind, "window_length", model.Duration(w.length()), "approximate", h.Approximate,
+			"group_count", h.GroupCount, "in_memory_total", h.InMemoryTotal, "active_total", h.ActiveTotal, "latency", latency, "first", ans.first)
+	}
+	if len(ans.NotCovered) > 0 {
+		level.Info(logger).Log("msg", "bounds not covered", "purpose", purpose, "window", w.kind, "parts", fmt.Sprint(ans.NotCovered))
+	}
 }
 
 // readBounds is the read value of a bounds answer, as the route labels it.
@@ -213,8 +236,11 @@ func (r *runner) checkRangeAgainstPromQL(ctx context.Context, w window, rng boun
 		a.refuse(sideTruth, classifyRefusal(sideTruth, err), "truth "+rangeKey(rng))
 		return latency, false
 	}
+	for _, s := range skippedRefusals(truth) {
+		a.refuse(sideTruth, s[1], "truth "+s[0]+" "+rangeKey(rng))
+	}
 
-	restrict := set.restrict()
+	restrict := set.restrictFor(truth)
 	groups := map[string]boundsGroup{}
 	for _, g := range rng.Groups {
 		groups[g.Value] = g
