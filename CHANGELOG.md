@@ -189,6 +189,7 @@
 * [BUGFIX] Ingester: Fix a TSDB being considered idle right after it is opened when its head has no in-order samples, for example after early compaction of non-owned series and a restart. With `-blocks-storage.tsdb.close-idle-tsdb-when-shipping-disabled` enabled, the TSDB and its recent blocks could be deleted minutes after the restart. #17137
 * [BUGFIX] MQE: Fix binary operations with `on (__name__, ...)` returning empty results when narrowing binary selectors is enabled and the other side has no metric name, for example `sum by (pod) (a) / on (__name__, pod) abs(b)`. Narrowing added a matcher for an empty metric name, which selects no series. #17156
 * [BUGFIX] MQE: Fix an issue where only part of a query that couldn't return results was optimized, resulting in trying to remotely execute an invalid query plan. #17152
+* [BUGFIX] MQE: Fix nested `group_left(...)` / `group_right(...)` joins returning no series when narrowing binary selectors is enabled and an outer join matches on a label the inner join copies from its one side, for example `(a * on (id) group_left (key) b) * on (key) group_left (site) c`. Matchers on the copied label were sent to the inner join's many side, which may not carry that label. #17411
 * [BUGFIX] Admin: Use relative links for the config, runtime config and ingester links in the administration web UI, so that they work when the UI is served behind a reverse proxy that adds a path prefix. #17271
 
 ### Mixin

@@ -76,3 +76,27 @@ eval instant at 5m sum by (pod) (ratio_total) and on (__name__, pod) abs(many_me
 
 eval instant at 5m sum by (pod) (ratio_total) / on (__name__, pod) (many_metric * on (env) group_left one_metric)
   {pod="a"} 1
+
+clear
+
+# group_left(...) and group_right(...) copy the include labels from the one side, so a matcher on an
+# include label must not narrow the many side, which may not carry that label.
+load 1m
+  identity{id="1", name="x"} 1+0x5
+  identity{id="2", name="y"} 1+0x5
+  resource{id="1", key="k1"} 1+0x5
+  resource{id="2", key="k2"} 1+0x5
+  site_info{key="k1", site="s1"} 1+0x5
+  key_info{key="k1"} 1+0x5
+
+eval instant at 5m (identity * on (id) group_left (key) resource) * on (key) group_left (site) site_info
+  {id="1", name="x", key="k1", site="s1"} 1
+
+eval instant at 5m site_info * on (key) group_right (site) (resource * on (id) group_right (key) identity)
+  {id="1", name="x", key="k1", site="s1"} 1
+
+eval instant at 5m key_info * on (key) (identity * on (id) group_left (key) resource)
+  {key="k1"} 1
+
+eval instant at 5m key_info * on (key) (identity{id="1"} * on () group_left (key) resource{id="1"})
+  {key="k1"} 1
