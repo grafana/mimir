@@ -2,7 +2,7 @@ package adaptivelimiter
 
 import (
 	"context"
-	"math/rand"
+	"math/rand/v2"
 	"time"
 
 	"github.com/failsafe-go/failsafe-go/policy"

@@ -14,11 +14,8 @@ var ErrExceeded = errors.New("budget exceeded")
 //
 // This type is concurrency safe.
 type Budget interface {
-	// RetryRate returns the current rate of retries relative to total executions, from 0 to 1.
-	RetryRate() float64
-
-	// HedgeRate returns the current rate of hedges relative to total executions, from 0 to 1.
-	HedgeRate() float64
+	// Rate returns the current combined rate of retries and hedges relative to total inflight executions, from 0 to 1.
+	Rate() float64
 }
 
 // Builder builds Budget instances.
@@ -28,8 +25,9 @@ type Builder interface {
 	// WithMaxRate configures the max rate of inflight executions that can be retries and/or hedges.
 	WithMaxRate(maxRate float64) Builder
 
-	// WithMinConcurrency configures the min number of budgeted retries and/or hedges that can be executed, regardless of
-	// the total number of inflight executions.
+	// WithMinConcurrency configures a minimum execution budget. At least minConcurrency retries and/or hedges may execute
+	// concurrently, even when the budget computed from WithMaxRate and the current inflight execution count falls below
+	// minConcurrency.
 	WithMinConcurrency(minConcurrency uint) Builder
 
 	// OnBudgetExceeded registers the listener to be called when the budget is exceeded.
@@ -108,46 +106,39 @@ type budget struct {
 	config
 
 	executions atomic.Int32
-	retries    atomic.Int32
-	hedges     atomic.Int32
+	inflight   atomic.Int32 // current count of inflight retries and hedges
 }
 
-func (b *budget) TryAcquireRetryPermit() bool {
-	if b.RetryRate() > b.maxRate {
-		return false
-	}
-
-	b.retries.Add(1)
+func (b *budget) RecordExecution() {
 	b.executions.Add(1)
-	return true
 }
 
-func (b *budget) TryAcquireHedgePermit() bool {
-	if b.HedgeRate() > b.maxRate {
-		return false
-	}
-
-	b.hedges.Add(1)
-	b.executions.Add(1)
-	return true
-}
-
-func (b *budget) ReleaseRetryPermit() {
-	b.retries.Add(-1)
+func (b *budget) ReleaseExecution() {
 	b.executions.Add(-1)
 }
 
-func (b *budget) ReleaseHedgePermit() {
-	b.hedges.Add(-1)
-	b.executions.Add(-1)
+func (b *budget) TryAcquirePermit() bool {
+	budgeted := b.inflight.Load()
+	if budgeted >= int32(b.minConcurrency) && b.Rate() > b.maxRate {
+		return false
+	}
+
+	b.inflight.Add(1)
+	b.RecordExecution()
+	return true
 }
 
-func (b *budget) RetryRate() float64 {
-	return float64(b.retries.Load()) / float64(b.executions.Load())
+func (b *budget) ReleasePermit() {
+	b.inflight.Add(-1)
+	b.ReleaseExecution()
 }
 
-func (b *budget) HedgeRate() float64 {
-	return float64(b.hedges.Load()) / float64(b.executions.Load())
+func (b *budget) Rate() float64 {
+	executions := b.executions.Load()
+	if executions == 0 {
+		return 0
+	}
+	return float64(b.inflight.Load()) / float64(executions)
 }
 
 func (b *budget) OnBudgetExceeded(executionType ExecutionType, info failsafe.ExecutionInfo) {
