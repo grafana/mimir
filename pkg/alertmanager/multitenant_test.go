@@ -1519,6 +1519,9 @@ func TestMultitenantAlertmanager_LoadValidationAppliesToTenantConfigOnly(t *test
 
 		_, exists := am.alertmanagers["user3"]
 		require.False(t, exists)
+
+		_, err := am.setConfig(&alertspb.AlertConfigDesc{User: "user3", RawConfig: configThatFailsValidation})
+		require.ErrorIs(t, err, errFileNotAllowed)
 	})
 }
 
