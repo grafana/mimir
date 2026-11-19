@@ -372,21 +372,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	for n, oldg := range m.groups {
 		go func(n string, g *Group) {
 			g.markStale = true
-			g.stop()
-			if m := g.metrics; m != nil {
-				m.IterationsMissed.DeleteLabelValues(n)
-				m.IterationsScheduled.DeleteLabelValues(n)
-				m.EvalTotal.DeleteLabelValues(n)
-				m.EvalFailures.DeleteLabelValues(n, "user")
-				m.EvalFailures.DeleteLabelValues(n, "operator")
-				m.GroupInterval.DeleteLabelValues(n)
-				m.GroupLastEvalTime.DeleteLabelValues(n)
-				m.GroupLastDuration.DeleteLabelValues(n)
-				m.GroupRules.DeleteLabelValues(n)
-				m.GroupSamples.DeleteLabelValues(n)
-				m.GroupLastRuleDurationSum.DeleteLabelValues(n)
-				m.GroupLastRestoreDuration.DeleteLabelValues(n)
-			}
+			stopRemovedGroup(n, g)
 			wg.Done()
 		}(n, oldg)
 	}
@@ -395,6 +381,78 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	m.groups = groups
 
 	return nil
+}
+
+// UnloadGroups stops the rule groups with the given keys and deletes them from the manager.
+// It does not write the staleness markers that Update writes for a removed group.
+// Use it when another rule evaluator takes over the groups.
+// A key is GroupKey(file, name), with the file name that Update got for the group.
+// UnloadGroups ignores unknown keys.
+// It also deletes the metrics of the groups, as Update does for a group that the rule files no longer have.
+// It returns the number of groups that it stopped.
+//
+// Call UnloadGroups before the Update that no longer has the groups.
+// Otherwise that Update stops the groups with staleness markers.
+// A later Update loads a group again as a new group if the rule files still have the group.
+// The new group does not get the state of the unloaded group.
+// It restores the for state of its alerts only if RestoreNewRuleGroups is set.
+//
+// UnloadGroups waits until each group stops.
+// A group stops after the rules that it evaluates now.
+// It skips its other rules in that evaluation.
+// UnloadGroups holds the manager lock while it waits.
+// Like Update, it blocks until Run if the groups have not started yet.
+// If the manager is stopped, UnloadGroups does nothing and returns 0.
+//
+// NOTE: This method is not used by Prometheus itself.
+// Its primary consumer is Mimir.
+func (m *Manager) UnloadGroups(keys ...string) int {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	select {
+	case <-m.done:
+		return 0
+	default:
+	}
+
+	var (
+		wg       sync.WaitGroup
+		unloaded int
+	)
+	for _, key := range keys {
+		g, ok := m.groups[key]
+		if !ok {
+			continue
+		}
+		delete(m.groups, key)
+		unloaded++
+
+		wg.Go(func() { stopRemovedGroup(key, g) })
+	}
+	wg.Wait()
+
+	return unloaded
+}
+
+// stopRemovedGroup stops a group that leaves the manager and deletes its metrics.
+// The group writes staleness markers for its series only if the caller sets g.markStale before the call.
+func stopRemovedGroup(key string, g *Group) {
+	g.stop()
+	if m := g.metrics; m != nil {
+		m.IterationsMissed.DeleteLabelValues(key)
+		m.IterationsScheduled.DeleteLabelValues(key)
+		m.EvalTotal.DeleteLabelValues(key)
+		m.EvalFailures.DeleteLabelValues(key, "user")
+		m.EvalFailures.DeleteLabelValues(key, "operator")
+		m.GroupInterval.DeleteLabelValues(key)
+		m.GroupLastEvalTime.DeleteLabelValues(key)
+		m.GroupLastDuration.DeleteLabelValues(key)
+		m.GroupRules.DeleteLabelValues(key)
+		m.GroupSamples.DeleteLabelValues(key)
+		m.GroupLastRuleDurationSum.DeleteLabelValues(key)
+		m.GroupLastRestoreDuration.DeleteLabelValues(key)
+	}
 }
 
 // GroupLoader is responsible for loading rule groups from arbitrary sources and parsing them.

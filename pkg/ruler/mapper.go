@@ -89,6 +89,12 @@ func (m *mapper) users() ([]string, error) {
 	return result, err
 }
 
+// ruleFileName returns the name of the file for the rule groups of the user's namespace.
+// The file name has the url path escaped namespace, to better handle `/` characters.
+func (m *mapper) ruleFileName(user, namespace string) string {
+	return filepath.Join(m.Path, user, url.PathEscape(namespace))
+}
+
 func (m *mapper) MapRules(user string, ruleConfigs map[string][]rulefmt.RuleGroup) (bool, []string, error) {
 	logger := log.With(m.logger, "user", user)
 
@@ -104,9 +110,7 @@ func (m *mapper) MapRules(user string, ruleConfigs map[string][]rulefmt.RuleGrou
 
 	// write all rule configs to disk
 	for filename, groups := range ruleConfigs {
-		// Store the encoded file name to better handle `/` characters
-		encodedFileName := url.PathEscape(filename)
-		fullFileName := filepath.Join(path, encodedFileName)
+		fullFileName := m.ruleFileName(user, filename)
 
 		fileUpdated, err := m.writeRuleGroupsIfNewer(groups, fullFileName, logger)
 		if err != nil {

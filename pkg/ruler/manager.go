@@ -60,6 +60,7 @@ type DefaultMultiTenantManager struct {
 	lastReloadSuccessful          *prometheus.GaugeVec
 	lastReloadSuccessfulTimestamp *prometheus.GaugeVec
 	configUpdatesTotal            *prometheus.CounterVec
+	ruleGroupsUnloadedTotal       *prometheus.CounterVec
 	registry                      prometheus.Registerer
 	logger                        log.Logger
 
@@ -100,6 +101,10 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 			Name: "cortex_ruler_config_updates_total",
 			Help: "Total number of config updates triggered by a user",
 		}, []string{"user"}),
+		ruleGroupsUnloadedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ruler_rule_groups_unloaded_total",
+			Help: "Total number of rule groups that this ruler stopped without stale markers because another ruler owns them now, while the user keeps other rule groups on this ruler.",
+		}, []string{"user"}),
 		registry: reg,
 		logger:   logger,
 	}, nil
@@ -107,12 +112,12 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 
 // SyncFullRuleGroups implements MultiTenantManager.
 // It's not safe to call this function concurrently with SyncFullRuleGroups() or SyncPartialRuleGroups().
-func (r *DefaultMultiTenantManager) SyncFullRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList) {
+func (r *DefaultMultiTenantManager) SyncFullRuleGroups(ctx context.Context, ruleGroupsByUser, ownedElsewhereByUser map[string]rulespb.RuleGroupList) {
 	if !r.cfg.TenantFederation.Enabled {
 		removeFederatedRuleGroups(ruleGroupsByUser, r.logger)
 	}
 
-	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroupsByUser); err != nil {
+	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroupsByUser, ownedElsewhereByUser); err != nil {
 		// We don't log it because the only error we could get here is a context canceled.
 		return
 	}
@@ -126,7 +131,7 @@ func (r *DefaultMultiTenantManager) SyncFullRuleGroups(ctx context.Context, rule
 
 // SyncPartialRuleGroups implements MultiTenantManager.
 // It's not safe to call this function concurrently with SyncFullRuleGroups() or SyncPartialRuleGroups().
-func (r *DefaultMultiTenantManager) SyncPartialRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList) {
+func (r *DefaultMultiTenantManager) SyncPartialRuleGroups(ctx context.Context, ruleGroupsByUser, ownedElsewhereByUser map[string]rulespb.RuleGroupList) {
 	if !r.cfg.TenantFederation.Enabled {
 		removeFederatedRuleGroups(ruleGroupsByUser, r.logger)
 	}
@@ -134,7 +139,7 @@ func (r *DefaultMultiTenantManager) SyncPartialRuleGroups(ctx context.Context, r
 	// Filter out tenants with no rule groups.
 	ruleGroupsByUser, removedUsers := filterRuleGroupsByNotEmptyUsers(ruleGroupsByUser)
 
-	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroupsByUser); err != nil {
+	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroupsByUser, ownedElsewhereByUser); err != nil {
 		// We don't log it because the only error we could get here is a context canceled.
 		return
 	}
@@ -165,7 +170,7 @@ func (r *DefaultMultiTenantManager) Start() {
 // syncRulesToManagerConcurrently calls syncRulesToManager() concurrently for each user in the input
 // ruleGroups. The max concurrency is limited. This function is expected to return an error only if
 // the input ctx is canceled.
-func (r *DefaultMultiTenantManager) syncRulesToManagerConcurrently(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) error {
+func (r *DefaultMultiTenantManager) syncRulesToManagerConcurrently(ctx context.Context, ruleGroups, ownedElsewhereByUser map[string]rulespb.RuleGroupList) error {
 	// Sync the rules to disk and then update the user's Prometheus Rules Manager.
 	// Since users are different, we can sync rules in parallel.
 	users := make([]string, 0, len(ruleGroups))
@@ -175,7 +180,7 @@ func (r *DefaultMultiTenantManager) syncRulesToManagerConcurrently(ctx context.C
 
 	err := concurrency.ForEachJob(ctx, len(users), 10, func(_ context.Context, idx int) error {
 		userID := users[idx]
-		r.syncRulesToManager(userID, ruleGroups[userID])
+		r.syncRulesToManager(userID, ruleGroups[userID], ownedElsewhereByUser[userID])
 		return nil
 	})
 
@@ -190,7 +195,8 @@ func (r *DefaultMultiTenantManager) syncRulesToManagerConcurrently(ctx context.C
 // syncRulesToManager maps the rule files to disk, detects any changes and will create/update
 // the user's Prometheus Rules Manager. Since this method writes to disk it is not safe to call
 // concurrently for the same user.
-func (r *DefaultMultiTenantManager) syncRulesToManager(user string, groups rulespb.RuleGroupList) {
+// The ownedElsewhere rule groups are the user's rule groups that another ruler owns.
+func (r *DefaultMultiTenantManager) syncRulesToManager(user string, groups, ownedElsewhere rulespb.RuleGroupList) {
 	// Map the files to disk and return the file names to be passed to the users manager if they
 	// have been updated
 	update, files, err := r.mapper.MapRules(user, groups.Formatted())
@@ -206,6 +212,11 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(user string, groups rules
 		level.Error(r.logger).Log("msg", "unable to create rule manager", "user", user, "err", err)
 		return
 	}
+	if created {
+		// Create the counter series at 0.
+		// Then rate and increase see the first rule groups that this ruler stops.
+		r.ruleGroupsUnloadedTotal.WithLabelValues(user)
+	}
 
 	// We need to update the manager only if it was just created or rules on disk have changed.
 	if !created && !update {
@@ -215,6 +226,21 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(user string, groups rules
 
 	level.Debug(r.logger).Log("msg", "updating rules", "user", user)
 	r.configUpdatesTotal.WithLabelValues(user).Inc()
+
+	// Stop the rule groups that another ruler owns now, before Update removes them.
+	// The other ruler evaluates these rule groups after its own sync.
+	// So these rule groups must not write stale markers.
+	keys := make([]string, 0, len(ownedElsewhere))
+	for _, g := range ownedElsewhere {
+		// The key must have the file name that the mapper gives to the rules manager.
+		// Otherwise UnloadGroups ignores the key.
+		// Then Update writes stale markers.
+		keys = append(keys, promRules.GroupKey(r.mapper.ruleFileName(user, g.Namespace), g.Name))
+	}
+	if unloaded := manager.UnloadGroups(keys...); unloaded > 0 {
+		r.ruleGroupsUnloadedTotal.WithLabelValues(user).Add(float64(unloaded))
+		level.Info(r.logger).Log("msg", "stopped rule groups that another ruler owns without stale markers", "user", user, "unloaded", unloaded)
+	}
 
 	err = manager.Update(r.cfg.EvaluationInterval, files, labels.EmptyLabels(), r.cfg.ExternalURL.String(), nil)
 	if err != nil {
@@ -359,6 +385,7 @@ func (r *DefaultMultiTenantManager) removeUsersIf(shouldRemove func(userID strin
 		r.lastReloadSuccessful.DeleteLabelValues(userID)
 		r.lastReloadSuccessfulTimestamp.DeleteLabelValues(userID)
 		r.configUpdatesTotal.DeleteLabelValues(userID)
+		r.ruleGroupsUnloadedTotal.DeleteLabelValues(userID)
 		r.userManagerMetrics.RemoveUserRegistry(userID)
 		level.Info(r.logger).Log("msg", "deleted rule manager and local rule files", "user", userID)
 	}
