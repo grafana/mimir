@@ -864,7 +864,7 @@ receivers:
 			}
 
 			err := am.setConfig(amConfig{User: "tenant", RawConfig: rawConfig})
-			if tc.credentials || tc.exempt {
+			if tc.credentials || tc.exempt || tc.fallback {
 				require.NoError(t, err)
 				require.Contains(t, am.alertmanagers, "tenant")
 			} else {
