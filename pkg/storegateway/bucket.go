@@ -86,9 +86,8 @@ type BucketStore struct {
 	userID          string
 	logger          log.Logger
 	metrics         *BucketStoreMetrics
-	bkt             objstore.InstrumentedBucketReader
 	bucketIndexMeta BucketIndexMetadataReader
-	fetcher         block.MetadataFetcher
+	fetcher         BlockMetadataFetcher
 	dir             string
 	indexCache      indexcache.IndexCache
 	indexReaderPool *indexheader.ReaderPool
@@ -202,9 +201,8 @@ func WithLazyLoadingGate(lazyLoadingGate gate.Gate) BucketStoreOption {
 // an object store bucket. It is optimized to work against high latency backends.
 func NewBucketStore(
 	userID string,
-	bkt objstore.InstrumentedBucketReader,
 	bucketIndexMeta BucketIndexMetadataReader,
-	fetcher block.MetadataFetcher,
+	fetcher BlockMetadataFetcher,
 	dir string,
 	bucketStoreConfig tsdb.BucketStoreConfig,
 	postingsStrategy postingsSelectionStrategy,
@@ -217,7 +215,6 @@ func NewBucketStore(
 ) (*BucketStore, error) {
 	s := &BucketStore{
 		logger:                      log.NewNopLogger(),
-		bkt:                         bkt,
 		bucketIndexMeta:             bucketIndexMeta,
 		fetcher:                     fetcher,
 		dir:                         dir,
@@ -307,20 +304,20 @@ func (s *BucketStore) SyncBlocks(ctx context.Context) error {
 }
 
 func (s *BucketStore) syncBlocks(ctx context.Context) error {
-	metas, _, metaFetchErr := s.fetcher.Fetch(ctx)
+	fetchedBlocks, metaFetchErr := s.fetcher.Fetch(ctx)
 	// For partial view allow adding new blocks at least.
-	if metaFetchErr != nil && metas == nil {
+	if metaFetchErr != nil && fetchedBlocks == nil {
 		return metaFetchErr
 	}
 
 	var wg sync.WaitGroup
-	blockc := make(chan *block.Meta)
+	blockc := make(chan FetchedBlock)
 
 	for i := 0; i < s.blockSyncConcurrency; i++ {
 		wg.Add(1)
 		go func() {
-			for meta := range blockc {
-				if err := s.addBlock(ctx, meta); err != nil {
+			for fetchedBlock := range blockc {
+				if err := s.addBlock(ctx, fetchedBlock.Meta, fetchedBlock.BucketReader); err != nil {
 					continue
 				}
 			}
@@ -328,13 +325,13 @@ func (s *BucketStore) syncBlocks(ctx context.Context) error {
 		}()
 	}
 
-	for id, meta := range metas {
+	for id, fetchedBlock := range fetchedBlocks {
 		if s.blockSet.contains(id) {
 			continue
 		}
 		select {
 		case <-ctx.Done():
-		case blockc <- meta:
+		case blockc <- fetchedBlock:
 		}
 	}
 
@@ -347,7 +344,7 @@ func (s *BucketStore) syncBlocks(ctx context.Context) error {
 
 	blockIDs := s.blockSet.openBlocksULIDs()
 	for _, id := range blockIDs {
-		if _, ok := metas[id]; ok {
+		if _, ok := fetchedBlocks[id]; ok {
 			continue
 		}
 		if err := s.removeBlock(id); err != nil {
@@ -442,7 +439,7 @@ func (s *BucketStore) cleanUpUnownedBlocks() error {
 	return nil
 }
 
-func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error) {
+func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta, bucketReader objstore.InstrumentedBucketReader) (err error) {
 	dir := filepath.Join(s.dir, meta.ULID.String())
 	start := time.Now()
 
@@ -474,7 +471,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 	indexHeaderReader, err := s.indexReaderPool.NewBinaryReader(
 		ctx,
 		binaryReaderLogger,
-		s.bkt,
+		bucketReader,
 		s.dir,
 		meta.ULID,
 		s.postingOffsetsInMemSampling,
@@ -497,7 +494,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 		log.With(s.logger, "block", meta.ULID),
 		s.metrics,
 		meta,
-		s.bkt,
+		bucketReader,
 		dir,
 		s.indexCache,
 		indexHeaderReader,

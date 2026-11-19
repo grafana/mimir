@@ -205,7 +205,7 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 				}))
 			}
 
-			g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), nil, nil)
+			g, err := newStoreGateway(gatewayCfg, storageCfg, newSingleBlocksBucketSet(t, bucketClient), ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), nil, nil)
 			require.NoError(t, err)
 			t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
 			assert.False(t, g.ringLifecycler.IsRegistered())
@@ -250,7 +250,7 @@ func TestStoreGateway_InitialSyncFailure(t *testing.T) {
 
 		bucketClient := &bucket.ErrorInjectedBucketClient{Injector: func(bucket.Operation, string) error { return assert.AnError }}
 
-		g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewLogfmtLogger(os.Stdout), nil, nil)
+		g, err := newStoreGateway(gatewayCfg, storageCfg, newSingleBlocksBucketSet(t, bucketClient), ringStore, defaultLimitsOverrides(t), log.NewLogfmtLogger(os.Stdout), nil, nil)
 		require.NoError(t, err)
 
 		require.NoError(t, g.StartAsync(ctx))
@@ -383,7 +383,7 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 
 				overrides := validation.NewOverrides(limits, nil)
 				reg := prometheus.NewPedanticRegistry()
-				g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, overrides, log.NewNopLogger(), reg, nil)
+				g, err := newStoreGateway(gatewayCfg, storageCfg, newSingleBlocksBucketSet(t, bucketClient), ringStore, overrides, log.NewNopLogger(), reg, nil)
 				require.NoError(t, err)
 				t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
 
@@ -473,7 +473,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 
 		overrides := validation.NewOverrides(limits, nil)
 		reg := prometheus.NewPedanticRegistry()
-		g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, overrides, log.NewNopLogger(), reg, nil)
+		g, err := newStoreGateway(gatewayCfg, storageCfg, newSingleBlocksBucketSet(t, bucketClient), ringStore, overrides, log.NewNopLogger(), reg, nil)
 		require.NoError(t, err)
 
 		return g, instanceID, reg
@@ -619,7 +619,7 @@ func TestStoreGateway_ShouldSupportLoadRingTokensFromFile(t *testing.T) {
 			bucketClient := &bucket.ClientMock{}
 			bucketClient.MockIter("", []string{}, nil)
 
-			g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), nil, nil)
+			g, err := newStoreGateway(gatewayCfg, storageCfg, newSingleBlocksBucketSet(t, bucketClient), ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), nil, nil)
 			require.NoError(t, err)
 			t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
 			assert.False(t, g.ringLifecycler.IsRegistered())
@@ -747,7 +747,7 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 			bucketClient := &bucket.ClientMock{}
 			bucketClient.MockIter("", []string{}, nil)
 
-			g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), reg, nil)
+			g, err := newStoreGateway(gatewayCfg, storageCfg, newSingleBlocksBucketSet(t, bucketClient), ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), reg, nil)
 			require.NoError(t, err)
 
 			// Store the initial ring state before starting the gateway.
@@ -821,7 +821,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 	generateStorageBlock(t, storageDir, userID, metricName, 10, 100, 15)
 	createBucketIndex(t, bucket, userID)
 
-	g, err := newStoreGateway(gatewayCfg, storageCfg, bucket, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), reg, nil)
+	g, err := newStoreGateway(gatewayCfg, storageCfg, newSingleBlocksBucketSet(t, bucket), ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), reg, nil)
 	require.NoError(t, err)
 
 	srv := newStoreGatewayTestServer(t, g)
@@ -996,7 +996,7 @@ func TestStoreGateway_RingLifecyclerAutoForgetUnhealthyInstances(t *testing.T) {
 		bucketClient := &bucket.ClientMock{}
 		bucketClient.MockIter("", []string{}, nil)
 
-		g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), nil, nil)
+		g, err := newStoreGateway(gatewayCfg, storageCfg, newSingleBlocksBucketSet(t, bucketClient), ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), nil, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 		t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
@@ -1107,7 +1107,7 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), logger, nil, nil)
+	g, err := newStoreGateway(gatewayCfg, storageCfg, newSingleBlocksBucketSet(t, bucketClient), ringStore, defaultLimitsOverrides(t), logger, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
@@ -1219,7 +1219,7 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-			g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), nil, nil)
+			g, err := newStoreGateway(gatewayCfg, storageCfg, newSingleBlocksBucketSet(t, bucketClient), ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), nil, nil)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 			t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
@@ -1297,7 +1297,7 @@ func TestStoreGateway_Series_QueryShardingShouldGuaranteeSeriesShardingConsisten
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), nil, nil)
+	g, err := newStoreGateway(gatewayCfg, storageCfg, newSingleBlocksBucketSet(t, bucketClient), ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
@@ -1378,7 +1378,7 @@ func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), nil, nil)
+	g, err := newStoreGateway(gatewayCfg, storageCfg, newSingleBlocksBucketSet(t, bucketClient), ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
@@ -1515,7 +1515,7 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 					ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 					t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-					g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, overrides, logger, nil, nil)
+					g, err := newStoreGateway(gatewayCfg, storageCfg, newSingleBlocksBucketSet(t, bucketClient), ringStore, overrides, logger, nil, nil)
 					require.NoError(t, err)
 					require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 					t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })

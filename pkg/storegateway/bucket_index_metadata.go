@@ -214,3 +214,35 @@ func (r *bucketIndexMetadataReader) Metadata() *bucketindex.Metadata {
 	}
 	return idx.Metadata()
 }
+
+type multiBucketIndexMetadataReader struct {
+	loaders []*BucketIndexLoader
+}
+
+// newMultiBucketIndexMetadataReader is an adapter from one BucketIndexLoader for each bucket to
+// BucketIndexMetadataReader.
+func newMultiBucketIndexMetadataReader(loaders []*BucketIndexLoader) BucketIndexMetadataReader {
+	return &multiBucketIndexMetadataReader{
+		loaders: loaders,
+	}
+}
+
+// Metadata returns the metadata of the bucket index that has the oldest update time. It ignores the
+// loaders that have not read a bucket index.
+func (r *multiBucketIndexMetadataReader) Metadata() *bucketindex.Metadata {
+	var oldestMetadata *bucketindex.Metadata
+	for _, loader := range r.loaders {
+		idx := loader.Index()
+		if idx == nil {
+			continue
+		}
+		if metadata := idx.Metadata(); oldestMetadata == nil || metadata.UpdatedAt < oldestMetadata.UpdatedAt {
+			oldestMetadata = metadata
+		}
+	}
+
+	if oldestMetadata == nil {
+		return &bucketindex.Metadata{}
+	}
+	return oldestMetadata
+}

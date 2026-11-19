@@ -39,7 +39,7 @@ func createStoreGateway(t *testing.T, reg prometheus.Registerer, opts ...storage
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
-	g, err := newStoreGateway(gatewayCfg, storageCfg, bucket, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), reg, nil)
+	g, err := newStoreGateway(gatewayCfg, storageCfg, newSingleBlocksBucketSet(t, bucket), ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), reg, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(context.Background(), g)) })
 	return g, ringStore

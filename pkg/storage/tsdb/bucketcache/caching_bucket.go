@@ -105,11 +105,24 @@ func getCacheOptions(slabs *pool.SafeSlabPool[byte]) []cache.Option {
 	return opts
 }
 
+// KeyScopes are the prefixes of the cache keys of a CachingBucket. An empty prefix gives keys without a
+// prefix.
+type KeyScopes struct {
+	// Metadata prefixes the cache keys of all operations, except the keys that ObjectRanges prefixes.
+	Metadata string
+
+	// ObjectRanges prefixes the cache keys of the GetRange subranges and of the object attributes that
+	// GetRange reads. Upload and Delete do not invalidate these keys. Thus, give the same ObjectRanges
+	// prefix to more than one CachingBucket only if their objects with the same name have the same
+	// content and do not change.
+	ObjectRanges string
+}
+
 // CachingBucket implementation that provides some caching features, based on passed configuration.
 type CachingBucket struct {
 	objstore.Bucket
 
-	bucketID     string
+	keyScopes    KeyScopes
 	cfg          *CachingBucketConfig
 	invalidation *cacheInvalidation
 	logger       log.Logger
@@ -123,8 +136,13 @@ type CachingBucket struct {
 }
 
 // NewCachingBucket creates new caching bucket with provided configuration. Configuration should not be
-// changed after creating caching bucket.
+// changed after creating caching bucket. The bucketID prefixes all cache keys.
 func NewCachingBucket(bucketID, bucketName string, bucketClient objstore.Bucket, cfg *CachingBucketConfig, logger log.Logger, reg prometheus.Registerer) (*CachingBucket, error) {
+	return NewCachingBucketWithKeyScopes(KeyScopes{Metadata: bucketID, ObjectRanges: bucketID}, bucketName, bucketClient, cfg, logger, reg)
+}
+
+// NewCachingBucketWithKeyScopes is like NewCachingBucket, but the keyScopes prefix the cache keys.
+func NewCachingBucketWithKeyScopes(keyScopes KeyScopes, bucketName string, bucketClient objstore.Bucket, cfg *CachingBucketConfig, logger log.Logger, reg prometheus.Registerer) (*CachingBucket, error) {
 	if bucketClient == nil {
 		return nil, errors.New("bucket is nil")
 	}
@@ -134,9 +152,9 @@ func NewCachingBucket(bucketID, bucketName string, bucketClient objstore.Bucket,
 
 	cb := &CachingBucket{
 		Bucket:       bucketClient,
-		bucketID:     bucketID,
+		keyScopes:    keyScopes,
 		cfg:          cfg,
-		invalidation: newCacheInvalidation(bucketID, cfg, logger),
+		invalidation: newCacheInvalidation(keyScopes.Metadata, cfg, logger),
 		logger:       logger,
 
 		requestedGetRangeBytes: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -185,7 +203,7 @@ func NewCachingBucket(bucketID, bucketName string, bucketClient objstore.Bucket,
 }
 
 func (cb *CachingBucket) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) error {
-	keyGen := newCacheKeyBuilder(cb.bucketID, name)
+	keyGen := newCacheKeyBuilder(cb.keyScopes.Metadata, name)
 	cb.invalidation.start(ctx, name, keyGen)
 	err := cb.Bucket.Upload(ctx, name, r, opts...)
 	if err == nil {
@@ -196,7 +214,7 @@ func (cb *CachingBucket) Upload(ctx context.Context, name string, r io.Reader, o
 }
 
 func (cb *CachingBucket) Delete(ctx context.Context, name string) error {
-	keyGen := newCacheKeyBuilder(cb.bucketID, name)
+	keyGen := newCacheKeyBuilder(cb.keyScopes.Metadata, name)
 	cb.invalidation.start(ctx, name, keyGen)
 	err := cb.Bucket.Delete(ctx, name)
 	if err == nil {
@@ -232,7 +250,7 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 		return cb.Bucket.Iter(ctx, dir, f, options...)
 	}
 
-	keyGen := newCacheKeyBuilder(cb.bucketID, dir)
+	keyGen := newCacheKeyBuilder(cb.keyScopes.Metadata, dir)
 	key := keyGen.iter(options...)
 
 	// Lookup the cache.
@@ -282,7 +300,7 @@ func (cb *CachingBucket) Exists(ctx context.Context, name string) (bool, error) 
 		return cb.Bucket.Exists(ctx, name)
 	}
 
-	keyGen := newCacheKeyBuilder(cb.bucketID, name)
+	keyGen := newCacheKeyBuilder(cb.keyScopes.Metadata, name)
 	key := keyGen.exists()
 	lockKey := keyGen.existsLock()
 
@@ -332,7 +350,7 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 		return cb.Bucket.Get(ctx, name)
 	}
 
-	keyGen := newCacheKeyBuilder(cb.bucketID, name)
+	keyGen := newCacheKeyBuilder(cb.keyScopes.Metadata, name)
 	contentLockKey := keyGen.contentLock()
 	contentKey := keyGen.content()
 	existsLockKey := keyGen.existsLock()
@@ -428,7 +446,7 @@ func (cb *CachingBucket) GetRange(ctx context.Context, name string, off, length 
 		return cb.Bucket.GetRange(ctx, name, off, length)
 	}
 
-	keyGen := newCacheKeyBuilder(cb.bucketID, name)
+	keyGen := newCacheKeyBuilder(cb.keyScopes.ObjectRanges, name)
 	return cb.cachedGetRange(ctx, name, keyGen, off, length, cfgName, cfg)
 }
 
@@ -438,7 +456,7 @@ func (cb *CachingBucket) Attributes(ctx context.Context, name string) (objstore.
 		return cb.Bucket.Attributes(ctx, name)
 	}
 
-	keyGen := newCacheKeyBuilder(cb.bucketID, name)
+	keyGen := newCacheKeyBuilder(cb.keyScopes.Metadata, name)
 	return cb.cachedAttributes(ctx, name, keyGen, cfgName, cfg.cache, cfg.ttl)
 }
 

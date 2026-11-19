@@ -49,6 +49,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
@@ -79,7 +80,7 @@ func TestNewBucketStores_PartitionerConfig(t *testing.T) {
 		bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 		require.NoError(t, err)
 
-		stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), bucket, nil, defaultLimitsOverrides(t), log.NewNopLogger(), nil)
+		stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), newSingleBlocksBucketSet(t, bucket), nil, defaultLimitsOverrides(t), log.NewNopLogger(), nil)
 		require.NoError(t, err)
 
 		require.IsType(t, &gapBasedPartitioner{}, stores.partitioners.chunks)
@@ -112,7 +113,7 @@ func TestBucketStores_InitialSync(t *testing.T) {
 
 	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewLogfmtLogger(os.Stdout), reg)
+	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), newSingleBlocksBucketSet(t, bucket), allowedTenants, defaultLimitsOverrides(t), log.NewLogfmtLogger(os.Stdout), reg)
 	require.NoError(t, err)
 
 	// Query series before the initial sync.
@@ -178,6 +179,78 @@ func TestBucketStores_InitialSync(t *testing.T) {
 	assert.Greater(t, testutil.ToFloat64(stores.syncLastSuccess), float64(0))
 }
 
+func TestBucketStores_LoadsBlocksFromAllReadBuckets(t *testing.T) {
+	ctx := context.Background()
+	cfg := prepareStorageConfig(t)
+
+	newStorageDir, oldStorageDir := t.TempDir(), t.TempDir()
+	generateStorageBlock(t, newStorageDir, "user-1", "series_in_new_bucket", 10, 100, 15)
+	generateStorageBlock(t, oldStorageDir, "user-1", "series_in_both_buckets", 10, 100, 15)
+	generateStorageBlock(t, oldStorageDir, "user-2", "series_in_old_bucket", 10, 100, 15)
+
+	// Copy the block of user-1 from the old bucket to the new bucket.
+	oldUserDirEntries, err := os.ReadDir(filepath.Join(oldStorageDir, "user-1"))
+	require.NoError(t, err)
+	require.Len(t, oldUserDirEntries, 1)
+	copiedBlockDirName := oldUserDirEntries[0].Name()
+	require.NoError(t, os.CopyFS(filepath.Join(newStorageDir, "user-1", copiedBlockDirName), os.DirFS(filepath.Join(oldStorageDir, "user-1", copiedBlockDirName))))
+
+	newBucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: newStorageDir})
+	require.NoError(t, err)
+	oldBucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: oldStorageDir})
+	require.NoError(t, err)
+	createBucketIndex(t, newBucket, "user-1")
+	createBucketIndex(t, oldBucket, "user-1")
+	createBucketIndex(t, oldBucket, "user-2")
+
+	bucketSet, err := bucket.NewBlocksBucketSet(bucket.BlocksBucket{Name: "new", Client: newBucket}, []bucket.BlocksBucket{{Name: "old", Client: oldBucket}})
+	require.NoError(t, err)
+
+	reg := prometheus.NewPedanticRegistry()
+	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), bucketSet, nil, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), stores))
+	})
+
+	// The store-gateway reads the copied block from the new bucket, because it is the first read bucket.
+	require.NoError(t, os.RemoveAll(filepath.Join(oldStorageDir, "user-1", copiedBlockDirName)))
+
+	for _, query := range []struct {
+		userID     string
+		metricName string
+	}{
+		{userID: "user-1", metricName: "series_in_new_bucket"},
+		{userID: "user-1", metricName: "series_in_both_buckets"},
+		{userID: "user-2", metricName: "series_in_old_bucket"},
+	} {
+		seriesSet, warnings, err := querySeries(t, stores, query.userID, query.metricName, 20, 40)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		require.Len(t, seriesSet, 1, "user: %s, metric: %s", query.userID, query.metricName)
+		assert.Equal(t, []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: query.metricName}}, seriesSet[0].Labels)
+	}
+
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_bucket_store_blocks_loaded Number of currently loaded blocks.
+			# TYPE cortex_bucket_store_blocks_loaded gauge
+			cortex_bucket_store_blocks_loaded 3
+
+			# HELP cortex_bucket_stores_tenants_discovered Number of tenants discovered in the bucket.
+			# TYPE cortex_bucket_stores_tenants_discovered gauge
+			cortex_bucket_stores_tenants_discovered 2
+
+			# HELP cortex_blocks_meta_syncs_total Total blocks metadata synchronization attempts
+			# TYPE cortex_blocks_meta_syncs_total counter
+			cortex_blocks_meta_syncs_total 4
+	`),
+		"cortex_bucket_store_blocks_loaded",
+		"cortex_bucket_stores_tenants_discovered",
+		"cortex_blocks_meta_syncs_total",
+	))
+}
+
 func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 	const tenantID = "user-1"
 	ctx := context.Background()
@@ -196,7 +269,7 @@ func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 
 	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), newSingleBlocksBucketSet(t, bucket), allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Initial sync should succeed even if a transient error occurs.
@@ -259,7 +332,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 
 	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), newSingleBlocksBucketSet(t, bucket), allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Run an initial sync to discover 1 block.
@@ -361,7 +434,7 @@ func TestBucketStores_ownedUsers(t *testing.T) {
 			bucketClient := &bucket.ClientMock{}
 			bucketClient.MockIter("", allUsers, nil)
 
-			stores, err := NewBucketStores(cfg, "", testData.shardingStrategy, bucketClient, testData.allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), nil)
+			stores, err := NewBucketStores(cfg, "", testData.shardingStrategy, newSingleBlocksBucketSet(t, bucketClient), testData.allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			// Sync user stores and count the number of times the callback is called.
@@ -425,7 +498,7 @@ func TestBucketStores_ChunksAndSeriesLimiterFactoriesInitializedByEnforcedLimits
 
 			var allowedTenants *util.AllowList
 			reg := prometheus.NewPedanticRegistry()
-			stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), bucket, allowedTenants, overrides, log.NewNopLogger(), reg)
+			stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), newSingleBlocksBucketSet(t, bucket), allowedTenants, overrides, log.NewNopLogger(), reg)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), stores))
 			t.Cleanup(func() {
@@ -482,7 +555,7 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 
 	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), newSingleBlocksBucketSet(t, bucket), allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	createBucketIndex(t, bucket, userID)
@@ -591,7 +664,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 
 	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), bkt, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), newSingleBlocksBucketSet(t, bkt), allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
 	t.Cleanup(func() {
@@ -758,7 +831,7 @@ func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
 
 	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, "", &sharding, bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, "", &sharding, newSingleBlocksBucketSet(t, bucket), allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Perform sync.
@@ -891,9 +964,17 @@ func indexHeaderCachingBucket(
 	indexHeaderCache := cache.NewMockCache()
 	blocksStorageCfg := prepareStorageConfig(tb)
 
-	return mimir_tsdb.NewStoreCachingBucket(
-		"", blocksStorageCfg, nil, indexHeaderCache, nil, bkt, logger, reg,
-	)
+	cachingBucketCfg, err := mimir_tsdb.NewStoreCachingBucketConfig(blocksStorageCfg, nil, indexHeaderCache, nil, logger, reg)
+	if err != nil {
+		return nil, err
+	}
+	return bucketcache.NewCachingBucket("", blocksStorageCfg.Bucket.BucketName(), bkt, cachingBucketCfg, logger, reg)
+}
+
+func newSingleBlocksBucketSet(t testing.TB, bucketClient objstore.Bucket) *bucket.BlocksBucketSet {
+	bucketSet, err := bucket.NewBlocksBucketSet(bucket.BlocksBucket{Name: "test", Client: bucketClient}, nil)
+	require.NoError(t, err)
+	return bucketSet
 }
 
 func BenchmarkBucketStoreLabelValues(tb *testing.B) {

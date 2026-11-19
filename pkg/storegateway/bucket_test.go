@@ -1818,9 +1818,8 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		reg := prometheus.NewPedanticRegistry()
 		st, err := NewBucketStore(
 			"test",
-			ibkt,
 			newTestBucketIndexMetadataReader(t, bkt, "test"),
-			f,
+			newSingleBucketBlockMetadataFetcher(f, ibkt),
 			tmpDir,
 			mimir_tsdb.BucketStoreConfig{
 				StreamingBatchSize:          testData.maxSeriesPerBatch,
@@ -1948,9 +1947,8 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 					// Create the bucket store.
 					store, err := NewBucketStore(
 						"tenant",
-						instrumentedBucket,
 						newTestBucketIndexMetadataReader(t, instrumentedBucket, "tenant"),
-						metaFetcher,
+						newSingleBucketBlockMetadataFetcher(metaFetcher, instrumentedBucket),
 						tmpDir,
 						mimir_tsdb.BucketStoreConfig{
 							StreamingBatchSize:          batchSize,
@@ -2124,7 +2122,6 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 
 	store := &BucketStore{
 		userID:          "test",
-		bkt:             objstore.WithNoopInstr(bkt),
 		bucketIndexMeta: newTestBucketIndexMetadataReader(t, bkt, "test"),
 		logger:          logger,
 		indexCache:      indexCache,
@@ -2279,9 +2276,8 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 
 	store, err := NewBucketStore(
 		"test",
-		instrBkt,
 		newTestBucketIndexMetadataReader(t, instrBkt, "test"),
-		fetcher,
+		newSingleBucketBlockMetadataFetcher(fetcher, instrBkt),
 		tmpDir,
 		mimir_tsdb.BucketStoreConfig{
 			StreamingBatchSize:          5000,
@@ -2353,9 +2349,8 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 
 	store, err := NewBucketStore(
 		"test",
-		instrBkt,
 		newTestBucketIndexMetadataReader(t, instrBkt, "test"),
-		fetcher,
+		newSingleBucketBlockMetadataFetcher(fetcher, instrBkt),
 		tmpDir,
 		mimir_tsdb.BucketStoreConfig{
 			IndexHeader:                 testIndexHeaderV1Config(),
@@ -2433,9 +2428,8 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 
 	store, err := NewBucketStore(
 		"test",
-		instrBkt,
 		newTestBucketIndexMetadataReader(t, instrBkt, "test"),
-		fetcher,
+		newSingleBucketBlockMetadataFetcher(fetcher, instrBkt),
 		tmpDir,
 		mimir_tsdb.BucketStoreConfig{
 			StreamingBatchSize:          5000,
@@ -2561,9 +2555,8 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 
 	store, err := NewBucketStore(
 		"tenant",
-		instrBkt,
 		newTestBucketIndexMetadataReader(t, instrBkt, "tenant"),
-		fetcher,
+		newSingleBucketBlockMetadataFetcher(fetcher, instrBkt),
 		tmpDir,
 		mimir_tsdb.BucketStoreConfig{
 			StreamingBatchSize:          5000,
@@ -2724,9 +2717,8 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 				t.Run(fmt.Sprintf("batch size: %d", batchSize), func(t *testing.T) {
 					store, err := NewBucketStore(
 						"tenant",
-						instrBkt,
 						newTestBucketIndexMetadataReader(t, instrBkt, "tenant"),
-						fetcher,
+						newSingleBucketBlockMetadataFetcher(fetcher, instrBkt),
 						tmpDir,
 						mimir_tsdb.BucketStoreConfig{
 							StreamingBatchSize:          batchSize,
@@ -2837,9 +2829,8 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 	opts = append([]BucketStoreOption{WithLogger(logger), WithIndexCache(indexCache)}, opts...)
 	store, err := NewBucketStore(
 		"tenant",
-		instrBkt,
 		newTestBucketIndexMetadataReader(t, instrBkt, "tenant"),
-		fetcher,
+		newSingleBucketBlockMetadataFetcher(fetcher, instrBkt),
 		tmpDir,
 		mimir_tsdb.BucketStoreConfig{
 			StreamingBatchSize:          maxSeriesPerBatch,

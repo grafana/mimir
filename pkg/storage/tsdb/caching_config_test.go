@@ -104,7 +104,7 @@ func TestMetadataCachingBucket_CacheKeysAreIsolatedByBucketID(t *testing.T) {
 	})
 }
 
-func Test_NewStoreCachingBucket(t *testing.T) {
+func TestNewStoreCachingBucketConfig(t *testing.T) {
 	type testCase struct {
 		op         string
 		configName string
@@ -176,28 +176,20 @@ func Test_NewStoreCachingBucket(t *testing.T) {
 	}
 
 	t.Run("no caches enabled", func(t *testing.T) {
-		bkt, ll, reg := objstore.NewInMemBucket(), log.NewNopLogger(), prometheus.NewPedanticRegistry()
-		bucketCacheCfg := bucketcache.NewCachingBucketConfig()
+		ll, reg := log.NewNopLogger(), prometheus.NewPedanticRegistry()
 
-		cacheBkt, err := newStoreCachingBucket(
-			bucketCacheCfg, "", BlocksStorageConfig{}, nil, nil, nil, bkt, ll, reg,
-		)
+		bucketCacheCfg, err := NewStoreCachingBucketConfig(BlocksStorageConfig{}, nil, nil, nil, ll, reg)
 		require.NoError(t, err)
-		require.IsNotType(t, &bucketcache.CachingBucket{}, cacheBkt)
-		// A configured bucket should have been a pointer type but just to make sure
-		require.IsNotType(t, bucketcache.CachingBucket{}, cacheBkt)
+		require.Nil(t, bucketCacheCfg)
 	})
 
 	t.Run("all caches enabled", func(t *testing.T) {
-		bkt, ll, reg := objstore.NewInMemBucket(), log.NewNopLogger(), prometheus.NewPedanticRegistry()
-		bucketCacheCfg := bucketcache.NewCachingBucketConfig()
+		ll, reg := log.NewNopLogger(), prometheus.NewPedanticRegistry()
 		metadata, indexHeader, chunks := cache.NewMockCache(), cache.NewMockCache(), cache.NewMockCache()
 
-		cacheBkt, err := newStoreCachingBucket(
-			bucketCacheCfg, "", BlocksStorageConfig{}, metadata, indexHeader, chunks, bkt, ll, reg,
-		)
+		bucketCacheCfg, err := NewStoreCachingBucketConfig(BlocksStorageConfig{}, metadata, indexHeader, chunks, ll, reg)
 		require.NoError(t, err)
-		require.IsType(t, &bucketcache.CachingBucket{}, cacheBkt)
+		require.NotNil(t, bucketCacheCfg)
 
 		validateMetadataCaching(t, bucketCacheCfg, metadata, nil)
 
@@ -208,17 +200,14 @@ func Test_NewStoreCachingBucket(t *testing.T) {
 	})
 
 	t.Run("no metadata cache enabled", func(t *testing.T) {
-		bkt, ll, reg := objstore.NewInMemBucket(), log.NewNopLogger(), prometheus.NewPedanticRegistry()
-		bucketCacheCfg := bucketcache.NewCachingBucketConfig()
+		ll, reg := log.NewNopLogger(), prometheus.NewPedanticRegistry()
 
 		var metadata cache.Cache // nil to disable
 		indexHeader, chunks := cache.NewMockCache(), cache.NewMockCache()
 
-		cacheBkt, err := newStoreCachingBucket(
-			bucketCacheCfg, "", BlocksStorageConfig{}, metadata, indexHeader, chunks, bkt, ll, reg,
-		)
+		bucketCacheCfg, err := NewStoreCachingBucketConfig(BlocksStorageConfig{}, metadata, indexHeader, chunks, ll, reg)
 		require.NoError(t, err)
-		require.IsType(t, &bucketcache.CachingBucket{}, cacheBkt)
+		require.NotNil(t, bucketCacheCfg)
 
 		validateMetadataCaching(t, bucketCacheCfg, nil, errors.New("operation config not found"))
 
@@ -229,17 +218,14 @@ func Test_NewStoreCachingBucket(t *testing.T) {
 	})
 
 	t.Run("no index-header cache enabled", func(t *testing.T) {
-		bkt, ll, reg := objstore.NewInMemBucket(), log.NewNopLogger(), prometheus.NewPedanticRegistry()
-		bucketCacheCfg := bucketcache.NewCachingBucketConfig()
+		ll, reg := log.NewNopLogger(), prometheus.NewPedanticRegistry()
 
 		var indexHeader cache.Cache // nil to disable
 		metadata, chunks := cache.NewMockCache(), cache.NewMockCache()
 
-		cacheBkt, err := newStoreCachingBucket(
-			bucketCacheCfg, "", BlocksStorageConfig{}, metadata, indexHeader, chunks, bkt, ll, reg,
-		)
+		bucketCacheCfg, err := NewStoreCachingBucketConfig(BlocksStorageConfig{}, metadata, indexHeader, chunks, ll, reg)
 		require.NoError(t, err)
-		require.IsType(t, &bucketcache.CachingBucket{}, cacheBkt)
+		require.NotNil(t, bucketCacheCfg)
 
 		validateMetadataCaching(t, bucketCacheCfg, metadata, nil)
 
@@ -250,17 +236,14 @@ func Test_NewStoreCachingBucket(t *testing.T) {
 	})
 
 	t.Run("no chunks cache enabled", func(t *testing.T) {
-		bkt, ll, reg := objstore.NewInMemBucket(), log.NewNopLogger(), prometheus.NewPedanticRegistry()
-		bucketCacheCfg := bucketcache.NewCachingBucketConfig()
+		ll, reg := log.NewNopLogger(), prometheus.NewPedanticRegistry()
 
 		var chunks cache.Cache // nil to disable
 		metadata, indexHeader := cache.NewMockCache(), cache.NewMockCache()
 
-		cacheBkt, err := newStoreCachingBucket(
-			bucketCacheCfg, "", BlocksStorageConfig{}, metadata, indexHeader, chunks, bkt, ll, reg,
-		)
+		bucketCacheCfg, err := NewStoreCachingBucketConfig(BlocksStorageConfig{}, metadata, indexHeader, chunks, ll, reg)
 		require.NoError(t, err)
-		require.IsType(t, &bucketcache.CachingBucket{}, cacheBkt)
+		require.NotNil(t, bucketCacheCfg)
 
 		validateMetadataCaching(t, bucketCacheCfg, metadata, nil)
 
