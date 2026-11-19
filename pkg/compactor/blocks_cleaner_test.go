@@ -418,7 +418,7 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 	))
 
 	// Override the users scanner to reconfigure it to only return a subset of users.
-	cleaner.usersScanner = tsdb.NewUsersScanner(bucketClient, func(userID string) (bool, error) { return userID == "user-1", nil }, logger, nil)
+	cleaner.usersScanner = tsdb.NewUsersScanner(bucketClient, func(userID string) (bool, error) { return userID == "user-1", nil }, scanUsersMaxWait, logger, nil)
 
 	// Create new blocks, to double check expected metrics have changed.
 	createTSDBBlock(t, bucketClient, "user-1", 40, 50, 2, nil)
@@ -449,7 +449,7 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 }
 
 func updateOwnershipFunc(c *BlocksCleaner, ownFunc func(user string) (bool, error)) {
-	c.usersScanner = tsdb.NewUsersScanner(c.bucketClient, ownFunc, c.logger, nil)
+	c.usersScanner = tsdb.NewUsersScanner(c.bucketClient, ownFunc, scanUsersMaxWait, c.logger, nil)
 }
 
 func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *testing.T) {

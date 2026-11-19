@@ -32,6 +32,9 @@ type UsersScanner struct {
 	bucketClient objstore.Bucket
 	logger       log.Logger
 	isOwned      func(userID string) (bool, error)
+	// maxWait is how long ScanUsers waits for a new listing before it uses the users found by the
+	// last successful listing. It is ignored if there is no successful listing yet.
+	maxWait time.Duration
 
 	listedUsers           atomic.Pointer[[]string]
 	listings              singleflight.Group
@@ -40,12 +43,13 @@ type UsersScanner struct {
 	lastSuccessfulListing prometheus.Gauge
 }
 
-func NewUsersScanner(bucketClient objstore.Bucket, isOwned func(userID string) (bool, error), logger log.Logger, reg prometheus.Registerer) *UsersScanner {
+func NewUsersScanner(bucketClient objstore.Bucket, isOwned func(userID string) (bool, error), maxWait time.Duration, logger log.Logger, reg prometheus.Registerer) *UsersScanner {
 	listingsCtx, stopListings := context.WithCancelCause(context.Background())
 	return &UsersScanner{
 		bucketClient: bucketClient,
 		logger:       logger,
 		isOwned:      isOwned,
+		maxWait:      maxWait,
 		listingsCtx:  listingsCtx,
 		stopListings: stopListings,
 		lastSuccessfulListing: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
@@ -56,12 +60,12 @@ func NewUsersScanner(bucketClient objstore.Bucket, isOwned func(userID string) (
 }
 
 // ScanUsers returns a list of users found in the storage, that are not marked for deletion,
-// and list of users marked for deletion. If listing the storage takes longer than maxWait or fails,
+// and list of users marked for deletion. If listing the storage takes longer than the max wait or fails,
 // it uses the users found by the last successful listing, if any.
 //
 // If sharding is enabled, returned lists contains only the users owned by this instance.
-func (s *UsersScanner) ScanUsers(ctx context.Context, maxWait time.Duration) (users, markedForDeletion []string, err error) {
-	listed, err := s.listUsers(ctx, maxWait)
+func (s *UsersScanner) ScanUsers(ctx context.Context) (users, markedForDeletion []string, err error) {
+	listed, err := s.listUsers(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -98,7 +102,7 @@ func (s *UsersScanner) Stop() {
 	_, _, _ = s.listings.Do("", func() (any, error) { return nil, context.Canceled })
 }
 
-func (s *UsersScanner) listUsers(ctx context.Context, maxWait time.Duration) ([]string, error) {
+func (s *UsersScanner) listUsers(ctx context.Context) ([]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -121,7 +125,7 @@ func (s *UsersScanner) listUsers(ctx context.Context, maxWait time.Duration) ([]
 	// maxWait is ignored if we have no previous results to return.
 	var maxWaitExpired <-chan time.Time
 	if previous != nil {
-		maxWaitTimer := time.NewTimer(maxWait)
+		maxWaitTimer := time.NewTimer(s.maxWait)
 		defer maxWaitTimer.Stop()
 		maxWaitExpired = maxWaitTimer.C
 	}
@@ -136,7 +140,7 @@ func (s *UsersScanner) listUsers(ctx context.Context, maxWait time.Duration) ([]
 		}
 	case <-maxWaitExpired:
 		// The listing is too slow: fall back to the previous results.
-		level.Warn(s.logger).Log("msg", "listing users takes longer than the max wait, using the users found by the last successful listing", "max_wait", maxWait)
+		level.Warn(s.logger).Log("msg", "listing users takes longer than the max wait, using the users found by the last successful listing", "max_wait", s.maxWait)
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

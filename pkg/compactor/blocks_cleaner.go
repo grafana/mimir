@@ -92,7 +92,7 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 	c := &BlocksCleaner{
 		cfg:                   cfg,
 		bucketClient:          bucketClient,
-		usersScanner:          mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger, prometheus.WrapRegistererWithPrefix("cortex_compactor_block_cleanup_", reg)),
+		usersScanner:          mimir_tsdb.NewUsersScanner(bucketClient, ownUser, scanUsersMaxWait, logger, prometheus.WrapRegistererWithPrefix("cortex_compactor_block_cleanup_", reg)),
 		cfgProvider:           cfgProvider,
 		singleFlight:          concurrency.NewLimitedConcurrencySingleFlight(cfg.CleanupConcurrency),
 		logger:                log.With(logger, "component", "cleaner"),
@@ -264,7 +264,7 @@ func (c *BlocksCleaner) instrumentFinishedCleanupRun(err error, logger log.Logge
 // refreshOwnedUsers is not required to be concurrency safe, but a single instance of this function
 // could run concurrently with the cleanup job for any tenant.
 func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context) (*ownedUsers, error) {
-	users, deleted, err := c.usersScanner.ScanUsers(ctx, scanUsersMaxWait)
+	users, deleted, err := c.usersScanner.ScanUsers(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover users from bucket: %w", err)
 	}
