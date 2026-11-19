@@ -693,6 +693,61 @@ templates:
 	})
 }
 
+func TestMultitenantAlertmanager_FileReferencesOnLoad(t *testing.T) {
+	urlFile := filepath.Join(t.TempDir(), "webhook-url")
+	require.NoError(t, os.WriteFile(urlFile, []byte("http://localhost/alerts"), 0600))
+	rawConfig := fmt.Sprintf(`
+route:
+  receiver: webhook
+receivers:
+  - name: webhook
+    webhook_configs:
+      - url_file: %q
+`, urlFile)
+
+	for _, tc := range []struct {
+		name     string
+		fallback bool
+	}{
+		{name: "operator fallback", fallback: true},
+		{name: "stored tenant config"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := prepareInMemoryAlertStore()
+			reg := prometheus.NewRegistry()
+			am := setupSingleMultitenantAlertmanager(t, mockAlertmanagerConfig(t), store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
+			am.fallbackConfig = rawConfig
+			storedConfig := rawConfig
+			if tc.fallback {
+				storedConfig = ""
+			}
+			require.NoError(t, store.SetAlertConfig(t.Context(), &alertspb.AlertConfigDesc{
+				User:      "tenant",
+				RawConfig: storedConfig,
+			}))
+
+			for range 2 {
+				require.NoError(t, am.loadAndSyncConfigs(t.Context(), reasonPeriodic))
+				if tc.fallback {
+					require.Contains(t, am.alertmanagers, "tenant")
+					require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
+# TYPE cortex_alertmanager_config_last_reload_successful gauge
+cortex_alertmanager_config_last_reload_successful{user="tenant"} 1
+`), "cortex_alertmanager_config_last_reload_successful"))
+				} else {
+					require.NotContains(t, am.alertmanagers, "tenant")
+					require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
+# TYPE cortex_alertmanager_config_last_reload_successful gauge
+cortex_alertmanager_config_last_reload_successful{user="tenant"} 0
+`), "cortex_alertmanager_config_last_reload_successful"))
+				}
+			}
+		})
+	}
+}
+
 func TestMultitenantAlertmanager_FirewallShouldBlockHTTPBasedReceiversWhenEnabled(t *testing.T) {
 	tests := map[string]struct {
 		getAlertmanagerConfig func(backendURL string) string

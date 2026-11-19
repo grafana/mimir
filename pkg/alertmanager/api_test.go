@@ -1878,10 +1878,42 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			cfg := &MultitenantAlertmanagerConfig{}
-			cfg.RequireExplicitSNSReceiverCredentials = testData.requireExplicitSNSReceiverCredentials
-			err := validateAlertmanagerConfig(testData.input, cfg)
-			assert.ErrorIs(t, err, testData.expected)
+			for _, allowFileFields := range []bool{false, true} {
+				t.Run(fmt.Sprintf("allow_file_fields=%t", allowFileFields), func(t *testing.T) {
+					cfg := &MultitenantAlertmanagerConfig{}
+					cfg.RequireExplicitSNSReceiverCredentials = testData.requireExplicitSNSReceiverCredentials
+					expected := testData.expected
+					if allowFileFields && expected == errFileNotAllowed {
+						expected = nil
+					}
+					err := validateAlertmanagerConfig(testData.input, cfg, allowFileFields)
+					assert.ErrorIs(t, err, expected)
+				})
+			}
 		})
 	}
+}
+
+func TestValidateAlertmanagerConfig_FallbackFileFields(t *testing.T) {
+	input := []interface{}{
+		webhook.WebhookConfig{
+			URLFile: "/webhook-url",
+			HTTPConfig: &commoncfg.HTTPClientConfig{
+				OAuth2: &commoncfg.OAuth2{ClientSecretFile: "/client-secret"},
+				TLSConfig: commoncfg.TLSConfig{
+					CAFile:   "/ca.pem",
+					CertFile: "/tls.crt",
+					KeyFile:  "/tls.key",
+				},
+			},
+		},
+	}
+	var cfg MultitenantAlertmanagerConfig
+	require.NoError(t, validateAlertmanagerConfig(input, &cfg, true))
+	require.ErrorIs(t, validateAlertmanagerConfig(input, &cfg, false), errFileNotAllowed)
+
+	// Allowing file fields must not skip validation of subsequent receivers.
+	input = append(input, config.SNSConfig{Sigv4: sigv4.SigV4Config{Region: "us-east-1"}})
+	cfg.RequireExplicitSNSReceiverCredentials = true
+	require.ErrorIs(t, validateAlertmanagerConfig(input, &cfg, true), errSNSCredentialsRequired)
 }

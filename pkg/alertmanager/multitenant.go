@@ -833,7 +833,8 @@ func (am *MultitenantAlertmanager) setConfig(cfg *alertspb.AlertConfigDesc) (*Al
 	rawCfg := cfg.RawConfig
 	var amCfg *config.Config
 	var err error
-	if cfg.RawConfig == "" {
+	usingFallbackConfig := cfg.RawConfig == ""
+	if usingFallbackConfig {
 		if am.fallbackConfig == "" {
 			return nil, fmt.Errorf("blank Alertmanager configuration for %v", cfg.User)
 		}
@@ -861,7 +862,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg *alertspb.AlertConfigDesc) (*Al
 		return nil, fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
 	}
 
-	if validationErr := validateAlertmanagerConfig(amCfg, am.cfg); validationErr != nil {
+	if validationErr := validateAlertmanagerConfig(amCfg, am.cfg, usingFallbackConfig); validationErr != nil {
 		if slices.Contains(am.cfg.TenantsExemptFromConfigValidationForExistingConfig, cfg.User) {
 			level.Warn(am.logger).Log("msg", "configuration failed validation during loading, this configuration should never have been accepted or the stored configuration is no longer considered valid, but the tenant is explicitly allowed to load invalid config", "user", cfg.User, "err", validationErr)
 		} else {
