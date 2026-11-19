@@ -135,6 +135,26 @@ func (r *runner) truthFirstSafe(p pair) bool {
 	return p.knownSeries > 0 && p.knownSeries*truthSizeMargin <= r.maxTruthSeries
 }
 
+// edgeProbeFits reports whether an edge probe over series may be sent. The probe's unless can't be sharded, so the whole probe runs on one querier and reads the window's series and those before it: it gets a quarter of -max-truth-series, as a truth sent before its estimate does.
+func (r *runner) edgeProbeFits(series int64) bool {
+	return r.maxTruthSeries == 0 || series*truthSizeMargin <= r.maxTruthSeries
+}
+
+// probeSeries is how many series a probe over set reads in the window, going by the estimate: the set's groups, or the whole answer for a grouped truth.
+func probeSeries(est *estimateResponse, set truthSet) int64 {
+	if set.values == nil {
+		return est.Total
+	}
+	in := set.restrict()
+	var n int64
+	for _, g := range est.Groups {
+		if in[g.Value] {
+			n += g.Count
+		}
+	}
+	return n
+}
+
 // largestSet asks for the estimate's -fallback-names largest groups one at a time, leaving out the groups over -max-truth-series.
 func (r *runner) largestSet(p pair, est *estimateResponse) truthSet {
 	label := p.groupBy
@@ -287,7 +307,9 @@ func (r *runner) explain(ctx context.Context, p pair, estimateFirst bool, set tr
 	}
 
 	// A group above the truth may count series with a chunk that overlaps the window but no sample PromQL sees in it: their last samples are just before it and their staleness marker in it, or they have a gap across it. Each such series has a sample just before the window, and series that start after it can't be counted, so the probe counts only the series seen before the window and not in it.
-	if r.edgeSlack > 0 && needsEdgeProbe(diffs) {
+	if r.edgeSlack > 0 && needsEdgeProbe(diffs) && !r.edgeProbeFits(probeSeries(est, set)) {
+		res.Refusals = append(res.Refusals, "edge probe:"+classTruthTooLarge)
+	} else if r.edgeSlack > 0 && needsEdgeProbe(diffs) {
 		r.sleep(ctx)
 		edge, _, err := r.truth(ctx, p, set, r.edgeSlack)
 		if err != nil {

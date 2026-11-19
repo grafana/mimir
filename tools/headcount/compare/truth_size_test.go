@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"math/rand/v2"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -119,4 +120,31 @@ func TestCandidatesKnownSeries(t *testing.T) {
 		got[p.query] = p.knownSeries
 	}
 	assert.Equal(t, map[string]int64{queryMetricTotal: 6, queryMetricByLabel: 6, queryTenantByName: 0}, got)
+}
+
+// TestRunnerEdgeProbeMaxTruthSeries: a mismatch whose edge probe would read more than a quarter of -max-truth-series is left unexplained, without the probe.
+func TestRunnerEdgeProbeMaxTruthSeries(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	f.estimateHook = func(_ int, r *estimateResponse) {
+		for i := range r.Groups {
+			r.Groups[i].Count++
+		}
+		r.Total += int64(len(r.Groups))
+	}
+	r, _ := newTestRunner(srv)
+	r.maxTruthSeries = 40 // the pair counts 6 series plus 3 added, under 40 but over a quarter of it
+	res := r.run(context.Background(), metricPair("pod"))
+	assert.Equal(t, outcomeMismatch, res.Outcome)
+	assert.Contains(t, res.Refusals, "edge probe:"+classTruthTooLarge)
+	for _, q := range f.queries {
+		assert.NotContains(t, q, "unless", "no edge probe sent")
+	}
+	f.queries = nil
+	r.maxTruthSeries = 0
+	r.run(context.Background(), metricPair("pod"))
+	sent := false
+	for _, q := range f.queries {
+		sent = sent || strings.Contains(q, "unless")
+	}
+	assert.True(t, sent, "with no limit the probe is sent")
 }

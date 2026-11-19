@@ -215,6 +215,21 @@ func rangeValues(rng boundsRange) []string {
 	return values
 }
 
+// rangeProbeSeries is how many series an edge probe over set reads in the range, going by upper: the set's names, or every name of the range for a grouped truth.
+func rangeProbeSeries(rng boundsRange, set truthSet) int64 {
+	if set.values == nil {
+		return rng.UpperTotal
+	}
+	in := set.restrict()
+	var n int64
+	for _, g := range rng.Groups {
+		if in[g.Value] {
+			n += g.Upper
+		}
+	}
+	return n
+}
+
 // rankedNames returns the range's names at ranks that PromQL may count: a name whose upper is over -max-truth-series is left out and recorded as a refusal of the truth. It is never nil, since a nil set asks for the grouped truth.
 func (r *runner) rankedNames(rng boundsRange, ranks []int, a *boundsAnswer) []string {
 	upper := map[string]int64{}
@@ -303,7 +318,9 @@ func (r *runner) checkRangeAgainstPromQL(ctx context.Context, w window, rng boun
 	// A block's index lists a series whose only sample in the range is a staleness marker, which PromQL drops, so lower can be above the truth by the series seen just before the range and not in it: the edge probe counts those.
 	edgeOK := false
 	var edgeAnswer answer
-	if r.edgeSlack > 0 {
+	if r.edgeSlack > 0 && !r.edgeProbeFits(rangeProbeSeries(rng, set)) {
+		a.refuse(sideTruth, classTruthTooLarge, "edge probe "+rangeKey(rng))
+	} else if r.edgeSlack > 0 {
 		r.sleep(ctx)
 		var err error
 		edgeAnswer, _, err = r.truth(ctx, rp, set, r.edgeSlack)
