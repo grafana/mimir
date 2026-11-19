@@ -3347,6 +3347,7 @@ How it **works**:
 
 How to **fix** it:
 
+- Find out which blocks could not be fetched. The error returned to the client doesn't list them, but the querier logs a `failed consistency check after all attempts` warning with the IDs in the `failed_blocks` field.
 - Ensure all store-gateways are healthy.
 - Ensure all store-gateways are successfully synching owned blocks (see [`MimirStoreGatewayHasNotSyncTheBucket`](#mimirstoregatewayhasnotsyncthebucket)).
 

@@ -3681,9 +3681,10 @@ func valuesFromSeries(name string, series ...labels.Labels) []string {
 }
 
 func TestStoreConsistencyCheckFailedErr(t *testing.T) {
-	t.Run("Error() should return an human readable error message", func(t *testing.T) {
+	t.Run("Error() should return a human readable error message without the failed block IDs", func(t *testing.T) {
 		err := newStoreConsistencyCheckFailedError([]ulid.ULID{ulid.MustNew(1, nil)})
-		assert.Equal(t, `failed to fetch some blocks (err-mimir-store-consistency-check-failed). The failed blocks are: 00000000010000000000000000`, err.Error())
+		assert.Equal(t, `failed to fetch some blocks (err-mimir-store-consistency-check-failed)`, err.Error())
+		assert.NotContains(t, err.Error(), "00000000010000000000000000")
 	})
 
 	t.Run("should support errors.Is()", func(t *testing.T) {

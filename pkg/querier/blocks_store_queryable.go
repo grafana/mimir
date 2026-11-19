@@ -824,9 +824,10 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	}
 
 	// We've not been able to query all expected blocks after all retries.
-	err = newStoreConsistencyCheckFailedError(remainingBlocks.GetULIDs())
-	level.Warn(util_log.WithContext(ctx, spanLog)).Log("msg", "failed consistency check after all attempts", "err", err)
-	return storeGatewayQueryStats{}, err
+	consistencyErr := newStoreConsistencyCheckFailedError(remainingBlocks.GetULIDs())
+	// The error returned to the client doesn't include the failed blocks, so we log them here.
+	level.Warn(util_log.WithContext(ctx, spanLog)).Log("msg", "failed consistency check after all attempts", "err", consistencyErr, "failed_blocks", strings.Join(convertULIDsToString(consistencyErr.remainingBlocks), " "))
+	return storeGatewayQueryStats{}, consistencyErr
 }
 
 // targetCompartments returns the read compartments to query for the given matchers. With compartments
@@ -935,7 +936,9 @@ func newStoreConsistencyCheckFailedError(remainingBlocks []ulid.ULID) *storeCons
 }
 
 func (e *storeConsistencyCheckFailedErr) Error() string {
-	return fmt.Sprintf("%s. The failed blocks are: %s", globalerror.StoreConsistencyCheckFailed.Message("failed to fetch some blocks"), strings.Join(convertULIDsToString(e.remainingBlocks), " "))
+	// The failed block IDs are internal details, so they are deliberately not part of the message
+	// returned to clients. They are logged by the querier instead.
+	return globalerror.StoreConsistencyCheckFailed.Message("failed to fetch some blocks")
 }
 
 // Is implements support for errors.Is.
