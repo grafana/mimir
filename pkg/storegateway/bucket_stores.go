@@ -617,9 +617,8 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 
 	bs, err := NewBucketStore(
 		userID,
-		userBkt,
 		newBucketIndexMetadataReaderFromLoader(loader),
-		fetcher,
+		newSingleBucketBlockMetadataFetcher(fetcher, userBkt),
 		u.syncDirForUser(userID),
 		u.cfg.BucketStore,
 		worstCaseFetchedDataStrategy{postingListActualSizeFactor: u.cfg.BucketStore.SeriesFetchPreference},

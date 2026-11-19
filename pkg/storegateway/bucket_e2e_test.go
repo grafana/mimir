@@ -224,9 +224,8 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	const maxGapBytes = mimir_tsdb.DefaultPartitionerMaxGapSize
 	store, err := NewBucketStore(
 		userID,
-		objstore.WithNoopInstr(storeBkt),
 		newTestBucketIndexMetadataReader(t, bkt, userID),
-		metaFetcher,
+		newSingleBucketBlockMetadataFetcher(metaFetcher, objstore.WithNoopInstr(storeBkt)),
 		cfg.tempDir,
 		cfg.bucketStoreConfig,
 		cfg.postingsStrategy,
