@@ -46,13 +46,17 @@ func NewBucketIndexLoader(userID string, bkt objstore.Bucket, cfgProvider bucket
 	}
 }
 
-// FetchIndex retrieves the bucket index from bucket, updating the cached instance.
+// FetchIndex retrieves the bucket index from bucket, updating the cached instance. If the bucket has several
+// self-contained buckets, it merges their bucket indexes and updates the bucket's block locations.
 func (l *BucketIndexLoader) FetchIndex(ctx context.Context) (*bucketindex.Index, error) {
-	idx, err := bucketindex.ReadIndex(ctx, l.bkt, l.userID, l.cfgProvider, l.logger)
+	idx, locations, err := bucketindex.ReadMergedIndex(ctx, l.bkt, l.userID, l.cfgProvider, l.logger)
 	if err != nil {
 		return nil, err
 	}
 
+	if lb, ok := l.bkt.(*bucket.BlockLocationBucket); ok {
+		lb.SetTenantBlockLocations(l.userID, locations)
+	}
 	l.idx.Store(idx)
 
 	return idx, nil

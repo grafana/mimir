@@ -150,17 +150,29 @@ func checkObjectStoresConfig(ctx context.Context, cfg Config, logger log.Logger)
 // querier's bucket name carries the read-compartment placeholder (it reads one bucket per read
 // compartment), so each compartment's resolved bucket is checked; otherwise the single configured bucket
 // is checked, as the placeholder is invalid as an actual bucket name.
+// The additional read buckets are checked the same way.
 func checkBlocksStorageConfig(ctx context.Context, cfg Config, logger log.Logger) error {
-	bucketCfg := cfg.BlocksStorage.Bucket
-	if !cfg.Compartments.Enabled || !strings.HasSuffix(bucketCfg.BucketName(), compartments.ReadCompartmentIDPlaceholder) {
-		return checkObjectStoreConfig(ctx, bucketCfg, logger)
+	checkBucket := func(bucketCfg bucket.Config) error {
+		if !cfg.Compartments.Enabled || !strings.HasSuffix(bucketCfg.BucketName(), compartments.ReadCompartmentIDPlaceholder) {
+			return checkObjectStoreConfig(ctx, bucketCfg, logger)
+		}
+
+		errs := multierror.New()
+		for c := 0; c < cfg.Compartments.Read.NumCompartments; c++ {
+			errs.Add(errors.Wrapf(checkObjectStoreConfig(ctx, bucketCfg.ReadCompartmentConfig(c), logger), "read compartment %d", c))
+		}
+		return errs.Err()
 	}
 
-	errs := multierror.New()
-	for c := 0; c < cfg.Compartments.Read.NumCompartments; c++ {
-		errs.Add(errors.Wrapf(checkObjectStoreConfig(ctx, bucketCfg.ReadCompartmentConfig(c), logger), "read compartment %d", c))
+	if err := checkBucket(cfg.BlocksStorage.Bucket); err != nil {
+		return err
 	}
-	return errs.Err()
+	for _, name := range cfg.BlocksStorage.AdditionalReadBucketNames {
+		if err := checkBucket(cfg.BlocksStorage.Bucket.WithBucketName(name)); err != nil {
+			return errors.Wrapf(err, "read bucket %s", name)
+		}
+	}
+	return nil
 }
 
 func checkObjectStoreConfig(ctx context.Context, cfg bucket.Config, logger log.Logger) error {

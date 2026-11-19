@@ -802,6 +802,7 @@ func TestNewBlocksStoreQueryableFinder_MetricsAreScopedToReadCompartment(t *test
 			compartments.WithReadCompartmentSuffix("blocks", idx),
 			metadataCache,
 			storageCfg.Bucket.ReadCompartmentConfig(idx),
+			nil,
 			storageCfg,
 			&blocksStoreLimitsMock{},
 			log.NewNopLogger(),
