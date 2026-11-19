@@ -1667,6 +1667,44 @@ receivers:
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
+func TestMultitenantAlertmanager_LoadValidationAppliesToTenantConfigOnly(t *testing.T) {
+	ctx := t.Context()
+	cfg := mockAlertmanagerConfig(t)
+	store := prepareInMemoryAlertStore()
+
+	am := setupSingleMultitenantAlertmanager(t, cfg, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
+	am.fallbackConfig = configThatFailsValidation
+
+	t.Run("tenant with an empty stored config loads the fallback", func(t *testing.T) {
+		require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{User: "user1"}))
+		require.NoError(t, am.loadAndSyncConfigs(ctx, reasonPeriodic))
+
+		_, exists := am.alertmanagers["user1"]
+		require.True(t, exists)
+	})
+
+	t.Run("tenant with no stored config loads the fallback on request", func(t *testing.T) {
+		req := httptest.NewRequest("GET", cfg.ExternalURL.String()+"/api/v2/status", nil)
+		w := httptest.NewRecorder()
+		am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), "user2")))
+
+		require.Equal(t, http.StatusOK, w.Result().StatusCode)
+		_, exists := am.alertmanagers["user2"]
+		require.True(t, exists)
+	})
+
+	t.Run("tenant with a stored config that fails validation does not load", func(t *testing.T) {
+		require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{User: "user3", RawConfig: configThatFailsValidation}))
+		require.NoError(t, am.loadAndSyncConfigs(ctx, reasonPeriodic))
+
+		_, exists := am.alertmanagers["user3"]
+		require.False(t, exists)
+
+		err := am.setConfig(amConfig{User: "user3", RawConfig: configThatFailsValidation})
+		require.ErrorIs(t, err, errFileNotAllowed)
+	})
+}
+
 // This test checks that the fallback configuration does not overwrite a configuration
 // written to storage before it is picked up by the instance.
 func TestMultitenantAlertmanager_ServeHTTPBeforeSyncFailsIfConfigExists(t *testing.T) {

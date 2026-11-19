@@ -936,6 +936,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 	rawCfg := cfg.RawConfig
 	var userAmConfig *definition.PostableApiAlertingConfig
 	var err error
+	var usingFallbackConfig bool
 	if cfg.RawConfig == "" {
 		if am.fallbackConfig == "" {
 			return fmt.Errorf("blank Alertmanager configuration for %v", cfg.User)
@@ -946,6 +947,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 			return fmt.Errorf("unable to load fallback configuration for %v: %v", cfg.User, err)
 		}
 		rawCfg = am.fallbackConfig
+		usingFallbackConfig = true
 	} else {
 		userAmConfig, err = definition.LoadCompat([]byte(cfg.RawConfig))
 		if err != nil && hasExisting {
@@ -964,12 +966,16 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 		return fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
 	}
 
-	if validationErr := validateAlertmanagerConfig(userAmConfig, am.cfg); validationErr != nil {
-		if slices.Contains(am.cfg.TenantsExemptFromConfigValidationForExistingConfig, cfg.User) {
-			level.Warn(am.logger).Log("msg", "configuration failed validation during loading, this configuration should never have been accepted or the stored configuration is no longer considered valid, but the tenant is explicitly allowed to load invalid config", "user", cfg.User, "err", validationErr)
-		} else {
-			level.Warn(am.logger).Log("msg", "configuration failed validation during loading, this configuration should never have been accepted or the stored configuration is no longer considered valid", "user", cfg.User, "err", validationErr)
-			return fmt.Errorf("configuration for %v failed validation: %w", cfg.User, validationErr)
+	// The operator supplies the fallback config.
+	// Run the user config checks only on a config that the user stored.
+	if !usingFallbackConfig {
+		if validationErr := validateUserSuppliedAlertmanagerConfig(userAmConfig, am.cfg); validationErr != nil {
+			if slices.Contains(am.cfg.TenantsExemptFromConfigValidationForExistingConfig, cfg.User) {
+				level.Warn(am.logger).Log("msg", "configuration failed validation during loading, this configuration should never have been accepted or the stored configuration is no longer considered valid, but the tenant is explicitly allowed to load invalid config", "user", cfg.User, "err", validationErr)
+			} else {
+				level.Warn(am.logger).Log("msg", "configuration failed validation during loading, this configuration should never have been accepted or the stored configuration is no longer considered valid", "user", cfg.User, "err", validationErr)
+				return fmt.Errorf("configuration for %v failed validation: %w", cfg.User, validationErr)
+			}
 		}
 	}
 
