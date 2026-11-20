@@ -508,6 +508,40 @@ func TestCachedIter(t *testing.T) {
 	})
 }
 
+// delayedSetAsyncCache simulates a cache whose asynchronous writes aren't visible yet
+// by dropping SetAsync calls. Synchronous writes are passed through.
+type delayedSetAsyncCache struct {
+	cache.Cache
+}
+
+func (delayedSetAsyncCache) SetAsync(string, []byte, time.Duration) {}
+
+func TestCachedIter_CacheLookupDisabledStoresResultSynchronously(t *testing.T) {
+	inmem := objstore.NewInMemBucket()
+	ctx := context.Background()
+	assert.NoError(t, inmem.Upload(ctx, "/file-1", strings.NewReader("hej")))
+
+	const cfgName = "dirs"
+	mock := cache.NewMockCache()
+	cfg := NewCachingBucketConfig()
+	cfg.CacheIter(cfgName, delayedSetAsyncCache{Cache: mock}, func(string) bool { return true }, 5*time.Minute, JSONIterCodec{})
+
+	cb, err := NewCachingBucket("test", "test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	assert.NoError(t, err)
+
+	// Pre-condition: the cache holds a listing without the file added next.
+	assert.NoError(t, cb.Iter(ctx, "/", func(string) error { return nil }))
+	mock.Flush()
+	assert.NoError(t, mock.Set(ctx, newCacheKeyBuilder("test", "/").iter(), []byte(`["/file-1"]`), time.Minute))
+
+	assert.NoError(t, inmem.Upload(ctx, "/file-2", strings.NewReader("ahoj")))
+
+	// A fresh listing must be visible in the cache as soon as Iter() returns, otherwise a
+	// concurrent lookup could read the stale listing and revert the change.
+	verifyIter(WithSkipCacheLookup(ctx), t, cb, []string{"/file-1", "/file-2"}, false, false, cfgName)
+	verifyIter(ctx, t, cb, []string{"/file-1", "/file-2"}, true, true, cfgName)
+}
+
 func verifyIter(ctx context.Context, t *testing.T, cb *CachingBucket, expectedFiles []string, expectedCacheLookup, expectedFromCache bool, cfgName string) {
 	requestsBefore := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpIter, cfgName)))
 	hitsBefore := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpIter, cfgName)))
