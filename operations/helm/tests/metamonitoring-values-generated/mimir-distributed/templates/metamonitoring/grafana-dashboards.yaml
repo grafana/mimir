@@ -25365,7 +25365,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(operation) (\n  rate(thanos_cache_operations_total{\n    cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\",\n    component=~\"store-gateway\",\n    name=\"chunks-cache\"\n  }[$__rate_interval])\n)\n",
+                            "expr": "sum by(operation) (\n  rate(thanos_cache_operations_total{\n    cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\",\n    component=~\"store-gateway\",\n    name=\"index-header-cache\"\n  }[$__rate_interval])\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{operation}}",
                             "legendLink": null
@@ -25400,6 +25400,211 @@ data:
                          "overrides": [ ]
                       },
                       "id": 44,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "(histogram_quantile(0.99, sum (rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", operation=\"getmulti\", component=~\"store-gateway\", name=\"index-header-cache\"\n}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "refId": "A"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(thanos_cache_operation_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", operation=\"getmulti\", component=~\"store-gateway\", name=\"index-header-cache\"\n}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "refId": "A_classic"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.50, sum (rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", operation=\"getmulti\", component=~\"store-gateway\", name=\"index-header-cache\"\n}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
+                            "refId": "B"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(thanos_cache_operation_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", operation=\"getmulti\", component=~\"store-gateway\", name=\"index-header-cache\"\n}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
+                            "refId": "B_classic"
+                         },
+                         {
+                            "expr": "(sum(histogram_sum(rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", operation=\"getmulti\", component=~\"store-gateway\", name=\"index-header-cache\"\n}[$__rate_interval]))) /\nsum(histogram_count(rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", operation=\"getmulti\", component=~\"store-gateway\", name=\"index-header-cache\"\n}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C"
+                         },
+                         {
+                            "expr": "(sum(rate(thanos_cache_operation_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", operation=\"getmulti\", component=~\"store-gateway\", name=\"index-header-cache\"\n}[$__rate_interval])) /\nsum(rate(thanos_cache_operation_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", operation=\"getmulti\", component=~\"store-gateway\", name=\"index-header-cache\"\n}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C_classic"
+                         }
+                      ],
+                      "title": "Latency (getmulti)",
+                      "type": "timeseries",
+                      "yaxes": [
+                         {
+                            "format": "ms",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "percentunit"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 45,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum(\n  rate(thanos_cache_hits_total{\n    cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\",\n    component=~\"store-gateway\",\n    name=\"index-header-cache\"\n  }[$__rate_interval])\n)\n/\nsum(\n  rate(thanos_cache_requests_total{\n    cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\",\n    component=~\"store-gateway\",\n    name=\"index-header-cache\"\n  }[$__rate_interval])\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "items",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Hit ratio",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Memcached – index header cache (store-gateway accesses)",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 100,
+                               "lineWidth": 0,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "normal"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "ops"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 46,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum by(operation) (\n  rate(thanos_cache_operations_total{\n    cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\",\n    component=~\"store-gateway\",\n    name=\"chunks-cache\"\n  }[$__rate_interval])\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "{{operation}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Requests / sec",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 10,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "s"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 47,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -25496,7 +25701,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 45,
+                      "id": 48,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -25556,7 +25761,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 46,
+                      "id": 49,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -25604,7 +25809,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 47,
+                      "id": 50,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -25701,7 +25906,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 48,
+                      "id": 51,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -25761,7 +25966,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 49,
+                      "id": 52,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -25809,7 +26014,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 50,
+                      "id": 53,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -25906,7 +26111,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 51,
+                      "id": 54,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -25966,7 +26171,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 52,
+                      "id": 55,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -25999,7 +26204,7 @@ data:
                             "unit": "percentunit"
                          }
                       },
-                      "id": 53,
+                      "id": 56,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -26047,7 +26252,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 54,
+                      "id": 57,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26144,7 +26349,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 55,
+                      "id": 58,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26241,7 +26446,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 56,
+                      "id": 59,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26338,7 +26543,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 57,
+                      "id": 60,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26435,7 +26640,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 58,
+                      "id": 61,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26532,7 +26737,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 59,
+                      "id": 62,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26641,7 +26846,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 60,
+                      "id": 63,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -26674,7 +26879,7 @@ data:
                             "unit": "percentunit"
                          }
                       },
-                      "id": 61,
+                      "id": 64,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -26722,7 +26927,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 62,
+                      "id": 65,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26819,7 +27024,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 63,
+                      "id": 66,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26916,7 +27121,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 64,
+                      "id": 67,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -27013,7 +27218,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 65,
+                      "id": 68,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -27110,7 +27315,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 66,
+                      "id": 69,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -27207,7 +27412,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 67,
+                      "id": 70,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
