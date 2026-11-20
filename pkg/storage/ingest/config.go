@@ -132,11 +132,16 @@ type QueryConfig struct {
 	// strong read consistency offsets. A negative value is valid and means the offsets of all partitions
 	// are always included, regardless of how long ago they became inactive.
 	IncludeInactivePartitionsOffsetDuration time.Duration `yaml:"include_inactive_partitions_offset_duration" category:"experimental"`
+
+	// RejectUnknownPartitionsInStrongConsistencyOffsets controls whether queriers reject strongly consistent
+	// requests whose offsets include a partition that the querier doesn't know about yet.
+	RejectUnknownPartitionsInStrongConsistencyOffsets bool `yaml:"reject_unknown_partitions_in_strong_consistency_offsets" category:"experimental"`
 }
 
 // RegisterFlagsWithPrefix registers QueryConfig flags under the given prefix.
 func (cfg *QueryConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.IncludeInactivePartitionsOffsetDuration, prefix+"include-inactive-partitions-offset-duration", 10*time.Minute, "How long, in addition to -querier.query-ingesters-within, the query-frontend keeps including the offset of a partition in the strong read consistency offsets after the partition became inactive. 0 means the offset of an inactive partition is excluded as soon as the query-ingesters-within period has elapsed. A negative value means the offsets of all partitions are always included.")
+	f.BoolVar(&cfg.RejectUnknownPartitionsInStrongConsistencyOffsets, prefix+"reject-unknown-partitions-in-strong-consistency-offsets", true, "If enabled, queriers reject strongly consistent requests whose offsets include a partition that is not yet known to the querier, rather than silently omitting that partition's data from the query result.")
 }
 
 // Validate the config.

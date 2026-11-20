@@ -244,6 +244,13 @@ func (d *Distributor) checkStrongReadConsistencyPartitionsKnown(ctx context.Cont
 	for _, id := range encoded.PartitionIDs(readCompartment) {
 		if _, found := slices.BinarySearch(knownPartitionIDs, id); !found {
 			d.strongReadConsistencyUnknownPartitionRequests.Inc()
+
+			if !d.cfg.IngestStorageConfig.Query.RejectUnknownPartitionsInStrongConsistencyOffsets {
+				// If -ingest-storage.query.reject-unknown-partitions-in-strong-consistency-offsets is disabled, such requests are
+				// still counted but not rejected.
+				return nil
+			}
+
 			return errors.Wrapf(errUnknownPartitionForStrongReadConsistency, "partition %d of read compartment %d", id, readCompartment)
 		}
 	}

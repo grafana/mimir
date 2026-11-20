@@ -784,6 +784,8 @@ func TestDistributor_getIngesterReplicationSetsForQuery_StrongReadConsistencyUnk
 		tenantDefaultStrong bool   // Sets the tenant's default read consistency to strong.
 		offsets             api.EncodedOffsets
 		expectedErr         error
+
+		disableRejection bool // Disables -ingest-storage.query.reject-unknown-partitions-in-strong-consistency-offsets.
 	}{
 		"strong consistency, offsets only for known partitions": {
 			level:       api.ReadConsistencyStrong,
@@ -794,6 +796,12 @@ func TestDistributor_getIngesterReplicationSetsForQuery_StrongReadConsistencyUnk
 			level:       api.ReadConsistencyStrong,
 			offsets:     api.EncodeOffsetsV1(map[int32]int64{0: 10, 1: 20, 2: 30}),
 			expectedErr: errUnknownPartitionForStrongReadConsistency,
+		},
+		"strong consistency, offsets include a partition unknown to the querier, rejection disabled": {
+			level:            api.ReadConsistencyStrong,
+			offsets:          api.EncodeOffsetsV1(map[int32]int64{0: 10, 1: 20, 2: 30}),
+			expectedErr:      nil,
+			disableRejection: true,
 		},
 		"strong consistency, no offsets in the context": {
 			level:       api.ReadConsistencyStrong,
@@ -844,14 +852,17 @@ func TestDistributor_getIngesterReplicationSetsForQuery_StrongReadConsistencyUnk
 					replicationFactor: 1,
 					limits:            limits,
 				}
-				if compartmentsEnabled {
-					cfg.numCompartments = 1
-					cfg.compartmentActivePartitions = map[int][]int32{0: {0, 1}}
-					cfg.configure = func(config *Config) {
+				cfg.configure = func(config *Config) {
+					config.IngestStorageConfig.Query.RejectUnknownPartitionsInStrongConsistencyOffsets = !testData.disableRejection
+					if compartmentsEnabled {
 						config.Compartments.Enabled = true
 						config.Compartments.Read.NumCompartments = 1
 						config.IngestStorageConfig.KafkaConfig.Topic = compartmentsTestTopicFormat
 					}
+				}
+				if compartmentsEnabled {
+					cfg.numCompartments = 1
+					cfg.compartmentActivePartitions = map[int][]int32{0: {0, 1}}
 				}
 
 				distributors, _, regs, _ := prepare(t, cfg)
@@ -876,6 +887,10 @@ func TestDistributor_getIngesterReplicationSetsForQuery_StrongReadConsistencyUnk
 					require.NoError(t, err)
 				} else {
 					require.ErrorIs(t, err, testData.expectedErr)
+					expectedRequestsWithUnknownPartitions = 1
+				}
+				if testData.disableRejection {
+					// Requests are still counted when they're not rejected.
 					expectedRequestsWithUnknownPartitions = 1
 				}
 

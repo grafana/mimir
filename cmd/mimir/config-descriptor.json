@@ -10582,6 +10582,17 @@
               "fieldFlag": "ingest-storage.query.include-inactive-partitions-offset-duration",
               "fieldType": "duration",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "reject_unknown_partitions_in_strong_consistency_offsets",
+              "required": false,
+              "desc": "If enabled, queriers reject strongly consistent requests whose offsets include a partition that is not yet known to the querier, rather than silently omitting that partition's data from the query result.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "ingest-storage.query.reject-unknown-partitions-in-strong-consistency-offsets",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
