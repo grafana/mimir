@@ -23,6 +23,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
@@ -1440,6 +1441,89 @@ func TestTripperware_QueryCostLookback(t *testing.T) {
 			require.Equal(t, strconv.FormatInt(end.Unix(), 10), forwarded.Get("end"))
 			require.Equal(t, "60", forwarded.Get("step"))
 			require.Equal(t, "10s", forwarded.Get("timeout"))
+		})
+	}
+
+	t.Run("clamped to the lookback/POST with URL parameters", func(t *testing.T) {
+		end := time.Now()
+		var forwarded url.Values
+		next := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			var err error
+			forwarded, err = util.ParseRequestFormWithoutConsumingBody(r)
+			require.NoError(t, err)
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+		})
+		params := fmt.Sprintf("query=up&start=%d&end=%d&step=60", end.Add(-3*time.Hour).Unix(), end.Unix())
+		req := httptest.NewRequest(http.MethodPost, "/prometheus/api/v1/query_range_cost?"+params, http.NoBody).WithContext(user.InjectOrgID(t.Context(), "user-1"))
+		resp, err := newTripperware(t)(next).RoundTrip(req)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+
+		start, err := strconv.ParseFloat(forwarded.Get("start"), 64)
+		require.NoError(t, err)
+		require.InDelta(t, float64(end.Add(-time.Hour).Unix()), start, 60)
+		require.Equal(t, "up", forwarded.Get("query"))
+		require.Equal(t, strconv.FormatInt(end.Unix(), 10), forwarded.Get("end"))
+	})
+}
+
+func TestTripperware_QueryCostRetries(t *testing.T) {
+	const maxRetries = 3
+	end := time.Now()
+	params := fmt.Sprintf("query=up&start=%d&end=%d&step=60", end.Add(-time.Hour).Unix(), end.Unix())
+
+	for _, tc := range []struct {
+		name   string
+		method string
+		// clamp sets a lookback that moves the start, so the request body is rewritten.
+		clamp bool
+	}{
+		{name: "GET", method: http.MethodGet},
+		{name: "POST", method: http.MethodPost},
+		{name: "POST clamped", method: http.MethodPost, clamp: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			downstreamErr := errors.New("downstream failed")
+			var calls int
+			next := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+				calls++
+				// httpgrpc.FromHTTPRequest reads the body, so do the same.
+				forwarded, err := httpgrpc.FromHTTPRequest(r)
+				require.NoError(t, err)
+				httpReq, err := httpgrpc.ToHTTPRequest(t.Context(), forwarded)
+				require.NoError(t, err)
+				values, err := util.ParseRequestFormWithoutConsumingBody(httpReq)
+				require.NoError(t, err)
+				require.Equal(t, "up", values.Get("query"), "try %d", calls)
+				return nil, downstreamErr
+			})
+
+			engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
+			limits := mockLimits{}
+			if tc.clamp {
+				limits.maxQueryLookback = 30 * time.Minute
+			}
+			tw, err := NewTripperware(Config{MaxRetries: maxRetries}, log.NewNopLogger(), limits,
+				newMockQueryLimitsProvider(&limits), newTestCodec(), nil, nil, engine, engineOpts, nil,
+				false, false, nil, prometheus.NewRegistry(), limiter.NewInflightMemoryConsumptionTracker(nil, nil))
+			require.NoError(t, err)
+
+			target := "/prometheus/api/v1/query_range_cost"
+			var body io.Reader = http.NoBody
+			if tc.method == http.MethodGet {
+				target += "?" + params
+			} else {
+				body = strings.NewReader(params)
+			}
+			req := httptest.NewRequest(tc.method, target, body).WithContext(user.InjectOrgID(t.Context(), "user-1"))
+			if tc.method == http.MethodPost {
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			}
+
+			resp, err := tw(next).RoundTrip(req)
+			require.ErrorIs(t, err, downstreamErr)
+			require.Nil(t, resp)
+			require.Equal(t, maxRetries, calls)
 		})
 	}
 }

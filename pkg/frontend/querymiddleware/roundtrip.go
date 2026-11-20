@@ -374,7 +374,7 @@ func newQueryTripperware(
 
 		// Cost estimates are not split, sharded or cached, but they are subject to the same
 		// tenant query limits and blocked queries as the queries that they estimate.
-		queryCost := newQueryCostRoundTripper(next, codec, queryCostMiddleware...)
+		queryCost := newQueryCostRoundTripper(next, codec, log, cfg.MaxRetries, retryMetrics, queryCostMiddleware...)
 
 		// Look up cache as first thing after validation.
 		if cfg.CacheResults {
