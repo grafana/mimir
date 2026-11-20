@@ -600,10 +600,10 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			// write compartment's Kafka cluster. The per-cluster offset files live in the TSDB directory
 			// alongside the ingester's data, one per write compartment.
 			readCompartmentTopic := compartments.ReplaceReadCompartment(kafkaCfg.Topic, cfg.ReadCompartmentID)
-			kafkaCfgs := ingest.WriteCompartmentConfigs(kafkaCfg, cfg.Compartments.Write.NumCompartments, readCompartmentTopic)
+			kafkaCfgs, additionalReadClusterCfg := ingest.PartitionReaderConfigs(kafkaCfg, cfg.Compartments.Write.NumCompartments, readCompartmentTopic, ingestCfg.AdditionalReadCluster)
 			offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset-wc-"+compartments.WriteCompartmentIDPlaceholder+".json")
 
-			i.ingestReader, err = ingest.NewMultiClusterPartitionReader(kafkaCfgs, ingestCfg.OrderedConsumption, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
+			i.ingestReader, err = ingest.NewMultiClusterPartitionReader(kafkaCfgs, additionalReadClusterCfg, ingestCfg.OrderedConsumption, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
 			if err != nil {
 				return nil, errors.Wrap(err, "creating ingest storage reader")
 			}
