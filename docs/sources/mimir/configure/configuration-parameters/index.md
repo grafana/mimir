@@ -6254,6 +6254,12 @@ query:
   # CLI flag: -ingest-storage.query.include-inactive-partitions-offset-duration
   [include_inactive_partitions_offset_duration: <duration> | default = 10m]
 
+  # (experimental) If enabled, queriers reject strongly consistent requests
+  # whose offsets include a partition that is not yet known to the querier,
+  # rather than silently omitting that partition's data from the query result.
+  # CLI flag: -ingest-storage.query.reject-unknown-partitions-in-strong-consistency-offsets
+  [reject_unknown_partitions_in_strong_consistency_offsets: <boolean> | default = true]
+
 # (advanced) Number of tenants to concurrently fsync WAL and WBL before Kafka
 # offsets are committed, must be at least 1.
 # CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency
