@@ -194,6 +194,7 @@
 * [BUGFIX] Alertmanager: Fix tenants without a configuration getting no Alertmanager when the fallback configuration (`-alertmanager.configs.fallback`) fails validation. For example, the fallback loads files or has an SNS receiver without explicit credentials. The load-time validation added in #17315 now checks tenant configuration only. #17399
 * [BUGFIX] Admin: Use relative links for the config, runtime config and ingester links in the administration web UI, so that they work when the UI is served behind a reverse proxy that adds a path prefix. #17271
 * [BUGFIX] Query-frontend: Fix retried POST requests to the label names, label values, series, cardinality and active series endpoints being sent without their body. Retries dropped the parameters sent in the body, such as `match[]`, so a retried label names or label values request could return results for all series. #17445
+* [BUGFIX] Querier: Mitigate strongly-consistent requests possibly omitting data from newly started partitions. #17456
 
 ### Mixin
 
