@@ -146,7 +146,7 @@ func testReopenedTSDBWithoutInOrderSamples(t *testing.T, oooSeries bool, oooTime
 		// which would raise the head max time on reopen. Remove it, so that the local blocks only
 		// have blocks that are skipped for that, like the ones written by CompactSelectedSeries.
 		var removed int
-		for _, b := range db.db.Blocks() {
+		for _, b := range db.Blocks() {
 			if len(b.Meta().Compaction.Hints) == 0 {
 				removed++
 				require.NoError(t, os.RemoveAll(b.Dir()))

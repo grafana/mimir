@@ -236,7 +236,7 @@ func (i *Ingester) labelChurnForRequest(r *http.Request) (*labelChurnResponse, i
 	response, err := db.labelChurn(r.Context(), time.Now().Add(-lookback).UnixMilli(), limit)
 	switch {
 	case errors.Is(err, errLabelChurnUnsupportedEngine):
-		http.Error(w, err.Error(), http.StatusNotImplemented)
+		return nil, http.StatusNotImplemented, err
 	case errors.Is(err, errLabelChurnCompactedTooRecently) || errors.Is(err, errLabelChurnNoRecord):
 		return nil, http.StatusServiceUnavailable, err
 	case err != nil:

@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"slices"
 	"time"
 
 	"github.com/grafana/dskit/ring"
@@ -24,7 +23,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -71,20 +69,6 @@ func (h prometheusHead) Ownership(owned ring.TokenRanges) (int, []storage.Series
 		}
 	})
 	return count, nonOwned
-}
-
-// Get postings for all series in one shard.
-func (h prometheusHead) ShardSeries(shardIndex, shardCount uint64) index.Postings {
-	out := make([]storage.SeriesRef, 0, 128)
-	h.ForEachShardHash(func(ref []storage.SeriesRef, shardHash []uint64) {
-		for i := range ref {
-			if shardHash[i]%shardCount == shardIndex {
-				out = append(out, ref[i])
-			}
-		}
-	})
-	slices.Sort(out) // We don't really need this for usage inside this module, but it's safer to conform to Postings norms.
-	return index.NewListPostings(out)
 }
 
 // Flush compacts the head block by block up to upTo, then the out-of-order head.
