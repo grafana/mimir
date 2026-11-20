@@ -156,6 +156,25 @@ func TestShardFromMatchers(t *testing.T) {
 		{
 			input: []*labels.Matcher{
 				{
+					Name: ShardLabel,
+					Type: labels.MatchEqual,
+					Value: ShardSelector{
+						ShardIndex: 1,
+						ShardCount: 4,
+						ByLabels:   []string{"span,name", "cluster"},
+					}.LabelValue(),
+				},
+			},
+			shard: &ShardSelector{
+				ShardIndex: 1,
+				ShardCount: 4,
+				ByLabels:   []string{"cluster", "span,name"},
+			},
+			idx: 0,
+		},
+		{
+			input: []*labels.Matcher{
+				{
 					Name:  ShardLabel,
 					Type:  labels.MatchEqual,
 					Value: "invalid-fmt",
