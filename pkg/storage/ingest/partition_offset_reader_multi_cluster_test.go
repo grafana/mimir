@@ -66,6 +66,7 @@ func TestMultiClusterOffsetsReader_WaitNextFetchLastProducedOffset(t *testing.T)
 
 	reader, err := NewMultiClusterOffsetsReader(
 		[]KafkaConfig{cfg0, cfg1},
+		nil,
 		[]string{topic0, topic1},
 		[]GetPartitionIDsFunc{partitionZeroIDs, partitionZeroIDs},
 		"query-frontend",
@@ -86,6 +87,80 @@ func TestMultiClusterOffsetsReader_WaitNextFetchLastProducedOffset(t *testing.T)
 	// One Kafka client per write compartment, owned by the multi-cluster reader, and they are distinct.
 	require.Len(t, reader.clients, 2)
 	assert.NotSame(t, reader.clients[0], reader.clients[1])
+}
+
+func TestMultiClusterOffsetsReader_AdditionalReadCluster(t *testing.T) {
+	const (
+		numPartitions              = int32(2)
+		topic0                     = "rc-0"
+		topic1                     = "rc-1"
+		additionalReadClusterTopic = "additional"
+	)
+
+	ctx := context.Background()
+
+	_, writeCompartmentAddr := testkafka.CreateCluster(t, numPartitions, topic0)
+	createAdditionalTestTopic(t, writeCompartmentAddr, topic1, numPartitions)
+	_, additionalReadClusterAddr := testkafka.CreateCluster(t, numPartitions, additionalReadClusterTopic)
+
+	writeCompartmentCfg := createTestKafkaConfig(writeCompartmentAddr, topic0)
+	writeCompartmentCfg.LastProducedOffsetPollInterval = 100 * time.Millisecond
+	additionalReadClusterCfg := createTestKafkaConfig(additionalReadClusterAddr, additionalReadClusterTopic)
+
+	writeCompartmentClient := createTestKafkaClient(t, writeCompartmentCfg)
+	additionalReadClusterClient := createTestKafkaClient(t, additionalReadClusterCfg)
+
+	// Write compartment 0: read compartment 0 partition 0 last offset 0, all other partitions empty.
+	produceRecord(ctx, t, writeCompartmentClient, topic0, 0, []byte("a"))
+	// Additional read cluster: partition 0 last offset 2, partition 1 last offset 1.
+	produceRecord(ctx, t, additionalReadClusterClient, additionalReadClusterTopic, 0, []byte("b"))
+	produceRecord(ctx, t, additionalReadClusterClient, additionalReadClusterTopic, 0, []byte("c"))
+	produceRecord(ctx, t, additionalReadClusterClient, additionalReadClusterTopic, 0, []byte("d"))
+	produceRecord(ctx, t, additionalReadClusterClient, additionalReadClusterTopic, 1, []byte("e"))
+	produceRecord(ctx, t, additionalReadClusterClient, additionalReadClusterTopic, 1, []byte("f"))
+
+	// Read compartment 0 has 2 partitions, read compartment 1 has 1 partition.
+	partitionZeroAndOneIDs := func(_ context.Context) ([]int32, error) { return []int32{0, 1}, nil }
+
+	reg := prometheus.NewPedanticRegistry()
+	reader, err := NewMultiClusterOffsetsReader(
+		[]KafkaConfig{writeCompartmentCfg},
+		&additionalReadClusterCfg,
+		[]string{topic0, topic1},
+		[]GetPartitionIDsFunc{partitionZeroAndOneIDs, partitionZeroIDs},
+		"query-frontend",
+		reg,
+		log.NewNopLogger(),
+	)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, reader)) })
+
+	offsets, err := reader.WaitNextFetchLastProducedOffset(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, kmeta.TopicsPartitionsOffsets{
+		topic0: {
+			0: kmeta.NewMultiClusterPartitionOffsets([]int64{0, 2}),
+			1: kmeta.NewMultiClusterPartitionOffsets([]int64{-1, 1}),
+		},
+		topic1: {
+			0: kmeta.NewMultiClusterPartitionOffsets([]int64{-1, 2}),
+		},
+	}, offsets)
+
+	metricFamilies, err := reg.Gather()
+	require.NoError(t, err)
+	writeCompartmentLabels := map[string]bool{}
+	for _, metricFamily := range metricFamilies {
+		for _, metric := range metricFamily.GetMetric() {
+			for _, label := range metric.GetLabel() {
+				if label.GetName() == "write_compartment" {
+					writeCompartmentLabels[label.GetValue()] = true
+				}
+			}
+		}
+	}
+	assert.Equal(t, map[string]bool{"0": true, "additional": true}, writeCompartmentLabels)
 }
 
 // TestMultiClusterOffsetsReader_SingleFlight verifies that concurrent callers share a single per-poll
@@ -134,6 +209,7 @@ func TestMultiClusterOffsetsReader_SingleFlight(t *testing.T) {
 
 	reader, err := NewMultiClusterOffsetsReader(
 		[]KafkaConfig{cfg0, cfg1},
+		nil,
 		[]string{topic},
 		[]GetPartitionIDsFunc{partitionZeroIDs},
 		"query-frontend",
@@ -190,6 +266,7 @@ func TestMultiClusterOffsetsReader_ClosesClientsOnStop(t *testing.T) {
 
 	reader, err := NewMultiClusterOffsetsReader(
 		[]KafkaConfig{createTestKafkaConfig(addr0, topic), createTestKafkaConfig(addr1, topic)},
+		nil,
 		[]string{topic},
 		[]GetPartitionIDsFunc{partitionZeroIDs},
 		"query-frontend",
@@ -216,12 +293,12 @@ func TestNewMultiClusterOffsetsReader_Validation(t *testing.T) {
 	cfg := createTestKafkaConfig("localhost:0", "rc-0")
 
 	t.Run("no Kafka clusters", func(t *testing.T) {
-		_, err := NewMultiClusterOffsetsReader(nil, []string{"rc-0"}, []GetPartitionIDsFunc{partitionZeroIDs}, "query-frontend", nil, logger)
+		_, err := NewMultiClusterOffsetsReader(nil, nil, []string{"rc-0"}, []GetPartitionIDsFunc{partitionZeroIDs}, "query-frontend", nil, logger)
 		require.Error(t, err)
 	})
 
 	t.Run("mismatched topics and partition ID functions", func(t *testing.T) {
-		_, err := NewMultiClusterOffsetsReader([]KafkaConfig{cfg}, []string{"rc-0", "rc-1"}, []GetPartitionIDsFunc{partitionZeroIDs}, "query-frontend", nil, logger)
+		_, err := NewMultiClusterOffsetsReader([]KafkaConfig{cfg}, nil, []string{"rc-0", "rc-1"}, []GetPartitionIDsFunc{partitionZeroIDs}, "query-frontend", nil, logger)
 		require.Error(t, err)
 	})
 }
