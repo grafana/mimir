@@ -80,7 +80,9 @@ spec:
             medium: Memory
             sizeLimit: 1Gi
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: store-gateway
           imagePullPolicy: IfNotPresent
@@ -214,7 +216,9 @@ spec:
             medium: Memory
             sizeLimit: 1Gi
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: store-gateway
           imagePullPolicy: IfNotPresent
@@ -348,7 +352,9 @@ spec:
             medium: Memory
             sizeLimit: 1Gi
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: store-gateway
           imagePullPolicy: IfNotPresent

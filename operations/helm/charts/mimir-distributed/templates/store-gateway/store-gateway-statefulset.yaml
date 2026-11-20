@@ -133,7 +133,7 @@ spec:
         {{ toYaml .Values.global.extraVolumes | nindent 8 }}
         {{- end }}
         - name: active-queries
-          emptyDir: {}
+          {{- include "mimir.activeQueriesVolume" (dict "ctx" . "component" "store-gateway") | nindent 10 }}
       containers:
         {{- if .Values.store_gateway.extraContainers }}
         {{ toYaml .Values.store_gateway.extraContainers | nindent 8 }}

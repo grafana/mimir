@@ -91,7 +91,9 @@ spec:
           configMap:
             name: test-ingress-values-mimir-runtime
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: store-gateway
           imagePullPolicy: IfNotPresent
@@ -236,7 +238,9 @@ spec:
           configMap:
             name: test-ingress-values-mimir-runtime
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: store-gateway
           imagePullPolicy: IfNotPresent
@@ -381,7 +385,9 @@ spec:
           configMap:
             name: test-ingress-values-mimir-runtime
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: store-gateway
           imagePullPolicy: IfNotPresent

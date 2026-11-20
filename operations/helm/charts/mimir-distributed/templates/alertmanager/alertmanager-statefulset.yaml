@@ -124,7 +124,7 @@ spec:
         - name: tmp
           emptyDir: {}
         - name: active-queries
-          emptyDir: {}
+          {{- include "mimir.activeQueriesVolume" (dict "ctx" . "component" "alertmanager") | nindent 10 }}
         {{- if .Values.alertmanager.fallbackConfig }}
         - name: alertmanager-fallback-config
           configMap:

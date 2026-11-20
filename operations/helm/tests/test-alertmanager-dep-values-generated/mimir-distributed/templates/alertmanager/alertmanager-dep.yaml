@@ -119,7 +119,9 @@ spec:
         - name: tmp
           emptyDir: {}
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
         - name: alertmanager-fallback-config
           configMap:
             name: test-alertmanager-dep-values-mimir-alertmanager-fallback-config

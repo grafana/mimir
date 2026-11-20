@@ -87,7 +87,9 @@ spec:
           configMap:
             name: test-gomaxprocs-override-values-mimir-runtime
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: store-gateway
           imagePullPolicy: IfNotPresent
@@ -228,7 +230,9 @@ spec:
           configMap:
             name: test-gomaxprocs-override-values-mimir-runtime
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: store-gateway
           imagePullPolicy: IfNotPresent
@@ -369,7 +373,9 @@ spec:
           configMap:
             name: test-gomaxprocs-override-values-mimir-runtime
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: store-gateway
           imagePullPolicy: IfNotPresent

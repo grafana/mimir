@@ -131,5 +131,5 @@ spec:
         - name: storage
           emptyDir: {}
         - name: active-queries
-          emptyDir: {}
+          {{- include "mimir.activeQueriesVolume" (dict "ctx" . "component" "query-frontend") | nindent 10 }}
 {{- end }}

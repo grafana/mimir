@@ -50,3 +50,8 @@ mimir:
       remote_timeout: null
     ingester:
       push_grpc_method_enabled: null
+
+# Jsonnet keeps the active-queries volume on the node's disk.
+global:
+  activeQueriesVolume:
+    inMemory: false

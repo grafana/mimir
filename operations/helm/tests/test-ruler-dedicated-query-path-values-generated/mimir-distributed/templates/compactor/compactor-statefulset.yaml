@@ -75,7 +75,9 @@ spec:
           configMap:
             name: test-ruler-dedicated-query-path-values-mimir-runtime
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: compactor
           imagePullPolicy: IfNotPresent

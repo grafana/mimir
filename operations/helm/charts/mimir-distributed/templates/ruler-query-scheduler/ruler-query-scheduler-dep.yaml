@@ -122,5 +122,5 @@ spec:
         - name: storage
           emptyDir: {}
         - name: active-queries
-          emptyDir: {}
+          {{- include "mimir.activeQueriesVolume" (dict "ctx" . "component" "ruler-query-scheduler") | nindent 10 }}
 {{- end }}
