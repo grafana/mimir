@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/prometheus/common/model"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -84,7 +86,10 @@ func mergeSeriesMetadataFromMultipleSources[S seriesMetadataSource](ctx context.
 
 			// Important: don't extract the string(...) call in the map lookup below - passing it directly allows us to avoid allocating it.
 			if outputSeriesIdx, seenAlready := seriesIndices[string(labelBytesBuf)]; seenAlready {
-				if series.DropName != allSeries[outputSeriesIdx].DropName {
+				// The same series can come from a name-dropping expression in only some sources, for example
+				// from different sides of "or". Without a __name__ label, dropping the name has no effect,
+				// so the series can still be merged.
+				if series.DropName != allSeries[outputSeriesIdx].DropName && series.Labels.Has(model.MetricNameLabel) {
 					return nil, nil, fmt.Errorf("series with labels %s has conflicting drop name values in different ranges / extents", series.Labels.String())
 				}
 
