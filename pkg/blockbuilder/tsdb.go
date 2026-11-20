@@ -154,8 +154,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
 
 		for _, s := range ts.Samples {
-			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs &&
-				(!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
+			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs {
 				if ref != 0 {
 					// If the cached reference exists, we try to use it.
 					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
