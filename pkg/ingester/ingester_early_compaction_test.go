@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
@@ -1328,7 +1329,9 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRetryAfterPartialEvicti
 	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
 	require.NoError(t, os.Remove(blockedSegment))
 
+	triggered := ingester.metrics.earlyCompactionNonOwnedSeriesTriggered.WithLabelValues(userID)
 	require.Equal(t, uint64(2), db.Head().NumSeries(), "only the non-owned in-order series should be evicted")
+	require.Equal(t, float64(1), testutil.ToFloat64(triggered), "partial eviction should count")
 	require.Empty(t, db.pendingNonOwnedRefs, "the attempt consumed both queued refs")
 	require.Equal(t, recomputeOwnedSeriesReasonEarlyCompaction, db.getAndClearReasonForRecomputeOwnedSeries())
 	require.True(t, db.recomputeOwnedSeries(0, recomputeOwnedSeriesReasonEarlyCompaction, log.NewNopLogger()))
@@ -1336,6 +1339,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRetryAfterPartialEvicti
 
 	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
 	require.Equal(t, uint64(1), db.Head().NumSeries(), "retry should evict the remaining non-owned series")
+	require.Equal(t, float64(2), testutil.ToFloat64(triggered), "successful retry should count")
 	require.Empty(t, db.pendingNonOwnedRefs)
 }
 
