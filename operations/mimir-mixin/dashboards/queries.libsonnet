@@ -131,7 +131,7 @@ local filename = 'mimir-queries.json';
             Queue reservation attempts that the query-frontend sent to a query-scheduler and that did not succeed, by outcome.
             The query-frontend counts each attempt that gets a reply or a transport error. It does not count an attempt that the query cancels before the reply.
 
-            - too_many_requests: The reservation slots plus the queued requests and idle slots of the tenant exceed -query-scheduler.max-outstanding-requests-per-tenant. The query fails.
+            - too_many_requests: The reservation slots plus the queued requests and idle slots of the tenant exceed -query-scheduler.max-outstanding-requests-per-tenant. The query-frontend tries again on another query-scheduler that did not reject the reservation. The query fails when no query-scheduler that did not reject the reservation has a stream that supports queue reservation, or when the attempts run out.
             - shutting_down: The query-scheduler is shutting down. The query-frontend tries again.
             - send_failed: A transport error occurred. The query-frontend tries again.
             - scheduler_error: The query-scheduler returned an error or an unknown status.
