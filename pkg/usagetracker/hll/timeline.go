@@ -54,12 +54,14 @@ func (t *Timeline) Merge(minute, now int64, s Sketch) {
 	}
 }
 
-// Cleanup drops the sketches of the minutes that are not in the window ending at now.
+// Cleanup drops sketches older than the window ending at now or later than now+1.
 func (t *Timeline) Cleanup(now int64) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
 	for i, slot := range t.slots {
-		if slot.sketch != nil && !t.inWindow(slot.minute, now) {
+		// Keep the next minute if a merge crossed the minute boundary after the caller read now.
+		// Dropping later minutes frees slots for new writes after the clock goes back.
+		if slot.sketch != nil && slot.minute != now+1 && !t.inWindow(slot.minute, now) {
 			t.slots[i] = timelineSlot{}
 		}
 	}
@@ -84,6 +86,18 @@ func (t *Timeline) Sketches(now int64, f func(minute int64, s Sketch)) {
 			f(slot.minute, slot.sketch)
 		}
 	}
+}
+
+// Empty returns whether no sketch is in the window ending at now or after it.
+func (t *Timeline) Empty(now int64) bool {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+	for _, slot := range t.slots {
+		if slot.sketch != nil && slot.minute > now-int64(len(t.slots)) {
+			return false
+		}
+	}
+	return true
 }
 
 func (t *Timeline) inWindow(minute, now int64) bool {

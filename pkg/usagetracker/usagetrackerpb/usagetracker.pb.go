@@ -510,7 +510,7 @@ func (m *SnapshotEvent) GetFilename() string {
 
 type SnapshotFile struct {
 	Data [][]byte `protobuf:"bytes,1,rep,name=data,proto3" json:"data,omitempty"`
-	// The HLL-timelines of the received series estimation of all tenants. Only the last file of a snapshot has them.
+	// A chunk of the HLL-timelines of the received series estimation. The chunks are in the last files of a snapshot, after all the shards, one per file.
 	ReceivedSeries []byte `protobuf:"bytes,2,opt,name=receivedSeries,proto3" json:"receivedSeries,omitempty"`
 }
 

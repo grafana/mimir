@@ -82,7 +82,7 @@ message SnapshotEvent {
 message SnapshotFile {
   repeated bytes data = 1;
 
-  // The HLL-timelines of the received series estimation of all tenants. Only the last file of a snapshot has them.
+  // A chunk of the HLL-timelines of the received series estimation. The chunks are in the last files of a snapshot, after all the shards, one per file.
   bytes receivedSeries = 2;
 }
 

@@ -4,6 +4,7 @@ package usagetracker
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -92,6 +93,59 @@ func TestTrackerStore_ReceivedSeries(t *testing.T) {
 		require.Zero(t, timelineEstimate(t, store, tenantID, now.Add(30*time.Minute)))
 	})
 
+	t.Run("a tenant without series is kept while it has received series in the window", func(t *testing.T) {
+		// With 2 zones, the local limit is 100: the first call fills it, and the second one is rejected.
+		store := newReceivedSeriesTestStore(limiterMock{tenantID: 200}, testReceivedSeriesPrecision, 1)
+		_, err := store.trackSeries(t.Context(), tenantID, seriesRange(0, 1000), now)
+		require.NoError(t, err)
+		rejected, err := store.trackSeries(t.Context(), tenantID, seriesRange(1000, 2000), now.Add(10*time.Minute))
+		require.NoError(t, err)
+		require.Len(t, rejected, 1000)
+
+		// The accepted series expire, but the minute of the rejected ones is still in the window.
+		cleanupTime := now.Add(testIdleTimeout + time.Minute)
+		store.cleanup(cleanupTime)
+		require.Zero(t, getTenant(t, store, tenantID).series.Load())
+		require.InEpsilon(t, 1000, timelineEstimate(t, store, tenantID, cleanupTime), 0.05)
+
+		// Once the rejected series are out of the window too, the tenant is deleted.
+		store.cleanup(now.Add(10*time.Minute + testIdleTimeout + time.Minute))
+		store.mtx.RLock()
+		require.NotContains(t, store.tenants, tenantID)
+		store.mtx.RUnlock()
+	})
+
+	t.Run("a tenant without series is kept while it has received series after the time of the cleanup", func(t *testing.T) {
+		// With 2 zones, the local limit is 100: the first call fills it.
+		store := newReceivedSeriesTestStore(limiterMock{tenantID: 200}, testReceivedSeriesPrecision, 1)
+		_, err := store.trackSeries(t.Context(), tenantID, seriesRange(0, 100), now)
+		require.NoError(t, err)
+
+		// The accepted series expire at the time of the cleanup, but a call in the next minute comes before the cleanup
+		// removes them, like a call while the cleanup goes through the shards: it's rejected.
+		cleanupTime := now.Add(testIdleTimeout + time.Minute)
+		rejected, err := store.trackSeries(t.Context(), tenantID, seriesRange(100, 1100), cleanupTime.Add(time.Minute))
+		require.NoError(t, err)
+		require.Len(t, rejected, 1000)
+
+		store.cleanup(cleanupTime)
+		require.Zero(t, getTenant(t, store, tenantID).series.Load())
+		require.InEpsilon(t, 1000, timelineEstimate(t, store, tenantID, cleanupTime.Add(time.Minute)), 0.05)
+	})
+
+	t.Run("an empty call doesn't keep a tenant without series", func(t *testing.T) {
+		store := newReceivedSeriesTestStore(limiterMock{}, testReceivedSeriesPrecision, 1)
+		_, err := store.trackSeries(t.Context(), tenantID, nil, now)
+		require.NoError(t, err)
+		// The call creates the tenant, but it received no series to keep it for.
+		getTenant(t, store, tenantID)
+
+		store.cleanup(now)
+		store.mtx.RLock()
+		require.NotContains(t, store.tenants, tenantID)
+		store.mtx.RUnlock()
+	})
+
 	t.Run("the metric is the estimate at the time of the scrape", func(t *testing.T) {
 		store := newReceivedSeriesTestStore(limiterMock{}, testReceivedSeriesPrecision, 1)
 		scrapeTime := now
@@ -150,7 +204,7 @@ func TestTrackerStore_ReceivedSeries(t *testing.T) {
 		store.cleanup(now)
 		require.Nil(t, getTenant(t, store, tenantID).receivedSeries.Load())
 		requireReceivedSeriesMetric(t, reg, nil)
-		require.Nil(t, store.snapshotReceivedSeries(now))
+		require.Nil(t, store.snapshotReceivedSeries(now, math.MaxInt))
 	})
 }
 
@@ -183,9 +237,15 @@ func TestTrackerStore_ReceivedSeriesSnapshot(t *testing.T) {
 		require.NoError(t, err)
 		return store
 	}
+	// sourceSnapshot returns the received series of a new source store, in a single chunk.
+	sourceSnapshot := func(t *testing.T) []byte {
+		chunks := newSourceStore(t).snapshotReceivedSeries(later, math.MaxInt)
+		require.Len(t, chunks, 1)
+		return chunks[0]
+	}
 
 	t.Run("loading merges the timelines of the tenants", func(t *testing.T) {
-		snapshot := newSourceStore(t).snapshotReceivedSeries(later)
+		snapshot := sourceSnapshot(t)
 
 		// The loading store has its own series for tenantID, and doesn't have the other tenant.
 		store := newReceivedSeriesTestStore(limiterMock{}, testReceivedSeriesPrecision, 1)
@@ -205,8 +265,31 @@ func TestTrackerStore_ReceivedSeriesSnapshot(t *testing.T) {
 		store.mtx.RUnlock()
 	})
 
+	t.Run("the snapshot is split between tenants", func(t *testing.T) {
+		// With a size of 1 byte, each tenant ends a chunk.
+		chunks := newSourceStore(t).snapshotReceivedSeries(later, 1)
+		require.Len(t, chunks, 2)
+
+		// load loads chunks, each on its own, into a store that has both tenants.
+		load := func(t *testing.T, chunks ...[]byte) *trackerStore {
+			store := newReceivedSeriesTestStore(limiterMock{}, testReceivedSeriesPrecision, 1)
+			for _, id := range []string{tenantID, "other"} {
+				_, err := store.trackSeries(t.Context(), id, nil, later)
+				require.NoError(t, err)
+			}
+			for _, chunk := range chunks {
+				require.NoError(t, store.loadReceivedSeriesSnapshot(chunk, later))
+			}
+			return store
+		}
+		split, whole := load(t, chunks...), load(t, sourceSnapshot(t))
+		for _, id := range []string{tenantID, "other"} {
+			require.Equal(t, timelineEstimate(t, whole, id, later), timelineEstimate(t, split, id, later), id)
+		}
+	})
+
 	t.Run("minutes out of the window are not loaded", func(t *testing.T) {
-		snapshot := newSourceStore(t).snapshotReceivedSeries(later)
+		snapshot := sourceSnapshot(t)
 		loadTime := now.Add(testIdleTimeout) // The minute of now is out of the window, the minute of later is not.
 
 		store := newReceivedSeriesTestStore(limiterMock{}, testReceivedSeriesPrecision, 1)
@@ -217,7 +300,7 @@ func TestTrackerStore_ReceivedSeriesSnapshot(t *testing.T) {
 	})
 
 	t.Run("snapshots with another precision or salt are skipped", func(t *testing.T) {
-		snapshot := newSourceStore(t).snapshotReceivedSeries(later)
+		snapshot := sourceSnapshot(t)
 		for name, store := range map[string]*trackerStore{
 			"precision": newReceivedSeriesTestStore(limiterMock{}, testReceivedSeriesPrecision-1, 1),
 			"salt":      newReceivedSeriesTestStore(limiterMock{}, testReceivedSeriesPrecision, 2),
@@ -232,7 +315,7 @@ func TestTrackerStore_ReceivedSeriesSnapshot(t *testing.T) {
 	})
 
 	t.Run("snapshots are ignored when the estimation is disabled", func(t *testing.T) {
-		snapshot := newSourceStore(t).snapshotReceivedSeries(later)
+		snapshot := sourceSnapshot(t)
 		store := newTrackerStore(testIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, newTestShardFactory())
 		_, err := store.trackSeries(t.Context(), tenantID, seriesRange(0, 10), later)
 		require.NoError(t, err)
@@ -241,7 +324,7 @@ func TestTrackerStore_ReceivedSeriesSnapshot(t *testing.T) {
 	})
 
 	t.Run("invalid snapshots", func(t *testing.T) {
-		snapshot := newSourceStore(t).snapshotReceivedSeries(later)
+		snapshot := sourceSnapshot(t)
 		newLoadingStore := func(t *testing.T) *trackerStore {
 			store := newReceivedSeriesTestStore(limiterMock{}, testReceivedSeriesPrecision, 1)
 			for _, tenantID := range []string{tenantID, "other"} {

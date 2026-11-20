@@ -272,7 +272,7 @@ type Limits struct {
 	ActiveSeriesAdditionalCustomTrackersConfig asmodel.CustomTrackersConfig                  `yaml:"active_series_additional_custom_trackers" json:"active_series_additional_custom_trackers" doc:"description=Additional custom trackers for active metrics merged on top of the base custom trackers. You can use this configuration option to define the base custom trackers globally for all tenants, and then use the additional trackers to add extra trackers on a per-tenant basis." category:"advanced"`
 	activeSeriesMergedCustomTrackersConfig     *atomic.Pointer[asmodel.CustomTrackersConfig] `yaml:"-" json:"-"`
 	MaxActiveSeriesAdditionalCustomTrackers    int                                           `yaml:"max_active_series_additional_custom_trackers" json:"max_active_series_additional_custom_trackers" category:"experimental"`
-	// UsageTrackerReceivedSeriesEstimationEnabled is not merged from the overrides of read compartments: the tenant's value applies to all of them.
+	// UsageTrackerReceivedSeriesEstimationEnabled is not merged from the overrides of tenant metadata: the tenant's value applies to all its metadata. Read compartments use their own overrides.
 	UsageTrackerReceivedSeriesEstimationEnabled bool `yaml:"usage_tracker_received_series_estimation_enabled" json:"usage_tracker_received_series_estimation_enabled" category:"experimental" doc:"hidden"`
 
 	// Max allowed time window for out-of-order samples.
@@ -1135,7 +1135,8 @@ func (o *Overrides) MaxActiveOrGlobalSeriesPerUser(limitsKey string) int {
 }
 
 // UsageTrackerReceivedSeriesEstimationEnabled returns whether the usage-tracker estimates the number of distinct
-// series received from the tenant, including the rejected ones. The value of the tenant applies to its read compartments.
+// series received from the tenant, including the rejected ones. The value of the tenant applies to its tenant
+// metadata, but not to its read compartments, which use their own overrides.
 func (o *Overrides) UsageTrackerReceivedSeriesEstimationEnabled(limitsKey string) bool {
 	return o.getOverridesForLimitsKey(limitsKey).UsageTrackerReceivedSeriesEstimationEnabled
 }

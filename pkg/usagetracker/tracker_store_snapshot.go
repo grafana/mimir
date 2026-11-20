@@ -297,8 +297,10 @@ func loadSnapshotSeries(tenant *trackedTenant, shard uint8, refs []refTimestamp,
 // as [unix minute][2^precision registers].
 const receivedSeriesSnapshotVersion = 1
 
-// snapshotReceivedSeries encodes the HLL-timelines of all tenants. It returns nil when the estimation is disabled.
-func (t *trackerStore) snapshotReceivedSeries(now time.Time) []byte {
+// snapshotReceivedSeries encodes the HLL-timelines of all tenants, in chunks that each load on their own.
+// A chunk ends after the tenant that makes it maxSize bytes or more, so only the timeline of a single tenant can make
+// it bigger than maxSize. It returns no chunks when the estimation is disabled or no tenant has received series.
+func (t *trackerStore) snapshotReceivedSeries(now time.Time, maxSize int) [][]byte {
 	if t.receivedSeries == nil {
 		return nil
 	}
@@ -308,14 +310,25 @@ func (t *trackerStore) snapshotReceivedSeries(now time.Time) []byte {
 	t.mtx.RUnlock()
 
 	minute := unixMinute(now)
-	snapshot := encoding.Encbuf{}
-	snapshot.PutByte(receivedSeriesSnapshotVersion)
-	snapshot.PutByte(t.receivedSeries.precision)
-	snapshot.PutBE32(t.receivedSeries.saltFingerprint())
-	// The counts are only known at the end: leave room for them, like snapshot() does.
-	tenantsAt := len(snapshot.B)
-	snapshot.B = append(snapshot.B, make([]byte, binary.MaxVarintLen64)...)
-	tenants := 0
+	var chunks [][]byte
+	var snapshot encoding.Encbuf
+	tenantsAt, tenants := 0, 0
+	// nextChunk ends the current chunk if it has tenants, and starts a new one.
+	nextChunk := func() {
+		if tenants > 0 {
+			putPaddedUvarint(snapshot.B[tenantsAt:tenantsAt+binary.MaxVarintLen64], uint64(tenants))
+			chunks = append(chunks, snapshot.Get())
+		}
+		snapshot = encoding.Encbuf{}
+		snapshot.PutByte(receivedSeriesSnapshotVersion)
+		snapshot.PutByte(t.receivedSeries.precision)
+		snapshot.PutBE32(t.receivedSeries.saltFingerprint())
+		// The counts are only known at the end: leave room for them, like snapshot() does.
+		tenantsAt = len(snapshot.B)
+		snapshot.B = append(snapshot.B, make([]byte, binary.MaxVarintLen64)...)
+		tenants = 0
+	}
+	nextChunk()
 	for tenantID, tenant := range clonedTenants {
 		timeline := tenant.receivedSeries.Load()
 		if timeline == nil {
@@ -337,14 +350,19 @@ func (t *trackerStore) snapshotReceivedSeries(now time.Time) []byte {
 		}
 		putPaddedUvarint(snapshot.B[sketchesAt:sketchesAt+binary.MaxVarintLen64], uint64(sketches))
 		tenants++
+		if len(snapshot.B) >= maxSize {
+			nextChunk()
+		}
 	}
-	putPaddedUvarint(snapshot.B[tenantsAt:tenantsAt+binary.MaxVarintLen64], uint64(tenants))
-	return snapshot.Get()
+	nextChunk()
+	return chunks
 }
 
-// loadReceivedSeriesSnapshot merges the HLL-timelines encoded by snapshotReceivedSeries into the timelines of the
-// tenants. It skips the tenants that don't exist: creating them would only create tenants with no series, which the
-// next cleanup removes. It skips the whole snapshot if it was written with another precision or salt.
+// loadReceivedSeriesSnapshot merges a chunk of the HLL-timelines encoded by snapshotReceivedSeries into the timelines
+// of the tenants. It skips the tenants that don't exist. The shards of the snapshot are loaded first and create its
+// tenants, but a cleanup that runs in between, while snapshots are loaded from events, can delete a tenant that has
+// no series: its received series are then missing until the next snapshot.
+// It skips the whole chunk if it was written with another precision or salt.
 func (t *trackerStore) loadReceivedSeriesSnapshot(data []byte, now time.Time) error {
 	if t.receivedSeries == nil || len(data) == 0 {
 		return nil

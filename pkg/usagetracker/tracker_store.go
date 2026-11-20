@@ -194,7 +194,8 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 		}
 	}
 
-	if timeline := tenant.receivedSeries.Load(); timeline != nil {
+	// An empty call received no series: merging its empty sketch would keep a tenant without series for the window.
+	if timeline := tenant.receivedSeries.Load(); timeline != nil && len(series) > 0 {
 		t.receivedSeries.track(timeline, series, timeNow)
 	}
 
@@ -390,8 +391,16 @@ func (t *trackerStore) cleanup(now time.Time) {
 
 	// Check all tenants and see if any of them are now empty.
 	// We don't need to take the mutex for this check, and in most situations we won't find any candidates.
+	// A tenant whose series all expired can still have received series that a later estimate counts: the rejected
+	// ones, also from calls in the minute after now while the shards were cleaned up. Keep it until they are out of
+	// the window. A call that was rejected before this check can still be merging them, so check again under the lock.
+	minute := unixMinute(now)
+	empty := func(tenant *trackedTenant) bool {
+		timeline := tenant.receivedSeries.Load()
+		return tenant.series.Load() == 0 && (timeline == nil || timeline.Empty(minute))
+	}
 	for tenantID, tenant := range tenantsClone {
-		if tenant.series.Load() == 0 {
+		if empty(tenant) {
 			deletionCandidates = append(deletionCandidates, tenantID)
 		}
 	}
@@ -409,7 +418,7 @@ func (t *trackerStore) cleanup(now time.Time) {
 		// Make sure nobody is appending.
 		// Since we have the t.mtx, we know that nobody can also get this tenant.
 		tenant.Lock()
-		if tenant.series.Load() == 0 {
+		if empty(tenant) {
 			delete(t.tenants, tenantID)
 			index, found := slices.BinarySearch(t.sortedTenants, tenantID)
 			if !found {
@@ -423,7 +432,7 @@ func (t *trackerStore) cleanup(now time.Time) {
 	t.mtx.Unlock()
 }
 
-// cleanupReceivedSeries drops the minutes that are out of the window from the HLL-timelines.
+// cleanupReceivedSeries prunes the received-series timelines at now.
 // It also creates or drops the timelines of the tenants whose limit changed.
 func (t *trackerStore) cleanupReceivedSeries(tenants map[string]*trackedTenant, now time.Time) {
 	minute := unixMinute(now)

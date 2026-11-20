@@ -3402,7 +3402,7 @@ func TestOverrides_UsageTrackerReceivedSeriesEstimationEnabled(t *testing.T) {
 
 	ov := NewOverrides(getDefaultLimits(), NewMockTenantLimits(map[string]*Limits{
 		"disabled": &disabled,
-		// The tenant's value applies to all its read compartments: an override of a compartment doesn't change it.
+		// The tenant's value applies to all its tenant metadata: an override of the metadata doesn't change it.
 		"disabled:source=test-run": &enabled,
 	}))
 
