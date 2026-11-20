@@ -1,3 +1,5 @@
+// Dashboards defining their own grafanaDashboards+ field.
+(import 'dashboards/overview.libsonnet') +
 {
   grafanaDashboards+:
     (import 'dashboards/config.libsonnet') +
@@ -16,7 +18,6 @@
     (import 'dashboards/overrides.libsonnet') +
     (import 'dashboards/tenants.libsonnet') +
     (import 'dashboards/top-tenants.libsonnet') +
-    (import 'dashboards/overview.libsonnet') +
 
     (if $._config.deployment_type != 'kubernetes' || $._config.singleBinary == true || !$._config.rollout_operator_dashboard_enable then {} else
        (import 'rollout-operator-mixin/dashboards/rollout-operator.libsonnet')) +
