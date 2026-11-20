@@ -8,8 +8,10 @@ package client
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -108,4 +110,30 @@ func TestMimirClient_X(t *testing.T) {
 		})
 	}
 
+}
+
+func TestMimirClient_GetRuleGroup_DoesNotWriteToStdout(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintln(w, "name: my-group\nrules:\n  - record: my_metric\n    expr: up")
+	}))
+	defer ts.Close()
+
+	client, err := New(Config{Address: ts.URL, ID: "my-id"}, log.NewNopLogger())
+	require.NoError(t, err)
+
+	// "mimirtool rules get" prints the rule group to stdout, so anything else
+	// written there makes the output invalid YAML.
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	origStdout := os.Stdout
+	os.Stdout = w
+	rg, getErr := client.GetRuleGroup(context.Background(), "my-namespace", "my-group")
+	os.Stdout = origStdout
+	require.NoError(t, w.Close())
+
+	out, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.NoError(t, getErr)
+	require.Equal(t, "my-group", rg.Name)
+	require.Empty(t, string(out))
 }
