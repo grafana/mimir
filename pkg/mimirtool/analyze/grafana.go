@@ -200,17 +200,8 @@ func parseQuery(query string, metrics map[string]struct{}, promqlParser parser.P
 
 	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		if n, ok := node.(*parser.VectorSelector); ok {
-			// VectorSelector has .Name when it's explicitly set as `name{...}`.
-			// Otherwise we need to look into the matchers.
-			if n.Name != "" {
-				metrics[n.Name] = struct{}{}
-				return nil
-			}
-			for _, m := range n.LabelMatchers {
-				if m.Name == model.MetricNameLabel && validMetricName.MatchString(m.Value) {
-					metrics[m.Value] = struct{}{}
-					return nil
-				}
+			if name := metricNameFromSelector(n); name != "" {
+				metrics[name] = struct{}{}
 			}
 		}
 
@@ -218,4 +209,20 @@ func parseQuery(query string, metrics map[string]struct{}, promqlParser parser.P
 	})
 
 	return nil
+}
+
+// metricNameFromSelector returns the metric name selected by the vector selector,
+// or an empty string if it can't be determined.
+func metricNameFromSelector(n *parser.VectorSelector) string {
+	// VectorSelector has .Name when it's explicitly set as `name{...}`.
+	// Otherwise we need to look into the matchers.
+	if n.Name != "" {
+		return n.Name
+	}
+	for _, m := range n.LabelMatchers {
+		if m.Name == model.MetricNameLabel && validMetricName.MatchString(m.Value) {
+			return m.Value
+		}
+	}
+	return ""
 }
