@@ -193,6 +193,7 @@
 * [BUGFIX] MQE: Fix an issue where only part of a query that couldn't return results was optimized, resulting in trying to remotely execute an invalid query plan. #17152
 * [BUGFIX] Alertmanager: Fix tenants without a configuration getting no Alertmanager when the fallback configuration (`-alertmanager.configs.fallback`) fails validation. For example, the fallback loads files or has an SNS receiver without explicit credentials. The load-time validation added in #17315 now checks tenant configuration only. #17399
 * [BUGFIX] Admin: Use relative links for the config, runtime config and ingester links in the administration web UI, so that they work when the UI is served behind a reverse proxy that adds a path prefix. #17271
+* [BUGFIX] MQE: Fix "could not find selector for node" errors when planning an instant query with a spun-off subquery whose expression has no selectors after optimization, such as `(sum(foo{a="1",a="2"}) or vector(0))`, when subquery spin-off runs inside the Mimir query engine with remote execution enabled. #17453
 
 ### Mixin
 

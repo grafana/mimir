@@ -5,6 +5,7 @@ package remoteexec
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/antithesishq/antithesis-sdk-go/assert"
 
@@ -47,6 +48,14 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	// sharded leg is executed remotely; otherwise the entire subtree is. The rest of the plan (the outer
 	// instant query) runs on the query-frontend.
 	if evaluationRoots := collectEvaluationRoots(plan.Root, plan.Parameters.TimeRange); len(evaluationRoots) > 0 {
+		// An earlier pass can remove all selectors from an evaluation root, for example by simplifying
+		// `sum(foo{a="1",a="2"}) or vector(0)` to `vector(0)`. A remote execution group needs a selector,
+		// and such a root reads no data, so run it locally. Filter before counting the roots, so that a
+		// single remaining root is not eagerly loaded.
+		evaluationRoots = slices.DeleteFunc(evaluationRoots, func(r evaluationRootWithTimeRange) bool {
+			return !optimize.InspectSelectors(r.root.Inner).HasSelectors
+		})
+
 		for _, evaluationRoot := range evaluationRoots {
 			if err := o.wrapEvaluationRoot(evaluationRoot.root, groups, len(evaluationRoots) > 1, maximumSupportedQueryPlanVersion, evaluationRoot.timeRange); err != nil {
 				return nil, err
