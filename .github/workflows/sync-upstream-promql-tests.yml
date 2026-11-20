@@ -1,0 +1,76 @@
+name: Sync upstream PromQL test cases
+
+# The vendoring workflow (update-vendored-mimir-prometheus.yml) re-syncs pkg/streamingpromql/testdata/upstream
+# with the vendored upstream test cases before it opens a "[main] Update mimir-prometheus to ..." PR. Cases
+# that then fail TestUpstreamTestCases are not disabled automatically: someone on the MQE team decides, and
+# can have them disabled by commenting "/disable-failing-upstream-promql-tests" on the PR.
+# trigger-disable-failing-upstream-promql-tests.yml then adds the run-disable-failing-upstream-promql-tests
+# label, which runs this workflow to disable them. See tools/sync-upstream-promql-tests/README.md.
+#
+# This runs code from the PR (including newly vendored upstream code), so it has read-only access and no
+# secrets, and only uploads the results. commit-synced-upstream-promql-tests.yml then runs from main,
+# checks the results and pushes them to the PR.
+
+on:
+  pull_request:
+    types: [labeled]
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  generate:
+    # Only the vendoring bot's PRs, from the branches the vendoring workflow creates for main (release
+    # branches may not have these tools). Of the labels, only the one the trigger workflow adds (as the
+    # vendoring bot) starts a run; the commit workflow checks again who added it.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == 'mimir-vendoring[bot]' &&
+      startsWith(github.event.pull_request.head.ref, 'bot/main/update-mimir-prometheus-') &&
+      github.event.label.name == 'run-disable-failing-upstream-promql-tests' &&
+      github.event.sender.login == 'mimir-vendoring[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      # The PR head rather than the merge commit: the results are committed on top of it.
+      - name: Check out the PR head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          # From go.mod rather than pinned here, as the repository's Go bumps don't update this file.
+          go-version-file: go.mod
+          cache: false
+
+      # The PR head already has the re-synced test cases, so it isn't the pre-sync state. The base is.
+      - name: Disable failing upstream PromQL test cases
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MIMIR_SYNC_REPORT: ${{ runner.temp }}/report/sync-report.md
+          MIMIR_SYNC_DISABLED: ${{ runner.temp }}/report/disabled-cases.md
+        run: |
+          # The tool only writes the reports if it disables anything, but the report artifact must exist.
+          mkdir -p "$RUNNER_TEMP/report"
+          touch "$RUNNER_TEMP/report/sync-report.md"
+          git fetch --depth=1 --no-tags origin "$BASE_SHA"
+          cd tools/disable-failing-upstream-promql-tests && MIMIR_SYNC_BASELINE_REF="$BASE_SHA" go run .
+
+      - name: Upload test cases
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: test-cases
+          path: pkg/streamingpromql/testdata/upstream
+          retention-days: 1
+
+      - name: Upload sync report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sync-report
+          path: ${{ runner.temp }}/report
+          retention-days: 1

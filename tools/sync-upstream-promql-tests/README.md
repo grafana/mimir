@@ -8,7 +8,11 @@ Run this tool with `go run .` in this directory, or via `make sync-upstream-prom
 
 ## Fixing a failing mimir-prometheus vendoring PR
 
-When a `[main] Update mimir-prometheus to ...` PR fails `TestOurUpstreamTestCasesAreInSyncWithUpstream` or `TestUpstreamTestCases`:
+The re-sync is done automatically. The "Update mimir-prometheus dependency" workflow runs this tool after updating the vendored dependencies, and includes the result in the PR as a separate commit, with a summary in the PR description. It only runs the tool for branches that need an approved PR to change, and only if the tool depends on nothing but the standard library and Mimir packages, because it runs while holding the vendoring bot's token. `TestOnlyDependsOnStandardLibraryAndMimir` checks the dependencies too, so keep this tool's imports, and those of `pkg/streamingpromql/upstreamtestdata/fileformat`, to the standard library.
+
+No test cases are disabled automatically. If `TestUpstreamTestCases` fails after the re-sync, someone on the MQE team decides whether to fix the issue or disable the failing cases. To preview what would be disabled, check out the PR branch and run `make disable-failing-upstream-promql-tests MIMIR_SYNC_BASELINE_REF=origin/main` without committing. If that is acceptable, and the PR is a `[main] Update mimir-prometheus to ...` PR, comment `/disable-failing-upstream-promql-tests` on the PR: the bot then disables the failing cases, pushes that as a commit from `mimir-vendoring[bot]`, and comments the list of disabled cases, mentioning the MQE team. Only the users listed in the "Trigger disabling failing upstream PromQL test cases" workflow can do this, and only while every commit on the PR is from the bot.
+
+If the automatic re-sync didn't happen or failed (the PR description says why), if the PR has other commits, or to disable cases on a PR for another branch, fix the PR locally:
 
 1. Check out the PR branch, run `make sync-upstream-promql-tests` and commit the result on its own, so reviewers can see upstream's changes separately from what gets disabled.
 2. Run `make disable-failing-upstream-promql-tests MIMIR_SYNC_BASELINE_REF=HEAD~1` and commit the result. It prints the cases it disabled, grouped by cause and by whether they are new upstream cases or existing ones. Review that list before pushing: a divergent result may be a real bug in Mimir's engine rather than something to disable.
