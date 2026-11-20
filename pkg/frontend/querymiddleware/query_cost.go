@@ -10,6 +10,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -23,15 +26,26 @@ type queryCostRoundTripper struct {
 	next       http.RoundTripper
 	codec      Codec
 	middleware MetricsQueryMiddleware
+
+	logger       log.Logger
+	maxRetries   int
+	retryMetrics prometheus.Observer
 }
 
 // newQueryCostRoundTripper returns a round tripper that rejects cost estimation requests
 // that the middlewares reject, and that estimates the same time range as the query.
-func newQueryCostRoundTripper(next http.RoundTripper, codec Codec, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
+// It retries failed requests up to maxRetries times, like other read requests.
+func newQueryCostRoundTripper(next http.RoundTripper, codec Codec, logger log.Logger, maxRetries int, retryMetrics prometheus.Observer, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
+	if retryMetrics == nil {
+		retryMetrics = newRetryMetrics(nil)
+	}
 	return &queryCostRoundTripper{
-		next:       next,
-		codec:      codec,
-		middleware: MergeMetricsQueryMiddlewares(middlewares...),
+		next:         next,
+		codec:        codec,
+		middleware:   MergeMetricsQueryMiddlewares(middlewares...),
+		logger:       logger,
+		maxRetries:   maxRetries,
+		retryMetrics: retryMetrics,
 	}
 }
 
@@ -68,7 +82,21 @@ func (rt *queryCostRoundTripper) RoundTrip(r *http.Request) (*http.Response, err
 			return nil, err
 		}
 	}
-	return rt.next.RoundTrip(r)
+	if rt.maxRetries <= 0 {
+		return rt.next.RoundTrip(r)
+	}
+
+	// Forwarding the request reads its body, so each try needs a fresh copy.
+	body, err := util.ReadRequestBodyWithoutConsuming(r)
+	if err != nil {
+		return nil, err
+	}
+	return doWithRetries(r.Context(), rt.logger, rt.maxRetries, rt.retryMetrics, func() (*http.Response, error) {
+		if body != nil {
+			r.Body = io.NopCloser(bytes.NewReader(body))
+		}
+		return rt.next.RoundTrip(r)
+	})
 }
 
 // withStartParam returns a copy of r with the start parameter set to startMs.
@@ -83,6 +111,8 @@ func withStartParam(r *http.Request, startMs int64) (*http.Request, error) {
 	encoded := params.Encode()
 	if r.Method == http.MethodPost {
 		// The parameters include those from the URL, so they are only sent in the body.
+		// The original request may have sent them only in the URL, without this content type.
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		r.URL.RawQuery = ""
 		r.Body = io.NopCloser(bytes.NewReader([]byte(encoded)))
 		r.ContentLength = int64(len(encoded))
