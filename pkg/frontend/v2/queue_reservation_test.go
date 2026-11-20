@@ -729,9 +729,7 @@ func TestFrontendSchedulerWorkers_PickReservationWorker(t *testing.T) {
 
 	picked := map[*frontendSchedulerWorker]int{}
 	for range 200 {
-		w, allRejected := workers.pickReservationWorker(rejectedAddrs)
-		require.False(t, allRejected)
-		picked[w]++
+		picked[workers.pickReservationWorker(rejectedAddrs)]++
 	}
 	require.Len(t, picked, 2, "only the workers that did not reject and have a stream qualify")
 	require.Positive(t, picked[first])
@@ -739,19 +737,12 @@ func TestFrontendSchedulerWorkers_PickReservationWorker(t *testing.T) {
 
 	rejectedAddrs[first.schedulerAddr] = struct{}{}
 	rejectedAddrs[second.schedulerAddr] = struct{}{}
-	w, allRejected := workers.pickReservationWorker(rejectedAddrs)
-	require.Nil(t, w)
-	require.False(t, allRejected, "the worker with no stream did not reject")
-
-	rejectedAddrs[noStreams.schedulerAddr] = struct{}{}
-	w, allRejected = workers.pickReservationWorker(rejectedAddrs)
-	require.Nil(t, w)
-	require.True(t, allRejected)
+	require.Nil(t, workers.pickReservationWorker(rejectedAddrs), "the worker that did not reject has no stream")
 }
 
-func TestQueueReservation_TooManyRequestsUsesThePlainPathWhenTheOtherSchedulersHaveNoStream(t *testing.T) {
+func TestQueueReservation_TooManyRequestsFailsWhenTheOtherSchedulersHaveNoStream(t *testing.T) {
 	rejecting := newTestReservationWorker(t, "rejecting", true)
-	// For example, this query-scheduler restarted without queue reservation.
+	// For example, the streams of this query-scheduler reconnect.
 	noStreams := newTestReservationWorker(t, "no-streams", true)
 	noStreams.reservationStreams.remove()
 	f := newTargetedTestFrontend(map[string]*frontendSchedulerWorker{
@@ -766,8 +757,9 @@ func TestQueueReservation_TooManyRequestsUsesThePlainPathWhenTheOtherSchedulersH
 	}()
 	r.run(t.Context())
 
-	require.True(t, r.plainPath)
-	require.NoError(t, r.err)
+	require.False(t, r.plainPath)
+	require.Equal(t, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests"), r.err)
+	require.Equal(t, "too_many_requests", r.errOutcome)
 	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeTooManyRequests)))
 	require.Zero(t, testutil.ToFloat64(f.queueReservationRetries), "no retry went out")
 }

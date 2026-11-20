@@ -220,19 +220,16 @@ func (f *frontendSchedulerWorkers) InstanceChanged(instance servicediscovery.Ins
 }
 
 // pickReservationWorker returns a random worker with a stream that supports queue reservation and
-// whose scheduler address is not in rejected. It returns nil when no worker qualifies. allRejected
-// is true when the scheduler address of every worker is in rejected.
-func (f *frontendSchedulerWorkers) pickReservationWorker(rejected map[string]struct{}) (picked *frontendSchedulerWorker, allRejected bool) {
+// whose scheduler address is not in rejected. It returns nil when no worker qualifies.
+func (f *frontendSchedulerWorkers) pickReservationWorker(rejected map[string]struct{}) *frontendSchedulerWorker {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	allRejected = true
 	candidates := make([]*frontendSchedulerWorker, 0, len(f.workers))
 	for addr, w := range f.workers {
 		if _, ok := rejected[addr]; ok {
 			continue
 		}
-		allRejected = false
 		select {
 		case <-w.reservationStreams.gone():
 			continue
@@ -241,9 +238,9 @@ func (f *frontendSchedulerWorkers) pickReservationWorker(rejected map[string]str
 		candidates = append(candidates, w)
 	}
 	if len(candidates) == 0 {
-		return nil, allRejected
+		return nil
 	}
-	return candidates[rand.IntN(len(candidates))], false
+	return candidates[rand.IntN(len(candidates))]
 }
 
 // Get number of workers.

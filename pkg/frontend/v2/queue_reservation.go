@@ -143,16 +143,23 @@ func (f *Frontend) newQueueReservation(ctx context.Context, userID string, group
 	return r
 }
 
-// run sends the RESERVE on the first free stream that supports queue reservation, to any
-// query-scheduler. After a transport error, a SHUTTING_DOWN or an unknown status, it sends a new
-// RESERVE with a new reservation ID. It makes as many attempts as a plain sub-request makes.
+// run makes the queue reservation for the sub-requests in these steps:
 //
-// The per-tenant limit applies per query-scheduler. So after TOO_MANY_REQUESTS_PER_TENANT, each
-// later attempt goes to a random query-scheduler that did not return it for this reservation. When
-// every query-scheduler returned it, or all attempts fail after one returned it, each sub-request
-// fails with too many requests. When all attempts fail for other reasons, each sub-request fails.
-// After ERROR, when no stream supports queue reservation any more, or when no query-scheduler that
-// did not return TOO_MANY_REQUESTS_PER_TENANT has such a stream, the sub-requests use the plain path.
+//  1. run sends the first RESERVE to the first free stream that supports queue reservation, of
+//     any query-scheduler.
+//  2. After TOO_MANY_REQUESTS_PER_TENANT, run adds the query-scheduler to the rejected set and
+//     retries. The per-tenant limit applies per query-scheduler, so another one can have room.
+//  3. After SHUTTING_DOWN, a transport error or an unknown status, run retries.
+//  4. While the rejected set is empty, a retry goes to the first free stream of any
+//     query-scheduler. After that, each retry goes to a random query-scheduler outside the set.
+//  5. After ERROR, or when no query-scheduler supports queue reservation any more, the
+//     sub-requests use the plain path.
+//  6. run stops after WorkerConcurrency+1 attempts, as a plain sub-request does, or when no
+//     query-scheduler outside the rejected set has a stream that supports queue reservation.
+//     Then each sub-request fails with too many requests if the set is not empty, or with an
+//     internal error if the set is empty.
+//
+// When ctx ends, each sub-request fails with the cause of ctx.
 func (r *queueReservation) run(ctx context.Context) {
 	defer close(r.done)
 
@@ -165,17 +172,11 @@ func (r *queueReservation) run(ctx context.Context) {
 	for attempt := 0; attempt < maxAttempts; {
 		var target *frontendSchedulerWorker
 		if len(rejected) > 0 {
-			var allRejected bool
-			if target, allRejected = r.f.schedulerWorkers.pickReservationWorker(rejected); target == nil {
-				if allRejected {
-					break
-				}
-				// For example, the other query-schedulers restarted without queue reservation, or their
-				// streams reconnect. No sub-request uses the reservation yet, so the plain path cannot
-				// queue a sub-request twice.
-				level.Warn(r.f.log).Log(rootqueryid.AppendLogFields([]any{"msg", "no query-scheduler that did not reject the queue reservation has a stream that supports queue reservation, sub-requests use the plain path", "user", r.userID}, r.rootQueryID)...)
-				r.plainPath = true
-				return
+			// The sub-requests do not use the plain path here. A plain ENQUEUE has a weaker limit
+			// than a RESERVE, so a query-scheduler that rejected the reservation can take some
+			// sub-requests and reject the rest.
+			if target = r.f.schedulerWorkers.pickReservationWorker(rejected); target == nil {
+				break
 			}
 		}
 
