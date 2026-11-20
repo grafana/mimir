@@ -967,6 +967,83 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 	}
 }
 
+func prepareCompactorWithReadBucketsForExecutorTest(t *testing.T, cfg Config, writeBucket, readBucket objstore.Bucket, cfgProvider ConfigProvider) *MultitenantCompactor {
+	t.Helper()
+	c := prepareCompactorForExecutorTest(t, cfg, writeBucket, cfgProvider)
+	c.readBuckets = []bucket.BlocksBucket{
+		{Name: "write", MetadataCacheID: "blocks-bucket-write", Client: writeBucket},
+		{Name: "read", MetadataCacheID: "blocks-bucket-read", Client: readBucket},
+	}
+
+	compactor, planner, err := splitAndMergeCompactorFactory(t.Context(), cfg, cfgProvider, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NoError(t, err)
+	c.blocksCompactorProvider = compactor
+	c.blocksPlanner = planner
+	return c
+}
+
+func TestSchedulerExecutor_ExecutePlanningJob_ShouldPlanBlocksInAllReadBuckets(t *testing.T) {
+	const tenant = "test-tenant"
+	cfg := makeTestCompactorConfig(t)
+	cfg.CompactionWaitPeriod = 0
+
+	writeBucket := block.BucketWithGlobalMarkers(objstore.NewInMemBucket())
+	readBucket := block.BucketWithGlobalMarkers(objstore.NewInMemBucket())
+	writeBucketBlock := createTSDBBlock(t, writeBucket, tenant, 10, 20, 2, nil)
+	readBucketBlock := createTSDBBlock(t, readBucket, tenant, 10, 20, 2, nil)
+	readBucketBlockNoCompact := createTSDBBlock(t, readBucket, tenant, 10, 20, 2, nil)
+	require.NoError(t, block.MarkForNoCompact(t.Context(), log.NewNopLogger(), bucket.NewUserBucketClient(tenant, readBucket, nil), readBucketBlockNoCompact, block.ManualNoCompactReason, ""))
+
+	schedulerExec := newTestSchedulerExecutor(t, cfg, nil)
+	c := prepareCompactorWithReadBucketsForExecutorTest(t, cfg, writeBucket, readBucket, newMockConfigProvider())
+
+	plannedJobs, err := schedulerExec.executePlanningJob(t.Context(), c, t.TempDir(), tenant)
+	require.NoError(t, err)
+	require.Len(t, plannedJobs, 1)
+	require.ElementsMatch(t, [][]byte{writeBucketBlock.Bytes(), readBucketBlock.Bytes()}, plannedJobs[0].Job.BlockIds)
+}
+
+func TestSchedulerExecutor_ExecuteCompactionJob_ShouldCompactBlocksInAllReadBuckets(t *testing.T) {
+	const tenant = "test-tenant"
+	cfg := makeTestCompactorConfig(t)
+
+	writeBucket := objstore.NewInMemBucket()
+	readBucket := objstore.NewInMemBucket()
+	writeBucketBlock := createTSDBBlock(t, writeBucket, tenant, 10, 20, 2, nil)
+	readBucketBlock := createTSDBBlock(t, readBucket, tenant, 20, 30, 2, nil)
+
+	schedulerExec := newTestSchedulerExecutor(t, cfg, nil)
+	c := prepareCompactorWithReadBucketsForExecutorTest(t, cfg, writeBucket, readBucket, newMockConfigProvider())
+
+	spec := &compactorschedulerpb.JobSpec{
+		Tenant:  tenant,
+		Job:     &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{writeBucketBlock.Bytes(), readBucketBlock.Bytes()}},
+		JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
+	}
+	status, err := schedulerExec.executeCompactionJob(t.Context(), c, t.TempDir(), &compactorschedulerpb.JobKey{Id: "test-job-id"}, spec)
+	require.NoError(t, err)
+	require.Equal(t, compactorschedulerpb.UPDATE_TYPE_COMPLETE, status)
+
+	// The compactor uploads the new block to the write bucket.
+	require.Equal(t, 2, countBlocksInBucket(t, writeBucket, tenant))
+	require.Equal(t, 1, countBlocksInBucket(t, readBucket, tenant))
+
+	// The compactor marks each source block for deletion in its own bucket.
+	for _, tc := range []struct {
+		bucket   objstore.Bucket
+		blockID  ulid.ULID
+		expected bool
+	}{
+		{bucket: writeBucket, blockID: writeBucketBlock, expected: true},
+		{bucket: readBucket, blockID: readBucketBlock, expected: true},
+		{bucket: writeBucket, blockID: readBucketBlock, expected: false},
+	} {
+		marked, err := tc.bucket.Exists(t.Context(), path.Join(tenant, tc.blockID.String(), block.DeletionMarkFilename))
+		require.NoError(t, err)
+		require.Equal(t, tc.expected, marked, tc.blockID.String())
+	}
+}
+
 func TestSchedulerExecutor_ExecuteCompactionJob_AbandonsWhenBlockDeletedAfterMetadataCached(t *testing.T) {
 	tenant := "test-tenant"
 	splitShards := 2

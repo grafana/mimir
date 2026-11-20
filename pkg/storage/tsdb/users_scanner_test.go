@@ -29,12 +29,13 @@ func TestUsersScanner_ScanUsers_ShouldReturnedOwnedUsersOnly(t *testing.T) {
 		return userID == "user-1" || userID == "user-3", nil
 	}
 
-	s := NewUsersScanner(bucketClient, isOwned, time.Minute, log.NewNopLogger(), nil)
+	s := NewUsersScanner([]objstore.Bucket{bucketClient}, isOwned, time.Minute, log.NewNopLogger(), nil)
 	for range 2 {
-		actual, deleted, err := s.ScanUsers(t.Context())
+		actual, deleted, bucketsPerUser, err := s.ScanUsers(t.Context())
 		require.NoError(t, err)
 		assert.Equal(t, []string{"user-1"}, actual)
 		assert.Equal(t, []string{"user-3"}, deleted)
+		assert.Nil(t, bucketsPerUser)
 	}
 	s.Stop()
 }
@@ -51,11 +52,12 @@ func TestUsersScanner_ScanUsers_ShouldReturnUsersForWhichOwnerCheckOrTenantDelet
 		return false, errors.New("failed to check if user is owned")
 	}
 
-	s := NewUsersScanner(bucketClient, isOwned, time.Minute, log.NewNopLogger(), nil)
-	actual, deleted, err := s.ScanUsers(t.Context())
+	s := NewUsersScanner([]objstore.Bucket{bucketClient}, isOwned, time.Minute, log.NewNopLogger(), nil)
+	actual, deleted, bucketsPerUser, err := s.ScanUsers(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, expected, actual)
 	assert.Empty(t, deleted)
+	assert.Nil(t, bucketsPerUser)
 }
 
 func TestUsersScanner_ScanUsers_ShouldNotReturnPrefixedUsedByMimirInternals(t *testing.T) {
@@ -64,10 +66,33 @@ func TestUsersScanner_ScanUsers_ShouldNotReturnPrefixedUsedByMimirInternals(t *t
 	bucketClient.MockExists(path.Join("user-1", TenantDeletionMarkPath), false, nil)
 	bucketClient.MockExists(path.Join("user-2", TenantDeletionMarkPath), false, nil)
 
-	s := NewUsersScanner(bucketClient, AllUsers, time.Minute, log.NewNopLogger(), nil)
-	actual, _, err := s.ScanUsers(t.Context())
+	s := NewUsersScanner([]objstore.Bucket{bucketClient}, AllUsers, time.Minute, log.NewNopLogger(), nil)
+	actual, _, _, err := s.ScanUsers(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, []string{"user-1", "user-2"}, actual)
+}
+
+func TestUsersScanner_ScanUsers_ShouldScanAllBuckets(t *testing.T) {
+	newBucket := &bucket.ClientMock{}
+	newBucket.MockIter("", []string{"user-1/", "user-3/"}, nil)
+	newBucket.MockExists(path.Join("user-1", TenantDeletionMarkPath), false, nil)
+	newBucket.MockExists(path.Join("user-3", TenantDeletionMarkPath), false, nil)
+	oldBucket := &bucket.ClientMock{}
+	oldBucket.MockIter("", []string{"user-1/", "user-2/"}, nil)
+	oldBucket.MockExists(path.Join("user-1", TenantDeletionMarkPath), false, nil)
+	oldBucket.MockExists(path.Join("user-2", TenantDeletionMarkPath), true, nil)
+
+	s := NewUsersScanner([]objstore.Bucket{newBucket, oldBucket}, AllUsers, time.Minute, log.NewNopLogger(), nil)
+	actual, deleted, bucketsPerUser, err := s.ScanUsers(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"user-1", "user-3"}, actual)
+	assert.Equal(t, []string{"user-2"}, deleted)
+	assert.Equal(t, map[string][]int{
+		"user-1": {0, 1},
+		"user-2": {1},
+		"user-3": {0},
+	}, bucketsPerUser)
+	s.Stop()
 }
 
 func TestListUsersInBuckets(t *testing.T) {

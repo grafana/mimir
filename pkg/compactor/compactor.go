@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -314,9 +315,9 @@ type MultitenantCompactor struct {
 	parentLogger log.Logger
 	registerer   prometheus.Registerer
 
-	// Functions that create bucket client, grouper, planner and compactor using the context.
+	// Functions that create bucket set, grouper, planner and compactor using the context.
 	// Useful for injecting mock objects from tests.
-	bucketClientFactory    func(ctx context.Context) (objstore.Bucket, error)
+	bucketSetFactory       func(ctx context.Context) (*bucket.BlocksBucketSet, error)
 	blocksGrouperFactory   BlocksGrouperFactory
 	blocksCompactorFactory BlocksCompactorFactory
 
@@ -327,8 +328,12 @@ type MultitenantCompactor struct {
 	blocksCompactorProvider BlocksCompactorProvider
 	blocksPlanner           Planner
 
-	// Client used to run operations on the bucket storing blocks.
+	// Client used to run operations on the bucket storing blocks. New blocks go to this bucket.
 	bucketClient objstore.Bucket
+
+	// readBuckets are all buckets that the compactor reads blocks from, in read order.
+	// The client of the first bucket is bucketClient.
+	readBuckets []bucket.BlocksBucket
 
 	executor compactionExecutor
 
@@ -381,8 +386,13 @@ type MultitenantCompactor struct {
 
 // NewMultitenantCompactor makes a new MultitenantCompactor.
 func NewMultitenantCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, cfgProvider ConfigProvider, logger log.Logger, registerer prometheus.Registerer) (*MultitenantCompactor, error) {
-	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
-		return bucket.NewClient(ctx, storageCfg.Bucket, "compactor", logger, registerer)
+	additionalReadCfgs, err := storageCfg.AdditionalReadBucketConfigs(compactorCfg.ReadCompartmentID)
+	if err != nil {
+		return nil, err
+	}
+
+	bucketSetFactory := func(ctx context.Context) (*bucket.BlocksBucketSet, error) {
+		return bucket.NewBlocksBucketSetFromConfigs(ctx, storageCfg.Bucket, additionalReadCfgs, "compactor", logger, registerer)
 	}
 
 	// Configure the compactor and grouper factories only if they weren't already set by a downstream project.
@@ -393,7 +403,7 @@ func NewMultitenantCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksSt
 	blocksGrouperFactory := compactorCfg.BlocksGrouperFactory
 	blocksCompactorFactory := compactorCfg.BlocksCompactorFactory
 
-	mimirCompactor, err := newMultitenantCompactor(compactorCfg, storageCfg, cfgProvider, logger, registerer, bucketClientFactory, blocksGrouperFactory, blocksCompactorFactory)
+	mimirCompactor, err := newMultitenantCompactor(compactorCfg, storageCfg, cfgProvider, logger, registerer, bucketSetFactory, blocksGrouperFactory, blocksCompactorFactory)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create blocks compactor: %w", err)
 	}
@@ -407,7 +417,7 @@ func newMultitenantCompactor(
 	cfgProvider ConfigProvider,
 	logger log.Logger,
 	registerer prometheus.Registerer,
-	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error),
+	bucketSetFactory func(ctx context.Context) (*bucket.BlocksBucketSet, error),
 	blocksGrouperFactory BlocksGrouperFactory,
 	blocksCompactorFactory BlocksCompactorFactory,
 ) (*MultitenantCompactor, error) {
@@ -433,7 +443,7 @@ func newMultitenantCompactor(
 		logger:                 log.With(logger, "component", "compactor"),
 		registerer:             registerer,
 		syncerMetrics:          newAggregatedSyncerMetrics(registerer),
-		bucketClientFactory:    bucketClientFactory,
+		bucketSetFactory:       bucketSetFactory,
 		blocksGrouperFactory:   blocksGrouperFactory,
 		blocksCompactorFactory: blocksCompactorFactory,
 
@@ -579,8 +589,8 @@ func (c *MultitenantCompactor) ringBasedCleanupDisabled() bool {
 func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	var err error
 
-	// Create bucket client.
-	c.bucketClient, err = c.bucketClientFactory(ctx)
+	// Create bucket clients.
+	bucketSet, err := c.bucketSetFactory(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create bucket client: %w", err)
 	}
@@ -591,8 +601,12 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		return fmt.Errorf("failed to initialize compactor dependencies: %w", err)
 	}
 
-	// Wrap the bucket client to write block deletion marks in the global location too.
-	c.bucketClient = block.BucketWithGlobalMarkers(c.bucketClient)
+	// Wrap the bucket clients to write block deletion marks in the global location too.
+	for _, b := range bucketSet.ReadBuckets() {
+		b.Client = block.BucketWithGlobalMarkers(b.Client)
+		c.readBuckets = append(c.readBuckets, b)
+	}
+	c.bucketClient = c.readBuckets[0].Client
 
 	if c.compactorCfg.SchedulerClientConfig.Enabled {
 		// Leases planning and compaction jobs from the compaction scheduler
@@ -613,7 +627,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		}
 
 		// Create the blocks cleaner (service).
-		c.blocksCleaner = NewBlocksCleaner(BlocksCleanerConfig{
+		c.blocksCleaner = newBlocksCleaner(BlocksCleanerConfig{
 			DeletionDelay:                 c.compactorCfg.DeletionDelay,
 			CleanupInterval:               util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
 			CleanupConcurrency:            c.compactorCfg.CleanupConcurrency,
@@ -623,7 +637,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 			UpdateBlocksConcurrency:       c.compactorCfg.UpdateBlocksConcurrency,
 			CompactionBlockRanges:         c.compactorCfg.BlockRanges,
 			EstimateCompactionJobs:        !c.compactorCfg.SchedulerClientConfig.Enabled,
-		}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnsUser, c.cfgProvider, c.parentLogger, c.registerer)
+		}, c.readBuckets, c.shardingStrategy.blocksCleanerOwnsUser, c.cfgProvider, c.parentLogger, c.registerer)
 
 		// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.
 		if err := c.blocksCleaner.StartAsync(ctx); err != nil {
@@ -822,7 +836,7 @@ func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 
 		ownedUsers[userID] = struct{}{}
 
-		if markedForDeletion, err := mimir_tsdb.TenantDeletionMarkExists(ctx, c.bucketClient, userID); err != nil {
+		if markedForDeletion, err := mimir_tsdb.TenantDeletionMarkExistsInAnyBucket(ctx, c.readBucketClients(), userID); err != nil {
 			c.compactionRunSkippedTenants.Inc()
 			level.Warn(c.logger).Log("msg", "unable to check if user is marked for deletion", "user", userID, "err", err)
 			continue
@@ -884,18 +898,10 @@ func (c *MultitenantCompactor) compactUserWithRetries(ctx context.Context, userI
 	return lastErr
 }
 
-func (c *MultitenantCompactor) createMetaSyncerForUser(userID string, userBucket objstore.InstrumentedBucket, userLogger log.Logger, cacheDir string, reg prometheus.Registerer) (*metaSyncer, error) {
+func (c *MultitenantCompactor) createMetaSyncerForUser(userID string, buckets *blockBuckets, userLogger log.Logger, cacheDir string, reg prometheus.Registerer) (*metaSyncer, error) {
 	// Filters out duplicate blocks that can be formed from two or more overlapping
 	// blocks that fully submatch the source blocks of the older blocks.
 	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
-
-	// List of filters to apply (order matters).
-	fetcherFilters := []block.MetadataFilter{
-		NewLabelRemoverFilter(compactionIgnoredLabels),
-		deduplicateBlocksFilter,
-		// removes blocks that should not be compacted due to being marked so.
-		NewNoCompactionMarkFilter(userBucket),
-	}
 
 	// Disable maxLookback (set to 0s) when block upload is enabled, block upload enabled implies there will be blocks
 	// beyond the lookback period, we don't want the compactor to skip these
@@ -904,7 +910,20 @@ func (c *MultitenantCompactor) createMetaSyncerForUser(userID string, userBucket
 		maxLookback = 0
 	}
 
-	fetcher, err := block.NewMetaFetcher(userLogger, c.compactorCfg.MetaSyncConcurrency, userBucket, cacheDir, reg, fetcherFilters, maxLookback)
+	var fetcher metaFetcher
+	var err error
+	if len(buckets.readBuckets) == 1 {
+		// List of filters to apply (order matters).
+		fetcherFilters := []block.MetadataFilter{
+			NewLabelRemoverFilter(compactionIgnoredLabels),
+			deduplicateBlocksFilter,
+			// removes blocks that should not be compacted due to being marked so.
+			NewNoCompactionMarkFilter(buckets.write()),
+		}
+		fetcher, err = block.NewMetaFetcher(userLogger, c.compactorCfg.MetaSyncConcurrency, buckets.write(), cacheDir, reg, fetcherFilters, maxLookback)
+	} else {
+		fetcher, err = newMultiBucketMetaFetcher(userLogger, c.compactorCfg.MetaSyncConcurrency, buckets, c.readBucketNames(), cacheDir, reg, deduplicateBlocksFilter, maxLookback)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -912,7 +931,7 @@ func (c *MultitenantCompactor) createMetaSyncerForUser(userID string, userBucket
 	syncer, err := newMetaSyncer(
 		userLogger,
 		reg,
-		userBucket,
+		buckets,
 		fetcher,
 		deduplicateBlocksFilter,
 		c.blocksMarkedForDeletion,
@@ -925,18 +944,18 @@ func (c *MultitenantCompactor) createMetaSyncerForUser(userID string, userBucket
 }
 
 func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) error {
-	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
+	buckets := c.blockBucketsForUser(userID)
 	userLogger := util_log.WithUserID(userID, c.logger)
 
 	reg := prometheus.NewRegistry()
 	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
 
-	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, c.baseCompactDir(), reg)
+	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, buckets, c.baseCompactDir(), reg)
 	if err != nil {
 		return fmt.Errorf("failed to create bucket compactor: %w", err)
 	}
 
-	syncer, err := c.createMetaSyncerForUser(userID, userBucket, userLogger, c.metaSyncDirForUser(userID), reg)
+	syncer, err := c.createMetaSyncerForUser(userID, buckets, userLogger, c.metaSyncDirForUser(userID), reg)
 	if err != nil {
 		return err
 	}
@@ -948,7 +967,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 	return nil
 }
 
-func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID string, userLogger log.Logger, userBucket objstore.Bucket, compactDir string, reg *prometheus.Registry) (*BucketCompactor, error) {
+func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID string, userLogger log.Logger, buckets *blockBuckets, compactDir string, reg *prometheus.Registry) (*BucketCompactor, error) {
 	// ring sharding may be disabled
 	var ownJob ownCompactionJobFunc
 	if c.shardingStrategy != nil {
@@ -961,13 +980,13 @@ func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID st
 		c.blocksPlanner,
 		c.blocksCompactorProvider(userID),
 		compactDir,
-		userBucket,
+		buckets,
 		c.compactorCfg.CompactionConcurrency,
 		true, // Skip unhealthy blocks, and mark them for no-compaction.
 		c.compactorCfg.BlockSymbolTableSizeThreshold,
 		ownJob,
 		c.jobsOrder,
-		newJobWaitPeriodFilter(c.compactorCfg.CompactionWaitPeriod, c.compactorCfg.CompactionOOOWaitPeriod, c.compactorCfg.CompactionSkipFutureMaxTime, c.compactorCfg.MetaSyncConcurrency, userBucket, userLogger),
+		newJobWaitPeriodFilter(c.compactorCfg.CompactionWaitPeriod, c.compactorCfg.CompactionOOOWaitPeriod, c.compactorCfg.CompactionSkipFutureMaxTime, c.compactorCfg.MetaSyncConcurrency, buckets, userLogger),
 		c.compactorCfg.BlockSyncConcurrency,
 		c.compactorCfg.BlockHealthValidationConcurrency,
 		c.bucketCompactorMetrics,
@@ -1000,7 +1019,50 @@ func (c *MultitenantCompactor) discoverUsersWithRetries(ctx context.Context) ([]
 }
 
 func (c *MultitenantCompactor) discoverUsers(ctx context.Context) ([]string, error) {
-	return mimir_tsdb.ListUsers(ctx, c.bucketClient)
+	if len(c.readBuckets) <= 1 {
+		return mimir_tsdb.ListUsers(ctx, c.bucketClient)
+	}
+
+	bucketsPerUser, err := mimir_tsdb.ListUsersInBuckets(ctx, c.readBucketClients())
+	if err != nil {
+		return nil, err
+	}
+	return slices.Sorted(maps.Keys(bucketsPerUser)), nil
+}
+
+// readBucketClients returns the clients of the read buckets, in read order.
+func (c *MultitenantCompactor) readBucketClients() []objstore.Bucket {
+	if len(c.readBuckets) <= 1 {
+		return []objstore.Bucket{c.bucketClient}
+	}
+
+	clients := make([]objstore.Bucket, 0, len(c.readBuckets))
+	for _, b := range c.readBuckets {
+		clients = append(clients, b.Client)
+	}
+	return clients
+}
+
+// readBucketNames returns the names of the read buckets, in read order.
+func (c *MultitenantCompactor) readBucketNames() []string {
+	names := make([]string, 0, len(c.readBuckets))
+	for _, b := range c.readBuckets {
+		names = append(names, b.Name)
+	}
+	return names
+}
+
+// blockBucketsForUser returns the read buckets of the tenant.
+func (c *MultitenantCompactor) blockBucketsForUser(userID string) *blockBuckets {
+	if len(c.readBuckets) <= 1 {
+		return newBlockBuckets(bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider))
+	}
+
+	userBuckets := make([]objstore.InstrumentedBucket, 0, len(c.readBuckets))
+	for _, b := range c.readBuckets {
+		userBuckets = append(userBuckets, bucket.NewUserBucketClient(userID, b.Client, c.cfgProvider))
+	}
+	return newBlockBuckets(userBuckets...)
 }
 
 // shardingStrategy describes whether compactor "owns" given user or job.

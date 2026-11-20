@@ -5,6 +5,8 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/benbjohnson/clock"
 	"github.com/go-kit/log"
@@ -17,16 +19,17 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-// TenantDiscoverer periodically scans the bucket for new tenants.
+// TenantDiscoverer periodically scans the buckets for new tenants.
 type TenantDiscoverer struct {
 	services.Service
 
-	logger                         log.Logger
-	metrics                        *schedulerMetrics
-	clock                          clock.Clock
-	lanePolicy                     lanePolicy
-	allowedTenants                 *util.AllowList
-	bkt                            objstore.Bucket
+	logger         log.Logger
+	metrics        *schedulerMetrics
+	clock          clock.Clock
+	lanePolicy     lanePolicy
+	allowedTenants *util.AllowList
+	// bkts are the read buckets, in read order.
+	bkts                           []objstore.Bucket
 	jpm                            JobPersistenceManager
 	tenantDiscoveryBackoff         backoff.Config
 	rotator                        *Rotator
@@ -40,7 +43,7 @@ func NewTenantDiscoverer(
 	lanePolicy lanePolicy,
 	allowList *util.AllowList,
 	rotator *Rotator,
-	bkt objstore.Bucket,
+	bkts []objstore.Bucket,
 	jpm JobPersistenceManager,
 	metrics *schedulerMetrics,
 	logger log.Logger) *TenantDiscoverer {
@@ -50,7 +53,7 @@ func NewTenantDiscoverer(
 		clock:                          clock.New(),
 		lanePolicy:                     lanePolicy,
 		allowedTenants:                 allowList,
-		bkt:                            bkt,
+		bkts:                           bkts,
 		jpm:                            jpm,
 		tenantDiscoveryBackoff:         cfg.TenantDiscoveryBackoff,
 		rotator:                        rotator,
@@ -89,7 +92,7 @@ func (s *TenantDiscoverer) iter(ctx context.Context) error {
 }
 
 func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
-	tenants, err := mimir_tsdb.ListUsers(ctx, s.bkt)
+	tenants, err := s.listTenants(ctx)
 	if err != nil {
 		level.Warn(s.logger).Log("msg", "failed tenant discovery", "err", err)
 		return err
@@ -140,4 +143,16 @@ func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (s *TenantDiscoverer) listTenants(ctx context.Context) ([]string, error) {
+	if len(s.bkts) == 1 {
+		return mimir_tsdb.ListUsers(ctx, s.bkts[0])
+	}
+
+	bucketsPerTenant, err := mimir_tsdb.ListUsersInBuckets(ctx, s.bkts)
+	if err != nil {
+		return nil, err
+	}
+	return slices.Sorted(maps.Keys(bucketsPerTenant)), nil
 }

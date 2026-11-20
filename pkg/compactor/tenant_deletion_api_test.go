@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
@@ -46,6 +47,27 @@ func TestDeleteTenant(t *testing.T) {
 		objs := bkt.Objects()
 		require.NotNil(t, objs[path.Join("fake", tsdb.TenantDeletionMarkPath)])
 	}
+}
+
+func TestDeleteTenant_ShouldUseAllReadBuckets(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "fake")
+	writeBucket := objstore.NewInMemBucket()
+	readBucket := objstore.NewInMemBucket()
+	require.NoError(t, readBucket.Upload(ctx, "fake/01EQK4QKFHVSZYVJ908Y7HH9E0/meta.json", bytes.NewReader([]byte("data"))))
+
+	c, _, _, _, _ := prepare(t, prepareConfig(t), writeBucket)
+	c.bucketClient = writeBucket
+	c.readBuckets = []bucket.BlocksBucket{{Name: "write", Client: writeBucket}, {Name: "read", Client: readBucket}}
+
+	blocksDeleted, err := c.isBlocksForUserDeleted(ctx, "fake")
+	require.NoError(t, err)
+	require.False(t, blocksDeleted)
+
+	resp := httptest.NewRecorder()
+	c.DeleteTenant(resp, (&http.Request{}).WithContext(ctx))
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.NotNil(t, writeBucket.Objects()[path.Join("fake", tsdb.TenantDeletionMarkPath)])
+	require.NotNil(t, readBucket.Objects()[path.Join("fake", tsdb.TenantDeletionMarkPath)])
 }
 
 func TestDeleteTenantStatus(t *testing.T) {

@@ -8,6 +8,8 @@ package tsdb
 import (
 	"context"
 	"errors"
+	"maps"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -30,29 +32,39 @@ func AllUsers(_ string) (bool, error) {
 }
 
 type UsersScanner struct {
-	bucketClient objstore.Bucket
-	logger       log.Logger
-	isOwned      func(userID string) (bool, error)
+	// bucketClients are the read buckets, in read order.
+	bucketClients []objstore.Bucket
+	logger        log.Logger
+	isOwned       func(userID string) (bool, error)
 	// maxWait is how long ScanUsers waits for a new listing before it uses the users found by the
 	// last successful listing. It is ignored if there is no successful listing yet.
 	maxWait time.Duration
 
-	listedUsers           atomic.Pointer[[]string]
+	listedUsers           atomic.Pointer[usersListing]
 	listings              singleflight.Group
 	listingsCtx           context.Context
 	stopListings          context.CancelCauseFunc
 	lastSuccessfulListing prometheus.Gauge
 }
 
-func NewUsersScanner(bucketClient objstore.Bucket, isOwned func(userID string) (bool, error), maxWait time.Duration, logger log.Logger, reg prometheus.Registerer) *UsersScanner {
+// usersListing holds the users found by a listing of the buckets.
+type usersListing struct {
+	users []string
+
+	// bucketsPerUser holds the indexes of the buckets that contain each user. It is nil if there is only one bucket.
+	bucketsPerUser map[string][]int
+}
+
+// NewUsersScanner returns a scanner for the users of the buckets. The bucketClients are in read order.
+func NewUsersScanner(bucketClients []objstore.Bucket, isOwned func(userID string) (bool, error), maxWait time.Duration, logger log.Logger, reg prometheus.Registerer) *UsersScanner {
 	listingsCtx, stopListings := context.WithCancelCause(context.Background())
 	return &UsersScanner{
-		bucketClient: bucketClient,
-		logger:       logger,
-		isOwned:      isOwned,
-		maxWait:      maxWait,
-		listingsCtx:  listingsCtx,
-		stopListings: stopListings,
+		bucketClients: bucketClients,
+		logger:        logger,
+		isOwned:       isOwned,
+		maxWait:       maxWait,
+		listingsCtx:   listingsCtx,
+		stopListings:  stopListings,
 		lastSuccessfulListing: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "last_tenants_list_timestamp_seconds",
 			Help: "Unix timestamp of the last successful listing of tenants.",
@@ -61,19 +73,23 @@ func NewUsersScanner(bucketClient objstore.Bucket, isOwned func(userID string) (
 }
 
 // ScanUsers returns a list of users found in the storage, that are not marked for deletion,
-// and list of users marked for deletion. If listing the storage takes longer than the max wait or fails,
+// and list of users marked for deletion. A user is marked for deletion if one of its buckets has the
+// tenant deletion mark. If listing the storage takes longer than the max wait or fails,
 // it uses the users found by the last successful listing, if any.
 //
+// With more than one bucket, bucketsPerUser holds the indexes of the buckets that contain each user,
+// in increasing order. With one bucket, bucketsPerUser is nil.
+//
 // If sharding is enabled, returned lists contains only the users owned by this instance.
-func (s *UsersScanner) ScanUsers(ctx context.Context) (users, markedForDeletion []string, err error) {
+func (s *UsersScanner) ScanUsers(ctx context.Context) (users, markedForDeletion []string, bucketsPerUser map[string][]int, err error) {
 	listed, err := s.listUsers(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// Check users for being owned by instance, and split users into non-deleted and deleted.
 	// We do these checks after listing all users, to improve cacheability of Iter (result is only cached at the end of Iter call).
-	for _, userID := range listed {
+	for _, userID := range listed.users {
 		// Check if it's owned by this instance.
 		owned, err := s.isOwned(userID)
 		if err != nil {
@@ -82,7 +98,7 @@ func (s *UsersScanner) ScanUsers(ctx context.Context) (users, markedForDeletion 
 			continue
 		}
 
-		deletionMarkExists, err := TenantDeletionMarkExists(ctx, s.bucketClient, userID)
+		deletionMarkExists, err := TenantDeletionMarkExistsInAnyBucket(ctx, s.userBucketClients(listed, userID), userID)
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "unable to check if user is marked for deletion", "user", userID, "err", err)
 		} else if deletionMarkExists {
@@ -93,7 +109,20 @@ func (s *UsersScanner) ScanUsers(ctx context.Context) (users, markedForDeletion 
 		users = append(users, userID)
 	}
 
-	return users, markedForDeletion, nil
+	return users, markedForDeletion, listed.bucketsPerUser, nil
+}
+
+// userBucketClients returns the clients of the buckets that contain the user, in read order.
+func (s *UsersScanner) userBucketClients(listed *usersListing, userID string) []objstore.Bucket {
+	if listed.bucketsPerUser == nil {
+		return s.bucketClients
+	}
+
+	clients := make([]objstore.Bucket, 0, len(listed.bucketsPerUser[userID]))
+	for _, idx := range listed.bucketsPerUser[userID] {
+		clients = append(clients, s.bucketClients[idx])
+	}
+	return clients
 }
 
 func (s *UsersScanner) Stop() {
@@ -103,13 +132,13 @@ func (s *UsersScanner) Stop() {
 	_, _, _ = s.listings.Do("", func() (any, error) { return nil, context.Canceled })
 }
 
-func (s *UsersScanner) listUsers(ctx context.Context) ([]string, error) {
+func (s *UsersScanner) listUsers(ctx context.Context) (*usersListing, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
 	listing := s.listings.DoChan("", func() (any, error) {
-		users, err := ListUsers(s.listingsCtx, s.bucketClient)
+		listed, err := s.listUsersInBuckets(s.listingsCtx)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
 				level.Warn(s.logger).Log("msg", "failed to list users", "err", err)
@@ -117,9 +146,9 @@ func (s *UsersScanner) listUsers(ctx context.Context) ([]string, error) {
 			return nil, err
 		}
 
-		s.listedUsers.Store(&users)
+		s.listedUsers.Store(listed)
 		s.lastSuccessfulListing.SetToCurrentTime()
-		return users, nil
+		return listed, nil
 	})
 
 	previous := s.listedUsers.Load()
@@ -134,7 +163,7 @@ func (s *UsersScanner) listUsers(ctx context.Context) ([]string, error) {
 	select {
 	case result := <-listing:
 		if result.Err == nil {
-			return result.Val.([]string), nil
+			return result.Val.(*usersListing), nil
 		}
 		if previous == nil {
 			return nil, result.Err
@@ -145,7 +174,23 @@ func (s *UsersScanner) listUsers(ctx context.Context) ([]string, error) {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-	return *previous, nil
+	return previous, nil
+}
+
+func (s *UsersScanner) listUsersInBuckets(ctx context.Context) (*usersListing, error) {
+	if len(s.bucketClients) == 1 {
+		users, err := ListUsers(ctx, s.bucketClients[0])
+		if err != nil {
+			return nil, err
+		}
+		return &usersListing{users: users}, nil
+	}
+
+	bucketsPerUser, err := ListUsersInBuckets(ctx, s.bucketClients)
+	if err != nil {
+		return nil, err
+	}
+	return &usersListing{users: slices.Sorted(maps.Keys(bucketsPerUser)), bucketsPerUser: bucketsPerUser}, nil
 }
 
 // ListUsers returns all user IDs found scanning the root of the bucket.

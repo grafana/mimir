@@ -107,11 +107,11 @@ func (m *aggregatedSyncerMetrics) gatherThanosSyncerMetrics(reg *prometheus.Regi
 
 	for _, met := range mfm["blocks_meta_synced"].GetMetric() {
 		v := met.GetGauge().GetValue()
-		ls := []string{}
 		for _, lp := range met.GetLabel() {
-			ls = append(ls, lp.GetValue())
+			if lp.GetName() == "state" {
+				m.metaBlocksSynced.WithLabelValues(lp.GetValue()).Add(v)
+			}
 		}
-		m.metaBlocksSynced.WithLabelValues(ls...).Add(v)
 	}
 
 	m.metaLoads.Add(mfm.SumCounters("blocks_meta_loads_total"))

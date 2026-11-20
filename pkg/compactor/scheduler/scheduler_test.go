@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
@@ -20,6 +21,8 @@ import (
 
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
+	"github.com/grafana/mimir/pkg/compartments"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -189,7 +192,7 @@ func newTestScheduler(t *testing.T, bkt objstore.Bucket, cfg Config) (*Scheduler
 	reg := prometheus.NewPedanticRegistry()
 	compactorCfg := compactor.Config{CompactionWaitPeriod: 15 * time.Minute}
 
-	scheduler, err := newCompactorScheduler(compactorCfg, cfg, util.NewAllowList(nil, nil), bkt, &NopJobPersistenceManager{}, reg, log.NewNopLogger())
+	scheduler, err := newCompactorScheduler(compactorCfg, cfg, util.NewAllowList(nil, nil), []objstore.Bucket{bkt}, &NopJobPersistenceManager{}, reg, log.NewNopLogger())
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -200,4 +203,20 @@ func newTestScheduler(t *testing.T, bkt objstore.Bucket, cfg Config) (*Scheduler
 	require.NoError(t, services.StartAndAwaitRunning(ctx, scheduler))
 
 	return scheduler, reg
+}
+
+func TestNewCompactorScheduler_UsesOnlyTheAdditionalReadBucketsOfItsReadCompartment(t *testing.T) {
+	compactorCfg := compactor.Config{
+		Compartments:      compartments.Config{Enabled: true, Read: compartments.ReadConfig{NumCompartments: 2}, Write: compartments.WriteConfig{NumCompartments: 1}},
+		ReadCompartmentID: 1,
+	}
+
+	storageCfg := mimir_tsdb.BlocksStorageConfig{}
+	flagext.DefaultValues(&storageCfg)
+	writeBucketName := storageCfg.Bucket.BucketName()
+	// Both entries are invalid in different ways, so the error tells which entry the scheduler uses.
+	storageCfg.AdditionalReadBuckets.BucketNames = []string{"0:", "1:" + writeBucketName}
+
+	_, err := NewCompactorScheduler(compactorCfg, Config{PersistenceType: "none"}, storageCfg, log.NewNopLogger(), nil)
+	require.EqualError(t, err, fmt.Sprintf("the blocks bucket name %q is used more than once", writeBucketName))
 }

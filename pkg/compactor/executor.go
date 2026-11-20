@@ -34,7 +34,6 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
-	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -618,7 +617,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	reg := prometheus.NewRegistry()
 	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
 
-	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
+	buckets := c.blockBucketsForUser(userID)
 
 	blockIDs := make([]ulid.ULID, len(spec.Job.BlockIds))
 	for i, id := range spec.Job.BlockIds {
@@ -632,8 +631,16 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	filters := []block.MetadataFilter{
 		NewLabelRemoverFilter(compactionIgnoredLabels),
 	}
-	fetcher := newBatchCachingMetaFetcher(userBucket, e.metadataCache, userLogger, userID, c.compactorCfg.MetaSyncConcurrency, e.cfg.MetadataCacheConfig.MetafileContentTTL, c.cacheBucketID())
-	metaMap, err := fetcher.fetchMetasFromIDs(ctx, blockIDs, filters)
+	var metaMap map[ulid.ULID]*block.Meta
+	var err error
+	if len(buckets.readBuckets) == 1 {
+		fetcher := newBatchCachingMetaFetcher(buckets.write(), e.metadataCache, userLogger, userID, c.compactorCfg.MetaSyncConcurrency, e.cfg.MetadataCacheConfig.MetafileContentTTL, c.cacheBucketID())
+		metaMap, err = fetcher.fetchMetasFromIDs(ctx, blockIDs, filters)
+	} else {
+		var bucketIndexes map[ulid.ULID]int
+		metaMap, bucketIndexes, err = fetchMetasFromIDsInBuckets(ctx, e.newBatchCachingMetaFetchers(c, userID, buckets, userLogger), blockIDs, filters)
+		buckets.set(bucketIndexes)
+	}
 	if err != nil {
 		// Abandon the job if a block metadata was not found or corrupt
 		if errors.Is(err, block.ErrorSyncMetaNotFound) || errors.Is(err, block.ErrorSyncMetaCorrupted) {
@@ -659,7 +666,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
 	}
 
-	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, compactDir, reg)
+	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, buckets, compactDir, reg)
 	if err != nil {
 		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, fmt.Errorf("failed to create bucket compactor: %w", err)
 	}
@@ -710,13 +717,13 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 }
 
 func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *MultitenantCompactor, compactDir string, tenant string) ([]*compactorschedulerpb.PlannedCompactionJob, error) {
-	userBucket := bucket.NewUserBucketClient(tenant, c.bucketClient, c.cfgProvider)
+	buckets := c.blockBucketsForUser(tenant)
 	userLogger := log.With(e.logger, "user", tenant)
 
 	reg := prometheus.NewRegistry()
 	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
 
-	bucketCompactor, err := c.newBucketCompactor(ctx, tenant, userLogger, userBucket, compactDir, reg)
+	bucketCompactor, err := c.newBucketCompactor(ctx, tenant, userLogger, buckets, compactDir, reg)
 	if err != nil {
 		return nil, fmt.Errorf("creating bucket compactor: %w", err)
 	}
@@ -728,20 +735,28 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 
 	// The BatchCachingMetaFetcher handles marker filtering on its own
 	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
-	fetcher := newBatchCachingMetaFetcher(userBucket, e.metadataCache, userLogger, tenant, c.compactorCfg.MetaSyncConcurrency, e.cfg.MetadataCacheConfig.MetafileContentTTL, c.cacheBucketID())
-
-	level.Info(userLogger).Log("msg", "start sync of metas")
-	metas, err := fetcher.fetchCompactableMetasFromListing(ctx, maxLookback, []block.MetadataFilter{
+	filters := []block.MetadataFilter{
 		NewLabelRemoverFilter(compactionIgnoredLabels),
 		deduplicateBlocksFilter,
-	}, block.NewFetcherMetrics(reg, nil))
+	}
+
+	level.Info(userLogger).Log("msg", "start sync of metas")
+	var metas map[ulid.ULID]*block.Meta
+	if len(buckets.readBuckets) == 1 {
+		fetcher := newBatchCachingMetaFetcher(buckets.write(), e.metadataCache, userLogger, tenant, c.compactorCfg.MetaSyncConcurrency, e.cfg.MetadataCacheConfig.MetafileContentTTL, c.cacheBucketID())
+		metas, err = fetcher.fetchCompactableMetasFromListing(ctx, maxLookback, filters, block.NewFetcherMetrics(reg, nil))
+	} else {
+		var bucketIndexes map[ulid.ULID]int
+		metas, bucketIndexes, err = fetchCompactableMetasFromBuckets(ctx, e.newBatchCachingMetaFetchers(c, tenant, buckets, userLogger), maxLookback, filters, block.NewFetcherMetrics(reg, nil))
+		buckets.set(bucketIndexes)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("meta fetch failed: %w", err)
 	}
 
 	level.Info(userLogger).Log("msg", "start of GC")
 	gcMetrics := newSyncerMetrics(reg, c.blocksMarkedForDeletion)
-	if err := garbageCollectBlocks(ctx, userLogger, userBucket, deduplicateBlocksFilter.DuplicateIDs(), gcMetrics, metas); err != nil {
+	if err := garbageCollectBlocks(ctx, userLogger, buckets, deduplicateBlocksFilter.DuplicateIDs(), gcMetrics, metas); err != nil {
 		return nil, fmt.Errorf("blocks garbage collect: %w", err)
 	}
 
@@ -792,6 +807,16 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 
 	level.Info(userLogger).Log("msg", "job planning completed", "num_jobs", len(plannedJobs))
 	return plannedJobs, nil
+}
+
+// newBatchCachingMetaFetchers returns one fetcher for each read bucket of buckets, in read order.
+func (e *schedulerExecutor) newBatchCachingMetaFetchers(c *MultitenantCompactor, userID string, buckets *blockBuckets, userLogger log.Logger) []*batchCachingMetaFetcher {
+	fetchers := make([]*batchCachingMetaFetcher, 0, len(buckets.readBuckets))
+	for idx, bkt := range buckets.readBuckets {
+		readBucket := c.readBuckets[idx]
+		fetchers = append(fetchers, newBatchCachingMetaFetcher(bkt, e.metadataCache, log.With(userLogger, "bucket", readBucket.Name), userID, c.compactorCfg.MetaSyncConcurrency, e.cfg.MetadataCacheConfig.MetafileContentTTL, readBucket.MetadataCacheID))
+	}
+	return fetchers
 }
 
 func serializeBlockIds(metas []*block.Meta) [][]byte {

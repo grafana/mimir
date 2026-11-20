@@ -226,6 +226,134 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	))
 }
 
+func TestBlocksCleaner_ShouldMaintainAllReadBuckets(t *testing.T) {
+	writeBucket, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	writeBucket = block.BucketWithGlobalMarkers(writeBucket)
+	readBucket, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	readBucket = block.BucketWithGlobalMarkers(readBucket)
+
+	ctx := context.Background()
+	now := time.Now()
+	deletionDelay := 12 * time.Hour
+
+	// User-1 has blocks in both buckets.
+	writeBucketBlock := createTSDBBlock(t, writeBucket, "user-1", 10, 20, 2, nil)
+	readBucketBlock := createTSDBBlock(t, readBucket, "user-1", 20, 30, 2, nil)
+	readBucketBlockToDelete := createTSDBBlock(t, readBucket, "user-1", 30, 40, 2, nil)
+	createDeletionMark(t, readBucket, "user-1", readBucketBlockToDelete, now.Add(-deletionDelay).Add(-time.Hour))
+
+	// User-2 has blocks only in the read bucket.
+	user2Block := createTSDBBlock(t, readBucket, "user-2", 10, 20, 2, nil)
+
+	// User-3 is marked for deletion only in the write bucket, and has blocks in both buckets.
+	require.NoError(t, tsdb.WriteTenantDeletionMark(ctx, writeBucket, "user-3", nil, tsdb.NewTenantDeletionMark(now)))
+	user3WriteBucketBlock := createTSDBBlock(t, writeBucket, "user-3", 10, 20, 2, nil)
+	user3ReadBucketBlock := createTSDBBlock(t, readBucket, "user-3", 10, 20, 2, nil)
+
+	// User-4 has no more blocks and is marked for deletion only in the read bucket. It should be fully deleted.
+	user4Mark := tsdb.NewTenantDeletionMark(now)
+	user4Mark.FinishedTime = util.UnixSecondsFromTime(now.Add(-time.Minute))
+	require.NoError(t, tsdb.WriteTenantDeletionMark(ctx, readBucket, "user-4", nil, user4Mark))
+
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:                 deletionDelay,
+		CleanupInterval:               time.Minute,
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
+	}
+	reg := prometheus.NewPedanticRegistry()
+	logger := log.NewNopLogger()
+	readBuckets := []bucket.BlocksBucket{{Name: "write", Client: writeBucket}, {Name: "read", Client: readBucket}}
+
+	cleaner := newBlocksCleaner(cfg, readBuckets, tsdb.AllUsers, newMockConfigProvider(), logger, reg)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, cleaner))
+	defer services.StopAndAwaitTerminated(ctx, cleaner) //nolint:errcheck
+
+	for _, tc := range []struct {
+		bucket         objstore.Bucket
+		path           string
+		expectedExists bool
+	}{
+		{bucket: readBucket, path: path.Join("user-1", readBucketBlockToDelete.String(), block.MetaFilename), expectedExists: false},
+		{bucket: writeBucket, path: path.Join("user-3", user3WriteBucketBlock.String(), block.MetaFilename), expectedExists: false},
+		{bucket: readBucket, path: path.Join("user-3", user3ReadBucketBlock.String(), block.MetaFilename), expectedExists: false},
+		// The tenant deletion mark of user-3 is in both buckets.
+		{bucket: writeBucket, path: path.Join("user-3", tsdb.TenantDeletionMarkPath), expectedExists: true},
+		{bucket: readBucket, path: path.Join("user-3", tsdb.TenantDeletionMarkPath), expectedExists: true},
+		{bucket: writeBucket, path: path.Join("user-4", tsdb.TenantDeletionMarkPath), expectedExists: false},
+		{bucket: readBucket, path: path.Join("user-4", tsdb.TenantDeletionMarkPath), expectedExists: false},
+	} {
+		exists, err := tc.bucket.Exists(ctx, tc.path)
+		require.NoError(t, err)
+		assert.Equal(t, tc.expectedExists, exists, tc.path)
+	}
+
+	for _, tc := range []struct {
+		bucket         objstore.Bucket
+		userID         string
+		expectedBlocks []ulid.ULID
+	}{
+		{bucket: writeBucket, userID: "user-1", expectedBlocks: []ulid.ULID{writeBucketBlock}},
+		{bucket: readBucket, userID: "user-1", expectedBlocks: []ulid.ULID{readBucketBlock}},
+		{bucket: writeBucket, userID: "user-2"},
+		{bucket: readBucket, userID: "user-2", expectedBlocks: []ulid.ULID{user2Block}},
+	} {
+		idx, err := bucketindex.ReadIndex(ctx, tc.bucket, tc.userID, nil, logger)
+		if tc.expectedBlocks == nil {
+			assert.Equal(t, bucketindex.ErrIndexNotFound, err)
+			continue
+		}
+		require.NoError(t, err)
+		assert.ElementsMatch(t, tc.expectedBlocks, idx.Blocks.GetULIDs())
+	}
+
+	assert.Equal(t, float64(1), testutil.ToFloat64(cleaner.runsCompleted))
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
+		# TYPE cortex_bucket_blocks_count gauge
+		cortex_bucket_blocks_count{user="user-1"} 2
+		cortex_bucket_blocks_count{user="user-2"} 1
+		# HELP cortex_bucket_read_bucket_blocks_count Total number of blocks in each read bucket. Includes blocks marked for deletion, but not partial blocks.
+		# TYPE cortex_bucket_read_bucket_blocks_count gauge
+		cortex_bucket_read_bucket_blocks_count{bucket="read",user="user-1"} 1
+		cortex_bucket_read_bucket_blocks_count{bucket="write",user="user-1"} 1
+		cortex_bucket_read_bucket_blocks_count{bucket="read",user="user-2"} 1
+	`),
+		"cortex_bucket_blocks_count",
+		"cortex_bucket_read_bucket_blocks_count",
+	))
+}
+
+func TestEstimateCompactionJobsFromBucketIndexes_ShouldUseTheUnionOfTheBucketIndexes(t *testing.T) {
+	writeBucket, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	writeBucket = block.BucketWithGlobalMarkers(writeBucket)
+	readBucket, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	readBucket = block.BucketWithGlobalMarkers(readBucket)
+
+	const user = "test"
+	twoHoursMS := 2 * time.Hour.Milliseconds()
+	dayMS := 24 * time.Hour.Milliseconds()
+	userWriteBucket := bucket.NewUserBucketClient(user, writeBucket, nil)
+	userReadBucket := bucket.NewUserBucketClient(user, readBucket, nil)
+
+	newBlock := func(minTime, maxTime int64) *bucketindex.Block {
+		return &bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: minTime, MaxTime: maxTime}
+	}
+	writeBucketIndex := &bucketindex.Index{Blocks: bucketindex.Blocks{newBlock(0, twoHoursMS), newBlock(dayMS, 2*dayMS), newBlock(2*dayMS, 3*dayMS)}}
+	readBucketIndex := &bucketindex.Index{Blocks: bucketindex.Blocks{newBlock(0, twoHoursMS), newBlock(dayMS, 2*dayMS), newBlock(2*dayMS, 3*dayMS)}}
+
+	// The no-compact mark of a bucket applies only to the blocks of that bucket.
+	require.NoError(t, block.MarkForNoCompact(context.Background(), log.NewNopLogger(), userWriteBucket, readBucketIndex.Blocks[1].ID, block.ManualNoCompactReason, ""))
+	require.NoError(t, block.MarkForNoCompact(context.Background(), log.NewNopLogger(), userReadBucket, readBucketIndex.Blocks[2].ID, block.ManualNoCompactReason, ""))
+
+	jobs, err := estimateCompactionJobsFromBucketIndexes(context.Background(), user, []objstore.InstrumentedBucket{userWriteBucket, userReadBucket}, []*bucketindex.Index{writeBucketIndex, readBucketIndex}, tsdb.DurationList{2 * time.Hour, 24 * time.Hour}, newMockConfigProvider())
+	require.NoError(t, err)
+	split, merge := computeSplitAndMergeJobs(jobs)
+	require.Equal(t, 0, split)
+	require.Equal(t, 2, merge)
+}
+
 func TestBlocksCleaner_ShouldNotRegisterCompactionJobMetricsWhenEstimationDisabled(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
@@ -418,7 +546,7 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 	))
 
 	// Override the users scanner to reconfigure it to only return a subset of users.
-	cleaner.usersScanner = tsdb.NewUsersScanner(bucketClient, func(userID string) (bool, error) { return userID == "user-1", nil }, scanUsersMaxWait, logger, nil)
+	cleaner.usersScanner = tsdb.NewUsersScanner([]objstore.Bucket{bucketClient}, func(userID string) (bool, error) { return userID == "user-1", nil }, scanUsersMaxWait, logger, nil)
 
 	// Create new blocks, to double check expected metrics have changed.
 	createTSDBBlock(t, bucketClient, "user-1", 40, 50, 2, nil)
@@ -449,7 +577,7 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 }
 
 func updateOwnershipFunc(c *BlocksCleaner, ownFunc func(user string) (bool, error)) {
-	c.usersScanner = tsdb.NewUsersScanner(c.bucketClient, ownFunc, scanUsersMaxWait, c.logger, nil)
+	c.usersScanner = tsdb.NewUsersScanner([]objstore.Bucket{c.readBuckets[0].client}, ownFunc, scanUsersMaxWait, c.logger, nil)
 }
 
 func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *testing.T) {
@@ -846,7 +974,7 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 	checkBlock(t, "user-1", bucketClient, block1, false, false)
 	checkBlock(t, "user-1", bucketClient, block2, true, false)
 
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1", cleaner.readBuckets, logger))
 
 	// check that no blocks were marked for deletion, because deletion delay is set to 0.
 	checkBlock(t, "user-1", bucketClient, block1, false, false)
@@ -856,7 +984,7 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 	// The delay time must be very short since these temporary files were just created
 	cfgProvider.userPartialBlockDelay["user-1"] = 1 * time.Nanosecond
 
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1", cleaner.readBuckets, logger))
 
 	// check that first block was marked for deletion (partial block updated far in the past), but not the second one, because it's not partial.
 	checkBlock(t, "user-1", bucketClient, block1, false, true)
@@ -921,7 +1049,7 @@ func TestBlocksCleaner_ShouldRemovePartiallyDeletedBlocksWithMarkerOutsideDelayP
 	checkBlockDeletionMarker(t, "user-1", bucketClient, block1, false)
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1", cleaner.readBuckets, logger))
 
 	// cleaner.cleanUser makes the clients consistent again. block1 is marked for deletion again
 	checkBlockDeletionMarker(t, "user-1", bucketClient, block1, true)
@@ -994,7 +1122,7 @@ func TestBlocksCleaner_ShouldRemovePartiallyDeletedBlocksWithGlobalMarkerPresent
 	checkBlock(t, "user-1", parentClient, block1, false, false)
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1", cleaner.readBuckets, logger))
 
 	var foundAfter bool
 	// block should not be discoverable via global markers path
@@ -1077,11 +1205,11 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.
 	cfgProvider.userPartialBlockDelay["user-1"] = 1 * time.Hour
 	cfgProvider.userPartialBlockDelay["user-2"] = 1 * time.Nanosecond
 
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1", cleaner.readBuckets, logger))
 	checkBlock(t, "user-1", bucketClient, block1, false, false) // This block was updated too recently, so we don't mark it for deletion just yet.
 	checkBlock(t, "user-2", bucketClient, block2, true, false)  // No change for user-2.
 
-	require.NoError(t, cleaner.cleanUser(ctx, "user-2", logger))
+	require.NoError(t, cleaner.cleanUser(ctx, "user-2", cleaner.readBuckets, logger))
 	checkBlock(t, "user-1", bucketClient, block1, false, false) // No change for user-1
 	checkBlock(t, "user-2", bucketClient, block2, true, false)  // Block with corrupted meta is NOT marked for deletion.
 
@@ -1142,7 +1270,7 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksIfConfiguredDelayIsInvalid(t 
 
 	// Run the cleanup.
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1", cleaner.readBuckets, logger))
 
 	// Ensure the block has NOT been marked for deletion.
 	checkBlock(t, "user-1", bucketClient, block1, false, false)
@@ -1236,7 +1364,7 @@ func TestStalePartialBlockLastModifiedTime(t *testing.T) {
 			}
 
 			cleaner := NewBlocksCleaner(BlocksCleanerConfig{}, baseBucket, func(userID string) (bool, error) { return true, nil }, nil, log.NewNopLogger(), nil)
-			lastModified, err := cleaner.stalePartialBlockLastModifiedTime(context.Background(), tc.blockID, tc.bucket, tc.cutoff)
+			lastModified, err := cleaner.stalePartialBlockLastModifiedTime(context.Background(), tc.blockID, tc.bucket, cleaner.readBuckets[0].supportsUpdatedAtIter, tc.cutoff)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedLastModified, lastModified)
 		})
@@ -1358,7 +1486,7 @@ func TestComputeCompactionJobs(t *testing.T) {
 			index := &bucketindex.Index{Blocks: c.blocks}
 			cfgProvider := newMockConfigProvider()
 			cfgProvider.splitAndMergeShards[user] = 3
-			jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, index, cfg.CompactionBlockRanges, cfgProvider)
+			jobs, err := estimateCompactionJobsFromBucketIndexes(context.Background(), user, []objstore.InstrumentedBucket{userBucket}, []*bucketindex.Index{index}, cfg.CompactionBlockRanges, cfgProvider)
 			require.NoError(t, err)
 			split, merge := computeSplitAndMergeJobs(jobs)
 			require.Equal(t, c.expectedSplits, split)
@@ -1436,7 +1564,7 @@ func TestComputeCompactionJobsWithOOOShards(t *testing.T) {
 			cfgProvider := newMockConfigProvider()
 			cfgProvider.splitAndMergeShards[user] = c.mergeShards
 			cfgProvider.oooSplitAndMergeShards[user] = c.oooMergeShards
-			jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, index, cfg.CompactionBlockRanges, cfgProvider)
+			jobs, err := estimateCompactionJobsFromBucketIndexes(context.Background(), user, []objstore.InstrumentedBucket{userBucket}, []*bucketindex.Index{index}, cfg.CompactionBlockRanges, cfgProvider)
 			require.NoError(t, err)
 
 			var inOrderJob, oooJob *Job
@@ -1726,12 +1854,12 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 
 			go func() {
 				defer wg.Done()
-				require.NoError(t, cleaner1.cleanUser(ctx, tenantID, logger))
+				require.NoError(t, cleaner1.cleanUser(ctx, tenantID, cleaner1.readBuckets, logger))
 			}()
 
 			go func() {
 				defer wg.Done()
-				require.NoError(t, cleaner2.cleanUser(ctx, tenantID, logger))
+				require.NoError(t, cleaner2.cleanUser(ctx, tenantID, cleaner2.readBuckets, logger))
 			}()
 
 			// Wait until both cleaners have done.
@@ -1782,7 +1910,7 @@ func TestBlocksCleaner_instrumentBucketIndexUpdate(t *testing.T) {
 	users, err := cleaner.refreshOwnedUsers(ctx)
 	require.NoError(t, err)
 
-	cleaner.instrumentBucketIndexUpdate(ctx, users.all)
+	cleaner.instrumentBucketIndexUpdate(ctx, users)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_bucket_index_last_successful_update_timestamp_seconds Timestamp of the last successful update of a tenant's bucket index.

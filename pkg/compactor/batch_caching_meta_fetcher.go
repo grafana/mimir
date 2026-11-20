@@ -95,6 +95,95 @@ func (f *batchCachingMetaFetcher) fetchCompactableMetasFromListing(ctx context.C
 	return metas, nil
 }
 
+// fetchCompactableMetasFromBuckets is like fetchCompactableMetasFromListing, but it fetches the metas from the
+// buckets of all fetchers. The fetchers are in read order.
+// It applies the deletion marks of each bucket to the blocks of that bucket, then it takes the union.
+// If a block is in more than one bucket, it uses the first bucket. Then it runs the filters on the union.
+// Then it removes the blocks that their bucket marks for no-compaction.
+// It also returns the index of the fetcher of each block that is not in the bucket of the first fetcher.
+func fetchCompactableMetasFromBuckets(ctx context.Context, fetchers []*batchCachingMetaFetcher, maxLookback time.Duration, filters []block.MetadataFilter, metrics *block.FetcherMetrics) (metas map[ulid.ULID]*block.Meta, bucketIndexes map[ulid.ULID]int, err error) {
+	start := time.Now()
+	metrics.Syncs.Inc()
+	metrics.ResetTx()
+	defer func() {
+		metrics.SyncDuration.Observe(time.Since(start).Seconds())
+		if err != nil {
+			metrics.SyncFailures.Inc()
+		}
+	}()
+
+	metasPerBucket := make([]map[ulid.ULID]*block.Meta, len(fetchers))
+	noCompactPerBucket := make([]map[ulid.ULID]struct{}, len(fetchers))
+	for idx, f := range fetchers {
+		blockIDs, noCompact, err := f.discoverBlocks(ctx, maxLookback, metrics.Synced)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		bucketMetas, stats, err := f.innerFetchMetas(ctx, blockIDs, false, true, metrics.Synced, nil)
+		stats.updateMetrics(metrics)
+		if err != nil {
+			return nil, nil, err
+		}
+		metasPerBucket[idx] = bucketMetas
+		noCompactPerBucket[idx] = noCompact
+	}
+
+	metas, bucketIndexes = unionOfBucketMetas(metasPerBucket)
+	metas, err = fetchers[0].runFilters(ctx, metas, metrics.Synced, filters)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	beforeLen := len(metas)
+	for id := range metas {
+		if _, marked := noCompactPerBucket[bucketIndexes[id]][id]; marked {
+			delete(metas, id)
+		}
+	}
+	metrics.Synced.WithLabelValues(block.MarkedForNoCompactionMeta).Set(float64(beforeLen - len(metas)))
+	metrics.Synced.WithLabelValues(block.LoadedMeta).Set(float64(len(metas)))
+	metrics.Submit()
+
+	return metas, bucketIndexes, nil
+}
+
+// fetchMetasFromIDsInBuckets fetches the meta of each block from the first fetcher whose bucket has the block.
+// The fetchers are in read order. It doesn't return the blocks that no bucket has.
+// It also returns the index of the fetcher of each block that is not in the bucket of the first fetcher.
+func fetchMetasFromIDsInBuckets(ctx context.Context, fetchers []*batchCachingMetaFetcher, blockIDs []ulid.ULID, filters []block.MetadataFilter) (map[ulid.ULID]*block.Meta, map[ulid.ULID]int, error) {
+	metas := make(map[ulid.ULID]*block.Meta, len(blockIDs))
+	bucketIndexes := map[ulid.ULID]int{}
+	remaining := blockIDs
+	for idx, f := range fetchers {
+		if len(remaining) == 0 {
+			break
+		}
+
+		found, _, err := f.innerFetchMetas(ctx, remaining, false, false, newNoopGaugeVec(), nil)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		var notFound []ulid.ULID
+		for _, id := range remaining {
+			meta, ok := found[id]
+			if !ok {
+				notFound = append(notFound, id)
+				continue
+			}
+			metas[id] = meta
+			if idx > 0 {
+				bucketIndexes[id] = idx
+			}
+		}
+		remaining = notFound
+	}
+
+	metas, err := fetchers[0].runFilters(ctx, metas, newNoopGaugeVec(), filters)
+	return metas, bucketIndexes, err
+}
+
 // fetchMetasFromIDs fetches metadata for specific block IDs using the cache where possible.
 // Unlike fetchCompactableMetasFromListing, this method returns an error if any block's meta.json is not
 // found in storage or is corrupt.
@@ -115,9 +204,9 @@ type fetchStats struct {
 func (fs *fetchStats) updateMetrics(metrics *block.FetcherMetrics) {
 	metrics.Loads.Add(float64(fs.totalLoads))
 	metrics.CachedLoads.Add(float64(fs.cachedLoads))
-	metrics.Synced.WithLabelValues(block.NoMeta).Set(float64(fs.noMeta.Load()))
-	metrics.Synced.WithLabelValues(block.CorruptedMeta).Set(float64(fs.corrupted.Load()))
-	metrics.Synced.WithLabelValues(block.FailedMeta).Set(float64(fs.failed.Load()))
+	metrics.Synced.WithLabelValues(block.NoMeta).Add(float64(fs.noMeta.Load()))
+	metrics.Synced.WithLabelValues(block.CorruptedMeta).Add(float64(fs.corrupted.Load()))
+	metrics.Synced.WithLabelValues(block.FailedMeta).Add(float64(fs.failed.Load()))
 }
 
 // innerFetchMetas fetches metadata for the given block IDs from cache and/or storage
@@ -208,8 +297,8 @@ func (f *batchCachingMetaFetcher) innerFetchMetas(ctx context.Context, blockIDs 
 func (f *batchCachingMetaFetcher) discoverBlocks(ctx context.Context, maxLookback time.Duration, synced block.GaugeVec) ([]ulid.ULID, map[ulid.ULID]struct{}, error) {
 	var lookbackExcluded, deletionMarked float64
 	defer func() {
-		synced.WithLabelValues(block.LookbackExcludedMeta).Set(lookbackExcluded)
-		synced.WithLabelValues(block.MarkedForDeletionMeta).Set(deletionMarked)
+		synced.WithLabelValues(block.LookbackExcludedMeta).Add(lookbackExcluded)
+		synced.WithLabelValues(block.MarkedForDeletionMeta).Add(deletionMarked)
 	}()
 
 	var minAllowedBlockID ulid.ULID

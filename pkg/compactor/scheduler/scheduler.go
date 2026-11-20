@@ -126,19 +126,28 @@ func NewCompactorScheduler(
 		return nil, err
 	}
 
-	bkt, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "compactor-scheduler", logger, registerer)
+	additionalReadCfgs, err := storageCfg.AdditionalReadBucketConfigs(compactorCfg.ReadCompartmentID)
 	if err != nil {
 		return nil, err
 	}
 
-	return newCompactorScheduler(compactorCfg, cfg, allowList, bkt, jpm, registerer, logger)
+	bucketSet, err := bucket.NewBlocksBucketSetFromConfigs(context.Background(), storageCfg.Bucket, additionalReadCfgs, "compactor-scheduler", logger, registerer)
+	if err != nil {
+		return nil, err
+	}
+
+	var bkts []objstore.Bucket
+	for _, b := range bucketSet.ReadBuckets() {
+		bkts = append(bkts, b.Client)
+	}
+	return newCompactorScheduler(compactorCfg, cfg, allowList, bkts, jpm, registerer, logger)
 }
 
 func newCompactorScheduler(
 	compactorCfg compactor.Config,
 	cfg Config,
 	allowList *util.AllowList,
-	bkt objstore.Bucket,
+	bkts []objstore.Bucket,
 	jpm JobPersistenceManager,
 	registerer prometheus.Registerer,
 	logger log.Logger) (*Scheduler, error) {
@@ -170,7 +179,7 @@ func newCompactorScheduler(
 		allowList:        allowList,
 		jpm:              jpm,
 		rotator:          rotator,
-		tenantDiscoverer: NewTenantDiscoverer(cfg, lanePolicy, allowList, rotator, bkt, jpm, metrics, logger),
+		tenantDiscoverer: NewTenantDiscoverer(cfg, lanePolicy, allowList, rotator, bkts, jpm, metrics, logger),
 		metrics:          metrics,
 		logger:           logger,
 		clock:            clock.New(),

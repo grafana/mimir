@@ -206,6 +206,24 @@ func TestConfig_Validate(t *testing.T) {
 	}
 }
 
+func TestNewMultitenantCompactor_UsesOnlyTheAdditionalReadBucketsOfItsReadCompartment(t *testing.T) {
+	compactorCfg := prepareConfig(t)
+	compactorCfg.Compartments = compartments.Config{Enabled: true, Read: compartments.ReadConfig{NumCompartments: 2}, Write: compartments.WriteConfig{NumCompartments: 1}}
+	compactorCfg.ReadCompartmentID = 1
+
+	storageCfg := mimir_tsdb.BlocksStorageConfig{}
+	flagext.DefaultValues(&storageCfg)
+	writeBucketName := storageCfg.Bucket.BucketName()
+	// Both entries are invalid in different ways, so the error tells which entry the compactor uses.
+	storageCfg.AdditionalReadBuckets.BucketNames = []string{"0:", "1:" + writeBucketName}
+
+	c, err := NewMultitenantCompactor(compactorCfg, storageCfg, newMockConfigProvider(), log.NewNopLogger(), nil)
+	require.NoError(t, err)
+
+	_, err = c.bucketSetFactory(context.Background())
+	require.EqualError(t, err, fmt.Sprintf("the blocks bucket name %q is used more than once", writeBucketName))
+}
+
 func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 	t.Parallel()
 
@@ -1881,15 +1899,15 @@ func prepareWithConfigProvider(t *testing.T, compactorCfg Config, bucketClient o
 	logger := &componentLogger{component: "compactor", log: log.NewLogfmtLogger(logs)}
 	registry := prometheus.NewRegistry()
 
-	bucketClientFactory := func(context.Context) (objstore.Bucket, error) {
-		return bucketClient, nil
+	bucketSetFactory := func(context.Context) (*bucket.BlocksBucketSet, error) {
+		return bucket.NewBlocksBucketSet(bucket.BlocksBucket{Client: bucketClient}, nil)
 	}
 
 	blocksCompactorFactory := func(context.Context, Config, ConfigProvider, log.Logger, prometheus.Registerer) (BlocksCompactorProvider, Planner, error) {
 		return func(string) Compactor { return tsdbCompactor }, tsdbPlanner, nil
 	}
 
-	c, err := newMultitenantCompactor(compactorCfg, storageCfg, limits, logger, registry, bucketClientFactory, splitAndMergeGrouperFactory, blocksCompactorFactory)
+	c, err := newMultitenantCompactor(compactorCfg, storageCfg, limits, logger, registry, bucketSetFactory, splitAndMergeGrouperFactory, blocksCompactorFactory)
 	require.NoError(t, err)
 
 	return c, tsdbCompactor, tsdbPlanner, logs, registry
