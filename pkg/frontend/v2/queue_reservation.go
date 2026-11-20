@@ -82,8 +82,8 @@ type queueReservation struct {
 	// streamsGone is closed when the query-scheduler has removed the reservation, because all
 	// streams of worker that support queue reservation ended.
 	streamsGone <-chan struct{}
-	// plainPath is true when no RESERVE could go out or the query-scheduler returned ERROR, so the
-	// sub-requests use the plain path.
+	// plainPath is true when no RESERVE could go out or the query-scheduler returned ERROR before any
+	// TOO_MANY_REQUESTS_PER_TENANT, so the sub-requests use the plain path.
 	plainPath bool
 	err       error
 	// errOutcome is the cortex_query_frontend_enqueue_requests_total outcome of each sub-request
@@ -155,8 +155,9 @@ func (f *Frontend) newQueueReservation(ctx context.Context, userID string, group
 //  3. After SHUTTING_DOWN, a transport error or an unknown status, run retries.
 //  4. While the rejected set is empty, a retry goes to the first free stream of any
 //     query-scheduler. After that, each retry goes to a random query-scheduler outside the set.
-//  5. After ERROR, or when no query-scheduler supports queue reservation any more, the
-//     sub-requests use the plain path.
+//  5. After ERROR while the rejected set is empty, or when no query-scheduler supports queue
+//     reservation any more, the sub-requests use the plain path. After ERROR while the set is
+//     not empty, run adds the query-scheduler to the set and retries.
 //  6. run stops after WorkerConcurrency+1 attempts, as a plain sub-request does, or when no
 //     query-scheduler outside the rejected set has a stream that supports queue reservation.
 //     Then each sub-request fails with too many requests if the set is not empty, or with an
@@ -166,7 +167,8 @@ func (f *Frontend) newQueueReservation(ctx context.Context, userID string, group
 func (r *queueReservation) run(ctx context.Context) {
 	defer close(r.done)
 
-	// rejected has the addresses of the query-schedulers that returned TOO_MANY_REQUESTS_PER_TENANT.
+	// rejected has the addresses of the query-schedulers that returned TOO_MANY_REQUESTS_PER_TENANT,
+	// and of the query-schedulers that returned ERROR after that.
 	var rejected map[string]struct{}
 	// retryAfterTooManyRequests is true when the last attempt got TOO_MANY_REQUESTS_PER_TENANT.
 	var retryAfterTooManyRequests bool
@@ -250,6 +252,15 @@ func (r *queueReservation) run(ctx context.Context) {
 
 		case res.status == schedulerpb.ERROR:
 			r.f.queueReservations.WithLabelValues(reservationOutcomeSchedulerError).Inc()
+			if len(rejected) > 0 {
+				// A query-scheduler that returned TOO_MANY_REQUESTS_PER_TENANT has a cap of at least the
+				// slots, so another query-scheduler can grant the reservation. For example, a rollout
+				// changes -query-scheduler.max-outstanding-requests-per-tenant. The plain path could
+				// send sub-requests to the query-scheduler that rejected the reservation.
+				level.Debug(r.logger(res.worker, reservationID)).Log("msg", "query-scheduler returned error for queue reservation after a rejection for too many outstanding requests, trying another query-scheduler", "err", res.schedulerErr)
+				rejected[res.worker.schedulerAddr] = struct{}{}
+				continue
+			}
 			// For example, the slots exceed -query-scheduler.max-outstanding-requests-per-tenant, which
 			// the query-frontend does not know. So no query-scheduler can grant the reservation.
 			// The query-scheduler did not open the reservation, and no sub-request uses it yet, so the

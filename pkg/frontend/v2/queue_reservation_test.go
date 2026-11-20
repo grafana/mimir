@@ -667,6 +667,75 @@ func TestQueueReservation_TooManyRequestsWinsOverLaterFailures(t *testing.T) {
 	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservationRetries))
 }
 
+func TestQueueReservation_ErrorAfterTooManyRequestsRetriesOnAnotherScheduler(t *testing.T) {
+	var reserves atomic.Int64
+	var grantedID atomic.String
+	reply := func(msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		switch reserves.Inc() {
+		case 1:
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+		case 2:
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: "the reservation requests more slots than the per-tenant queue cap"}
+		}
+		grantedID.Store(msg.ReservationID)
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	}
+	schedulers := []*reservationTestScheduler{
+		newReservationTestScheduler(t, true, reply),
+		newReservationTestScheduler(t, true, reply),
+		newReservationTestScheduler(t, true, reply),
+	}
+	reg := prometheus.NewPedanticRegistry()
+	f := setupReservationFrontend(t, reg, nil, schedulers...)
+
+	ctx, scope := newReservationTestContext(t, 1)
+	defer scope.Close(false)
+	doGroupRequests(t, f, ctx, 1)
+	test.Poll(t, 5*time.Second, 1, func() interface{} {
+		return totalMessages(schedulerpb.ENQUEUE, schedulers...)
+	})
+
+	for i, s := range schedulers {
+		require.Len(t, s.messages(schedulerpb.RESERVE), 1, "scheduler %d must get exactly one RESERVE", i)
+		for _, m := range s.messages(schedulerpb.ENQUEUE) {
+			require.Equal(t, grantedID.Load(), m.ReservationID, "the sub-request must use the granted reservation, not the plain path")
+		}
+	}
+	verifyEnqueueRequestsMetric(t, reg, map[string]int{"enqueued": 1})
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeTooManyRequests)))
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeSchedulerError)))
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeOK)))
+	// The retry after ERROR does not come right after a 429.
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservationRetries))
+}
+
+func TestQueueReservation_ErrorAfterTooManyRequestsFailsWhenNoOtherSchedulerRemains(t *testing.T) {
+	var reserves atomic.Int64
+	reply := func(*schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if reserves.Inc() == 1 {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+		}
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: "the reservation requests more slots than the per-tenant queue cap"}
+	}
+	first := newReservationTestScheduler(t, true, reply)
+	second := newReservationTestScheduler(t, true, reply)
+	reg := prometheus.NewPedanticRegistry()
+	f := setupReservationFrontend(t, reg, nil, first, second)
+
+	ctx, scope := newReservationTestContext(t, 1)
+	defer scope.Close(false)
+	requireStreamError(t, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests"), doGroupRequests(t, f, ctx, 1))
+	verifyEnqueueRequestsMetric(t, reg, map[string]int{"too_many_requests": 1})
+
+	for i, s := range []*reservationTestScheduler{first, second} {
+		require.Len(t, s.messages(schedulerpb.RESERVE), 1, "scheduler %d must get exactly one RESERVE", i)
+		require.Empty(t, s.messages(schedulerpb.ENQUEUE), "scheduler %d must get no plain-path ENQUEUE", i)
+	}
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeTooManyRequests)))
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeSchedulerError)))
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservationRetries))
+}
+
 func TestQueueReservation_RetryCountsOnlyTheAttemptRightAfterTooManyRequests(t *testing.T) {
 	rejecting := newTestReservationWorker(t, "rejecting", true)
 	granting := newTestReservationWorker(t, "granting", true)
