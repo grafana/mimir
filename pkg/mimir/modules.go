@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"time"
@@ -903,16 +904,12 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 	//
 	// INACTIVE partitions are only included until they're too old to be queried: queriers stop querying a
 	// partition that has been inactive for longer than the tenant's query-ingesters-within, so there's no
-	// point in fetching (and sending) its offset. We use the default query-ingesters-within, since the
-	// offsets are shared across tenants; a tenant with a larger override just falls back to the last produced
-	// offset in the ingester for the partitions whose offset is missing.
-	var maxInactivePartitionAge time.Duration
-	if queryIngestersWithin := time.Duration(t.Cfg.LimitsConfig.QueryIngestersWithin); queryIngestersWithin > 0 {
-		maxInactivePartitionAge = queryIngestersWithin + t.Cfg.IngestStorage.Query.IncludeInactivePartitionsOffsetDuration
-	}
-
+	// point in fetching (and sending) its offset. The offsets are shared across tenants, so we use the
+	// largest query-ingesters-within of the default and all tenant overrides, evaluated on each call so
+	// that runtime config changes are picked up.
 	getPartitionIDs := func(readCompartmentID int) ingest.GetPartitionIDsFunc {
 		return func(_ context.Context) ([]int32, error) {
+			maxInactivePartitionAge := maxInactivePartitionAgeForReadConsistencyOffsets(t.Overrides, t.Cfg.IngestStorage.Query.IncludeInactivePartitionsOffsetDuration)
 			return partitionIDsForReadConsistencyOffsets(t.IngesterPartitionRingWatchers.Watcher(readCompartmentID).PartitionRing(), time.Now(), maxInactivePartitionAge), nil
 		}
 	}
@@ -954,6 +951,24 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 	t.QueryFrontendOffsetsReader = reader
 
 	return reader, nil
+}
+
+// maxInactivePartitionAgeForReadConsistencyOffsets returns how long after becoming inactive a partition's offset
+// should still be included in the strong read consistency offsets. It returns 0 if there is no limit, which is
+// the case if any tenant (or the default) has query-ingesters-within disabled.
+func maxInactivePartitionAgeForReadConsistencyOffsets(overrides *validation.Overrides, extraDuration time.Duration) time.Duration {
+	queryIngestersWithin := overrides.MaxDurationAcrossAllTenants(func(l *validation.Limits) time.Duration {
+		if l.QueryIngestersWithin <= 0 {
+			return math.MaxInt64 // Disabled: ingesters are always queried.
+		}
+		return time.Duration(l.QueryIngestersWithin)
+	})
+
+	if queryIngestersWithin == math.MaxInt64 {
+		return 0
+	}
+
+	return queryIngestersWithin + extraDuration
 }
 
 // partitionIDsForReadConsistencyOffsets returns the sorted IDs of the partitions in the ring whose offsets
@@ -1863,7 +1878,7 @@ func (t *Mimir) setupModuleManager() error {
 		QuerierQueryPlanner:              {API, Overrides, CacheKeyGenerator},
 		QuerierRing:                      {API, RuntimeConfig, MemberlistKV, Vault},
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
-		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
+		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing, Overrides},
 		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QuerierRing, QueryFrontendCacheClient, CacheKeyGenerator},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
 		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QuerierQueryPlanner, QuerierIntermediateCacheClient},

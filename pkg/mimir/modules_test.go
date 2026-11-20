@@ -27,11 +27,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/vault"
 )
 
@@ -614,6 +616,57 @@ func TestPartitionIDsForReadConsistencyOffsets(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			assert.Equal(t, testData.expected, partitionIDsForReadConsistencyOffsets(partitionRing, now, testData.maxInactiveAge))
+		})
+	}
+}
+
+func TestMaxInactivePartitionAgeForReadConsistencyOffsets(t *testing.T) {
+	tests := map[string]struct {
+		defaultWithin time.Duration
+		tenantWithin  map[string]time.Duration
+		extra         time.Duration
+		expected      time.Duration
+	}{
+		"default only": {
+			defaultWithin: 13 * time.Hour,
+			extra:         10 * time.Minute,
+			expected:      13*time.Hour + 10*time.Minute,
+		},
+		"tenant override larger than default": {
+			defaultWithin: 13 * time.Hour,
+			tenantWithin:  map[string]time.Duration{"a": 24 * time.Hour, "b": time.Hour},
+			extra:         10 * time.Minute,
+			expected:      24*time.Hour + 10*time.Minute,
+		},
+		"tenant override smaller than default": {
+			defaultWithin: 13 * time.Hour,
+			tenantWithin:  map[string]time.Duration{"a": time.Hour},
+			expected:      13 * time.Hour,
+		},
+		"default disabled means no limit": {
+			defaultWithin: 0,
+			tenantWithin:  map[string]time.Duration{"a": time.Hour},
+			extra:         10 * time.Minute,
+			expected:      0,
+		},
+		"tenant override disabled means no limit": {
+			defaultWithin: 13 * time.Hour,
+			tenantWithin:  map[string]time.Duration{"a": 0},
+			extra:         10 * time.Minute,
+			expected:      0,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			overrides := validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				defaults.QueryIngestersWithin = model.Duration(testData.defaultWithin)
+				for id, d := range testData.tenantWithin {
+					tenantLimits[id] = &validation.Limits{QueryIngestersWithin: model.Duration(d)}
+				}
+			})
+
+			assert.Equal(t, testData.expected, maxInactivePartitionAgeForReadConsistencyOffsets(overrides, testData.extra))
 		})
 	}
 }
