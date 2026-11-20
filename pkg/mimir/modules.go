@@ -909,11 +909,10 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 	var reader querymiddleware.ReadConsistencyOffsetsReader
 
 	if t.Cfg.Compartments.Enabled {
-		// One Kafka cluster per write compartment, each holding every read compartment's topic.
-		clusterConfigs := make([]ingest.KafkaConfig, t.Cfg.Compartments.Write.NumCompartments)
-		for writeCompartmentID := range clusterConfigs {
-			clusterConfigs[writeCompartmentID] = t.Cfg.IngestStorage.KafkaConfig.WriteCompartmentConfig(writeCompartmentID)
-		}
+		// One Kafka cluster per write compartment, each holding every read compartment's topic, and
+		// optionally the additional read cluster. The ingesters use the same Kafka clusters in the same
+		// order, so they can match each offset to its Kafka cluster.
+		clusterConfigs, additionalReadClusterConfig := ingest.PartitionReaderConfigs(t.Cfg.IngestStorage.KafkaConfig, t.Cfg.Compartments.Write.NumCompartments, t.Cfg.IngestStorage.KafkaConfig.Topic, t.Cfg.IngestStorage.AdditionalReadCluster)
 
 		topics := make([]string, t.Cfg.Compartments.Read.NumCompartments)
 		getPartitionIDsByCompartment := make([]ingest.GetPartitionIDsFunc, t.Cfg.Compartments.Read.NumCompartments)
@@ -922,7 +921,7 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 			getPartitionIDsByCompartment[readCompartmentID] = getPartitionIDs(readCompartmentID)
 		}
 
-		multiClusterReader, err := ingest.NewMultiClusterOffsetsReader(clusterConfigs, topics, getPartitionIDsByCompartment, "query-frontend", t.Registerer, util_log.Logger)
+		multiClusterReader, err := ingest.NewMultiClusterOffsetsReader(clusterConfigs, additionalReadClusterConfig, topics, getPartitionIDsByCompartment, "query-frontend", t.Registerer, util_log.Logger)
 		if err != nil {
 			return nil, err
 		}
