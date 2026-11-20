@@ -724,6 +724,7 @@
   "ingest-storage.ordered-consumption.max-batch-records": 1024,
   "ingest-storage.ordered-consumption.max-batch-wait": 50000000,
   "ingest-storage.ordered-consumption.input-buffer-size": 0,
+  "ingest-storage.query.include-inactive-partitions-offset-duration": 600000000000,
   "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency": 4,
   "blocks-storage.backend": "filesystem",
   "blocks-storage.s3.endpoint": "",

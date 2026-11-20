@@ -900,9 +900,20 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 	// We include all partition states because ACTIVE and INACTIVE partitions must be queried, and PENDING
 	// partitions may switch to ACTIVE between when the query-frontend fetches the offsets and the querier
 	// builds the replica set of partitions to query.
+	//
+	// INACTIVE partitions are only included until they're too old to be queried: queriers stop querying a
+	// partition that has been inactive for longer than the tenant's query-ingesters-within, so there's no
+	// point in fetching (and sending) its offset. We use the default query-ingesters-within, since the
+	// offsets are shared across tenants; a tenant with a larger override just falls back to the last produced
+	// offset in the ingester for the partitions whose offset is missing.
+	var maxInactivePartitionAge time.Duration
+	if queryIngestersWithin := time.Duration(t.Cfg.LimitsConfig.QueryIngestersWithin); queryIngestersWithin > 0 {
+		maxInactivePartitionAge = queryIngestersWithin + t.Cfg.IngestStorage.Query.IncludeInactivePartitionsOffsetDuration
+	}
+
 	getPartitionIDs := func(readCompartmentID int) ingest.GetPartitionIDsFunc {
 		return func(_ context.Context) ([]int32, error) {
-			return t.IngesterPartitionRingWatchers.Watcher(readCompartmentID).PartitionRing().PartitionIDs(), nil
+			return partitionIDsForReadConsistencyOffsets(t.IngesterPartitionRingWatchers.Watcher(readCompartmentID).PartitionRing(), time.Now(), maxInactivePartitionAge), nil
 		}
 	}
 
@@ -943,6 +954,30 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 	t.QueryFrontendOffsetsReader = reader
 
 	return reader, nil
+}
+
+// partitionIDsForReadConsistencyOffsets returns the sorted IDs of the partitions in the ring whose offsets
+// should be included in the strong read consistency offsets: all PENDING and ACTIVE partitions, and the
+// INACTIVE ones that became inactive less than maxInactiveAge ago. If maxInactiveAge is 0, all INACTIVE
+// partitions are included.
+func partitionIDsForReadConsistencyOffsets(partitionRing *ring.PartitionRing, now time.Time, maxInactiveAge time.Duration) []int32 {
+	if maxInactiveAge <= 0 {
+		return partitionRing.PartitionIDs()
+	}
+
+	oldestInactiveSince := now.Add(-maxInactiveAge)
+
+	partitions := partitionRing.Partitions()
+	ids := make([]int32, 0, len(partitions))
+	for _, p := range partitions {
+		if p.IsInactive() && p.GetStateTimestamp() < oldestInactiveSince.Unix() {
+			continue
+		}
+		ids = append(ids, p.Id)
+	}
+
+	slices.Sort(ids)
+	return ids
 }
 
 func (t *Mimir) initCacheKeyGenerator() (services.Service, error) {

@@ -576,3 +576,44 @@ func TestMimir_CreateQueryFrontendPromQLEngineOptions_CardinalityEstimationUsesC
 	assert.Contains(t, mimir.QueryFrontendCardinalityCacheClient.(*cache.MockCache).GetItems(), "key")
 	assert.Empty(t, mimir.QueryFrontendCacheClient.(*cache.MockCache).GetItems())
 }
+
+func TestPartitionIDsForReadConsistencyOffsets(t *testing.T) {
+	now := time.Now()
+
+	desc := ring.NewPartitionRingDesc()
+	desc.AddPartition(0, ring.PartitionActive, now.Add(-24*time.Hour))
+	desc.AddPartition(1, ring.PartitionPending, now.Add(-time.Minute))
+	desc.AddPartition(2, ring.PartitionInactive, now.Add(-time.Hour))
+	desc.AddPartition(3, ring.PartitionInactive, now.Add(-12*time.Hour))
+	desc.AddPartition(4, ring.PartitionInactive, now.Add(-48*time.Hour))
+	partitionRing, err := ring.NewPartitionRing(*desc)
+	require.NoError(t, err)
+
+	tests := map[string]struct {
+		maxInactiveAge time.Duration
+		expected       []int32
+	}{
+		"no limit includes all inactive partitions": {
+			maxInactiveAge: 0,
+			expected:       []int32{0, 1, 2, 3, 4},
+		},
+		"inactive partitions older than the max age are excluded": {
+			maxInactiveAge: 13 * time.Hour,
+			expected:       []int32{0, 1, 2, 3},
+		},
+		"only recently inactive partitions are included": {
+			maxInactiveAge: 2 * time.Hour,
+			expected:       []int32{0, 1, 2},
+		},
+		"active and pending partitions are always included": {
+			maxInactiveAge: time.Minute,
+			expected:       []int32{0, 1},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, testData.expected, partitionIDsForReadConsistencyOffsets(partitionRing, now, testData.maxInactiveAge))
+		})
+	}
+}

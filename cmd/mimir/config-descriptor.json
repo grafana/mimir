@@ -10567,6 +10567,27 @@
           "fieldDefaultValue": null
         },
         {
+          "kind": "block",
+          "name": "query",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "include_inactive_partitions_offset_duration",
+              "required": false,
+              "desc": "How long, in addition to -querier.query-ingesters-within, the query-frontend keeps including the offset of a partition in the strong read consistency offsets after the partition became inactive. 0 means the offset of an inactive partition is excluded as soon as the query-ingesters-within period has elapsed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 600000000000,
+              "fieldFlag": "ingest-storage.query.include-inactive-partitions-offset-duration",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
           "kind": "field",
           "name": "write_logs_fsync_before_kafka_commit_concurrency",
           "required": false,
