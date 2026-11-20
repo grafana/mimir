@@ -942,6 +942,43 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 
 		return 0, nil, false, false, nil
 	},
+	parser.BITAND: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH == nil && rH == nil {
+			return bitwiseFloat(parser.BITAND, lF, rF), nil, true, true, nil
+		}
+		return 0, nil, false, false, nil
+	},
+	parser.BITOR: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH == nil && rH == nil {
+			return bitwiseFloat(parser.BITOR, lF, rF), nil, true, true, nil
+		}
+		return 0, nil, false, false, nil
+	},
+	parser.BITXOR: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH == nil && rH == nil {
+			return bitwiseFloat(parser.BITXOR, lF, rF), nil, true, true, nil
+		}
+		return 0, nil, false, false, nil
+	},
+}
+
+func bitwiseFloat(op parser.ItemType, lhs, rhs float64) float64 {
+	const maxSafeInteger = 1<<53 - 1
+	if lhs < 0 || rhs < 0 || lhs > maxSafeInteger || rhs > maxSafeInteger ||
+		math.IsNaN(lhs) || math.IsNaN(rhs) || math.Trunc(lhs) != lhs || math.Trunc(rhs) != rhs {
+		return math.NaN()
+	}
+	l, r := uint64(lhs), uint64(rhs)
+	switch op {
+	case parser.BITAND:
+		return float64(l & r)
+	case parser.BITOR:
+		return float64(l | r)
+	case parser.BITXOR:
+		return float64(l ^ r)
+	default:
+		return math.NaN()
+	}
 }
 
 var boolComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{

@@ -126,6 +126,9 @@ const (
 	BINARY_GTR        BinaryOperation = 16
 	BINARY_TRIM_UPPER BinaryOperation = 17
 	BINARY_TRIM_LOWER BinaryOperation = 18
+	BINARY_BITAND     BinaryOperation = 19
+	BINARY_BITOR      BinaryOperation = 20
+	BINARY_BITXOR     BinaryOperation = 21
 )
 
 var BinaryOperation_name = map[int32]string{
@@ -148,6 +151,9 @@ var BinaryOperation_name = map[int32]string{
 	16: "BINARY_GTR",
 	17: "BINARY_TRIM_UPPER",
 	18: "BINARY_TRIM_LOWER",
+	19: "BINARY_BITAND",
+	20: "BINARY_BITOR",
+	21: "BINARY_BITXOR",
 }
 
 var BinaryOperation_value = map[string]int32{
@@ -170,6 +176,9 @@ var BinaryOperation_value = map[string]int32{
 	"BINARY_GTR":        16,
 	"BINARY_TRIM_UPPER": 17,
 	"BINARY_TRIM_LOWER": 18,
+	"BINARY_BITAND":     19,
+	"BINARY_BITOR":      20,
+	"BINARY_BITXOR":     21,
 }
 
 func (BinaryOperation) EnumDescriptor() ([]byte, []int) {

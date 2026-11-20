@@ -275,6 +275,9 @@ var itemTypeToBinaryOperation = map[parser.ItemType]BinaryOperation{
 	parser.GTR:        BINARY_GTR,
 	parser.TRIM_UPPER: BINARY_TRIM_UPPER,
 	parser.TRIM_LOWER: BINARY_TRIM_LOWER,
+	parser.BITAND:     BINARY_BITAND,
+	parser.BITOR:      BINARY_BITOR,
+	parser.BITXOR:     BINARY_BITXOR,
 }
 
 var binaryOperationToItemType = invert(itemTypeToBinaryOperation)
