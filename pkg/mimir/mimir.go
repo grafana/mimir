@@ -298,6 +298,9 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Compartments.Validate(); err != nil {
 		return errors.Wrap(err, "invalid compartments config")
 	}
+	if c.IngestStorage.AdditionalReadCluster.Enabled() && !c.Compartments.Enabled {
+		return errors.New("the ingest storage additional read cluster requires compartments to be enabled")
+	}
 	if c.Compartments.Enabled {
 		if !c.IngestStorage.Enabled {
 			return errors.New("compartments require ingest storage to be enabled")
