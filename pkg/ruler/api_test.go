@@ -1519,6 +1519,19 @@ rules:
 			status: 202,
 		},
 		{
+			name:   "with a block scalar expression that has an indentation indicator",
+			cfg:    defaultCfg,
+			status: 202,
+			input: `
+name: test
+interval: 15s
+rules:
+- record: up_rule
+  expr: |2
+        up{}
+`,
+		},
+		{
 			name: "with valid rules but evaluation delay and query offset set to different values",
 			cfg:  defaultCfg,
 			input: `
@@ -1592,18 +1605,18 @@ func TestAPI_CreateRuleGroupWithCaching(t *testing.T) {
 	ruleGroupVersion1 := `name: group1
 interval: 15s
 rules:
-    - record: up_rule
-      expr: up
-    - alert: up_alert
-      expr: up < 1
+  - record: up_rule
+    expr: up
+  - alert: up_alert
+    expr: up < 1
 `
 	ruleGroupVersion2 := `name: group1
 interval: 15s
 rules:
-    - record: up_rule
-      expr: up
-    - alert: up_alert
-      expr: up <= 1
+  - record: up_rule
+    expr: up
+  - alert: up_alert
+    expr: up <= 1
 `
 
 	mockCache, store := newInMemoryRuleStore(t)
@@ -1790,7 +1803,7 @@ func TestAPI_DeleteNamespace(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, "name: group1\ninterval: 1m\nrules:\n    - record: UP_RULE\n      expr: up\n    - alert: UP_ALERT\n      expr: up < 1\n", w.Body.String())
+	require.Equal(t, "name: group1\ninterval: 1m\nrules:\n  - record: UP_RULE\n    expr: up\n  - alert: UP_ALERT\n    expr: up < 1\n", w.Body.String())
 
 	// Delete namespace1
 	req = requestFor(t, http.MethodDelete, "https://localhost:8080/prometheus/config/v1/rules/namespace1", nil, "user1")

@@ -121,6 +121,7 @@
 * [ENHANCEMENT] Ingester: Add the experimental `early_head_compaction_min_in_memory_series` runtime-configurable instance limit under `ingester_limits`, which overrides `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series` when set to a value greater than 0. This allows changing the TSDB Head early compaction threshold together with `max_series` without restarting ingesters. #17282
 * [ENHANCEMENT] Query-scheduler: Add the `cortex_query_scheduler_max_outstanding_requests_per_tenant` metric, which exposes the value of `-query-scheduler.max-outstanding-requests-per-tenant`. #17299
 * [ENHANCEMENT] Store-gateway: Reduce the memory usage and garbage collection pressure of loaded sparse index-headers. #16266
+* [BUGFIX] Ruler: Fix the rule group API returning rule expressions with changed leading whitespace when they are YAML block scalars with an indentation indicator. The API now responds with YAML indented by 2 spaces instead of 4. #17400
 * [ENHANCEMENT] Compactor: Use the last tenant list for blocks cleanup when listing the bucket is slow or fails. #17335
 * [ENHANCEMENT] Mimirtool: `mimirtool runtime-config validate` now accepts Mimir flags after `--`. #17439
 * [BUGFIX] Ruler: Count write requests rejected by the tenant request-rate, ingestion-rate or active-series limits as `client_error` in `cortex_ruler_write_requests_failed_total`, so they no longer trigger `MimirRulerTooManyFailedPushes`. Ingester overload is still counted as `server_error`. #17302
