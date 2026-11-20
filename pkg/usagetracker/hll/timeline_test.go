@@ -110,6 +110,26 @@ func TestTimeline(t *testing.T) {
 		require.Equal(t, sketchOf(0, 100).Estimate(), estimate(tl, now))
 	})
 
+	t.Run("a cleanup for an earlier minute keeps the minutes less than a window after it", func(t *testing.T) {
+		tl := NewTimeline(minutes)
+		now := start + 100
+		// A call just after the minute changed, while a scrape or a cleanup that read the clock before it runs.
+		tl.Merge(now+1, now+1, sketchOf(0, 100))
+		// Only a clock that went back a whole window leaves a minute this far after now.
+		tl.Merge(now+minutes, now+minutes, sketchOf(100, 200))
+		// The union of the minutes before now is empty, so the cleanup rebuilds it.
+		tl.Cleanup(now)
+		require.Equal(t, []int64{now + 1}, minutesWithSketches(tl, now+minutes))
+	})
+
+	t.Run("a timeline is empty when no sketch is in the window", func(t *testing.T) {
+		tl := NewTimeline(minutes)
+		tl.Merge(start, start, sketchOf(0, 100))
+		require.False(t, tl.Empty(start))
+		// No cleanup dropped the sketch of start yet, but it's out of this window.
+		require.True(t, tl.Empty(start+minutes))
+	})
+
 	t.Run("merge keeps a copy of the sketch", func(t *testing.T) {
 		tl := NewTimeline(minutes)
 		s := sketchOf(0, 100)

@@ -165,7 +165,9 @@ func TestPartitionHandler(t *testing.T) {
 	})
 
 	t.Run("received series are snapshotted and loaded", func(t *testing.T) {
-		// The small target size splits the snapshot into many files, and the received series go in the last one.
+		// The small target size splits the snapshot into many files, and the received series of each tenant go in
+		// a file of their own after them. With the large one, both tenants share a chunk.
+		const otherTenantID = "other"
 		for _, maxFileSize := range []int{10e3, 100} {
 			t.Run("maxFileSize="+strconv.Itoa(maxFileSize), func(t *testing.T) {
 				t.Parallel()
@@ -180,7 +182,7 @@ func TestPartitionHandler(t *testing.T) {
 					cfg.ReceivedSeriesEstimationEnabled = true
 					require.NoError(t, cfg.ReceivedSeriesEstimationHashSalt.Set("salt"))
 				}
-				estimate := func(p *partitionHandler) float64 {
+				estimate := func(p *partitionHandler, tenantID string) float64 {
 					p.store.mtx.RLock()
 					defer p.store.mtx.RUnlock()
 					return p.store.tenants[tenantID].receivedSeries.Load().Estimate(unixMinute(time.Now()), hll.NewSketch(p.store.receivedSeries.precision))
@@ -192,13 +194,17 @@ func TestPartitionHandler(t *testing.T) {
 				rejected, err := ph1.store.trackSeries(ctx, tenantID, seriesRange(0, 10*shards), time.Now())
 				require.NoError(t, err)
 				require.NotEmpty(t, rejected)
+				// Fewer series than the first tenant, so that loading them into the wrong tenant fails.
+				_, err = ph1.store.trackSeries(ctx, otherTenantID, seriesRange(0, 5*shards), time.Now())
+				require.NoError(t, err)
 				require.NoError(t, ph1.publishSnapshot(ctx))
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, ph1))
-				require.InEpsilon(t, 10*shards, estimate(ph1), 0.1)
+				require.InEpsilon(t, 10*shards, estimate(ph1, tenantID), 0.1)
 
 				ph2 := h.newHandler(t, configure)
 				require.NoError(t, services.StartAndAwaitRunning(ctx, ph2))
-				require.Equal(t, estimate(ph1), estimate(ph2))
+				require.Equal(t, estimate(ph1, tenantID), estimate(ph2, tenantID))
+				require.Equal(t, estimate(ph1, otherTenantID), estimate(ph2, otherTenantID))
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, ph2))
 			})
 		}

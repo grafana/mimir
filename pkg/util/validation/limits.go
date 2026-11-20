@@ -272,7 +272,7 @@ type Limits struct {
 	ActiveSeriesAdditionalCustomTrackersConfig asmodel.CustomTrackersConfig                  `yaml:"active_series_additional_custom_trackers" json:"active_series_additional_custom_trackers" doc:"description=Additional custom trackers for active metrics merged on top of the base custom trackers. You can use this configuration option to define the base custom trackers globally for all tenants, and then use the additional trackers to add extra trackers on a per-tenant basis." category:"advanced"`
 	activeSeriesMergedCustomTrackersConfig     *atomic.Pointer[asmodel.CustomTrackersConfig] `yaml:"-" json:"-"`
 	MaxActiveSeriesAdditionalCustomTrackers    int                                           `yaml:"max_active_series_additional_custom_trackers" json:"max_active_series_additional_custom_trackers" category:"experimental"`
-	// UsageTrackerReceivedSeriesEstimationEnabled is not merged from the overrides of read compartments: the tenant's value applies to all of them.
+	// UsageTrackerReceivedSeriesEstimationEnabled is read from the overrides of the base tenant: its value applies to all its read compartments and tenant metadata.
 	UsageTrackerReceivedSeriesEstimationEnabled bool `yaml:"usage_tracker_received_series_estimation_enabled" json:"usage_tracker_received_series_estimation_enabled" category:"experimental" doc:"hidden"`
 
 	// Max allowed time window for out-of-order samples.
@@ -1135,9 +1135,10 @@ func (o *Overrides) MaxActiveOrGlobalSeriesPerUser(limitsKey string) int {
 }
 
 // UsageTrackerReceivedSeriesEstimationEnabled returns whether the usage-tracker estimates the number of distinct
-// series received from the tenant, including the rejected ones. The value of the tenant applies to its read compartments.
+// series received from the tenant, including the rejected ones. The value of the base tenant applies to its read
+// compartments and tenant metadata, whose own overrides are ignored.
 func (o *Overrides) UsageTrackerReceivedSeriesEstimationEnabled(limitsKey string) bool {
-	return o.getOverridesForLimitsKey(limitsKey).UsageTrackerReceivedSeriesEstimationEnabled
+	return o.getOverridesForUser(compartments.BaseTenantID(limitsKey)).UsageTrackerReceivedSeriesEstimationEnabled
 }
 
 // ActiveSeriesLimitResponseCode returns the HTTP status code to use when rejecting series due to the active series limit.

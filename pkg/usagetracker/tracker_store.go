@@ -390,8 +390,12 @@ func (t *trackerStore) cleanup(now time.Time) {
 
 	// Check all tenants and see if any of them are now empty.
 	// We don't need to take the mutex for this check, and in most situations we won't find any candidates.
+	// A tenant whose series all expired can still have received series in the window, the ones that were rejected:
+	// keep it until they are out of the window too. A call for a tenant with no series is accepted, so the check
+	// below doesn't need to look at the received series again.
+	minute := unixMinute(now)
 	for tenantID, tenant := range tenantsClone {
-		if tenant.series.Load() == 0 {
+		if timeline := tenant.receivedSeries.Load(); tenant.series.Load() == 0 && (timeline == nil || timeline.Empty(minute)) {
 			deletionCandidates = append(deletionCandidates, tenantID)
 		}
 	}
