@@ -131,7 +131,7 @@ type prepareStoreConfig struct {
 	numBlocks            int
 	bucketStoreConfig    mimir_tsdb.BucketStoreConfig
 
-	// Optionally wrap objstore.Bucket for caching (e.g. NewStoreCachingBucket) or to inject test instrumentation.
+	// Optionally wrap objstore.Bucket for caching (e.g. with NewStoreCachingBucketConfig) or to inject test instrumentation.
 	wrapBucket func(tb testing.TB, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error)
 }
 
@@ -224,9 +224,8 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	const maxGapBytes = mimir_tsdb.DefaultPartitionerMaxGapSize
 	store, err := NewBucketStore(
 		userID,
-		objstore.WithNoopInstr(storeBkt),
 		newTestBucketIndexMetadataReader(t, bkt, userID),
-		metaFetcher,
+		newSingleBucketBlockMetadataFetcher(metaFetcher, objstore.WithNoopInstr(storeBkt)),
 		cfg.tempDir,
 		cfg.bucketStoreConfig,
 		cfg.postingsStrategy,

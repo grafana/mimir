@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
@@ -163,6 +164,31 @@ func ListUsers(ctx context.Context, bucketClient objstore.Bucket) (users []strin
 	})
 
 	return users, err
+}
+
+// ListUsersInBuckets lists the users of each bucket. For each user, it returns the indexes of the buckets
+// that contain the user, in increasing order. It returns an error if it can't list one of the buckets.
+func ListUsersInBuckets(ctx context.Context, bucketClients []objstore.Bucket) (map[string][]int, error) {
+	usersPerBucket := make([][]string, len(bucketClients))
+	err := concurrency.ForEachJob(ctx, len(bucketClients), len(bucketClients), func(ctx context.Context, idx int) error {
+		users, err := ListUsers(ctx, bucketClients[idx])
+		if err != nil {
+			return err
+		}
+		usersPerBucket[idx] = users
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	bucketsPerUser := map[string][]int{}
+	for idx, users := range usersPerBucket {
+		for _, userID := range users {
+			bucketsPerUser[userID] = append(bucketsPerUser[userID], idx)
+		}
+	}
+	return bucketsPerUser, nil
 }
 
 // isUserIDReserved returns whether the provided user ID is reserved and can't be used for storing metrics.

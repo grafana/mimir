@@ -21,7 +21,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/thanos-io/objstore"
 	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/compartments"
@@ -146,9 +145,14 @@ type StoreGateway struct {
 func NewStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer, tracker *activitytracker.ActivityTracker) (*StoreGateway, error) {
 	var ringStore kv.Client
 
-	bucketClient, err := createBucketClient(storageCfg, logger, reg)
+	additionalReadCfgs, err := storageCfg.AdditionalReadBucketConfigs(gatewayCfg.ReadCompartmentID)
 	if err != nil {
 		return nil, err
+	}
+
+	bucketSet, err := bucket.NewBlocksBucketSetFromConfigs(context.Background(), storageCfg.Bucket, additionalReadCfgs, "store-gateway", logger, reg)
+	if err != nil {
+		return nil, errors.Wrap(err, "create blocks bucket set")
 	}
 
 	ringStore, err = kv.NewClient(
@@ -161,10 +165,10 @@ func NewStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		return nil, errors.Wrap(err, "create KV store client")
 	}
 
-	return newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, limits, logger, reg, tracker)
+	return newStoreGateway(gatewayCfg, storageCfg, bucketSet, ringStore, limits, logger, reg, tracker)
 }
 
-func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, bucketClient objstore.Bucket, ringStore kv.Client, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer, tracker *activitytracker.ActivityTracker) (*StoreGateway, error) {
+func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, bucketSet *bucket.BlocksBucketSet, ringStore kv.Client, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer, tracker *activitytracker.ActivityTracker) (*StoreGateway, error) {
 	var err error
 
 	g := &StoreGateway{
@@ -253,7 +257,7 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		cacheBucketID = compartments.WithReadCompartmentSuffix("blocks", gatewayCfg.ReadCompartmentID)
 	}
 
-	g.stores, err = NewBucketStores(storageCfg, cacheBucketID, shardingStrategy, bucketClient, allowedTenants, limits, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
+	g.stores, err = NewBucketStores(storageCfg, cacheBucketID, shardingStrategy, bucketSet, allowedTenants, limits, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
 	if err != nil {
 		return nil, errors.Wrap(err, "create bucket stores")
 	}
@@ -458,13 +462,4 @@ func requestActivity(ctx context.Context, name string, req interface{}) string {
 	user := getUserIDFromGRPCContext(ctx)
 	traceID, _ := tracing.ExtractSampledTraceID(ctx)
 	return fmt.Sprintf("%s: user=%q trace=%q request=%v", name, user, traceID, req)
-}
-
-func createBucketClient(cfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
-	bucketClient, err := bucket.NewClient(context.Background(), cfg.Bucket, "store-gateway", logger, reg)
-	if err != nil {
-		return nil, errors.Wrap(err, "create bucket client")
-	}
-
-	return bucketClient, nil
 }

@@ -412,6 +412,64 @@ func TestInvalidOffsetAndLength(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestCachingBucketWithKeyScopes(t *testing.T) {
+	const (
+		rangeObjectName    = "block/chunks/000001"
+		metadataObjectName = "block/meta.json"
+	)
+
+	rangeObjectContent := bytes.Repeat([]byte("0123456789"), 10)
+
+	sharedCache := cache.NewMockCache()
+	cfg := NewCachingBucketConfig()
+	cfg.CacheGetRange("chunks", sharedCache, func(name string) bool { return name == rangeObjectName }, 10, sharedCache, time.Hour, time.Hour, 3)
+	cfg.CacheGet("metafile", sharedCache, func(name string) bool { return name == metadataObjectName }, 1024, time.Hour, time.Hour, time.Hour)
+
+	newBackend := objstore.NewInMemBucket()
+	require.NoError(t, newBackend.Upload(t.Context(), rangeObjectName, bytes.NewReader(rangeObjectContent)))
+	require.NoError(t, newBackend.Upload(t.Context(), metadataObjectName, strings.NewReader("new")))
+
+	// The old backend has no range object. Thus, a GetRange on it can only succeed from the cache.
+	oldBackend := objstore.NewInMemBucket()
+	require.NoError(t, oldBackend.Upload(t.Context(), metadataObjectName, strings.NewReader("old")))
+
+	// One registry for both caching buckets: their metrics are told apart by the bucket name.
+	reg := prometheus.NewPedanticRegistry()
+	newCachingBucket, err := NewCachingBucketWithKeyScopes(KeyScopes{Metadata: "new", ObjectRanges: "blocks"}, "new", newBackend, cfg, log.NewNopLogger(), reg)
+	require.NoError(t, err)
+	oldCachingBucket, err := NewCachingBucketWithKeyScopes(KeyScopes{Metadata: "old", ObjectRanges: "blocks"}, "old", oldBackend, cfg, log.NewNopLogger(), reg)
+	require.NoError(t, err)
+
+	readRange := func(cachingBucket *CachingBucket) []byte {
+		reader, err := cachingBucket.GetRange(t.Context(), rangeObjectName, 15, 30)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, reader.Close()) }()
+		content, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		return content
+	}
+	readObject := func(cachingBucket *CachingBucket) string {
+		reader, err := cachingBucket.Get(t.Context(), metadataObjectName)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, reader.Close()) }()
+		content, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		return string(content)
+	}
+
+	require.Equal(t, rangeObjectContent[15:45], readRange(newCachingBucket))
+	require.Equal(t, rangeObjectContent[15:45], readRange(oldCachingBucket))
+
+	require.Equal(t, "new", readObject(newCachingBucket))
+	require.Equal(t, "old", readObject(oldCachingBucket))
+	require.Equal(t, "new", readObject(newCachingBucket))
+
+	require.Contains(t, sharedCache.GetItems(), "blocks:subrange:"+rangeObjectName+":10:20")
+	require.Contains(t, sharedCache.GetItems(), "blocks:attrs:"+rangeObjectName)
+	require.Contains(t, sharedCache.GetItems(), "new:content:"+metadataObjectName)
+	require.Contains(t, sharedCache.GetItems(), "old:content:"+metadataObjectName)
+}
+
 type testBucket struct {
 	*objstore.InMemBucket
 }
