@@ -4725,6 +4725,8 @@ spec:
       - args:
         - -block-builder-scheduler.consumer-group=block-builder-rc-0
         - -block-builder-scheduler.max-jobs-per-partition=3
+        - -blocks-storage.gcs.bucket-name=blocks-bucket-rc-0
+        - -common.storage.backend=gcs
         - -compartments.enabled=true
         - -compartments.read.num-compartments=2
         - -compartments.write.num-compartments=2
@@ -4798,6 +4800,8 @@ spec:
       - args:
         - -block-builder-scheduler.consumer-group=block-builder-rc-1
         - -block-builder-scheduler.max-jobs-per-partition=3
+        - -blocks-storage.gcs.bucket-name=blocks-bucket-rc-1
+        - -common.storage.backend=gcs
         - -compartments.enabled=true
         - -compartments.read.num-compartments=2
         - -compartments.write.num-compartments=2

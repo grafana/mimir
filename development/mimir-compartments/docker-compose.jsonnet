@@ -220,6 +220,9 @@ std.manifestYamlDoc({
       extraArguments: [
         "-ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'",
         '-ingest-storage.kafka.topic=mimir-ingest-rc-%d' % compartment,
+        '-block-builder-scheduler.consumer-group=block-builder-rc-%d' % compartment,
+        // The scheduler records its offsets in the compartment's blocks bucket, next to the block-builders' blocks.
+        '-blocks-storage.s3.bucket-name=mimir-blocks-rc-%d' % compartment,
       ],
     })
     for compartment in std.range(0, numCompartments - 1)

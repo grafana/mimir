@@ -15,12 +15,15 @@
   }),
 
   // Args. Each read compartment's scheduler plans jobs for that compartment's topic across every write
-  // compartment's Kafka cluster, tracking offsets in a per-compartment consumer group.
+  // compartment's Kafka cluster, tracking offsets in a per-compartment consumer group and in a marker
+  // object in the compartment's blocks bucket.
   local perCompartmentBlockBuilderSchedulerArgs(compartmentIdx) =
     $.mimirCompartmentsCommonArgs {
       'ingest-storage.kafka.address': $._config.compartments_ingest_storage_kafka_address,
       'ingest-storage.kafka.topic': $.mimirIngestStorageCompartmentKafkaTopic(compartmentIdx),
       'block-builder-scheduler.consumer-group': 'block-builder-rc-%d' % compartmentIdx,
+      // The scheduler's offset marker lives in the compartment's blocks bucket, next to the blocks it tracks.
+      [$.mimirBlocksStorageBucketNameFlag]: $.mimirBlocksStorageCompartmentBucketName(compartmentIdx),
     },
 
   block_builder_scheduler_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled, numCompartments, function(compartment) $.block_builder_scheduler_args + perCompartmentBlockBuilderSchedulerArgs(compartment)),
