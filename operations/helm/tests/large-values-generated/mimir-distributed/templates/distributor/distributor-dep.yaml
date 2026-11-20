@@ -123,5 +123,7 @@ spec:
         - name: storage
           emptyDir: {}
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
 

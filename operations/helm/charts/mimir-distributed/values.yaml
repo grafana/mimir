@@ -76,6 +76,16 @@ global:
   # scope: alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway
   podLabels: {}
 
+  # -- Settings of the emptyDir volume that holds the activity tracker file and is mounted at /active-query-tracker.
+  # Mimir memory-maps this file and updates it on every tracked request, so a volume on the node's disk is written to continuously.
+  # Each component can override these settings in its own activeQueriesVolume section.
+  # scope: alertmanager, compactor, distributor, ingester, overrides-exporter, querier, query-frontend, query-scheduler, ruler, ruler-querier, ruler-query-frontend, ruler-query-scheduler, store-gateway
+  activeQueriesVolume:
+    # -- Keep the volume in memory instead of on the node's disk. The activity tracker file then counts towards the memory usage of the container.
+    inMemory: true
+    # -- Size limit of the volume when it is kept in memory. It must fit the activity tracker file, which takes 1KiB per entry of activity_tracker.max_entries, that is 1MiB with the default of 1024 entries.
+    sizeLimit: 16Mi
+
 serviceAccount:
   # -- Whether to create a service account or not. In case 'create' is false, do set 'name' to an existing service account name.
   create: true
@@ -681,6 +691,10 @@ alertmanager:
 
   # Extra volume mounts that will be added to the alertmanager container
   extraVolumeMounts: []
+  # -- Overrides of global.activeQueriesVolume for the alertmanager. Settings that are not set here use the global value.
+  activeQueriesVolume: {}
+  #  inMemory: false
+  #  sizeLimit: 32Mi
 
   # Extra env variables to pass to the alertmanager container
   env: []
@@ -915,6 +929,10 @@ distributor:
   extraContainers: []
   extraVolumes: []
   extraVolumeMounts: []
+  # -- Overrides of global.activeQueriesVolume for the distributor. Settings that are not set here use the global value.
+  activeQueriesVolume: {}
+  #  inMemory: false
+  #  sizeLimit: 32Mi
   env: []
   extraEnvFrom: []
 
@@ -1080,6 +1098,10 @@ ingester:
   extraContainers: []
   extraVolumes: []
   extraVolumeMounts: []
+  # -- Overrides of global.activeQueriesVolume for the ingester. Settings that are not set here use the global value.
+  activeQueriesVolume: {}
+  #  inMemory: false
+  #  sizeLimit: 32Mi
   env: []
   extraEnvFrom: []
 
@@ -1316,6 +1338,10 @@ overrides_exporter:
   extraContainers: []
   extraVolumes: []
   extraVolumeMounts: []
+  # -- Overrides of global.activeQueriesVolume for the overrides-exporter. Settings that are not set here use the global value.
+  activeQueriesVolume: {}
+  #  inMemory: false
+  #  sizeLimit: 32Mi
   env: []
   extraEnvFrom: []
 
@@ -1452,6 +1478,10 @@ ruler:
   extraContainers: []
   extraVolumes: []
   extraVolumeMounts: []
+  # -- Overrides of global.activeQueriesVolume for the ruler. Settings that are not set here use the global value.
+  activeQueriesVolume: {}
+  #  inMemory: false
+  #  sizeLimit: 32Mi
   env: []
   extraEnvFrom: []
 
@@ -1581,6 +1611,10 @@ ruler_querier:
   extraContainers: []
   extraVolumes: []
   extraVolumeMounts: []
+  # -- Overrides of global.activeQueriesVolume for the ruler-querier. Settings that are not set here use the global value.
+  activeQueriesVolume: {}
+  #  inMemory: false
+  #  sizeLimit: 32Mi
   env: []
   extraEnvFrom: []
 
@@ -1702,6 +1736,10 @@ ruler_query_frontend:
   extraContainers: []
   extraVolumes: []
   extraVolumeMounts: []
+  # -- Overrides of global.activeQueriesVolume for the ruler-query-frontend. Settings that are not set here use the global value.
+  activeQueriesVolume: {}
+  #  inMemory: false
+  #  sizeLimit: 32Mi
   env: []
   extraEnvFrom: []
 
@@ -1794,6 +1832,10 @@ ruler_query_scheduler:
   extraContainers: []
   extraVolumes: []
   extraVolumeMounts: []
+  # -- Overrides of global.activeQueriesVolume for the ruler-query-scheduler. Settings that are not set here use the global value.
+  activeQueriesVolume: {}
+  #  inMemory: false
+  #  sizeLimit: 32Mi
   env: []
   extraEnvFrom: []
 
@@ -1934,6 +1976,10 @@ querier:
   extraContainers: []
   extraVolumes: []
   extraVolumeMounts: []
+  # -- Overrides of global.activeQueriesVolume for the querier. Settings that are not set here use the global value.
+  activeQueriesVolume: {}
+  #  inMemory: false
+  #  sizeLimit: 32Mi
   env: []
   extraEnvFrom: []
 
@@ -2059,6 +2105,10 @@ query_frontend:
   extraContainers: []
   extraVolumes: []
   extraVolumeMounts: []
+  # -- Overrides of global.activeQueriesVolume for the query-frontend. Settings that are not set here use the global value.
+  activeQueriesVolume: {}
+  #  inMemory: false
+  #  sizeLimit: 32Mi
   env: []
   extraEnvFrom: []
 
@@ -2154,6 +2204,10 @@ query_scheduler:
   extraContainers: []
   extraVolumes: []
   extraVolumeMounts: []
+  # -- Overrides of global.activeQueriesVolume for the query-scheduler. Settings that are not set here use the global value.
+  activeQueriesVolume: {}
+  #  inMemory: false
+  #  sizeLimit: 32Mi
   env: []
   extraEnvFrom: []
 
@@ -2326,6 +2380,10 @@ store_gateway:
   extraContainers: []
   extraVolumes: []
   extraVolumeMounts: []
+  # -- Overrides of global.activeQueriesVolume for the store-gateway. Settings that are not set here use the global value.
+  activeQueriesVolume: {}
+  #  inMemory: false
+  #  sizeLimit: 32Mi
   env: []
   extraEnvFrom: []
 
@@ -2596,6 +2654,10 @@ compactor:
   extraContainers: []
   extraVolumes: []
   extraVolumeMounts: []
+  # -- Overrides of global.activeQueriesVolume for the compactor. Settings that are not set here use the global value.
+  activeQueriesVolume: {}
+  #  inMemory: false
+  #  sizeLimit: 32Mi
   env: []
   extraEnvFrom: []
 

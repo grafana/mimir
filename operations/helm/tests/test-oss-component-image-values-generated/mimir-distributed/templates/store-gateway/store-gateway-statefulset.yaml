@@ -87,7 +87,9 @@ spec:
           configMap:
             name: test-oss-component-image-values-mimir-runtime
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: store-gateway
           image: test/store_gateway:1-store-gateway
@@ -229,7 +231,9 @@ spec:
           configMap:
             name: test-oss-component-image-values-mimir-runtime
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: store-gateway
           image: test/store_gateway:1-store-gateway
@@ -371,7 +375,9 @@ spec:
           configMap:
             name: test-oss-component-image-values-mimir-runtime
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: store-gateway
           image: test/store_gateway:1-store-gateway
