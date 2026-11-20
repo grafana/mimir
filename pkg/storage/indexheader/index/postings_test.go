@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/grafana/regexp"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
@@ -19,7 +18,6 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
-	"github.com/grafana/mimir/pkg/util/filepool"
 )
 
 type postingEntry struct {
@@ -182,8 +180,7 @@ func setupFactoriesWithPostingsOffsetsTable(t *testing.T, postingsOffsetsEncbuf 
 		require.NoError(t, bkt.Close())
 	})
 
-	reg := prometheus.WrapRegistererWithPrefix("indexheader_", prometheus.NewPedanticRegistry())
-	diskDecbufFactory := streamencoding.NewFilePoolDecbufFactory(filePath, 0, filepool.NewFilePoolMetrics(reg))
+	diskDecbufFactory := streamencoding.NewFileDecbufFactory(filePath)
 	bucketDecbufFactory := streamencoding.NewBucketDecbufFactory(instBkt, "index")
 
 	return map[string]streamencoding.DecbufFactory{
