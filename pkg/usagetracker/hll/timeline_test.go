@@ -17,7 +17,7 @@ func TestTimeline(t *testing.T) {
 	sketchOf := func(from, to int) Sketch {
 		s := NewSketch(p)
 		for v := from; v < to; v++ {
-			s.Insert(Hash(uint64(v), 0))
+			s.insert(hash(uint64(v), 0), p)
 		}
 		return s
 	}

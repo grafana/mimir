@@ -5,6 +5,7 @@ package usagetracker
 import (
 	"cmp"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"maps"
 	"math"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
@@ -152,9 +154,9 @@ func (e *receivedSeriesEstimation) track(timeline *hll.Timeline, series []uint64
 }
 
 // saltFingerprint identifies the salt in snapshots: sketches built with another salt must not be merged,
-// because the same series would be counted once per salt.
+// because the same series would be counted once per salt. It is a hash, because the salt is a secret.
 func (e *receivedSeriesEstimation) saltFingerprint() uint32 {
-	return uint32(hll.Hash(e.salt, 0))
+	return uint32(xxhash.Sum64(binary.LittleEndian.AppendUint64(nil, e.salt)))
 }
 
 func unixMinute(t time.Time) int64 {

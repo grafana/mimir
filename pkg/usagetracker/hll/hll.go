@@ -25,7 +25,7 @@ const (
 )
 
 // Sketch is a dense HyperLogLog sketch with 2^p one-byte registers.
-// Each register holds the highest rank inserted for its index, between 0 and MaxRank(p).
+// Each register holds the highest rank inserted for its index, between 0 and maxRank(p).
 type Sketch []uint8
 
 // NewSketch returns an empty sketch with precision p, which must be between MinPrecision and MaxPrecision.
@@ -33,35 +33,31 @@ func NewSketch(p uint8) Sketch {
 	return make(Sketch, 1<<p)
 }
 
-// MaxRank returns the highest rank that a register of a sketch with precision p can hold.
-func MaxRank(p uint8) uint8 {
+// maxRank returns the highest rank that a register of a sketch with precision p can hold.
+func maxRank(p uint8) uint8 {
 	return 65 - p
 }
 
-// Hash mixes value with salt using the SplitMix64 finalizer.
+// hash mixes value with salt using the SplitMix64 finalizer.
 // Values that an attacker can choose, like series hashes, must be mixed with a secret salt before they are inserted:
 // otherwise the attacker can choose values with high ranks, and a few of them inflate the estimate.
 // Mixing also spreads values whose bits are not uniform, like the series hashes of one partition and shard.
-func Hash(value, salt uint64) uint64 {
+func hash(value, salt uint64) uint64 {
 	z := (value ^ salt) + 0x9e3779b97f4a7c15
 	z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
 	z = (z ^ (z >> 27)) * 0x94d049bb133111eb
 	return z ^ (z >> 31)
 }
 
-// Insert adds h, a value already mixed with Hash, to the sketch.
-func (s Sketch) Insert(h uint64) {
-	s.insert(h, s.precision())
-}
-
-// InsertAll mixes each value with salt using Hash, and adds it to the sketch.
+// InsertAll mixes each value with salt using hash, and adds it to the sketch.
 func (s Sketch) InsertAll(values []uint64, salt uint64) {
 	p := s.precision()
 	for _, v := range values {
-		s.insert(Hash(v, salt), p)
+		s.insert(hash(v, salt), p)
 	}
 }
 
+// insert adds h, a value already mixed with hash, to the sketch, which has precision p.
 func (s Sketch) insert(h uint64, p uint) {
 	// The top p bits choose the register, and the rank is the position of the first 1 in the bits after them.
 	// The 1 at bit p-1 caps the rank at 65-p when all those bits are 0.
@@ -93,9 +89,9 @@ func (s Sketch) Valid() bool {
 	if len(s) < 1<<MinPrecision || len(s) > 1<<MaxPrecision || len(s)&(len(s)-1) != 0 {
 		return false
 	}
-	maxRank := MaxRank(uint8(s.precision()))
+	limit := maxRank(uint8(s.precision()))
 	for _, r := range s {
-		if r > maxRank {
+		if r > limit {
 			return false
 		}
 	}

@@ -263,7 +263,7 @@ func TestTrackerStore_ReceivedSeriesSnapshot(t *testing.T) {
 
 		// The last byte is the last register of the last sketch.
 		wrongRegister := append([]byte(nil), snapshot...)
-		wrongRegister[len(wrongRegister)-1] = hll.MaxRank(testReceivedSeriesPrecision) + 1
+		wrongRegister[len(wrongRegister)-1] = 255 // Never a valid rank.
 		require.ErrorContains(t, newLoadingStore(t).loadReceivedSeriesSnapshot(wrongRegister, later), "register out of range")
 	})
 }

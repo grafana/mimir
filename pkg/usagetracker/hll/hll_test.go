@@ -12,26 +12,26 @@ import (
 )
 
 func TestHash(t *testing.T) {
-	// The first output of SplitMix64 seeded with 0: with no salt, Hash(0) is that same step.
-	require.Equal(t, uint64(0xe220a8397b1dcdaf), Hash(0, 0))
-	require.NotEqual(t, Hash(1, 0), Hash(1, 1), "salt must change the hash")
+	// The first output of SplitMix64 seeded with 0: with no salt, hash(0) is that same step.
+	require.Equal(t, uint64(0xe220a8397b1dcdaf), hash(0, 0))
+	require.NotEqual(t, hash(1, 0), hash(1, 1), "salt must change the hash")
 }
 
 func TestSketchInsertRank(t *testing.T) {
 	const p = 8
 	s := NewSketch(p)
 
-	// All bits after the index are 0: the rank is capped at MaxRank.
-	s.Insert(0)
-	require.Equal(t, MaxRank(p), s[0])
+	// All bits after the index are 0: the rank is capped at maxRank.
+	s.insert(0, p)
+	require.Equal(t, maxRank(p), s[0])
 
 	// The first bit after the index is 1: rank 1.
-	s.Insert(0xff<<56 | 1<<55)
+	s.insert(0xff<<56|1<<55, p)
 	require.Equal(t, uint8(1), s[0xff])
 
 	// A lower rank doesn't replace a higher one.
-	s.Insert(1 << 55)
-	require.Equal(t, MaxRank(p), s[0])
+	s.insert(1<<55, p)
+	require.Equal(t, maxRank(p), s[0])
 }
 
 func TestSketchEstimate(t *testing.T) {
@@ -66,8 +66,8 @@ func TestSketchMerge(t *testing.T) {
 			r := rand.New(rand.NewSource(int64(p)))
 			a, b := NewSketch(p), NewSketch(p)
 			for i := range a {
-				a[i] = uint8(r.Intn(int(MaxRank(p)) + 1))
-				b[i] = uint8(r.Intn(int(MaxRank(p)) + 1))
+				a[i] = uint8(r.Intn(int(maxRank(p)) + 1))
+				b[i] = uint8(r.Intn(int(maxRank(p)) + 1))
 			}
 			expected := NewSketch(p)
 			for i := range expected {
@@ -103,9 +103,9 @@ func TestSketchValid(t *testing.T) {
 	require.False(t, make(Sketch, 300).Valid(), "not a power of 2")
 
 	s := NewSketch(8)
-	s[3] = MaxRank(8)
+	s[3] = maxRank(8)
 	require.True(t, s.Valid())
-	s[3] = MaxRank(8) + 1
+	s[3] = maxRank(8) + 1
 	require.False(t, s.Valid())
 }
 
@@ -130,7 +130,7 @@ func BenchmarkSketchMerge(b *testing.B) {
 		b.Run(fmt.Sprintf("p=%d", p), func(b *testing.B) {
 			s, other := NewSketch(p), NewSketch(p)
 			for i := range other {
-				other[i] = uint8(rand.Intn(int(MaxRank(p)) + 1))
+				other[i] = uint8(rand.Intn(int(maxRank(p)) + 1))
 			}
 			for b.Loop() {
 				s.Merge(other)
@@ -144,7 +144,7 @@ func BenchmarkSketchEstimate(b *testing.B) {
 		b.Run(fmt.Sprintf("p=%d", p), func(b *testing.B) {
 			s := NewSketch(p)
 			for i := range s {
-				s[i] = uint8(rand.Intn(int(MaxRank(p)) + 1))
+				s[i] = uint8(rand.Intn(int(maxRank(p)) + 1))
 			}
 			for b.Loop() {
 				_ = s.Estimate()
