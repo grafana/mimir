@@ -13,6 +13,7 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
@@ -511,23 +512,35 @@ func TestBatchStream_MergeWithTimestampConflicts(t *testing.T) {
 	})
 
 	t.Run("nan handling", func(t *testing.T) {
-		s := newBatchStream(2, nil, nil)
+		// The kept value must not depend on which side each value is on. A value is preferred over NaN, and of
+		// two NaNs, the one with the higher bits is preferred.
+		staleNaN := math.Float64frombits(value.StaleNaN)
+		for name, tc := range map[string]struct {
+			left, right, expected float64
+		}{
+			"NaN and value":       {left: math.NaN(), right: 5, expected: 5},
+			"value and NaN":       {left: 5, right: math.NaN(), expected: 5},
+			"NaN and stale NaN":   {left: math.NaN(), right: staleNaN, expected: math.NaN()},
+			"stale NaN and NaN":   {left: staleNaN, right: math.NaN(), expected: math.NaN()},
+			"stale NaN and value": {left: staleNaN, right: 5, expected: 5},
+		} {
+			t.Run(name, func(t *testing.T) {
+				s := newBatchStream(2, nil, nil)
 
-		// NaN vs finite value
-		leftBatch := mkGenericFloatBatch(100, 1)
-		leftBatch.Values[0] = math.NaN()
-		s.batches = []chunk.Batch{leftBatch}
+				leftBatch := mkGenericFloatBatch(100, 1)
+				leftBatch.Values[0] = tc.left
+				s.batches = []chunk.Batch{leftBatch}
 
-		rightBatch := mkGenericFloatBatch(100, 1)
-		rightBatch.Values[0] = 5.0
-		s.merge(&rightBatch, chunk.BatchSize, 0)
+				rightBatch := mkGenericFloatBatch(100, 1)
+				rightBatch.Values[0] = tc.right
+				s.merge(&rightBatch, chunk.BatchSize, 0)
 
-		require.Equal(t, 1, s.len())
-		require.Equal(t, 1, s.batches[0].Length)
-
-		// Result should be deterministic, even with NaN
-		// NaN > 5.0 should be false, so right side should win
-		require.Equal(t, 5.0, s.batches[0].Values[0])
+				require.Equal(t, 1, s.len())
+				require.Equal(t, 1, s.batches[0].Length)
+				// NaN != NaN, so compare the bits.
+				require.Equal(t, math.Float64bits(tc.expected), math.Float64bits(s.batches[0].Values[0]))
+			})
+		}
 	})
 
 	t.Run("histogram with zero count", func(t *testing.T) {
