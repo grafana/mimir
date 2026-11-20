@@ -8,7 +8,6 @@ package client
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"net/url"
 
@@ -61,7 +60,6 @@ func (c *MimirClient) GetRuleGroup(ctx context.Context, namespace, groupName str
 	escapedGroupName := url.PathEscape(groupName)
 	path := c.apiPath + "/" + escapedNamespace + "/" + escapedGroupName
 
-	fmt.Println(path)
 	res, err := c.doRequest(ctx, path, "GET", nil, -1)
 	if err != nil {
 		return nil, err
