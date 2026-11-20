@@ -1969,6 +1969,26 @@ func (o *Overrides) CardinalityAnalysisMaxResults(userID string) int {
 	return o.getOverridesForUser(userID).CardinalityAnalysisMaxResults
 }
 
+// MaxDurationAcrossAllTenants returns the maximum duration, as returned by f, across the default limits and the
+// limits of every tenant that currently has overrides. The default limits are always considered, as they apply to
+// all tenants without overrides, including those not known yet.
+func (o *Overrides) MaxDurationAcrossAllTenants(f func(*Limits) time.Duration) time.Duration {
+	result := f(o.defaultLimits)
+
+	if o.tenantLimits == nil {
+		return result
+	}
+
+	for _, limits := range o.tenantLimits.AllByUserID() {
+		if limits == nil {
+			continue
+		}
+		result = max(result, f(limits))
+	}
+
+	return result
+}
+
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
 	userID = tenant.TrimMetadata(userID)
 	if o.tenantLimits != nil {
