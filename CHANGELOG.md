@@ -1,5 +1,9 @@
 # Changelog
 
+## unreleased
+
+* [BUGFIX] Alertmanager: Fix tenants without a configuration getting no Alertmanager when the fallback configuration (`-alertmanager.configs.fallback`) fails validation. For example, the fallback loads files or has an SNS receiver without explicit credentials. The load-time validation added in #17319 now checks tenant configuration only. #17436
+
 ## 3.1.11
 
 * [BUGFIX] Upgrade Go to 1.26.11 to address [CVE-2026-97054](https://pkg.go.dev/vuln/GO-2026-6859). #17375
