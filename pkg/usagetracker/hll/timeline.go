@@ -15,9 +15,10 @@ type Timeline struct {
 	mtx   sync.Mutex
 	slots []timelineSlot
 
-	// past is the union of the minutes of the window ending at pastNow, without pastNow itself, so that
-	// an estimate at pastNow only merges past with the sketch of pastNow. It's nil until a minute before pastNow
-	// has a sketch.
+	// past caches the union of the minutes of the window ending at pastNow, without pastNow itself, so that
+	// an estimate at pastNow only merges past with the sketch of pastNow. updatePast rebuilds it from the slots
+	// when now changes, and Merge keeps it up to date in between. It's nil until a minute before pastNow has
+	// a sketch, and a nil past is not a cache: updatePast always rebuilds it.
 	past    Sketch
 	pastNow int64
 }
