@@ -460,6 +460,55 @@ func TestCompareGroups(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "different limit",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{Name: "example_group", Limit: 10, Rules: []rulefmt.Rule{ruleOne}},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{Name: "example_group", Limit: 20, Rules: []rulefmt.Rule{ruleOne}},
+			},
+			expectedErr: errDiffLimit,
+		},
+		{
+			name: "different group labels",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{Name: "example_group", Labels: map[string]string{"team": "a"}, Rules: []rulefmt.Rule{ruleOne}},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{Name: "example_group", Labels: map[string]string{"team": "b"}, Rules: []rulefmt.Rule{ruleOne}},
+			},
+			expectedErr: errDiffLabels,
+		},
+		{
+			name: "group labels set in one group only",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{Name: "example_group", Rules: []rulefmt.Rule{ruleOne}},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{Name: "example_group", Labels: map[string]string{"team": "b"}, Rules: []rulefmt.Rule{ruleOne}},
+			},
+			expectedErr: errDiffLabels,
+		},
+		{
+			name: "nil and empty group labels are equivalent",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{Name: "example_group", Rules: []rulefmt.Rule{ruleOne}},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{Name: "example_group", Labels: map[string]string{}, Rules: []rulefmt.Rule{ruleOne}},
+			},
+		},
+		{
+			name: "different align evaluation time on interval",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{Name: "example_group", AlignEvaluationTimeOnInterval: true, Rules: []rulefmt.Rule{ruleOne}},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{Name: "example_group", Rules: []rulefmt.Rule{ruleOne}},
+			},
+			expectedErr: errDiffAlignEvaluationTime,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
