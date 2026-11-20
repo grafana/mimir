@@ -13,6 +13,7 @@ std.manifestYamlDoc({
     self.rulers(1) +
     self.alertmanagers(1) +
     self.usage_trackers +
+    self.continuous_test +
     self.nginx +
     self.minio +
     self.grafana +
@@ -175,6 +176,28 @@ std.manifestYamlDoc({
         '-usage-tracker.partitions=16',
         '-usage-tracker.partition-reconcile-interval=10s',
         '-usage-tracker.lost-partitions-shutdown-grace-period=30s',
+      ],
+    }),
+  },
+
+  continuous_test:: {
+    'continuous-test': mimirService({
+      name: 'continuous-test',
+      target: 'continuous-test',
+      publishedHttpPort: 8092,
+      dependsOn: {
+        'distributor-1': { condition: 'service_started' },
+        'query-frontend': { condition: 'service_started' },
+      },
+      extraArguments: [
+        '-tests.run-interval=1m',
+        '-tests.write-endpoint=http://distributor-1:8080',
+        '-tests.read-endpoint=http://query-frontend:8080/prometheus',
+        '-tests.tenant-id=mimir-continuous-test',
+        '-tests.write-read-series-test.max-query-age=1h',
+        '-tests.write-read-series-test.num-series=100',
+        '-tests.explore.enabled=true',
+        '-tests.explore.write-interval=1s',
       ],
     }),
   },

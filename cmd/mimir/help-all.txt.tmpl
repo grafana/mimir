@@ -4057,6 +4057,18 @@ Usage of ./cmd/mimir/mimir:
     	Optionally define the cluster validation label.
   -tests.client.user-agent string
     	The value the Mimir client should send in the User-Agent header. (default "mimir-continuous-test")
+  -tests.explore.definition-file string
+    	Path to a YAML file defining the behavior space to explore. If empty, the built-in definition is used.
+  -tests.explore.enabled
+    	Set to true to run the explore test, which repeatedly writes samples of series drawn from a definition of the behavior space to explore, and reads them back. Its series are independent from the series of other tests.
+  -tests.explore.name-validation-scheme value
+    	Name validation scheme of the tenant, as configured with -validation.name-validation-scheme. With legacy, series with UTF-8 names are only written with OTLP, whose endpoint escapes the names. Supported values: legacy, utf8. (default legacy)
+  -tests.explore.random-source string
+    	Source of the random choices of each write: its protocol, how many series it writes, and which. With "seed", the choices are determined by the seed and the time of the write. With "antithesis", they are drawn from the Antithesis SDK, so that Antithesis can guide the exploration. Outside Antithesis, the draws come from crypto/rand. (default "seed")
+  -tests.explore.seed uint
+    	Seed of the explore test. With the same seed and definition, series have the same bucket layouts and values, and each write interval writes the same series with the same protocol. Set to 0 to pick a random seed at startup. (default 1)
+  -tests.explore.write-interval duration
+    	How often the explore test writes samples and reads them back. Must be a whole number of seconds. Series are labeled with the write interval, so tests with different write intervals write different series. (default 1m0s)
   -tests.ingest-storage-record.consumer-group string
     	The Kafka consumer group used for getting/setting commmitted offsets. (default "ingest-storage-record")
   -tests.ingest-storage-record.enabled

@@ -98,6 +98,7 @@ func (cfg *ClientConfig) RegisterFlags(f *flag.FlagSet) {
 
 type Client struct {
 	protocol    WriteProtocol
+	transport   http.RoundTripper
 	writeClient clientWriter
 	readClient  v1.API
 	cfg         ClientConfig
@@ -154,35 +155,9 @@ func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (
 		return nil, errors.New("either set tests.tenant-id or tests.basic-auth-user/tests.basic-auth-password or tests.bearer-token")
 	}
 
-	var writeClient clientWriter
-
-	switch cfg.WriteProtocol {
-	case writeProtocolPrometheus:
-		writeClient = &prometheusWriter{
-			httpClient:        &http.Client{Transport: rt},
-			writeBaseEndpoint: cfg.WriteBaseEndpoint,
-			writeBatchSize:    cfg.WriteBatchSize,
-			writeTimeout:      cfg.WriteTimeout,
-		}
-
-	case writeProtocolPrometheus2:
-		writeClient = &prometheus2Writer{
-			httpClient:        &http.Client{Transport: rt},
-			writeBaseEndpoint: cfg.WriteBaseEndpoint,
-			writeBatchSize:    cfg.WriteBatchSize,
-			writeTimeout:      cfg.WriteTimeout,
-		}
-
-	case writeProtocolOtelHttp:
-		writeClient = &otlpHTTPWriter{
-			httpClient:        &http.Client{Transport: rt},
-			writeBaseEndpoint: cfg.WriteBaseEndpoint,
-			writeBatchSize:    cfg.WriteBatchSize,
-			writeTimeout:      cfg.WriteTimeout,
-		}
-
-	default:
-		return nil, fmt.Errorf("the only supported write protocols are: \"prometheus\", \"prometheus2\", \"otlp-http\"")
+	writeClient, err := newWriter(cfg.WriteProtocol, rt, cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	apiCfg := api.Config{
@@ -197,11 +172,57 @@ func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (
 
 	return &Client{
 		protocol:    cfg.WriteProtocol,
+		transport:   rt,
 		writeClient: writeClient,
 		readClient:  v1.NewAPI(readClient),
 		cfg:         cfg,
 		logger:      logger,
 	}, nil
+}
+
+func newWriter(protocol WriteProtocol, rt http.RoundTripper, cfg ClientConfig) (clientWriter, error) {
+	switch protocol {
+	case writeProtocolPrometheus:
+		return &prometheusWriter{
+			httpClient:        &http.Client{Transport: rt},
+			writeBaseEndpoint: cfg.WriteBaseEndpoint,
+			writeBatchSize:    cfg.WriteBatchSize,
+			writeTimeout:      cfg.WriteTimeout,
+		}, nil
+
+	case writeProtocolPrometheus2:
+		return &prometheus2Writer{
+			httpClient:        &http.Client{Transport: rt},
+			writeBaseEndpoint: cfg.WriteBaseEndpoint,
+			writeBatchSize:    cfg.WriteBatchSize,
+			writeTimeout:      cfg.WriteTimeout,
+		}, nil
+
+	case writeProtocolOtelHttp:
+		return &otlpHTTPWriter{
+			httpClient:        &http.Client{Transport: rt},
+			writeBaseEndpoint: cfg.WriteBaseEndpoint,
+			writeBatchSize:    cfg.WriteBatchSize,
+			writeTimeout:      cfg.WriteTimeout,
+		}, nil
+
+	default:
+		return nil, fmt.Errorf("the only supported write protocols are: \"prometheus\", \"prometheus2\", \"otlp-http\"")
+	}
+}
+
+// WithWriteProtocol returns a client that writes with the given protocol, and otherwise behaves
+// like c.
+func (c *Client) WithWriteProtocol(protocol WriteProtocol) (MimirClient, error) {
+	writeClient, err := newWriter(protocol, c.transport, c.cfg)
+	if err != nil {
+		return nil, err
+	}
+	clone := *c
+	clone.protocol = protocol
+	clone.cfg.WriteProtocol = protocol
+	clone.writeClient = writeClient
+	return &clone, nil
 }
 
 // QueryRange implements MimirClient.
@@ -260,18 +281,26 @@ func (c *Client) Query(ctx context.Context, query string, ts time.Time, options 
 
 // Metadata implements MimirClient.
 func (c *Client) Metadata(ctx context.Context, metricName string) (v1.Metadata, error) {
+	m, err := c.MetricMetadata(ctx, metricName)
+	if err != nil {
+		return v1.Metadata{}, err
+	}
+	if len(m) == 0 {
+		return v1.Metadata{}, fmt.Errorf("metadata for metric %q not found", metricName)
+	}
+	return m[0], nil
+}
+
+// MetricMetadata returns every distinct metadata of the given metric, or none if it has no metadata.
+func (c *Client) MetricMetadata(ctx context.Context, metricName string) ([]v1.Metadata, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.cfg.ReadTimeout)
 	defer cancel()
 
 	result, err := c.readClient.Metadata(ctx, metricName, "1")
 	if err != nil {
-		return v1.Metadata{}, err
+		return nil, err
 	}
-	m := result[metricName]
-	if len(m) == 0 {
-		return v1.Metadata{}, fmt.Errorf("metadata for metric %q not found", metricName)
-	}
-	return m[0], nil
+	return result[metricName], nil
 }
 
 // WriteSeries implements MimirClient.

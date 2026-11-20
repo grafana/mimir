@@ -99,6 +99,29 @@ services:
     volumes:
       - "./config:/mimir/config"
       - "./activity:/activity"
+  continuous-test:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=continuous-test -activity-tracker.filepath=/activity/continuous-test -tests.run-interval=1m -tests.write-endpoint=http://distributor-1:8080 -tests.read-endpoint=http://query-frontend:8080/prometheus -tests.tenant-id=mimir-continuous-test -tests.write-read-series-test.max-query-age=1h -tests.write-read-series-test.num-series=100 -tests.explore.enabled=true -tests.explore.write-interval=1s"
+    depends_on:
+      distributor-1:
+        condition: "service_started"
+      query-frontend:
+        condition: "service_started"
+    environment:
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    hostname: "continuous-test"
+    image: "mimir"
+    ports:
+      - "8092:8080"
+      - "11092:11092"
+    volumes:
+      - "./config:/mimir/config"
+      - "./activity:/activity"
   distributor-1:
     build:
       context: "."

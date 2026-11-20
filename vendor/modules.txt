@@ -161,6 +161,7 @@ github.com/alecthomas/units
 ## explicit; go 1.24.0
 github.com/antithesishq/antithesis-sdk-go/assert
 github.com/antithesishq/antithesis-sdk-go/internal
+github.com/antithesishq/antithesis-sdk-go/random
 github.com/antithesishq/antithesis-sdk-go/internal/json
 # github.com/apache/arrow-go/v18 v18.7.0
 ## explicit; go 1.25.0

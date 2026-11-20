@@ -1,0 +1,42 @@
+# The behavior space explored by the continuous-test "explore" test. Override this file with
+# -tests.explore.definition-file.
+
+# Every write interval (-tests.explore.write-interval), the test picks a protocol and a write
+# size N, picks N distinct series that the protocol can write, writes a sample of each of them in
+# a single request, and reads them back. Each series is picked by drawing a family, with the same
+# chance for every family, and then a value of each list of the family in turn.
+protocols: [v1, v2, otlp]
+write_sizes: [1, 2, 5, 10]
+
+# Series belong to a family: float series, or native histogram series. Each combination of a
+# charset, a unit, a help text and one value from each list of a family is its own series, which
+# lives as long as the test: every write that picks it appends a sample. Combinations that can't
+# be written are skipped:
+# - OTLP only writes float counters and gauges, and native histogram int counters with
+#   exponential buckets.
+# - Custom buckets have neither negative buckets nor a zero bucket.
+# - Unless -tests.explore.name-validation-scheme=utf8, UTF-8 names are only written with OTLP.
+# This makes 1650 series, or 2652 with the UTF-8 name validation scheme.
+
+# The names of metrics and labels: legacy names, or names with dots and non-ASCII letters.
+charsets: [legacy, utf8]
+
+# The metadata written with each series, and read back. Metadata belongs to a metric, so each
+# value is also part of the metric name.
+metadata:
+  # Units: none, or a unit that is also the suffix of the metric name. OTLP writes it as an OTLP
+  # unit, such as s for seconds, which the OTLP endpoint translates back.
+  units: [none, seconds]
+  # Help texts: empty, ASCII, or with non-ASCII and special characters, such as a newline.
+  helps: [none, ascii, utf8]
+
+floats:
+  # Metric types of series of float samples.
+  types: [counter, gauge, unknown, info, stateset]
+
+native_histograms:
+  sample_types: [int, float]
+  kinds: [counter, gauge]
+  # Exponential schemas, and -53 for custom buckets.
+  schemas: [-4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, -53]
+  layouts: [contiguous, gaps, negative, zero_only]
