@@ -2068,7 +2068,7 @@ func TestOperatorEvaluationStats_FinalizeAndComputePrometheusStats(t *testing.T)
 	stats.allSeries.samplesReadIfFirstStep[1] = 301
 	stats.allSeries.samplesReadIfFirstStep[2] = 302
 
-	actual, err := stats.FinalizeAndComputePrometheusStats()
+	actual, perNode, err := stats.FinalizeAndComputePrometheusStats()
 	require.NoError(t, err)
 
 	expected := &promstats.QuerySamples{
@@ -2082,6 +2082,61 @@ func TestOperatorEvaluationStats_FinalizeAndComputePrometheusStats(t *testing.T)
 	}
 	require.Equal(t, expected, actual)
 
+	// We didn't record any per-node stats, this should be nil.
+	require.Nil(t, perNode)
+
+	stats.Close()
+	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+}
+
+func TestOperatorEvaluationStats_FinalizeAndComputePrometheusStats_MultiNode(t *testing.T) {
+	startT := timestamp.Time(1000)
+	timeRange := NewRangeQueryTimeRange(startT, startT.Add(2*time.Second), time.Second)
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	stats, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
+	require.NoError(t, err)
+
+	floats := NewFPointRingBuffer(memoryConsumptionTracker)
+	histograms := NewHPointRingBuffer(memoryConsumptionTracker)
+	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(startT.Add(-3 * time.Second))}))
+	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(startT.Add(-2 * time.Second))}))
+	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(startT.Add(-time.Second))}))
+	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(startT)}))
+
+	require.NoError(t, stats.TrackSamplesForRangeVectorSelector(startT.UnixMilli(), floats, histograms, timestamp.FromTime(startT.Add(-4*time.Second)), timestamp.FromTime(startT), false, nil, 5))
+	require.NoError(t, stats.TrackSamplesForRangeVectorSelector(startT.UnixMilli(), floats, histograms, timestamp.FromTime(startT.Add(-4*time.Second)), timestamp.FromTime(startT), false, nil, 6))
+	require.NoError(t, stats.TrackSamplesForRangeVectorSelector(startT.Add(time.Second).UnixMilli(), floats, histograms, timestamp.FromTime(startT.Add(-2*time.Second)), timestamp.FromTime(startT.Add(-time.Second)), false, nil, 5))
+	require.NoError(t, stats.TrackSamplesForRangeVectorSelector(startT.Add(2*time.Second).UnixMilli(), floats, histograms, timestamp.FromTime(startT.Add(-1*time.Second)), timestamp.FromTime(startT), false, nil, 6))
+
+	actualProm, actualPerNode, err := stats.FinalizeAndComputePrometheusStats()
+	require.NoError(t, err)
+
+	expectedProm := &promstats.QuerySamples{
+		TotalSamples:        8 + 3 + 4,
+		TotalSamplesPerStep: []int64{8, 3, 4},
+		SamplesRead:         8 + 1 + 1,
+		SamplesReadPerStep:  []int64{8, 1, 1},
+		EnablePerStepStats:  true,
+		Interval:            time.Second.Milliseconds(),
+		StartTimestamp:      timestamp.FromTime(startT),
+	}
+	require.Equal(t, expectedProm, actualProm)
+
+	expectedPerNode := []NodeQueryCost{
+		{
+			NodeId:      5,
+			SamplesRead: 4 + 1 + 0,
+		},
+		{
+			NodeId:      6,
+			SamplesRead: 4 + 0 + 1,
+		},
+	}
+	require.Equal(t, expectedPerNode, actualPerNode)
+
+	floats.Close()
+	histograms.Close()
 	stats.Close()
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }

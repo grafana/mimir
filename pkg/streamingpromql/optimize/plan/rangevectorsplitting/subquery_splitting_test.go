@@ -61,6 +61,41 @@ func TestQuerySplitting_SubqueryNestedAnnotations(t *testing.T) {
 	}
 }
 
+func TestQuerySplitting_SubqueryEvaluationRoot_SkipsSplitting(t *testing.T) {
+	planner, err := streamingpromql.NewQueryPlanner(defaultSplittingOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	testCases := map[string]struct {
+		expr          string
+		expectedSplit bool
+	}{
+		"ordinary subquery is split": {
+			expr:          `avg_over_time(sum(metric)[5h:1m])`,
+			expectedSplit: true,
+		},
+		"spun-off subquery is not split": {
+			expr: `avg_over_time(__vector_evaluation_root__(sum(metric))[5h:1m])`,
+		},
+		"evaluation root nested in an expression prevents splitting": {
+			expr: `avg_over_time((metric + __vector_evaluation_root__(sum(metric)))[5h:1m])`,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			plan, err := planner.NewQueryPlan(t.Context(), tc.expr, types.NewInstantQueryTimeRange(timestamp.Time(0).Add(6*time.Hour)),
+				streamingpromql.DefaultLookbackDelta, false, nil, streamingpromql.NoopPlanningObserver{})
+			require.NoError(t, err)
+
+			if tc.expectedSplit {
+				require.Contains(t, plan.String(), "SplitFunctionCall")
+			} else {
+				require.NotContains(t, plan.String(), "SplitFunctionCall")
+			}
+		})
+	}
+}
+
 // TestQuerySplitting_InsertDuplicatesAcrossSplitBlocks checks that insertDuplicatesAcrossSplitBlocks (see commonsubexpressionelimination/optimization_pass.go)
 // wraps exactly the nodes it needs to in a Duplicate node. core.Subquery or core.StepInvariantExpression nested
 // below a split target's own child, at any depth.

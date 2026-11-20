@@ -172,9 +172,11 @@ groups:
                 rate(thanos_cache_operation_failures_total{operation!~"add|delete"}[4m])
               )
               /
-              sum by(cluster, namespace, name, operation) (
-                rate(thanos_cache_operations_total{operation!~"add|delete"}[4m])
-              ) > 10
+              (
+                sum by(cluster, namespace, name, operation) (
+                  rate(thanos_cache_operations_total{operation!~"add|delete"}[4m])
+                ) > 10
+              )
             ) * 100 > 5
           for: 5m
           labels:
@@ -1190,6 +1192,17 @@ groups:
           for: 1h
           labels:
             severity: critical
+        - alert: MimirCompactorNotDiscoveringTenants
+          annotations:
+            message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not successfully discovered tenants for blocks cleanup in the last 6 hours.
+            runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimircompactornotdiscoveringtenants
+          expr: |
+            (time() - cortex_compactor_block_cleanup_last_tenants_list_timestamp_seconds > 60 * 60 * 6)
+            and
+            (cortex_compactor_block_cleanup_last_tenants_list_timestamp_seconds > 0)
+          for: 1h
+          labels:
+            severity: critical
         - alert: MimirCompactorNotRunningCompaction
           annotations:
             message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not run compaction in the last 6 hours.
@@ -1646,7 +1659,11 @@ groups:
             message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to compact and upload blocks.
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirblockbuildercompactanduploadfailed
           expr: |
-            sum by (cluster, namespace, instance) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[4m])) > 0
+            sum by (cluster, namespace, instance) (
+              (cortex_blockbuilder_tsdb_compact_and_upload_failed_total unless present_over_time(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[1h] offset 4m))
+              or
+              rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[4m])
+            ) > 0
           labels:
             severity: critical
         - alert: MimirBlockBuilderHasNotShippedBlocks

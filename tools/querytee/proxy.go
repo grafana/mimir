@@ -430,8 +430,11 @@ func (p *Proxy) Start() error {
 		_, _ = w.Write([]byte("ready"))
 	}))
 
-	// Pprof profiling endpoint.
-	router.PathPrefix("/debug/pprof").Handler(http.DefaultServeMux)
+	router.PathPrefix("/debug/pprof").Handler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("pprof endpoints are not accessible from the main port, use metrics port instead"))
+	}))
 
 	// Since we are only doing query requests decoding, we only care about the lookback delta for the Codec instance.
 	// The other config parameters are not relevant.

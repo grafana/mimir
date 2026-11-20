@@ -512,7 +512,7 @@ data:
                       "span": 6,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_written_bytes_total[$__rate_interval]\n  )\n)\n+\nignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"alertmanager\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_writes_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"alertmanager\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -560,7 +560,7 @@ data:
                       "span": 6,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_read_bytes_total[$__rate_interval]\n  )\n) + ignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"alertmanager\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_reads_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"alertmanager\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -4032,7 +4032,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_written_bytes_total[$__rate_interval]\n  )\n)\n+\nignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"compactor\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_writes_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"compactor\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -4080,7 +4080,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_read_bytes_total[$__rate_interval]\n  )\n) + ignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"compactor\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_reads_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"compactor\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -9460,7 +9460,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_written_bytes_total[$__rate_interval]\n  )\n)\n+\nignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"distributor|ingester\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_writes_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"distributor|ingester\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -9508,7 +9508,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_read_bytes_total[$__rate_interval]\n  )\n) + ignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"distributor|ingester\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_reads_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"distributor|ingester\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -9931,7 +9931,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_written_bytes_total[$__rate_interval]\n  )\n)\n+\nignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_writes_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -9979,7 +9979,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_read_bytes_total[$__rate_interval]\n  )\n) + ignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_reads_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -12636,7 +12636,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 6,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "sum(rate(cortex_frontend_query_sharding_rewrites_succeeded_total{$read_path_matcher}[$__rate_interval])) /\nsum(rate(cortex_frontend_query_sharding_rewrites_attempted_total{$read_path_matcher}[$__rate_interval]))\n",
@@ -12686,7 +12686,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 6,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "(histogram_quantile(0.99, sum (rate(cortex_frontend_sharded_queries_per_query{$read_path_matcher}[$__rate_interval]))) * 1) and on() (vector($latency_metrics) == -1)",
@@ -12745,6 +12745,55 @@ data:
                             "show": false
                          }
                       ]
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Sharded queries / sec\nHow many sharded sub-queries are created per second, by the zone in the job name.\nOnly query-frontend and ruler-query-frontend jobs with the default names, optionally per zone, and monolithic deployments are included.\nQuery-frontends with a custom suffix or a renamed job aren't shown.\nJobs without a zone are shown as no-zone.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "reqps"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 12,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum by (zone) (\n  label_replace(\n    label_replace(\n      rate(cortex_frontend_sharded_queries_total{$read_path_matcher, cluster=~\"$cluster\", job=~\"($namespace)/(((ruler-)?query-frontend(-zone-.+)?|cortex|mimir))\"}[$__rate_interval]),\n      \"zone\", \"$1\", \"job\", \".*-(zone-.+)\"\n    ),\n    \"zone\", \"no-zone\", \"zone\", \"^$\"\n  )\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "{{zone}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Sharded queries / sec",
+                      "type": "timeseries"
                    }
                 ],
                 "repeat": null,
@@ -12765,7 +12814,7 @@ data:
                             "unit": "bytes"
                          }
                       },
-                      "id": 12,
+                      "id": 13,
                       "options": {
                          "calculate": true
                       },
@@ -12810,7 +12859,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 13,
+                      "id": 14,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12920,7 +12969,7 @@ data:
                             }
                          ]
                       },
-                      "id": 14,
+                      "id": 15,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12976,7 +13025,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 15,
+                      "id": 16,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13025,7 +13074,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 16,
+                      "id": 17,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13159,7 +13208,7 @@ data:
                             }
                          ]
                       },
-                      "id": 17,
+                      "id": 18,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13214,7 +13263,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 18,
+                      "id": 19,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13294,7 +13343,7 @@ data:
                    {
                       "datasource": "$datasource",
                       "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by query-frontends. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
-                      "id": 19,
+                      "id": 20,
                       "options": {
                          "calculate": true,
                          "calculation": {
@@ -13360,7 +13409,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 20,
+                      "id": 21,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13483,7 +13532,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 21,
+                      "id": 22,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13624,7 +13673,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 22,
+                      "id": 23,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13765,7 +13814,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 23,
+                      "id": 24,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13875,7 +13924,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 24,
+                      "id": 25,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -13954,7 +14003,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 25,
+                      "id": 26,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14033,7 +14082,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 26,
+                      "id": 27,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14156,7 +14205,7 @@ data:
                             }
                          ]
                       },
-                      "id": 27,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14243,7 +14292,7 @@ data:
                             }
                          ]
                       },
-                      "id": 28,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14310,7 +14359,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14444,7 +14493,7 @@ data:
                             }
                          ]
                       },
-                      "id": 30,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14499,7 +14548,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 31,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14590,7 +14639,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 32,
+                      "id": 33,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14692,7 +14741,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 33,
+                      "id": 34,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14789,7 +14838,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 35,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14904,7 +14953,7 @@ data:
                             }
                          ]
                       },
-                      "id": 35,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14966,7 +15015,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 36,
+                      "id": 37,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14998,7 +15047,7 @@ data:
                    {
                       "datasource": "$datasource",
                       "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
-                      "id": 37,
+                      "id": 38,
                       "options": {
                          "calculate": true,
                          "calculation": {
@@ -15064,7 +15113,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 38,
+                      "id": 39,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15124,7 +15173,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 40,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15215,7 +15264,7 @@ data:
                             }
                          ]
                       },
-                      "id": 40,
+                      "id": 41,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15269,7 +15318,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 41,
+                      "id": 42,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -15379,7 +15428,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 42,
+                      "id": 43,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15433,7 +15482,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 43,
+                      "id": 44,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15481,7 +15530,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 44,
+                      "id": 45,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15541,7 +15590,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 45,
+                      "id": 46,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15595,7 +15644,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 46,
+                      "id": 47,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15651,7 +15700,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 47,
+                      "id": 48,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15718,7 +15767,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 48,
+                      "id": 49,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15797,7 +15846,7 @@ data:
                             }
                          ]
                       },
-                      "id": 49,
+                      "id": 50,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15882,7 +15931,7 @@ data:
                             }
                          ]
                       },
-                      "id": 50,
+                      "id": 51,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15948,7 +15997,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 51,
+                      "id": 52,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15996,7 +16045,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 52,
+                      "id": 53,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -16094,7 +16143,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 53,
+                      "id": 54,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -16204,7 +16253,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 54,
+                      "id": 55,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -16253,7 +16302,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 55,
+                      "id": 56,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -16302,7 +16351,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 56,
+                      "id": 57,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20515,7 +20564,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_written_bytes_total[$__rate_interval]\n  )\n)\n+\nignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"store-gateway\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_writes_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"store-gateway\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -20563,7 +20612,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_read_bytes_total[$__rate_interval]\n  )\n) + ignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"store-gateway\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_reads_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"store-gateway\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -24736,7 +24785,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(cluster, namespace, metric, scaledObject, scaler) (\n  label_replace(\n    rate(keda_scaler_errors[$__rate_interval]),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, metric, scaledObject) (\n    label_replace(\n      label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?querier.*\"} * 0,\n          \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(?:mimir-)?(.*)\"\n      ),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    )\n  )\n",
+                            "expr": "sum by(cluster, namespace, metric, scaledObject, scaler) (\n  label_replace(\n    # Prefer the modern counter, with a fallback for KEDA versions before 2.14.\n    (rate(keda_scaler_detail_errors_total[$__rate_interval]) or rate(keda_scaler_errors[$__rate_interval])),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, metric, scaledObject) (\n    label_replace(\n      label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?querier.*\"} * 0,\n          \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(?:mimir-)?(.*)\"\n      ),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    )\n  )\n",
                             "format": "time_series",
                             "legendFormat": "{{scaler}} failures",
                             "legendLink": null
@@ -32816,7 +32865,7 @@ data:
                       "span": 6,
                       "targets": [
                          {
-                            "expr": "sum by(cluster, namespace, metric, scaledObject, scaler) (\n  label_replace(\n    rate(keda_scaler_errors[$__rate_interval]),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, metric, scaledObject) (\n    label_replace(\n      label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier.*\"} * 0,\n          \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(?:mimir-)?(.*)\"\n      ),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    )\n  )\n",
+                            "expr": "sum by(cluster, namespace, metric, scaledObject, scaler) (\n  label_replace(\n    # Prefer the modern counter, with a fallback for KEDA versions before 2.14.\n    (rate(keda_scaler_detail_errors_total[$__rate_interval]) or rate(keda_scaler_errors[$__rate_interval])),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, metric, scaledObject) (\n    label_replace(\n      label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier.*\"} * 0,\n          \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(?:mimir-)?(.*)\"\n      ),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    )\n  )\n",
                             "format": "time_series",
                             "legendFormat": "{{scaler}} failures",
                             "legendLink": null
@@ -42977,6 +43026,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
+                      "description": "### Number of Queries Queued - query-scheduler\nNumber of queries for this tenant waiting in query-scheduler queues to be picked up by a querier, summed across query-scheduler replicas.\nA single query can produce multiple queued requests after splitting and sharding.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -43025,6 +43075,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
+                      "description": "### Query Expression Length - query-frontend\n99th percentile, 90th percentile and average length in bytes of query expressions received by the query-frontend for this tenant.\nValues are calculated over the rate interval across all query-frontend replicas.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -43194,6 +43245,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
+                      "description": "### Number of Queries Queued - ruler-query-scheduler\nNumber of queries for this tenant waiting in ruler-query-scheduler queues to be picked up by a querier, summed across ruler-query-scheduler replicas.\nA single rule query can produce multiple queued requests after splitting and sharding.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -43242,6 +43294,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
+                      "description": "### Query Expression Length - ruler-query-frontend\n99th percentile, 90th percentile and average length in bytes of rule query expressions received by the ruler-query-frontend for this tenant.\nValues are calculated over the rate interval across all ruler-query-frontend replicas.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -43692,7 +43745,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byName",
-                                  "options": "Value"
+                                  "options": "Value #A"
                                },
                                "properties": [
                                   {
@@ -43706,6 +43759,26 @@ data:
                                   {
                                      "id": "unit",
                                      "value": "short"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Value #B"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "% of total"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 1
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "percentunit"
                                   }
                                ]
                             },
@@ -43726,6 +43799,24 @@ data:
                                   {
                                      "id": "unit",
                                      "value": "string"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "links",
+                                     "value": [
+                                        {
+                                           "targetBlank": true,
+                                           "title": "Tenant dashboard for ${__value.raw}",
+                                           "url": "./d/35fa247ce651ba189debf33d7ae41611/mimir-tenants?${__url_time_range}&${__all_variables}&var-user=${__value.raw:percentencode}"
+                                        }
+                                     ]
                                   }
                                ]
                             }
@@ -43756,16 +43847,23 @@ data:
                          "desc": true
                       },
                       "spaceLength": 10,
-                      "span": 12,
+                      "span": 9,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n)\n",
+                            "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n)",
                             "format": "table",
                             "instant": true,
                             "legendFormat": "",
                             "refId": "A"
+                         },
+                         {
+                            "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n) / scalar(sum(( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n))",
+                            "format": "table",
+                            "instant": true,
+                            "legendFormat": "",
+                            "refId": "B"
                          }
                       ],
                       "thresholds": [ ],
@@ -43778,6 +43876,12 @@ data:
                          "value_type": "individual"
                       },
                       "transform": "table",
+                      "transformations": [
+                         {
+                            "id": "merge",
+                            "options": { }
+                         }
+                      ],
                       "type": "table",
                       "xaxis": {
                          "buckets": null,
@@ -43804,6 +43908,73 @@ data:
                             "show": false
                          }
                       ]
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "others"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#8F8F8F",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 3,
+                      "options": {
+                         "displayLabels": [ ],
+                         "legend": {
+                            "displayMode": "list",
+                            "placement": "right",
+                            "showLegend": true,
+                            "values": [ ]
+                         },
+                         "pieType": "donut",
+                         "reduceOptions": {
+                            "calcs": [
+                               "lastNotNull"
+                            ],
+                            "fields": "",
+                            "values": false
+                         },
+                         "sort": "none",
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sort_desc(topk($limit, sum by (user) (( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n)))",
+                            "format": "time_series",
+                            "instant": true,
+                            "legendFormat": "{{ user }}",
+                            "refId": "A"
+                         },
+                         {
+                            "expr": "sum(\n  (sum by (user) (( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n))\n  unless\n  topk($limit, sum by (user) (( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n))\n)\n",
+                            "format": "time_series",
+                            "instant": true,
+                            "legendFormat": "others",
+                            "refId": "B"
+                         }
+                      ],
+                      "title": "Share of the total",
+                      "type": "piechart"
                    }
                 ],
                 "repeat": null,
@@ -43844,7 +44015,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byName",
-                                  "options": "Value"
+                                  "options": "Value #A"
                                },
                                "properties": [
                                   {
@@ -43858,6 +44029,26 @@ data:
                                   {
                                      "id": "unit",
                                      "value": "short"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Value #B"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "% of total"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 1
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "percentunit"
                                   }
                                ]
                             },
@@ -43880,11 +44071,29 @@ data:
                                      "value": "string"
                                   }
                                ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "links",
+                                     "value": [
+                                        {
+                                           "targetBlank": true,
+                                           "title": "Tenant dashboard for ${__value.raw}",
+                                           "url": "./d/35fa247ce651ba189debf33d7ae41611/mimir-tenants?${__url_time_range}&${__all_variables}&var-user=${__value.raw:percentencode}"
+                                        }
+                                     ]
+                                  }
+                               ]
                             }
                          ]
                       },
                       "fill": 1,
-                      "id": 3,
+                      "id": 4,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -43908,7 +44117,7 @@ data:
                          "desc": true
                       },
                       "spaceLength": 10,
-                      "span": 12,
+                      "span": 9,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -43918,6 +44127,13 @@ data:
                             "instant": true,
                             "legendFormat": "",
                             "refId": "A"
+                         },
+                         {
+                            "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (\n    (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n)\n unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n) / scalar(sum(( # Classic storage\n  sum by (cluster, namespace, user) (\n    (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n)\n unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n))",
+                            "format": "table",
+                            "instant": true,
+                            "legendFormat": "",
+                            "refId": "B"
                          }
                       ],
                       "thresholds": [ ],
@@ -43930,6 +44146,12 @@ data:
                          "value_type": "individual"
                       },
                       "transform": "table",
+                      "transformations": [
+                         {
+                            "id": "merge",
+                            "options": { }
+                         }
+                      ],
                       "type": "table",
                       "xaxis": {
                          "buckets": null,
@@ -43956,6 +44178,73 @@ data:
                             "show": false
                          }
                       ]
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "others"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#8F8F8F",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 5,
+                      "options": {
+                         "displayLabels": [ ],
+                         "legend": {
+                            "displayMode": "list",
+                            "placement": "right",
+                            "showLegend": true,
+                            "values": [ ]
+                         },
+                         "pieType": "donut",
+                         "reduceOptions": {
+                            "calcs": [
+                               "lastNotNull"
+                            ],
+                            "fields": "",
+                            "values": false
+                         },
+                         "sort": "none",
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sort_desc(topk($limit, sum by (user) (( # Classic storage\n  sum by (cluster, namespace, user) (\n    (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n)\n unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n)))",
+                            "format": "time_series",
+                            "instant": true,
+                            "legendFormat": "{{ user }}",
+                            "refId": "A"
+                         },
+                         {
+                            "expr": "sum(\n  (sum by (user) (( # Classic storage\n  sum by (cluster, namespace, user) (\n    (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n)\n unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n))\n  unless\n  topk($limit, sum by (user) (( # Classic storage\n  sum by (cluster, namespace, user) (\n    (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n)\n unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n))\n)\n",
+                            "format": "time_series",
+                            "instant": true,
+                            "legendFormat": "others",
+                            "refId": "B"
+                         }
+                      ],
+                      "title": "Share of the total",
+                      "type": "piechart"
                    }
                 ],
                 "repeat": null,
@@ -43994,7 +44283,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 4,
+                      "id": 6,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -44056,7 +44345,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byName",
-                                  "options": "Value"
+                                  "options": "Value #A"
                                },
                                "properties": [
                                   {
@@ -44070,6 +44359,26 @@ data:
                                   {
                                      "id": "unit",
                                      "value": "short"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Value #B"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "% of total"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 1
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "percentunit"
                                   }
                                ]
                             },
@@ -44092,11 +44401,29 @@ data:
                                      "value": "string"
                                   }
                                ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "links",
+                                     "value": [
+                                        {
+                                           "targetBlank": true,
+                                           "title": "Tenant dashboard for ${__value.raw}",
+                                           "url": "./d/35fa247ce651ba189debf33d7ae41611/mimir-tenants?${__url_time_range}&${__all_variables}&var-user=${__value.raw:percentencode}"
+                                        }
+                                     ]
+                                  }
+                               ]
                             }
                          ]
                       },
                       "fill": 1,
-                      "id": 5,
+                      "id": 7,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -44120,7 +44447,7 @@ data:
                          "desc": true
                       },
                       "spaceLength": 10,
-                      "span": 12,
+                      "span": 9,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -44130,6 +44457,13 @@ data:
                             "instant": true,
                             "legendFormat": "",
                             "refId": "A"
+                         },
+                         {
+                            "expr": "topk($limit, sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[5m]))) / scalar(sum(sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[5m]))))",
+                            "format": "table",
+                            "instant": true,
+                            "legendFormat": "",
+                            "refId": "B"
                          }
                       ],
                       "thresholds": [ ],
@@ -44142,6 +44476,12 @@ data:
                          "value_type": "individual"
                       },
                       "transform": "table",
+                      "transformations": [
+                         {
+                            "id": "merge",
+                            "options": { }
+                         }
+                      ],
                       "type": "table",
                       "xaxis": {
                          "buckets": null,
@@ -44168,6 +44508,73 @@ data:
                             "show": false
                          }
                       ]
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "others"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#8F8F8F",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 8,
+                      "options": {
+                         "displayLabels": [ ],
+                         "legend": {
+                            "displayMode": "list",
+                            "placement": "right",
+                            "showLegend": true,
+                            "values": [ ]
+                         },
+                         "pieType": "donut",
+                         "reduceOptions": {
+                            "calcs": [
+                               "lastNotNull"
+                            ],
+                            "fields": "",
+                            "values": false
+                         },
+                         "sort": "none",
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sort_desc(topk($limit, sum by (user) (sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[5m])))))",
+                            "format": "time_series",
+                            "instant": true,
+                            "legendFormat": "{{ user }}",
+                            "refId": "A"
+                         },
+                         {
+                            "expr": "sum(\n  (sum by (user) (sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[5m]))))\n  unless\n  topk($limit, sum by (user) (sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[5m]))))\n)\n",
+                            "format": "time_series",
+                            "instant": true,
+                            "legendFormat": "others",
+                            "refId": "B"
+                         }
+                      ],
+                      "title": "Share of the total",
+                      "type": "piechart"
                    }
                 ],
                 "repeat": null,
@@ -44206,7 +44613,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 6,
+                      "id": 9,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -44304,11 +44711,29 @@ data:
                                      "value": "string"
                                   }
                                ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "links",
+                                     "value": [
+                                        {
+                                           "targetBlank": true,
+                                           "title": "Tenant dashboard for ${__value.raw}",
+                                           "url": "./d/35fa247ce651ba189debf33d7ae41611/mimir-tenants?${__url_time_range}&${__all_variables}&var-user=${__value.raw:percentencode}"
+                                        }
+                                     ]
+                                  }
+                               ]
                             }
                          ]
                       },
                       "fill": 1,
-                      "id": 7,
+                      "id": 10,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -44416,7 +44841,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byName",
-                                  "options": "Value"
+                                  "options": "Value #A"
                                },
                                "properties": [
                                   {
@@ -44430,6 +44855,26 @@ data:
                                   {
                                      "id": "unit",
                                      "value": "short"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Value #B"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "% of total"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 1
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "percentunit"
                                   }
                                ]
                             },
@@ -44452,11 +44897,29 @@ data:
                                      "value": "string"
                                   }
                                ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "links",
+                                     "value": [
+                                        {
+                                           "targetBlank": true,
+                                           "title": "Tenant dashboard for ${__value.raw}",
+                                           "url": "./d/35fa247ce651ba189debf33d7ae41611/mimir-tenants?${__url_time_range}&${__all_variables}&var-user=${__value.raw:percentencode}"
+                                        }
+                                     ]
+                                  }
+                               ]
                             }
                          ]
                       },
                       "fill": 1,
-                      "id": 8,
+                      "id": 11,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -44480,7 +44943,7 @@ data:
                          "desc": true
                       },
                       "spaceLength": 10,
-                      "span": 12,
+                      "span": 9,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -44490,6 +44953,13 @@ data:
                             "instant": true,
                             "legendFormat": "",
                             "refId": "A"
+                         },
+                         {
+                            "expr": "topk($limit, sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|distributor.*|cortex|mimir))\"}[5m]))) / scalar(sum(sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|distributor.*|cortex|mimir))\"}[5m]))))",
+                            "format": "table",
+                            "instant": true,
+                            "legendFormat": "",
+                            "refId": "B"
                          }
                       ],
                       "thresholds": [ ],
@@ -44502,6 +44972,12 @@ data:
                          "value_type": "individual"
                       },
                       "transform": "table",
+                      "transformations": [
+                         {
+                            "id": "merge",
+                            "options": { }
+                         }
+                      ],
                       "type": "table",
                       "xaxis": {
                          "buckets": null,
@@ -44528,6 +45004,73 @@ data:
                             "show": false
                          }
                       ]
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "others"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#8F8F8F",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 12,
+                      "options": {
+                         "displayLabels": [ ],
+                         "legend": {
+                            "displayMode": "list",
+                            "placement": "right",
+                            "showLegend": true,
+                            "values": [ ]
+                         },
+                         "pieType": "donut",
+                         "reduceOptions": {
+                            "calcs": [
+                               "lastNotNull"
+                            ],
+                            "fields": "",
+                            "values": false
+                         },
+                         "sort": "none",
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sort_desc(topk($limit, sum by (user) (sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|distributor.*|cortex|mimir))\"}[5m])))))",
+                            "format": "time_series",
+                            "instant": true,
+                            "legendFormat": "{{ user }}",
+                            "refId": "A"
+                         },
+                         {
+                            "expr": "sum(\n  (sum by (user) (sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|distributor.*|cortex|mimir))\"}[5m]))))\n  unless\n  topk($limit, sum by (user) (sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|distributor.*|cortex|mimir))\"}[5m]))))\n)\n",
+                            "format": "time_series",
+                            "instant": true,
+                            "legendFormat": "others",
+                            "refId": "B"
+                         }
+                      ],
+                      "title": "Share of the total",
+                      "type": "piechart"
                    }
                 ],
                 "repeat": null,
@@ -44566,7 +45109,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 9,
+                      "id": 13,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -44628,7 +45171,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byName",
-                                  "options": "Value"
+                                  "options": "Value #A"
                                },
                                "properties": [
                                   {
@@ -44642,6 +45185,26 @@ data:
                                   {
                                      "id": "unit",
                                      "value": "short"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Value #B"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "% of total"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 1
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "percentunit"
                                   }
                                ]
                             },
@@ -44664,11 +45227,29 @@ data:
                                      "value": "string"
                                   }
                                ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "links",
+                                     "value": [
+                                        {
+                                           "targetBlank": true,
+                                           "title": "Tenant dashboard for ${__value.raw}",
+                                           "url": "./d/35fa247ce651ba189debf33d7ae41611/mimir-tenants?${__url_time_range}&${__all_variables}&var-user=${__value.raw:percentencode}"
+                                        }
+                                     ]
+                                  }
+                               ]
                             }
                          ]
                       },
                       "fill": 1,
-                      "id": 10,
+                      "id": 14,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -44692,16 +45273,23 @@ data:
                          "desc": true
                       },
                       "spaceLength": 10,
-                      "span": 12,
+                      "span": 9,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n)\n",
+                            "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n)",
                             "format": "table",
                             "instant": true,
                             "legendFormat": "",
                             "refId": "A"
+                         },
+                         {
+                            "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n) / scalar(sum(( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n))",
+                            "format": "table",
+                            "instant": true,
+                            "legendFormat": "",
+                            "refId": "B"
                          }
                       ],
                       "thresholds": [ ],
@@ -44714,6 +45302,12 @@ data:
                          "value_type": "individual"
                       },
                       "transform": "table",
+                      "transformations": [
+                         {
+                            "id": "merge",
+                            "options": { }
+                         }
+                      ],
                       "type": "table",
                       "xaxis": {
                          "buckets": null,
@@ -44740,6 +45334,73 @@ data:
                             "show": false
                          }
                       ]
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "others"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#8F8F8F",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 15,
+                      "options": {
+                         "displayLabels": [ ],
+                         "legend": {
+                            "displayMode": "list",
+                            "placement": "right",
+                            "showLegend": true,
+                            "values": [ ]
+                         },
+                         "pieType": "donut",
+                         "reduceOptions": {
+                            "calcs": [
+                               "lastNotNull"
+                            ],
+                            "fields": "",
+                            "values": false
+                         },
+                         "sort": "none",
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sort_desc(topk($limit, sum by (user) (( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n)))",
+                            "format": "time_series",
+                            "instant": true,
+                            "legendFormat": "{{ user }}",
+                            "refId": "A"
+                         },
+                         {
+                            "expr": "sum(\n  (sum by (user) (( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n))\n  unless\n  topk($limit, sum by (user) (( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n))\n)\n",
+                            "format": "time_series",
+                            "instant": true,
+                            "legendFormat": "others",
+                            "refId": "B"
+                         }
+                      ],
+                      "title": "Share of the total",
+                      "type": "piechart"
                    }
                 ],
                 "repeat": null,
@@ -44780,7 +45441,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byName",
-                                  "options": "Value"
+                                  "options": "Value #A"
                                },
                                "properties": [
                                   {
@@ -44794,6 +45455,26 @@ data:
                                   {
                                      "id": "unit",
                                      "value": "short"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Value #B"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "% of total"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 1
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "percentunit"
                                   }
                                ]
                             },
@@ -44816,11 +45497,29 @@ data:
                                      "value": "string"
                                   }
                                ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "links",
+                                     "value": [
+                                        {
+                                           "targetBlank": true,
+                                           "title": "Tenant dashboard for ${__value.raw}",
+                                           "url": "./d/35fa247ce651ba189debf33d7ae41611/mimir-tenants?${__url_time_range}&${__all_variables}&var-user=${__value.raw:percentencode}"
+                                        }
+                                     ]
+                                  }
+                               ]
                             }
                          ]
                       },
                       "fill": 1,
-                      "id": 11,
+                      "id": 16,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -44844,7 +45543,7 @@ data:
                          "desc": true
                       },
                       "spaceLength": 10,
-                      "span": 12,
+                      "span": 9,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -44854,6 +45553,13 @@ data:
                             "instant": true,
                             "legendFormat": "",
                             "refId": "A"
+                         },
+                         {
+                            "expr": "topk($limit, sum by (user) (rate(cortex_distributor_received_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[5m]))) / scalar(sum(sum by (user) (rate(cortex_distributor_received_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[5m]))))",
+                            "format": "table",
+                            "instant": true,
+                            "legendFormat": "",
+                            "refId": "B"
                          }
                       ],
                       "thresholds": [ ],
@@ -44866,6 +45572,12 @@ data:
                          "value_type": "individual"
                       },
                       "transform": "table",
+                      "transformations": [
+                         {
+                            "id": "merge",
+                            "options": { }
+                         }
+                      ],
                       "type": "table",
                       "xaxis": {
                          "buckets": null,
@@ -44892,6 +45604,73 @@ data:
                             "show": false
                          }
                       ]
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "others"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#8F8F8F",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 17,
+                      "options": {
+                         "displayLabels": [ ],
+                         "legend": {
+                            "displayMode": "list",
+                            "placement": "right",
+                            "showLegend": true,
+                            "values": [ ]
+                         },
+                         "pieType": "donut",
+                         "reduceOptions": {
+                            "calcs": [
+                               "lastNotNull"
+                            ],
+                            "fields": "",
+                            "values": false
+                         },
+                         "sort": "none",
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sort_desc(topk($limit, sum by (user) (sum by (user) (rate(cortex_distributor_received_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[5m])))))",
+                            "format": "time_series",
+                            "instant": true,
+                            "legendFormat": "{{ user }}",
+                            "refId": "A"
+                         },
+                         {
+                            "expr": "sum(\n  (sum by (user) (sum by (user) (rate(cortex_distributor_received_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[5m]))))\n  unless\n  topk($limit, sum by (user) (sum by (user) (rate(cortex_distributor_received_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[5m]))))\n)\n",
+                            "format": "time_series",
+                            "instant": true,
+                            "legendFormat": "others",
+                            "refId": "B"
+                         }
+                      ],
+                      "title": "Share of the total",
+                      "type": "piechart"
                    }
                 ],
                 "repeat": null,
@@ -44932,7 +45711,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byName",
-                                  "options": "Value"
+                                  "options": "Value #A"
                                },
                                "properties": [
                                   {
@@ -44946,6 +45725,26 @@ data:
                                   {
                                      "id": "unit",
                                      "value": "short"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Value #B"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "% of total"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 1
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "percentunit"
                                   }
                                ]
                             },
@@ -44968,11 +45767,29 @@ data:
                                      "value": "string"
                                   }
                                ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "links",
+                                     "value": [
+                                        {
+                                           "targetBlank": true,
+                                           "title": "Tenant dashboard for ${__value.raw}",
+                                           "url": "./d/35fa247ce651ba189debf33d7ae41611/mimir-tenants?${__url_time_range}&${__all_variables}&var-user=${__value.raw:percentencode}"
+                                        }
+                                     ]
+                                  }
+                               ]
                             }
                          ]
                       },
                       "fill": 1,
-                      "id": 12,
+                      "id": 18,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -44996,7 +45813,7 @@ data:
                          "desc": true
                       },
                       "spaceLength": 10,
-                      "span": 12,
+                      "span": 9,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -45006,6 +45823,13 @@ data:
                             "instant": true,
                             "legendFormat": "",
                             "refId": "A"
+                         },
+                         {
+                            "expr": "topk($limit, sum by (rule_group, user) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"})) / scalar(sum(sum by (rule_group, user) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"})))",
+                            "format": "table",
+                            "instant": true,
+                            "legendFormat": "",
+                            "refId": "B"
                          }
                       ],
                       "thresholds": [ ],
@@ -45018,6 +45842,12 @@ data:
                          "value_type": "individual"
                       },
                       "transform": "table",
+                      "transformations": [
+                         {
+                            "id": "merge",
+                            "options": { }
+                         }
+                      ],
                       "type": "table",
                       "xaxis": {
                          "buckets": null,
@@ -45044,6 +45874,73 @@ data:
                             "show": false
                          }
                       ]
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "others"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#8F8F8F",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 19,
+                      "options": {
+                         "displayLabels": [ ],
+                         "legend": {
+                            "displayMode": "list",
+                            "placement": "right",
+                            "showLegend": true,
+                            "values": [ ]
+                         },
+                         "pieType": "donut",
+                         "reduceOptions": {
+                            "calcs": [
+                               "lastNotNull"
+                            ],
+                            "fields": "",
+                            "values": false
+                         },
+                         "sort": "none",
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sort_desc(topk($limit, sum by (rule_group, user) (sum by (rule_group, user) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}))))",
+                            "format": "time_series",
+                            "instant": true,
+                            "legendFormat": "{{ user }} / {{ rule_group }}",
+                            "refId": "A"
+                         },
+                         {
+                            "expr": "sum(\n  (sum by (rule_group, user) (sum by (rule_group, user) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"})))\n  unless\n  topk($limit, sum by (rule_group, user) (sum by (rule_group, user) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"})))\n)\n",
+                            "format": "time_series",
+                            "instant": true,
+                            "legendFormat": "others",
+                            "refId": "B"
+                         }
+                      ],
+                      "title": "Share of the total",
+                      "type": "piechart"
                    }
                 ],
                 "repeat": null,
@@ -45120,11 +46017,29 @@ data:
                                      "value": "string"
                                   }
                                ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "links",
+                                     "value": [
+                                        {
+                                           "targetBlank": true,
+                                           "title": "Tenant dashboard for ${__value.raw}",
+                                           "url": "./d/35fa247ce651ba189debf33d7ae41611/mimir-tenants?${__url_time_range}&${__all_variables}&var-user=${__value.raw:percentencode}"
+                                        }
+                                     ]
+                                  }
+                               ]
                             }
                          ]
                       },
                       "fill": 1,
-                      "id": 13,
+                      "id": 20,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -45236,7 +46151,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byName",
-                                  "options": "Value"
+                                  "options": "Value #A"
                                },
                                "properties": [
                                   {
@@ -45250,6 +46165,26 @@ data:
                                   {
                                      "id": "unit",
                                      "value": "short"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Value #B"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "% of total"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 1
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "percentunit"
                                   }
                                ]
                             },
@@ -45272,11 +46207,29 @@ data:
                                      "value": "string"
                                   }
                                ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "links",
+                                     "value": [
+                                        {
+                                           "targetBlank": true,
+                                           "title": "Tenant dashboard for ${__value.raw}",
+                                           "url": "./d/35fa247ce651ba189debf33d7ae41611/mimir-tenants?${__url_time_range}&${__all_variables}&var-user=${__value.raw:percentencode}"
+                                        }
+                                     ]
+                                  }
+                               ]
                             }
                          ]
                       },
                       "fill": 1,
-                      "id": 14,
+                      "id": 21,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -45300,16 +46253,23 @@ data:
                          "desc": true
                       },
                       "spaceLength": 10,
-                      "span": 12,
+                      "span": 9,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "topk($limit,\n  sum by (user) (cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"})\n  and ignoring(user)\n  (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])) == 0)\n)\n",
+                            "expr": "topk($limit, sum by (user) (cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"})\nand ignoring(user)\n(sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])) == 0)\n)",
                             "format": "table",
                             "instant": true,
                             "legendFormat": "",
                             "refId": "A"
+                         },
+                         {
+                            "expr": "topk($limit, sum by (user) (cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"})\nand ignoring(user)\n(sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])) == 0)\n) / scalar(sum(sum by (user) (cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"})\nand ignoring(user)\n(sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])) == 0)\n))",
+                            "format": "table",
+                            "instant": true,
+                            "legendFormat": "",
+                            "refId": "B"
                          }
                       ],
                       "thresholds": [ ],
@@ -45322,6 +46282,12 @@ data:
                          "value_type": "individual"
                       },
                       "transform": "table",
+                      "transformations": [
+                         {
+                            "id": "merge",
+                            "options": { }
+                         }
+                      ],
                       "type": "table",
                       "xaxis": {
                          "buckets": null,
@@ -45348,6 +46314,73 @@ data:
                             "show": false
                          }
                       ]
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "others"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#8F8F8F",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 22,
+                      "options": {
+                         "displayLabels": [ ],
+                         "legend": {
+                            "displayMode": "list",
+                            "placement": "right",
+                            "showLegend": true,
+                            "values": [ ]
+                         },
+                         "pieType": "donut",
+                         "reduceOptions": {
+                            "calcs": [
+                               "lastNotNull"
+                            ],
+                            "fields": "",
+                            "values": false
+                         },
+                         "sort": "none",
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sort_desc(topk($limit, sum by (user) (sum by (user) (cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"})\nand ignoring(user)\n(sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])) == 0)\n)))",
+                            "format": "time_series",
+                            "instant": true,
+                            "legendFormat": "{{ user }}",
+                            "refId": "A"
+                         },
+                         {
+                            "expr": "sum(\n  (sum by (user) (sum by (user) (cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"})\nand ignoring(user)\n(sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])) == 0)\n))\n  unless\n  topk($limit, sum by (user) (sum by (user) (cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"})\nand ignoring(user)\n(sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])) == 0)\n))\n)\n",
+                            "format": "time_series",
+                            "instant": true,
+                            "legendFormat": "others",
+                            "refId": "B"
+                         }
+                      ],
+                      "title": "Share of the total",
+                      "type": "piechart"
                    }
                 ],
                 "repeat": null,
@@ -45424,11 +46457,29 @@ data:
                                      "value": "string"
                                   }
                                ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "links",
+                                     "value": [
+                                        {
+                                           "targetBlank": true,
+                                           "title": "Tenant dashboard for ${__value.raw}",
+                                           "url": "./d/35fa247ce651ba189debf33d7ae41611/mimir-tenants?${__url_time_range}&${__all_variables}&var-user=${__value.raw:percentencode}"
+                                        }
+                                     ]
+                                  }
+                               ]
                             }
                          ]
                       },
                       "fill": 1,
-                      "id": 15,
+                      "id": 23,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -47777,7 +48828,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_written_bytes_total[$__rate_interval]\n  )\n)\n+\nignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"ingester\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_writes_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"ingester\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -47825,7 +48876,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_read_bytes_total[$__rate_interval]\n  )\n) + ignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"ingester\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_reads_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"ingester\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -50653,7 +51704,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum by(cluster, namespace, metric, scaledObject, scaler) (\n  label_replace(\n    rate(keda_scaler_errors[$__rate_interval]),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, metric, scaledObject) (\n    label_replace(\n      label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?distributor.*\"} * 0,\n          \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(?:mimir-)?(.*)\"\n      ),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    )\n  )\n",
+                            "expr": "sum by(cluster, namespace, metric, scaledObject, scaler) (\n  label_replace(\n    # Prefer the modern counter, with a fallback for KEDA versions before 2.14.\n    (rate(keda_scaler_detail_errors_total[$__rate_interval]) or rate(keda_scaler_errors[$__rate_interval])),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, metric, scaledObject) (\n    label_replace(\n      label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?distributor.*\"} * 0,\n          \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(?:mimir-)?(.*)\"\n      ),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    )\n  )\n",
                             "format": "time_series",
                             "legendFormat": "{{scaler}} failures",
                             "legendLink": null

@@ -120,6 +120,7 @@
       alertmanager: ['alertmanager', 'cortex', 'mimir'],
       overrides_exporter: ['overrides-exporter'],
       usage_tracker: ['usage-tracker.*'],
+      memcached_cardinality: ['memcached-cardinality'],
 
       // The following are job matchers used to select all components in the read path.
       main_read_path: std.uniq(std.sort(self.query_frontend + self.query_scheduler + self.querier)),
@@ -297,6 +298,12 @@
 
     // Whether mimir compactor scheduler is enabled (experimental)
     compactor_scheduler_enabled: false,
+
+    // Whether the query-frontend dedicated cardinality estimation cache is enabled (experimental)
+    cache_cardinality_enabled: false,
+
+    // Whether queue reservation between query-frontends and query-schedulers is enabled (experimental)
+    queue_reservation_enabled: false,
 
     // Whether mimir compactors run in standalone mode (not pulling jobs from the scheduler)
     compactor_standalone_enabled: true,

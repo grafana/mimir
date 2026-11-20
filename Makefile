@@ -10,7 +10,7 @@ help:
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-and-lint print-supported-os-arch
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc generate-doc clean-doc check-doc check-reference-help license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-and-lint print-supported-os-arch
 .DEFAULT_GOAL := all
 
 # Version number
@@ -246,7 +246,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr17128-e96c699693@sha256:09029fbe7fd4ba122022eb2f3dd5d6e184f8c1f2001032c8fd4f007e73301738
+LATEST_BUILD_IMAGE_TAG ?= pr17304-92dfc487c3@sha256:002f5180a3357e51f64ac1159f724af2b236538a11af9fd3504129ff9f8014f4
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -276,7 +276,7 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests sync-upstream-promql-tests disable-failing-upstream-promql-tests format-protobuf check-protobuf-format generate-node-methods check-node-methods clean-node-methods build-jsonnet-tests check-jsonnet-tests: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-checklocks lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos generate-doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests sync-upstream-promql-tests disable-failing-upstream-promql-tests format-protobuf check-protobuf-format generate-node-methods check-node-methods clean-node-methods build-jsonnet-tests check-jsonnet-tests: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) BINARY_SUFFIX=$(BINARY_SUFFIX) DASHBOARDS_HISTOGRAM_MODE=$(DASHBOARDS_HISTOGRAM_MODE) MIMIR_SYNC_BASELINE_REF=$(MIMIR_SYNC_BASELINE_REF) $@;
 
@@ -348,8 +348,13 @@ lint-gh-action: operations/mimir-rules-action/entrypoint.sh
 # so golangci-lint and faillint can reuse cached compiled packages.
 LINT_GO_ENV := CGO_ENABLED=0 GOFLAGS="-tags=$(GO_TAGS)"
 
+.PHONY: lint-checklocks
+lint-checklocks: ## Check mutex contracts in the annotated packages.
+	@command -v checklocks >/dev/null || { echo "checklocks not found; run this target in mimir-build-image or install checklocks on PATH" >&2; exit 1; }
+	$(LINT_GO_ENV) go vet -vettool=$$(command -v checklocks) -inferred=false ./pkg/querier/worker ./pkg/usagetracker/usagetrackerclient
+
 lint: ## Run lints to check for style issues.
-lint: check-makefiles check-merge-conflicts
+lint: check-makefiles check-merge-conflicts lint-checklocks
 	misspell -error $(DOC_SOURCES_PATH)
 
 	./tools/find-unpooled-slice-creation.sh
@@ -417,7 +422,6 @@ lint: check-makefiles check-merge-conflicts
 	# a lint ignore directive to skip linting).
 	$(LINT_GO_ENV) faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\
 		golang.org/x/net/context=context,\
-		sync/atomic=go.uber.org/atomic,\
 		regexp=github.com/grafana/regexp,\
 		github.com/go-kit/kit/log/...=github.com/go-kit/log,\
 		github.com/prometheus/client_golang/prometheus.{MultiError}=github.com/prometheus/prometheus/tsdb/errors.{NewMulti},\
@@ -609,10 +613,8 @@ check-protobuf-format:
 %.md.embedmd : %.md
 	embedmd -w $<
 
-doc: ## Generates the config file documentation.
-doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
-	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
-	prettier --write "**/*.md"
+generate-doc: ## Generates the config file documentation, without formatting it.
+generate-doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
 	# Make operations/helm/charts/*/README.md
 	helm-docs
 
@@ -777,6 +779,19 @@ list-image-targets: ## List all images building make targets.
 
 clean-doc: ## Clean the documentation files generated from templates.
 	rm -f $(DOC_TEMPLATES:.template=.md)
+
+# Prettier needs Node.js, which is not in the build image. Run it in a Node.js image, or with the Node.js on the PATH.
+PRETTIER_VERSION := 3.8.4
+ifeq ($(BUILD_IN_CONTAINER),true)
+PRETTIER := $(SUDO) docker run --rm -u $(shell id -u):$(shell id -g) -e HOME=/tmp -v $(CURDIR):/src:$(CONTAINER_MOUNT_OPTIONS) -w /src node:$(shell cat .node-version)-alpine npx --yes prettier@$(PRETTIER_VERSION)
+else
+PRETTIER := npx --yes prettier@$(PRETTIER_VERSION)
+endif
+
+doc: ## Generates the config file documentation.
+doc: generate-doc
+	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
+	$(PRETTIER) --write "**/*.md"
 
 check-doc: ## Check the documentation files are up to date.
 check-doc: doc

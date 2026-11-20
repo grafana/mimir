@@ -4,6 +4,12 @@
     'config:recommended',
     'schedule:daily'
   ],
+  customDatasources: {
+    'gvisor-go': {
+      defaultRegistryUrlTemplate: 'https://proxy.golang.org/gvisor.dev/gvisor/@v/go.info',
+      transformTemplates: ['{"releases": [{"version": Version}]}'],
+    },
+  },
   customManagers: [
     {
       customType: 'regex',
@@ -52,14 +58,12 @@
     },
     {
       customType: 'regex',
-      description: 'Update "npm install" commands in development Dockerfiles',
-      managerFilePatterns: [
-        'mimir-build-image/Dockerfile',
-        'development/**/dev.dockerfile',
-      ],
+      description: 'Update prettier in Makefile',
+      managerFilePatterns: ['Makefile'],
       matchStrings: [
-        'npm install\\s+(?:-[^\\s]+\\s+)*(?<depName>[^@\\s]+)@(?<currentValue>[^\\s]+)',
+        'PRETTIER_VERSION := (?<currentValue>[^\\s]+)',
       ],
+      depNameTemplate: 'prettier',
       datasourceTemplate: 'npm',
     },
     {
@@ -98,6 +102,14 @@
   ],
   packageRules: [
     {
+      description: 'Track checklocks pseudo-versions from the gVisor go branch weekly',
+      matchDatasources: ['custom.gvisor-go'],
+      matchPackageNames: ['gvisor.dev/gvisor'],
+      versioning: 'semver',
+      ignoreUnstable: false,
+      schedule: ['* 0-4 * * 1'],
+    },
+    {
       matchBaseBranches: [
         'release-3.2',
         'release-3.1',
@@ -107,6 +119,16 @@
       matchPackageNames: [
         '*',
       ],
+    },
+    {
+      description: 'Disable lock file maintenance on release-2.17',
+      matchBaseBranches: [
+        'release-2.17',
+      ],
+      matchUpdateTypes: [
+        'lockFileMaintenance',
+      ],
+      enabled: false,
     },
     {
       // Don't update replace directives.
@@ -122,6 +144,20 @@
         'github.com/charleskorn/go-grpc',
         'github.com/grafana/mimir-otlptranslator',
         'github.com/prometheus/alertmanager',
+      ],
+      enabled: false,
+    },
+    {
+      description: 'Keep franz-go below v1.22, see the replace directive in go.mod',
+      matchPackageNames: [
+        'github.com/twmb/franz-go',
+      ],
+      allowedVersions: '<1.22.0',
+    },
+    {
+      description: 'Do not update franz-go/pkg/kfake: newer versions need franz-go v1.22 or later',
+      matchPackageNames: [
+        'github.com/twmb/franz-go/pkg/kfake',
       ],
       enabled: false,
     },

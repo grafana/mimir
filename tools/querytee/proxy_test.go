@@ -1482,8 +1482,8 @@ func TestProxy_Pprof(t *testing.T) {
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
 
-	assert.Equal(t, http.StatusOK, res.StatusCode)
-	assert.Equal(t, "text/plain; charset=utf-8", res.Header.Get("Content-Type"))
+	assert.Equal(t, http.StatusNotFound, res.StatusCode)
+	assert.Equal(t, "text/plain", res.Header.Get("Content-Type"))
 	assert.NotEmpty(t, string(body))
 }
 

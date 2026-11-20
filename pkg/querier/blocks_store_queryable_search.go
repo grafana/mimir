@@ -575,6 +575,10 @@ func blockIDsToBlockMatchers(blockIDs []ulid.ULID) []storepb.LabelMatcher {
 
 // paramsToSGProto returns nil for nil/empty Params. An unknown FuzzAlg is an
 // error, so that an algorithm with no wire value is not sent as subsequence.
+//
+// It does not send the cursor of p yet, because a store-gateway that predates
+// cursors would ignore it. The change that sends it must also send a filter
+// for Params without terms, since a cursor search can have none.
 func paramsToSGProto(p *streaminglabelvalues.Params) (*storepb.SearchFilter, error) {
 	if p == nil || len(p.Terms) == 0 {
 		return nil, nil

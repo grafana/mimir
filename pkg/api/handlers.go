@@ -281,6 +281,7 @@ func NewQuerierHandler(
 		promqlext.NewPromQLParser(),
 		false, // Disable the experimental query cost feature.
 		0,     // Query timeout, only used by the query cost feature.
+		0,     // Disable the default time range for metadata requests that omit start or end.
 	)
 
 	api.InstallCodec(protobufCodec{})

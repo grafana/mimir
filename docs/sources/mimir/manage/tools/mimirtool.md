@@ -1202,23 +1202,25 @@ The `backfill` command can optionally run a pre-verification step on blocks inte
 
 - `meta.json` correctness.
 - Block well-formedness checks (either basic or full consistency).
-- Whether blocks cover distinct time periods or overlap.
+- Whether blocks overlap in time, which is only allowed between blocks in different shards with the same shard count.
 - That blocks do not cross the midnight UTC boundary.
 - (Optionally) Enforce one-day-for-one-block structure.
+
+The day and overlap checks read the `__compactor_shard_id__` external label. A UTC day, or a group of blocks whose time ranges overlap directly or through other blocks in the group, passes only if it contains a single block, or if every block in it is sharded with the same shard count and no shard ID repeats. An unsharded block can contain any series, so it cannot share a day or overlap with any other block. Shard counts nest, for example the series in a `1_of_4` block are a subset of those a `1_of_2` block can hold, so blocks with different shard counts cannot share a day or overlap either. A production compactor can legitimately hold blocks with several shard counts for the same period, but backfilled data is intentionally required to use a single shard count per day or period. The checks only compare labels: they do not verify that the series in a block actually hash into the shard its label names.
 
 Blocks that pass these checks are more likely, but not guaranteed to be accepted when uploaded to Mimir.
 If the blocks intended for upload fail these checks, it may be necessary to either regenerate the blocks with different options, or use a compaction tool to coerce them into the right shape.
 Note that Mimir may also perform its own verification checks that may differ from these ones performed locally, so a set of blocks that pass these checks may still be rejected during backfill.
 The process of correcting verification errors, whether local or remote, is outside the scope of this document.
 
-| Flag                     | Default | Description                                                                                                                                                                                                            |
-| ------------------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--verify`               | `false` | Enable verification of blocks before uploading.                                                                                                                                                                        |
-| `--dry-run`              | `false` | Only perform verification, do not upload. Implies `--verify`.                                                                                                                                                          |
-| `--fail-fast`            | `true`  | Abort verification on the first error encountered. When `false`, collects a report of all errors detected during verification.                                                                                         |
-| `--deep-verification`    | `true`  | When verifying, performs a deep introspection of individual chunks for consistency. Can be skipped for some workflows with high confidence in the integrity of created blocks.                                         |
-| `--single-block-per-day` | `false` | When `true`, enforces that each block covers at most a single UTC day, and each UTC day has at most one corresponding block. When `false`, only enforces that blocks do not cross the day boundary and do not overlap. |
-| `--verify-concurrency`   | `0`     | Sets the number of goroutines for performing verification. If `0`, defaults to `GOMAXPROCS` or `4`, whichever is smaller.                                                                                              |
+| Flag                     | Default | Description                                                                                                                                                                                                                                                         |
+| ------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--verify`               | `false` | Enable verification of blocks before uploading.                                                                                                                                                                                                                     |
+| `--dry-run`              | `false` | Only perform verification, do not upload. Implies `--verify`.                                                                                                                                                                                                       |
+| `--fail-fast`            | `true`  | Abort verification on the first error encountered. When `false`, collects a report of all errors detected during verification.                                                                                                                                      |
+| `--deep-verification`    | `true`  | When verifying, performs a deep introspection of individual chunks for consistency. Can be skipped for some workflows with high confidence in the integrity of created blocks.                                                                                      |
+| `--single-block-per-day` | `false` | When `true`, enforces that a UTC day has a single block, unless all blocks on that day are sharded with the same shard count and distinct shard IDs. When `false`, applies the same rule to overlapping blocks. Either way, blocks must not cross the day boundary. |
+| `--verify-concurrency`   | `0`     | Sets the number of goroutines for performing verification. If `0`, defaults to `GOMAXPROCS` or `4`, whichever is smaller.                                                                                                                                           |
 
 ##### Example
 

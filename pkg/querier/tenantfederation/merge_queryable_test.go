@@ -1707,6 +1707,45 @@ func TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsLimit(t *test
 	assert.Equal(t, []string{"team-a", "team-b"}, drainSearchResultSet(t, rs))
 }
 
+func TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsCursor(t *testing.T) {
+	src := &searchableTenantQueryable{}
+	q := NewQueryable(src, false, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(t.Context(), "team-a|team-b|team-c")
+
+	tests := []struct {
+		name        string
+		order       storage.Ordering
+		resumeAfter string
+		scoreAfter  float64
+		limit       int
+		want        []string
+	}{
+		{name: "OrderByValueAsc", order: storage.OrderByValueAsc, resumeAfter: "team-a", want: []string{"team-b", "team-c"}},
+		{name: "OrderByValueDesc", order: storage.OrderByValueDesc, resumeAfter: "team-c", want: []string{"team-b", "team-a"}},
+		{name: "OrderByScoreDesc", order: storage.OrderByScoreDesc, resumeAfter: "team-a", scoreAfter: 1, want: []string{"team-b", "team-c"}},
+		{name: "OrderByValueDesc applies the cursor before the limit", order: storage.OrderByValueDesc, resumeAfter: "team-c", limit: 1, want: []string{"team-b"}},
+		{name: "OrderByScoreDesc applies the cursor before the limit", order: storage.OrderByScoreDesc, resumeAfter: "team-a", scoreAfter: 1, limit: 1, want: []string{"team-b"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			params, err := streaminglabelvalues.NewParams(nil, true, streaminglabelvalues.FuzzAlgSubsequence, 0)
+			require.NoError(t, err)
+			params, err = params.WithCursor(tc.resumeAfter, tc.scoreAfter)
+			require.NoError(t, err)
+
+			rs := s.SearchLabelValues(ctx, defaultTenantLabel, params, &storage.SearchHints{OrderBy: tc.order, Limit: tc.limit})
+			defer rs.Close()
+			assert.Equal(t, tc.want, drainSearchResultSet(t, rs))
+		})
+	}
+}
+
 // TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_BypassNotInjected
 // pins the bypass contract: with bypassWithSingleID=true and a single
 // tenant, the synthetic label is NOT injected — the request is forwarded

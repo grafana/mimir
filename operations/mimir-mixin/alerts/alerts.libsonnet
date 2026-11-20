@@ -324,9 +324,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 rate(thanos_cache_operation_failures_total{operation!~"add|delete"}[%(rate_interval)s])
               )
               /
-              sum by(%(group_by)s, name, operation) (
-                rate(thanos_cache_operations_total{operation!~"add|delete"}[%(rate_interval)s])
-              ) > 10
+              (
+                sum by(%(group_by)s, name, operation) (
+                  rate(thanos_cache_operations_total{operation!~"add|delete"}[%(rate_interval)s])
+                ) > 10
+              )
             ) * 100 > 5
           ||| % {
             group_by: $._config.alert_aggregation_labels,

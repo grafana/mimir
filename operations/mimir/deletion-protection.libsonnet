@@ -4,6 +4,7 @@
     // disable the deletion protection first, and then delete the StatefulSets.
     ingester_deletion_protection_enabled: false,
     store_gateway_deletion_protection_enabled: false,
+    usage_tracker_deletion_protection_enabled: false,
   },
 
   local policy = $.admissionregistration.v1.validatingAdmissionPolicy,
@@ -47,4 +48,9 @@
   local storeGatewayProtection = $.newStatefulSetDeletionProtectionPolicy('store-gateway'),
   store_gateway_deletion_protection_policy: if !$._config.store_gateway_deletion_protection_enabled then null else storeGatewayProtection.policy,
   store_gateway_deletion_protection_policy_binding: if !$._config.store_gateway_deletion_protection_enabled then null else storeGatewayProtection.binding,
+
+  // Usage-tracker deletion protection. The 'usage-tracker-zone' prefix matches only the usage-tracker zone StatefulSets.
+  local usageTrackerProtection = $.newStatefulSetDeletionProtectionPolicy('usage-tracker-zone'),
+  usage_tracker_deletion_protection_policy: if !$._config.usage_tracker_deletion_protection_enabled then null else usageTrackerProtection.policy,
+  usage_tracker_deletion_protection_policy_binding: if !$._config.usage_tracker_deletion_protection_enabled then null else usageTrackerProtection.binding,
 }

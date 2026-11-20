@@ -25,7 +25,7 @@ Since the query-frontend fetches offsets only for in-use partitions (fetching fo
 too expensive on the Kafka backend), there may be short-time race conditions during which the query-frontend sees
 a subset of the in-use partitions. For example, during a partitions scale up event, when the query hits the querier
 there may be more partitions than when it was processed by the query-frontend. To overcome these race conditions,
-the ingester also periodically fetchs the last produced offset for its partition. If the offset is missing from the
+the ingester also periodically fetches the last produced offset for its partition. If the offset is missing from the
 context, the ingester will fallback to the last produced offset fetched by itself. The ingester uses the same fetching
 strategy of the query-frontend, which is waiting for the result of the next last produce offset periodic request that
 will be issued.
@@ -60,7 +60,7 @@ We benchmarked it taking in account what we consider the worst case scenario:
 
 ### Encoding performance
 
-The encoding is the process to covert a `map[int32]int64` into the HTTP header value string.
+The encoding is the process to convert a `map[int32]int64` into the HTTP header value string.
 
 | Encoding format                                                                                    | CPU         | Memory     | Allocations |
 | -------------------------------------------------------------------------------------------------- | ----------- | ---------- | ----------- |
@@ -74,7 +74,7 @@ The encoding is the process to covert a `map[int32]int64` into the HTTP header v
 
 ### Decoding performance
 
-The decoding is the process to covert the HTTP header value string into a `map[int32]int64`.
+The decoding is the process to convert the HTTP header value string into a `map[int32]int64`.
 
 | Encoding format                                                                                    | CPU         | Memory      | Allocations  |
 | -------------------------------------------------------------------------------------------------- | ----------- | ----------- | ------------ |

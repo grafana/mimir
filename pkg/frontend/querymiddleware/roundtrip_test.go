@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
@@ -94,6 +95,7 @@ func TestTripperware_RangeQuery(t *testing.T) {
 		engineOpts,
 		nil,
 		false,
+		false,
 		nil,
 		nil,
 		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
@@ -149,6 +151,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		engine,
 		engineOpts,
 		nil,
+		false,
 		false,
 		nil,
 		nil,
@@ -231,6 +234,65 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		resultTime := res.(model.Vector)[0].Timestamp.Time()
 		require.Equal(t, postFormTimeParam.Unix(), resultTime.Unix())
 	})
+}
+
+func TestTripperware_LegacyCardinalityEstimationUsesDedicatedCache(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	codec := newTestCodec()
+	limits := mockLimits{totalShards: 8}
+	resultsCache := cache.NewMockCache()
+	cardinalityCache := cache.NewMockCache()
+
+	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
+	tw, err := NewTripperware(
+		makeTestConfig(func(cfg *Config) {
+			cfg.UseMQEForSplittingAndCachingResults = false
+			cfg.ShardedQueries = true
+			cfg.UseMQEForSharding = false
+			cfg.TargetSeriesPerShard = 1000
+			cfg.CardinalityEstimationCacheClient = cardinalityCache
+		}),
+		log.NewNopLogger(),
+		limits,
+		newMockQueryLimitsProvider(&limits),
+		codec,
+		resultsCache,
+		nil,
+		engine,
+		engineOpts,
+		nil,
+		false,
+		false,
+		nil,
+		nil,
+		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
+	)
+	require.NoError(t, err)
+
+	rt := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return codec.EncodeMetricsQueryResponse(r.Context(), r, &PrometheusResponse{
+			Status: "success",
+			Data:   &PrometheusData{ResultType: "vector"},
+		})
+	})
+
+	queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: tw(rt)})
+	require.NoError(t, err)
+	_, _, _, err = v1.NewAPI(queryClient).Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC))
+	require.NoError(t, err)
+
+	// The version prefix keeps the keys the same as when the results cache held the estimates.
+	expectedPrefix := fmt.Sprintf("%d@QS:", resultsCacheVersion)
+	hasCardinalityKey := func(items map[string]cache.Item) bool {
+		for k := range items {
+			if strings.HasPrefix(k, expectedPrefix) {
+				return true
+			}
+		}
+		return false
+	}
+	require.True(t, hasCardinalityKey(cardinalityCache.GetItems()), "cardinality cache should hold the estimate")
+	require.False(t, hasCardinalityKey(resultsCache.GetItems()), "results cache should not hold the estimate")
 }
 
 func TestTripperware_Metrics(t *testing.T) {
@@ -482,6 +544,7 @@ func TestTripperware_Metrics(t *testing.T) {
 				engineOpts,
 				nil,
 				false,
+				false,
 				nil,
 				reg,
 				limiter.NewInflightMemoryConsumptionTracker(reg, nil),
@@ -548,6 +611,7 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 		engine,
 		engineOpts,
 		nil,
+		false,
 		false,
 		nil,
 		nil,
@@ -627,6 +691,7 @@ func TestTripperware_ShouldRetryFailedRequestsUpToMaxRetries(t *testing.T) {
 				engineOpts,
 				nil,
 				false,
+				false,
 				nil,
 				reg,
 				limiter.NewInflightMemoryConsumptionTracker(reg, nil),
@@ -672,6 +737,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 		limits,
 		newMockQueryLimitsProvider(&limits),
 		newTestCodec(),
+		nil,
 		nil,
 		nil,
 		nil,
@@ -913,6 +979,7 @@ func TestTripperware_RemoteRead(t *testing.T) {
 				engineOpts,
 				nil,
 				false,
+				false,
 				nil,
 				reg,
 				limiter.NewInflightMemoryConsumptionTracker(reg, nil),
@@ -1050,6 +1117,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		promEngine,
 		promOpts,
 		NewSingleClusterReadConsistencyOffsetsReader(offsetsReader),
+		false,
 		false,
 		nil,
 		nil,

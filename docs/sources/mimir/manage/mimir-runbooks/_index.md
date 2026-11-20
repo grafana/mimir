@@ -749,6 +749,17 @@ How to **investigate**:
 
 Same as [`MimirCompactorNotCleaningUpBlocks`](#MimirCompactorNotCleaningUpBlocks).
 
+### MimirCompactorNotDiscoveringTenants
+
+This alert fires when a Mimir compactor has not successfully listed the tenants in the bucket for blocks cleanup in the last 6 hours.
+The compactor continues to update the bucket index of the tenants that it already knows, but it doesn't create a bucket index for new tenants.
+
+How to **investigate**:
+
+- Look for errors about listing users in the compactor logs
+- Check the errors and the latency of the `iter` operation in `thanos_objstore_bucket_operation_failures_total` and `thanos_objstore_bucket_operation_duration_seconds`
+- Check if the object storage is slow or rate-limits list requests at the root of the bucket
+
 ### MimirCompactorHasNotUploadedBlocks
 
 This alert fires when a Mimir compactor is not uploading any compacted blocks to the storage since a long time.
@@ -1044,6 +1055,14 @@ How to **investigate**:
 - Check for object storage failures for the compactor
   ```
   sum(rate(thanos_objstore_bucket_operation_failures_total{namespace="<namespace>", component="compactor"}[$__rate_interval]))
+  ```
+- Check for slow `iter` operations on the bucket. Compactors list the bucket root to discover tenants before they update any bucket index.
+  ```
+  histogram_quantile(1, sum(rate(thanos_objstore_bucket_operation_duration_seconds{namespace="<namespace>", component="compactor", operation="iter"}[$__rate_interval])))
+  ```
+  For more precision, check the compactor cleanup logs. The gap between a run start and its first per-tenant message is the discovery time:
+  ```
+  {namespace="<namespace>", container="compactor", pod="<pod>"} |= "started blocks cleanup and maintenance"
   ```
 
 How to **fix** it:
@@ -2257,12 +2276,22 @@ How it **works**:
 - The block-builder periodically consumes data from a Kafka topic and processes the consumed data into TSDB blocks.
 - It compacts and uploads the produced TSDB blocks to object storage.
 - If the block-builder encounters issues while compacting or uploading the blocks, it reports the failure metric, which then triggers the alert.
+- When `-block-builder.verify-blocks-before-upload` is enabled, the block-builder also verifies the index of each block before uploading it. The checks are the ones the compactor runs on its source blocks: out-of-order labels, out-of-order chunks, and chunks outside the block time range. A block that fails verification isn't uploaded, fails the job, and is reported by both the failure metric and `cortex_blockbuilder_tsdb_block_verification_failed_total`.
 
 How to **investigate**:
 
 - Explore the block-builder logs to check what errors are there.
+- Check whether `cortex_blockbuilder_tsdb_block_verification_failed_total` increased, or look for `msg="block verification failed"` in the block-builder logs. If so, the block-builder built a corrupt block, and the failure isn't caused by object storage. The log line includes the partition, the job ID, the block ID, and the verification error, which names the check that failed.
 
 Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNoCycleProcessing` above.
+
+If a block failed verification:
+
+- Don't disable `-block-builder.verify-blocks-before-upload` to unblock the partition. Doing so uploads the corrupt block, and a block with out-of-order labels stops compaction for the tenant until it's marked `no-compact`.
+- The block-builder-scheduler retries the failed job automatically once its lease expires, possibly on a different worker. Until a retry succeeds, some of the job's data may be missing from object storage for the tenants on the partition. If a retry succeeds, no further action is needed for the data.
+- To check whether a retry succeeded, search the block-builder logs for the job ID. A later `msg="marking job as completed"` log line means it did. If the same job keeps failing, [`MimirBlockBuilderPersistentJobFailure`](#mimirblockbuilderpersistentjobfailure) also fires.
+- If failures of different jobs keep coming from the same node, suspect the node's hardware. Check its kernel logs for memory or disk errors, and cordon and drain it.
+- If the same job keeps failing on different workers, the cause is likely the data or a bug. Temporarily increase the Kafka topic retention to prevent data loss, and report the verification error, partition, and job ID to the Mimir maintainers.
 
 ### MimirBlockBuilderHasNotShippedBlocks
 
@@ -4100,7 +4129,7 @@ In the case of an ingester or store-gateway being `OOMKilled`, if you have the "
   - On multi-tenant Mimir clusters with **shuffle-sharding for queriers enabled**, you may consider to temporarily increase the shard size for affected tenants: be aware that this could affect other tenants too, reducing resources available to run other tenant queries. Alternatively, you may choose to do nothing and let Mimir return errors for that given user once the per-tenant queue is full.
   - On multi-tenant Mimir clusters with **query-sharding enabled** and **more than a few tenants** being affected: The workload exceeds the available downstream capacity. Scaling of queriers and potentially store-gateways should be considered.
   - On multi-tenant Mimir clusters with **query-sharding enabled** and **only a single tenant** being affected:
-    - Verify if the particular queries are hitting edge cases, where query-sharding is not benefical, by getting traces from the `Mimir / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
+    - Verify if the particular queries are hitting edge cases, where query-sharding is not beneficial, by getting traces from the `Mimir / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
     - Otherwise and only if the queries by the tenant are within reason representing normal usage, consider scaling of queriers and potentially store-gateways.
   - On a Mimir cluster with **querier auto-scaling enabled** after checking the health of the existing querier replicas, check to see if the auto-scaler has added additional querier replicas or if the maximum number of querier replicas has been reached and is not sufficient and should be increased.
 

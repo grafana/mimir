@@ -55,6 +55,7 @@ func TestIngesterSearchLabelNames(t *testing.T) {
 		caseInsens  bool
 		ordering    client.SearchOrdering
 		limit       int64
+		resumeAfter string
 		wantValues  []string
 	}{
 		{name: "no filter returns all", wantValues: []string{"__name__", "env", "status"}},
@@ -62,13 +63,15 @@ func TestIngesterSearchLabelNames(t *testing.T) {
 		{name: "case-insensitive 'ENV' matches", filterTerms: []string{"ENV"}, caseInsens: true, wantValues: []string{"env"}},
 		{name: "limit 1", limit: 1, wantValues: []string{"__name__"}},
 		{name: "value desc", ordering: client.ORDER_BY_VALUE_DESC, wantValues: []string{"status", "env", "__name__"}},
+		{name: "resume after", resumeAfter: "env", wantValues: []string{"status"}},
+		{name: "resume after value desc applies before the limit", ordering: client.ORDER_BY_VALUE_DESC, resumeAfter: "status", limit: 1, wantValues: []string{"env"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			req := &client.SearchLabelNamesRequest{
 				StartTimestampMs: 0,
 				EndTimestampMs:   200_000,
-				Filter:           &client.SearchFilter{Terms: tc.filterTerms, CaseInsensitive: tc.caseInsens},
+				Filter:           &client.SearchFilter{Terms: tc.filterTerms, CaseInsensitive: tc.caseInsens, ResumeAfter: tc.resumeAfter},
 				Ordering:         tc.ordering,
 				Limit:            tc.limit,
 			}
@@ -77,6 +80,9 @@ func TestIngesterSearchLabelNames(t *testing.T) {
 
 			var got []string
 			for _, b := range s.sent {
+				// Every batch says whether the server applied the cursor, so a
+				// caller can tell it from a server that predates cursors.
+				assert.Equal(t, tc.resumeAfter != "", b.CursorApplied)
 				for _, r := range b.Results {
 					got = append(got, r.Value)
 				}
@@ -118,6 +124,8 @@ func TestIngesterSearchLabelValues(t *testing.T) {
 		fuzzThreshold int32
 		ordering      client.SearchOrdering
 		limit         int64
+		resumeAfter   string
+		scoreAfter    float64
 		want          []string
 	}{
 		{name: "all status values", labelName: "status", want: []string{"200", "300", "500"}},
@@ -126,6 +134,12 @@ func TestIngesterSearchLabelValues(t *testing.T) {
 		{name: "limit 2", labelName: "status", limit: 2, want: []string{"200", "300"}},
 		{name: "value desc", labelName: "status", ordering: client.ORDER_BY_VALUE_DESC, want: []string{"500", "300", "200"}},
 		{name: "missing label returns empty", labelName: "missing"},
+		{name: "resume after skips values at or before the cursor", labelName: "status", resumeAfter: "200", want: []string{"300", "500"}},
+		{name: "resume after applies before the limit", labelName: "status", resumeAfter: "200", limit: 1, want: []string{"300"}},
+		{name: "resume after value desc", labelName: "status", ordering: client.ORDER_BY_VALUE_DESC, resumeAfter: "500", want: []string{"300", "200"}},
+		{name: "resume after score desc", labelName: "status", ordering: client.ORDER_BY_SCORE_DESC, resumeAfter: "200", scoreAfter: 1, want: []string{"300", "500"}},
+		{name: "resume after value desc applies before the limit", labelName: "status", ordering: client.ORDER_BY_VALUE_DESC, resumeAfter: "500", limit: 1, want: []string{"300"}},
+		{name: "resume after score desc applies before the limit", labelName: "status", ordering: client.ORDER_BY_SCORE_DESC, resumeAfter: "200", scoreAfter: 1, limit: 1, want: []string{"300"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -138,6 +152,8 @@ func TestIngesterSearchLabelValues(t *testing.T) {
 					CaseInsensitive: tc.caseInsens,
 					FuzzAlg:         tc.fuzzAlg,
 					FuzzThreshold:   tc.fuzzThreshold,
+					ResumeAfter:     tc.resumeAfter,
+					ScoreAfter:      tc.scoreAfter,
 				},
 				Ordering: tc.ordering,
 				Limit:    tc.limit,
@@ -147,6 +163,9 @@ func TestIngesterSearchLabelValues(t *testing.T) {
 
 			var got []string
 			for _, b := range s.sent {
+				// Every batch says whether the server applied the cursor, so a
+				// caller can tell it from a server that predates cursors.
+				assert.Equal(t, tc.resumeAfter != "", b.CursorApplied)
 				for _, r := range b.Results {
 					got = append(got, r.Value)
 				}
@@ -230,7 +249,7 @@ func TestStreamSearchResultsPropagatesWarnings(t *testing.T) {
 				sent = append(sent, b)
 				return nil
 			}
-			require.NoError(t, streamSearchResults(context.Background(), rs, send))
+			require.NoError(t, streamSearchResults(context.Background(), rs, false, send))
 			assert.Equal(t, tc.wantSent, sent)
 		})
 	}
@@ -263,7 +282,7 @@ func TestStreamSearchResultsPropagatesErrInsteadOfWarnings(t *testing.T) {
 		sent = append(sent, &client.SearchResultBatch{Results: out, Warnings: b.Warnings})
 		return nil
 	}
-	require.ErrorIs(t, streamSearchResults(context.Background(), rs, send), want)
+	require.ErrorIs(t, streamSearchResults(context.Background(), rs, false, send), want)
 	require.Len(t, sent, 1, "trailer batch carrying warnings must be suppressed when rs.Err() is non-nil")
 	assert.Len(t, sent[0].Results, searchBatchSize, "the mid-iteration flush carried the full batch")
 	assert.Empty(t, sent[0].Warnings, "warnings must never ride on mid-iteration batches")
@@ -290,7 +309,7 @@ func TestStreamSearchResultsBatching(t *testing.T) {
 		sent = append(sent, &client.SearchResultBatch{Results: results, Warnings: b.Warnings})
 		return nil
 	}
-	require.NoError(t, streamSearchResults(context.Background(), rs, send))
+	require.NoError(t, streamSearchResults(context.Background(), rs, false, send))
 	require.Len(t, sent, 2, "257 results must split into 2 batches at the searchBatchSize=256 boundary")
 	assert.Len(t, sent[0].Results, searchBatchSize, "first batch is full")
 	assert.Len(t, sent[1].Results, 1, "second batch carries the remainder")
@@ -350,6 +369,32 @@ func TestIngesterSearchLabelValuesRejectsUnknownFuzzAlgAsInvalidArgument(t *test
 	assert.Equal(t, "unknown fuzz algorithm 99", st.Message())
 }
 
+// TestIngesterSearchRejectsInvalidCursorAsInvalidArgument also covers a value
+// ordering, because the server validates score_after for every ordering.
+func TestIngesterSearchRejectsInvalidCursorAsInvalidArgument(t *testing.T) {
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(t.Context(), "test")
+	filter := &client.SearchFilter{ResumeAfter: "200", ScoreAfter: 1.5}
+
+	for name, search := range map[string]func() error{
+		"label names": func() error {
+			req := &client.SearchLabelNamesRequest{Filter: filter, Ordering: client.ORDER_BY_VALUE_ASC}
+			return i.SearchLabelNames(req, &mockSearchLabelNamesStream{ctx: ctx})
+		},
+		"label values": func() error {
+			req := &client.SearchLabelValuesRequest{Name: "status", Filter: filter, Ordering: client.ORDER_BY_SCORE_DESC}
+			return i.SearchLabelValues(req, &mockSearchLabelValuesStream{ctx: ctx})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			st, ok := grpcutil.ErrorToStatus(search())
+			require.True(t, ok, "expected gRPC status error")
+			assert.Equal(t, codes.InvalidArgument, st.Code())
+			assert.Equal(t, "score after 1.5 out of [0,1]", st.Message())
+		})
+	}
+}
+
 func TestProtoToParamsFuzzAlg(t *testing.T) {
 	tests := []struct {
 		wire client.SearchFilter_FuzzAlg
@@ -392,7 +437,7 @@ func TestStreamSearchResults(t *testing.T) {
 			sent = append(sent, &client.SearchResultBatch{Results: out, Warnings: b.Warnings})
 			return nil
 		}
-		require.NoError(t, streamSearchResults(context.Background(), rs, send))
+		require.NoError(t, streamSearchResults(context.Background(), rs, false, send))
 		require.Len(t, sent, 2)
 		require.Len(t, sent[0].Results, searchBatchSize)
 		require.Len(t, sent[1].Results, 1)
@@ -405,7 +450,7 @@ func TestStreamSearchResults(t *testing.T) {
 			sent = append(sent, &client.SearchResultBatch{Results: append([]client.SearchResultBatch_Result(nil), b.Results...), Warnings: b.Warnings})
 			return nil
 		}
-		require.NoError(t, streamSearchResults(context.Background(), rs, send))
+		require.NoError(t, streamSearchResults(context.Background(), rs, false, send))
 		require.Len(t, sent, 1)
 		assert.Empty(t, sent[0].Results)
 		assert.Equal(t, []string{"all clamped"}, sent[0].Warnings)
@@ -424,7 +469,7 @@ func TestStreamSearchResultsHonoursCtxCancellation(t *testing.T) {
 	rs := &fakeSearchResultSet{results: results}
 	send := func(_ *client.SearchResultBatch) error { return nil }
 	cancel()
-	err := streamSearchResults(ctx, rs, send)
+	err := streamSearchResults(ctx, rs, false, send)
 	require.ErrorIs(t, err, context.Canceled)
 }
 

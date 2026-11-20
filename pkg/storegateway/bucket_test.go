@@ -1432,7 +1432,7 @@ func testBlockToBucketBlock(tb testing.TB, testBlock *fixtures.BucketTestBlock, 
 			})
 		require.NoError(tb, err)
 
-		indexReader, err := indexheader.NewStreamBinaryReader(context.Background(), testBlock.Meta.ULID, testBlock.InstrBkt, tb.TempDir(), cfg, mimir_tsdb.DefaultPostingOffsetInMemorySampling, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
+		indexReader, err := indexheader.NewStreamBinaryReader(context.Background(), testBlock.Meta.ULID, testBlock.InstrBkt, tb.TempDir(), cfg, streamindex.SamplingConfig{Factor: mimir_tsdb.DefaultPostingOffsetInMemorySampling}, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
 		require.NoError(tb, err)
 
 		return &bucketBlock{
@@ -2079,7 +2079,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			partitioners: newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
 		}
-		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), b1.meta.ULID, bkt, tmpDir, testIndexHeaderV1Config(), mimir_tsdb.DefaultPostingOffsetInMemorySampling, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
+		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), b1.meta.ULID, bkt, tmpDir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: mimir_tsdb.DefaultPostingOffsetInMemorySampling}, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
 		assert.NoError(t, err)
 	}
 
@@ -2118,7 +2118,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			partitioners: newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
 		}
-		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), b2.meta.ULID, bkt, tmpDir, testIndexHeaderV1Config(), mimir_tsdb.DefaultPostingOffsetInMemorySampling, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
+		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), b2.meta.ULID, bkt, tmpDir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: mimir_tsdb.DefaultPostingOffsetInMemorySampling}, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
 		assert.NoError(t, err)
 	}
 

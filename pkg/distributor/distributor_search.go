@@ -322,6 +322,10 @@ func buildSearchLabelValuesRequest(from, to model.Time, name string, params *str
 // paramsToProto returns nil for nil/empty Params — the ingester treats a
 // nil filter as accept-all. An unknown FuzzAlg is an error, so that an
 // algorithm with no wire value is not sent as subsequence.
+//
+// It does not send the cursor of p yet, because an ingester that predates
+// cursors would ignore it. The change that sends it must also send a filter
+// for Params without terms, since a cursor search can have none.
 func paramsToProto(p *streaminglabelvalues.Params) (*ingester_client.SearchFilter, error) {
 	if p == nil || len(p.Terms) == 0 {
 		return nil, nil

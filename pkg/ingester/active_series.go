@@ -122,7 +122,7 @@ func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matche
 
 	var postings index.Postings
 	if shard != nil && matchAllSeries(matchers) {
-		postings = getShardedAllPostings(ctx, db.Head(), shard.ShardIndex, shard.ShardCount)
+		postings = getShardedAllPostings(ctx, db.db.Head(), shard.ShardIndex, shard.ShardCount)
 	} else {
 		postings, err = tsdb.PostingsForMatchers(ctx, idx, matchers...)
 		if err != nil {

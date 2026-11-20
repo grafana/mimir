@@ -33,7 +33,7 @@ type Config struct {
 func main() {
 	// Parse CLI flags.
 	cfg := Config{}
-	flag.IntVar(&cfg.ServerMetricsPort, "server.metrics-port", 9900, "The port where metrics are exposed.")
+	flag.IntVar(&cfg.ServerMetricsPort, "server.metrics-port", 9900, "The port where metrics and profiles are exposed.")
 	cfg.ProxyConfig.RegisterFlags(flag.CommandLine)
 
 	// Parse CLI arguments.
@@ -52,7 +52,7 @@ func main() {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(collectors.NewGoCollector())
 
-	i := instrumentation.NewMetricsServer(cfg.ServerMetricsPort, registry, util_log.Logger)
+	i := instrumentation.NewInstrumentationServer(cfg.ServerMetricsPort, registry, util_log.Logger)
 	if err := i.Start(); err != nil {
 		level.Error(util_log.Logger).Log("msg", "Unable to start instrumentation server", "err", err.Error())
 		util_log.Flush()

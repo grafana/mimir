@@ -19,6 +19,8 @@ type API interface {
 	UserRegistryHandler(http.ResponseWriter, *http.Request)
 	TenantsHandler(http.ResponseWriter, *http.Request)
 	TenantTSDBHandler(http.ResponseWriter, *http.Request)
+	LabelChurnHandler(http.ResponseWriter, *http.Request)
+	LabelChurnPageHandler(http.ResponseWriter, *http.Request)
 	PrepareInstanceRingDownscaleHandler(http.ResponseWriter, *http.Request)
 	PushToStorageAndReleaseRequest(context.Context, *mimirpb.WriteRequest) error
 	NotifyPreCommit(ctx context.Context) error

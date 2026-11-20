@@ -353,6 +353,11 @@ type Options struct {
 	// is implemented.
 	EnableSTAsZeroSample bool
 
+	// EnableCommitStats makes appenders collect per-series CommitStats for
+	// samples dropped at Commit. The duplicate samples metric is updated
+	// either way.
+	EnableCommitStats bool
+
 	// EnableHistogramSTEncoding enables the ST-capable chunk encoding for
 	// integer and float histograms (EncHistogramST and EncFloatHistogramST).
 	// Independent of FloatChunkEncoding; only controls histogram families.
@@ -1339,6 +1344,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		headOpts.IndexLookupPlannerFunc = opts.IndexLookupPlannerFunc
 	}
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
+	headOpts.EnableCommitStats = opts.EnableCommitStats
 	headOpts.EnableSTStorage.Store(opts.EnableSTStorage)
 	headOpts.FloatChunkEncoding.Store(uint32(opts.FloatChunkEncoding))
 	headOpts.EnableHistogramSTEncoding.Store(opts.EnableHistogramSTEncoding)
@@ -2082,11 +2088,9 @@ func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSerie
 	return nil
 }
 
-// CompactStaleHead writes stale series into blocks and evicts those that are still
-// eligible for removal. Series whose exemplars still need replay remain in the head,
-// but their persisted sample chunks are released if otherwise eligible for eviction.
-// WAL replay may restore those samples after a restart until the global replay
-// cutoff passes them.
+// CompactStaleHead writes stale series into blocks and evicts those still eligible
+// for removal. Exemplars do not prevent eviction. Pending exemplars may be discarded,
+// and exemplar recovery after a restart is not guaranteed.
 func (db *DB) CompactStaleHead() (err error) {
 	db.cmtx.Lock()
 	defer func() {
@@ -2152,10 +2156,8 @@ func (db *DB) CompactStaleHead() (err error) {
 //
 // Series that received new samples after the ref list was collected are skipped during eviction
 // and remain in the head. They may be reconsidered during a subsequent compaction cycle.
-// Series with exemplars at or after the global replay cutoff also remain in the head,
-// until the cutoff passes the exemplar timestamps. Their persisted sample chunks are
-// released if the series is otherwise eligible for eviction. WAL replay may restore
-// those samples after a restart until the global replay cutoff passes them.
+// Exemplars do not prevent eviction. Pending exemplars may be discarded, and exemplar recovery
+// after a restart is not guaranteed.
 //
 // This operation persists only in-order chunks. Series with non-empty out-of-order state at the
 // time of compaction are therefore skipped as well, since evicting them would orphan their

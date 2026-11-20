@@ -71,27 +71,27 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 - Grafana Mimir removes the legacy HTTP prefixes deprecated in Cortex.
   - Query endpoints
 
-    | Legacy                                                  | Current                                                    |
-    | ------------------------------------------------------- | ---------------------------------------------------------- |
-    | `/<legacy-http-prefix>/api/v1/query`                    | `<prometheus-http-prefix>/api/v1/query`                    |
-    | `/<legacy-http-prefix>/api/v1/query_range`              | `<prometheus-http-prefix>/api/v1/query_range`              |
-    | `/<legacy-http-prefix>/api/v1/query_exemplars`          | `<prometheus-http-prefix>/api/v1/query_exemplars`          |
-    | `/<legacy-http-prefix>/api/v1/series`                   | `<prometheus-http-prefix>/api/v1/series`                   |
-    | `/<legacy-http-prefix>/api/v1/labels`                   | `<prometheus-http-prefix>/api/v1/labels`                   |
-    | `/<legacy-http-prefix>/api/v1/label/{name}/values`      | `<prometheus-http-prefix>/api/v1/label/{name}/values`      |
-    | `/<legacy-http-prefix>/api/v1/metadata`                 | `<prometheus-http-prefix>/api/v1/metadata`                 |
-    | `/<legacy-http-prefix>/api/v1/read`                     | `<prometheus-http-prefix>/api/v1/read`                     |
-    | `/<legacy-http-prefix>/api/v1/cardinality/label_names`  | `<prometheus-http-prefix>/api/v1/cardinality/label_names`  |
-    | `/<legacy-http-prefix>/api/v1/cardinality/label_values` | `<prometheus-http-prefix>/api/v1/cardinality/label_values` |
-    | `/api/prom/user_stats`                                  | `/api/v1/user_stats`                                       |
+    | Legacy                                                 | Current                                                    |
+    | ------------------------------------------------------ | ---------------------------------------------------------- |
+    | `<legacy-http-prefix>/api/v1/query`                    | `<prometheus-http-prefix>/api/v1/query`                    |
+    | `<legacy-http-prefix>/api/v1/query_range`              | `<prometheus-http-prefix>/api/v1/query_range`              |
+    | `<legacy-http-prefix>/api/v1/query_exemplars`          | `<prometheus-http-prefix>/api/v1/query_exemplars`          |
+    | `<legacy-http-prefix>/api/v1/series`                   | `<prometheus-http-prefix>/api/v1/series`                   |
+    | `<legacy-http-prefix>/api/v1/labels`                   | `<prometheus-http-prefix>/api/v1/labels`                   |
+    | `<legacy-http-prefix>/api/v1/label/{name}/values`      | `<prometheus-http-prefix>/api/v1/label/{name}/values`      |
+    | `<legacy-http-prefix>/api/v1/metadata`                 | `<prometheus-http-prefix>/api/v1/metadata`                 |
+    | `<legacy-http-prefix>/api/v1/read`                     | `<prometheus-http-prefix>/api/v1/read`                     |
+    | `<legacy-http-prefix>/api/v1/cardinality/label_names`  | `<prometheus-http-prefix>/api/v1/cardinality/label_names`  |
+    | `<legacy-http-prefix>/api/v1/cardinality/label_values` | `<prometheus-http-prefix>/api/v1/cardinality/label_values` |
+    | `/api/prom/user_stats`                                 | `/api/v1/user_stats`                                       |
 
   - Distributor endpoints
 
-    | Legacy endpoint              | Current                       |
-    | ---------------------------- | ----------------------------- |
-    | `/<legacy-http-prefix>/push` | `/api/v1/push`                |
-    | `/all_user_stats`            | `/distributor/all_user_stats` |
-    | `/ha-tracker`                | `/distributor/ha_tracker`     |
+    | Legacy endpoint             | Current                       |
+    | --------------------------- | ----------------------------- |
+    | `<legacy-http-prefix>/push` | `/api/v1/push`                |
+    | `/all_user_stats`           | `/distributor/all_user_stats` |
+    | `/ha-tracker`               | `/distributor/ha_tracker`     |
 
   - Ingester endpoints
 
@@ -104,24 +104,24 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 
   - Ruler endpoints
 
-    | Legacy                                                | Current                                                            |
-    | ----------------------------------------------------- | ------------------------------------------------------------------ |
-    | `/<legacy-http-prefix>/api/v1/rules`                  | `<prometheus-http-prefix>/api/v1/rules`                            |
-    | `/<legacy-http-prefix>/api/v1/alerts`                 | `<prometheus-http-prefix>/api/v1/alerts`                           |
-    | `/<legacy-http-prefix>/rules`                         | `<prometheus-http-prefix>/config/v1/rules`                         |
-    | `/<legacy-http-prefix>/rules/{namespace}`             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
-    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
-    | `/<legacy-http-prefix>/rules/{namespace}`             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
-    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
-    | `/<legacy-http-prefix>/rules/{namespace}`             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
-    | `/ruler_ring`                                         | `/ruler/ring`                                                      |
+    | Legacy                                               | Current                                                            |
+    | ---------------------------------------------------- | ------------------------------------------------------------------ |
+    | `<legacy-http-prefix>/api/v1/rules`                  | `<prometheus-http-prefix>/api/v1/rules`                            |
+    | `<legacy-http-prefix>/api/v1/alerts`                 | `<prometheus-http-prefix>/api/v1/alerts`                           |
+    | `<legacy-http-prefix>/rules`                         | `<prometheus-http-prefix>/config/v1/rules`                         |
+    | `<legacy-http-prefix>/rules/{namespace}`             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
+    | `<legacy-http-prefix>/rules/{namespace}/{groupName}` | `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
+    | `<legacy-http-prefix>/rules/{namespace}`             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
+    | `<legacy-http-prefix>/rules/{namespace}/{groupName}` | `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
+    | `<legacy-http-prefix>/rules/{namespace}`             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
+    | `/ruler_ring`                                        | `/ruler/ring`                                                      |
 
   - Alertmanager endpoints
 
-    | Legacy                  | Current                            |
-    | ----------------------- | ---------------------------------- |
-    | `/<legacy-http-prefix>` | `/alertmanager`                    |
-    | `/status`               | `/multitenant_alertmanager/status` |
+    | Legacy                 | Current                            |
+    | ---------------------- | ---------------------------------- |
+    | `<legacy-http-prefix>` | `/alertmanager`                    |
+    | `/status`              | `/multitenant_alertmanager/status` |
 
 ## Generate the configuration for Grafana Mimir
 

@@ -202,9 +202,9 @@ func TestFailFast_HaltsProcessing(t *testing.T) {
 
 func TestReport_SummaryAndErr(t *testing.T) {
 	r := newReport(3)
-	r.Add("01FAKE000000000000000000A", "check-x", "/dir/a", fmt.Errorf("err-a1"))
-	r.Add("01FAKE000000000000000000A", "check-y", "/dir/a", fmt.Errorf("err-a2"))
-	r.Add("01FAKE000000000000000000B", "check-x", "/dir/b", fmt.Errorf("err-b1"))
+	r.Add("01FAKE000000000000000000A", "check-x", "/dir/a", "", fmt.Errorf("err-a1"))
+	r.Add("01FAKE000000000000000000A", "check-y", "/dir/a", "", fmt.Errorf("err-a2"))
+	r.Add("01FAKE000000000000000000B", "check-x", "/dir/b", "", fmt.Errorf("err-b1"))
 
 	total, failedBlocks, failures := r.Summary()
 	assert.Equal(t, 3, total)
@@ -221,7 +221,7 @@ func TestReport_SummaryAndErr(t *testing.T) {
 func TestReport_ErrFormat(t *testing.T) {
 	r := newReport(10)
 	for i := 0; i < 7; i++ {
-		r.Add(fmt.Sprintf("01FAKE00000000000000000%02d", i), "check-x", "/dir", fmt.Errorf("detail-%d", i))
+		r.Add(fmt.Sprintf("01FAKE00000000000000000%02d", i), "check-x", "/dir", "001", fmt.Errorf("detail-%d", i))
 	}
 
 	err := r.Err()
