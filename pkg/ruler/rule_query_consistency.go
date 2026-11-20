@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -93,8 +94,76 @@ type readConsistencyQuerier struct {
 func (q *readConsistencyQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	ctx = forceStrongReadConsistencyIfQueryingAlertsForStateMetric(ctx, matchers, q.logger)
 
-	return q.next.Select(ctx, sortSeries, hints, matchers...)
+	set := q.next.Select(ctx, sortSeries, hints, matchers...)
+	if isQueryingAlertsForStateMetric("", matchers...) {
+		return bufferAlertsForStateSeries(ctx, set)
+	}
+
+	return set
 }
+
+// bufferAlertsForStateSeries eagerly reads the input series set, in order, and returns a series set
+// whose series can be iterated in any order and any number of times.
+//
+// The series returned by a Mimir queryable may be backed by the ingesters chunks stream, which requires
+// series to be consumed in the same order they're returned. However, rules.Group.RestoreForState retains
+// all the series and then iterates only the ones matching an active alert, in the (random) order of the active
+// alerts map. Reading a series out of order fails and the activation state of the alert is lost.
+//
+// RestoreForState only looks at the last float sample of each series, so that is the only one retained
+// to keep memory bounded. The queryable wrapped by this function is only used for restoring the alerts state.
+func bufferAlertsForStateSeries(ctx context.Context, set storage.SeriesSet) storage.SeriesSet {
+	var series []storage.Series
+
+	for set.Next() {
+		if err := ctx.Err(); err != nil {
+			return storage.ErrSeriesSet(err)
+		}
+
+		s := set.At()
+		// Copy the labels: they may be backed by a buffer that is reused once the stream moves on.
+		lbls := s.Labels().Copy()
+
+		var floats []promql.FPoint
+		it := s.Iterator(nil)
+		// Drain the whole series, even past a non-float sample, so the next series can be read from the stream.
+		for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+			if vt != chunkenc.ValFloat {
+				continue
+			}
+			t, v := it.At()
+			// Replace the previous sample, so that at most one is retained.
+			floats = append(floats[:0], promql.FPoint{T: t, F: v})
+		}
+		if err := it.Err(); err != nil {
+			return storage.ErrSeriesSet(err)
+		}
+
+		series = append(series, promql.NewStorageSeries(promql.Series{Metric: lbls, Floats: floats}))
+	}
+	if err := set.Err(); err != nil {
+		return storage.ErrSeriesSet(err)
+	}
+
+	return &bufferedSeriesSet{series: series, pos: -1, warnings: set.Warnings()}
+}
+
+type bufferedSeriesSet struct {
+	series   []storage.Series
+	pos      int
+	warnings annotations.Annotations
+}
+
+func (s *bufferedSeriesSet) Next() bool {
+	s.pos++
+	return s.pos < len(s.series)
+}
+
+func (s *bufferedSeriesSet) At() storage.Series { return s.series[s.pos] }
+
+func (s *bufferedSeriesSet) Err() error { return nil }
+
+func (s *bufferedSeriesSet) Warnings() annotations.Annotations { return s.warnings }
 
 // LabelValues implements storage.Querier.
 func (q *readConsistencyQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
