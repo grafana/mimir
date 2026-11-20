@@ -661,6 +661,12 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 
 		err := db.engine().Evict(ctx, refs)
 		db.updateLastSeriesRemoval()
+
+		seriesAfter := db.Head().NumSeries()
+		// Eviction can return an error after removing series, or return nil without removing any.
+		if seriesAfter < seriesBefore {
+			i.metrics.earlyCompactionNonOwnedSeriesTriggered.WithLabelValues(userID).Inc()
+		}
 		if err != nil {
 			// Eviction may make partial progress; recompute ownership to requeue surviving refs.
 			db.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonEarlyCompaction)
@@ -668,11 +674,8 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 			continue
 		}
 
-		seriesAfter := db.Head().NumSeries()
-		// References may no longer exist by the time eviction runs, so only count
-		// success when the number of in-memory series actually decreases.
 		if seriesBefore == seriesAfter {
-			level.Warn(i.logger).Log("msg", "series eviction returned success during per-tenant early compaction of non-owned series but no series were evicted", "user", userID, "in_memory_series", seriesBefore, "num_refs", len(refs))
+			level.Warn(i.logger).Log("msg", "series eviction returned success during per-tenant early compaction of non-owned series without changing the head series count", "user", userID, "in_memory_series", seriesBefore, "num_refs", len(refs))
 			continue
 		}
 
@@ -680,8 +683,6 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 		// updated by compactions that advance HeadMinTime. The compactions performed
 		// here evict selected series without advancing HeadMinTime.
 		db.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonEarlyCompaction)
-
-		i.metrics.earlyCompactionNonOwnedSeriesTriggered.WithLabelValues(userID).Inc()
 
 		level.Info(i.logger).Log("msg", "per-tenant early head compaction of non-owned series completed",
 			"user", userID,
