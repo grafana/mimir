@@ -30,6 +30,14 @@ import (
 )
 
 func TestShuffleShardingStrategy(t *testing.T) {
+	testShuffleShardingStrategy(t, noShardSizeTransitions)
+}
+
+func TestShuffleShardingStrategy_WithShardSizeTransitions(t *testing.T) {
+	testShuffleShardingStrategy(t, newShardSizeTransitionsForTest)
+}
+
+func testShuffleShardingStrategy(t *testing.T, newTransitions func() *ShardSizeTransitions) {
 	// The following block IDs have been picked to have increasing hash values
 	// in order to simplify the tests.
 	block1 := ulid.MustNew(1, nil) // hash: 283204220
@@ -438,7 +446,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 
 			// Assert on filter users.
 			for _, expected := range testData.expectedUsers {
-				filter := NewShuffleShardingStrategy(r, expected.instanceID, expected.instanceAddr, dynamicReplication, testData.limits, log.NewNopLogger())
+				filter := NewShuffleShardingStrategy(r, expected.instanceID, expected.instanceAddr, dynamicReplication, testData.limits, newTransitions(), log.NewNopLogger())
 				actualUsers, err := filter.FilterUsers(ctx, []string{userID})
 				assert.Equal(t, expected.err, err)
 				assert.Equal(t, expected.users, actualUsers)
@@ -446,7 +454,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 
 			// Assert on filter blocks.
 			for _, expected := range testData.expectedBlocks {
-				filter := NewShuffleShardingStrategy(r, expected.instanceID, expected.instanceAddr, dynamicReplication, testData.limits, log.NewNopLogger())
+				filter := NewShuffleShardingStrategy(r, expected.instanceID, expected.instanceAddr, dynamicReplication, testData.limits, newTransitions(), log.NewNopLogger())
 				synced := extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{}, []string{"state"})
 				synced.WithLabelValues(shardExcludedMeta).Set(0)
 
@@ -528,6 +536,14 @@ func (m *shardingLimitsMock) StoreGatewayTenantShardSizePerZone(_ string) int {
 // 3. Decrease RF to 3
 // Throughout this process, blocks owned by zone-a, zone-b, and zone-c instances should never change.
 func TestShuffleShardingStrategy_RFMigration(t *testing.T) {
+	testShuffleShardingStrategy_RFMigration(t, noShardSizeTransitions)
+}
+
+func TestShuffleShardingStrategy_RFMigration_WithShardSizeTransitions(t *testing.T) {
+	testShuffleShardingStrategy_RFMigration(t, newShardSizeTransitionsForTest)
+}
+
+func testShuffleShardingStrategy_RFMigration(t *testing.T, newTransitions func() *ShardSizeTransitions) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -574,17 +590,17 @@ func TestShuffleShardingStrategy_RFMigration(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run("RF3_to_RF4_scaling_up/"+tc.name, func(t *testing.T) {
 			t.Parallel()
-			runRF3toRF4MigrationTest(t, tc.shardSize, tc.shardSizePerZone, tc.instancesPerZone, tc.dynamicReplication)
+			runRF3toRF4MigrationTest(t, tc.shardSize, tc.shardSizePerZone, tc.instancesPerZone, tc.dynamicReplication, newTransitions())
 		})
 
 		t.Run("RF4_to_RF3_scaling_down/"+tc.name, func(t *testing.T) {
 			t.Parallel()
-			runRF4toRF3MigrationTest(t, tc.shardSize, tc.shardSizePerZone, tc.instancesPerZone, tc.dynamicReplication)
+			runRF4toRF3MigrationTest(t, tc.shardSize, tc.shardSizePerZone, tc.instancesPerZone, tc.dynamicReplication, newTransitions())
 		})
 	}
 }
 
-func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instancesPerZone int, dynamicReplication bool) {
+func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instancesPerZone int, dynamicReplication bool, transitions *ShardSizeTransitions) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -654,7 +670,7 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 	allInitialInstances = append(allInitialInstances, zoneBInstances...)
 	allInitialInstances = append(allInitialInstances, zoneCInstances...)
 
-	baselineState := captureState(t, ctx, r, allInitialInstances, 3, limits, userIDs, blocks, dynamicReplication)
+	baselineState := captureState(t, ctx, r, allInitialInstances, 3, limits, userIDs, blocks, dynamicReplication, transitions)
 
 	// Ensure every instance gets some blocks when shuffle sharding is disabled.
 	if shardSize == 0 && shardSizePerZone == 0 {
@@ -680,7 +696,7 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 	require.NoError(t, ring.WaitInstanceState(ctx, r, zoneAInstances[0].id, ring.ACTIVE))
 
 	// Verify all instances have the same blocks as before.
-	stateAfterRFChange := captureState(t, ctx, r, allInitialInstances, ringCfg.ReplicationFactor, limits, userIDs, blocks, dynamicReplication)
+	stateAfterRFChange := captureState(t, ctx, r, allInitialInstances, ringCfg.ReplicationFactor, limits, userIDs, blocks, dynamicReplication, transitions)
 	assertStateUnchanged(t, baselineState, stateAfterRFChange,
 		getInstanceIDs(zoneAInstances, zoneBInstances, zoneCInstances))
 
@@ -704,14 +720,14 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 			require.NoError(t, ring.WaitInstanceState(ctx, r, zoneDInstances[0].id, ring.ACTIVE))
 
 			// Verify zone-a, zone-b, zone-c instances have the same blocks as baseline.
-			stateAfterZoneDAdded := captureState(t, ctx, r, allInitialInstances, ringCfg.ReplicationFactor, limits, userIDs, blocks, dynamicReplication)
+			stateAfterZoneDAdded := captureState(t, ctx, r, allInitialInstances, ringCfg.ReplicationFactor, limits, userIDs, blocks, dynamicReplication, transitions)
 			assertStateUnchanged(t, baselineState, stateAfterZoneDAdded,
 				getInstanceIDs(zoneAInstances, zoneBInstances, zoneCInstances))
 
 			// In case there's only 1 zone-d instance, we expect that instance to own all blocks.
 			if numZoneDInstances == 1 {
 				require.Len(t, zoneDInstances, 1)
-				zoneDState := captureState(t, ctx, r, zoneDInstances, ringCfg.ReplicationFactor, limits, userIDs, blocks, dynamicReplication)
+				zoneDState := captureState(t, ctx, r, zoneDInstances, ringCfg.ReplicationFactor, limits, userIDs, blocks, dynamicReplication, transitions)
 				instState, ok := zoneDState[zoneDInstances[0].id]
 				require.True(t, ok, "zone-d instance %s not found in captured state", zoneDInstances[0].id)
 				require.NotEmpty(t, instState.blocksPerUser, "zone-d instance %s should own blocks for users", zoneDInstances[0].id)
@@ -753,7 +769,7 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 	zoneABInstances = append(zoneABInstances, zoneAInstances...)
 	zoneABInstances = append(zoneABInstances, zoneBInstances...)
 
-	stateAfterZoneCRemoved := captureState(t, ctx, r, zoneABInstances, 4, limits, userIDs, blocks, dynamicReplication)
+	stateAfterZoneCRemoved := captureState(t, ctx, r, zoneABInstances, 4, limits, userIDs, blocks, dynamicReplication, transitions)
 	assertStateUnchanged(t, baselineState, stateAfterZoneCRemoved,
 		getInstanceIDs(zoneAInstances, zoneBInstances))
 
@@ -774,7 +790,7 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 	require.NoError(t, ring.WaitInstanceState(ctx, r, newZoneCInstances[0].id, ring.ACTIVE))
 
 	// Verify zone-a and zone-b instances have the same blocks as baseline.
-	stateAfterZoneCReAdded := captureState(t, ctx, r, zoneABInstances, 4, limits, userIDs, blocks, dynamicReplication)
+	stateAfterZoneCReAdded := captureState(t, ctx, r, zoneABInstances, 4, limits, userIDs, blocks, dynamicReplication, transitions)
 	assertStateUnchanged(t, baselineState, stateAfterZoneCReAdded,
 		getInstanceIDs(zoneAInstances, zoneBInstances))
 
@@ -783,7 +799,7 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 	t.Log("All migration steps completed successfully - blocks were never reshuffled in untouched zones")
 }
 
-func runRF4toRF3MigrationTest(t *testing.T, shardSize, shardSizePerZone, instancesPerZone int, dynamicReplication bool) {
+func runRF4toRF3MigrationTest(t *testing.T, shardSize, shardSizePerZone, instancesPerZone int, dynamicReplication bool, transitions *ShardSizeTransitions) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -854,7 +870,7 @@ func runRF4toRF3MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 	allInitialInstances = append(allInitialInstances, zoneCInstances...)
 	allInitialInstances = append(allInitialInstances, zoneDInstances...)
 
-	baselineState := captureState(t, ctx, r, allInitialInstances, 4, limits, userIDs, blocks, dynamicReplication)
+	baselineState := captureState(t, ctx, r, allInitialInstances, 4, limits, userIDs, blocks, dynamicReplication, transitions)
 
 	if shardSize == 0 && shardSizePerZone == 0 {
 		for instance, state := range baselineState {
@@ -891,7 +907,7 @@ func runRF4toRF3MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 	zoneABCInstances = append(zoneABCInstances, zoneBInstances...)
 	zoneABCInstances = append(zoneABCInstances, zoneCInstances...)
 
-	stateAfterZoneDRemoved := captureState(t, ctx, r, zoneABCInstances, 4, limits, userIDs, blocks, dynamicReplication)
+	stateAfterZoneDRemoved := captureState(t, ctx, r, zoneABCInstances, 4, limits, userIDs, blocks, dynamicReplication, transitions)
 	assertStateUnchanged(t, baselineState, stateAfterZoneDRemoved,
 		getInstanceIDs(zoneAInstances, zoneBInstances, zoneCInstances))
 
@@ -910,7 +926,7 @@ func runRF4toRF3MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 	require.NoError(t, ring.WaitInstanceState(ctx, r, zoneAInstances[0].id, ring.ACTIVE))
 
 	// Verify zone-a, zone-b, zone-c instances have the same blocks as baseline.
-	stateAfterRFChange := captureState(t, ctx, r, zoneABCInstances, ringCfg.ReplicationFactor, limits, userIDs, blocks, dynamicReplication)
+	stateAfterRFChange := captureState(t, ctx, r, zoneABCInstances, ringCfg.ReplicationFactor, limits, userIDs, blocks, dynamicReplication, transitions)
 	assertStateUnchanged(t, baselineState, stateAfterRFChange,
 		getInstanceIDs(zoneAInstances, zoneBInstances, zoneCInstances))
 
@@ -990,13 +1006,13 @@ func createBlockMetas(withDynamicReplication bool, blocks []ulid.ULID) map[ulid.
 }
 
 // captureState captures the state for all instances.
-func captureState(t *testing.T, ctx context.Context, r *ring.Ring, instances []instanceDef, replicationFactor int, limits ShardingLimits, userIDs []string, blocks []ulid.ULID, dynamicReplication bool) map[string]instanceState {
+func captureState(t *testing.T, ctx context.Context, r *ring.Ring, instances []instanceDef, replicationFactor int, limits ShardingLimits, userIDs []string, blocks []ulid.ULID, dynamicReplication bool, transitions *ShardSizeTransitions) map[string]instanceState {
 	t.Helper()
 
 	state := make(map[string]instanceState)
 
 	for _, inst := range instances {
-		strategy := NewShuffleShardingStrategy(r, inst.id, inst.addr, createDynamicReplication(dynamicReplication, replicationFactor), limits, log.NewNopLogger())
+		strategy := NewShuffleShardingStrategy(r, inst.id, inst.addr, createDynamicReplication(dynamicReplication, replicationFactor), limits, transitions, log.NewNopLogger())
 
 		filteredUsers, err := strategy.FilterUsers(ctx, userIDs)
 		require.NoError(t, err, "FilterUsers failed for instance %s", inst.id)
@@ -1017,6 +1033,14 @@ func captureState(t *testing.T, ctx context.Context, r *ring.Ring, instances []i
 		state[inst.id] = instanceState{
 			users:         filteredUsers,
 			blocksPerUser: blocksPerUser,
+		}
+	}
+
+	// Adding or removing zones changes neither the configured per-zone shard size nor the tenant shard in the other
+	// zones, so it must not be mistaken for a shard size change.
+	if limits.StoreGatewayTenantShardSizePerZone("") > 0 {
+		for _, userID := range userIDs {
+			require.False(t, transitions.InTransition(userID), "user %s", userID)
 		}
 	}
 

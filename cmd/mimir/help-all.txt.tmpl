@@ -3949,6 +3949,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Multiple of the default replication factor that should be used for recent blocks. Minimum value is 2 (default 5)
   -store-gateway.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants that can be loaded by the store-gateway. If specified, only blocks for these tenants will be loaded by the store-gateway, otherwise all tenants can be loaded. Subject to sharding.
+  -store-gateway.shard-size-transition-enabled
+    	[experimental] If true, when the store-gateway shard size of a tenant changes, store-gateways keep the blocks they loaded for the previous tenant shard, and queriers also query the previous tenant shard, for 3 times -blocks-storage.bucket-store.sync-interval after the change. This gives the store-gateways in the new tenant shard time to load the blocks. The state is kept in memory, so a restarted component doesn't know about changes made before it started. This setting is used by queriers and store-gateways.
   -store-gateway.sharding-ring.auto-forget-enabled
     	[deprecated] When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than the configured -store-gateway.sharding-ring.auto-forget-unhealthy-periods times the configured -store-gateway.sharding-ring.heartbeat-timeout. This setting is deprecated. Set -store-gateway.sharding-ring.auto-forget-unhealthy-periods to 0 to disable auto-forget. (default true)
   -store-gateway.sharding-ring.auto-forget-unhealthy-periods int

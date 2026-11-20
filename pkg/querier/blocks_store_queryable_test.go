@@ -3285,6 +3285,11 @@ type blocksStoreSetMock struct {
 
 	mockedResponses []interface{}
 	nextResult      int
+	inTransition    bool
+}
+
+func (m *blocksStoreSetMock) InShardSizeTransition(_ string) bool {
+	return m.inTransition
 }
 
 func (m *blocksStoreSetMock) GetClientsFor(_ string, _ bucketindex.Blocks, _ map[ulid.ULID][]string) (map[BlocksStoreClient][][]ulid.ULID, error) {

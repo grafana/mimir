@@ -68,6 +68,10 @@ type BlocksStoreSet interface {
 	// each to be queried separately.
 	// The exclude parameter is the map of blocks -> store-gateway addresses that should be excluded.
 	GetClientsFor(userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][][]ulid.ULID, error)
+
+	// InShardSizeTransition returns whether the tenant's shard size changed recently, as observed by the last call to
+	// GetClientsFor. During a transition GetClientsFor alternates between the new and the previous tenant shard.
+	InShardSizeTransition(userID string) bool
 }
 
 // BlocksFinder is the interface used to find blocks for a given user and time range.
@@ -364,9 +368,15 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	}
 	clientsPool := newStoreGatewayClientPool(client.NewRingsServiceDiscovery(readRings), querierCfg.StoreGatewayClient, logger, reg)
 
+	// The tenant shard size is the same in all compartments, so they share the transitions.
+	var shardSizeTransitions *storegateway.ShardSizeTransitions
+	if gatewayCfg.ShardSizeTransitionEnabled {
+		shardSizeTransitions = storegateway.NewShardSizeTransitions(mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval, "querier", reg)
+	}
+
 	stores := make([]blocksStoreCompartment, numCompartments)
 	for idx := range stores {
-		storeSet, err := newBlocksStoreReplicationSet(storesRings[idx], clientsPool, randomLoadBalancing, dynamicReplication, querierCfg.PreferAvailabilityZones, limits)
+		storeSet, err := newBlocksStoreReplicationSet(storesRings[idx], clientsPool, randomLoadBalancing, dynamicReplication, querierCfg.PreferAvailabilityZones, limits, shardSizeTransitions)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create store set")
 		}
@@ -777,7 +787,8 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		consistencyTracker.Complete()
 	}()
 
-	for attempt := 1; attempt <= q.dynamicReplication.MaxReplicationFactor(); attempt++ {
+	maxAttempts := q.dynamicReplication.MaxReplicationFactor()
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		// Find the set of store-gateway instances having the blocks. The exclude parameter is the
 		// map of blocks queried so far, with the list of store-gateway addresses for each block.
 		clients, err := stores.GetClientsFor(tenantID, remainingBlocks, attemptedBlocks)
@@ -792,6 +803,12 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 			return storeGatewayQueryStats{}, err
 		}
 		spanLog.DebugLog("msg", "found store-gateway instances to query", "num instances", len(clients), "attempt", attempt)
+
+		// While the tenant's shard size is changing, attempts alternate between the new and previous tenant shards,
+		// starting with the new one. Double the attempts so that each shard is tried as many times as it would be alone.
+		if attempt == 1 && stores.InShardSizeTransition(tenantID) {
+			maxAttempts *= 2
+		}
 
 		// Fetch series from stores. If an error occur we do not retry because retries
 		// are only meant to cover missing blocks.
