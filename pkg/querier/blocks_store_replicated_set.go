@@ -40,6 +40,9 @@ type blocksStoreReplicationSet struct {
 	dynamicReplication storegateway.DynamicReplication
 	limits             BlocksStoreLimits
 
+	// transitions is nil if shard size transitions are disabled.
+	transitions *storegateway.ShardSizeTransitions
+
 	// When non empty, the querier prioritises querying blocks from store-gateways in these zones with equal priority.
 	preferredZones []string
 
@@ -55,6 +58,7 @@ func newBlocksStoreReplicationSet(
 	dynamicReplication storegateway.DynamicReplication,
 	preferredZones []string,
 	limits BlocksStoreLimits,
+	transitions *storegateway.ShardSizeTransitions,
 ) (*blocksStoreReplicationSet, error) {
 	s := &blocksStoreReplicationSet{
 		storesRing:         storesRing,
@@ -63,6 +67,7 @@ func newBlocksStoreReplicationSet(
 		balancingStrategy:  balancingStrategy,
 		preferredZones:     preferredZones,
 		limits:             limits,
+		transitions:        transitions,
 		subservicesWatcher: services.NewFailureWatcher(),
 	}
 
@@ -107,7 +112,7 @@ func (s *blocksStoreReplicationSet) stopping(_ error) error {
 func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][][]ulid.ULID, error) {
 	blocksByAddr := make(map[string][]ulid.ULID)
 	instances := make(map[string]ring.InstanceDesc)
-	userRing := storegateway.GetShuffleShardingSubring(s.storesRing, userID, s.limits)
+	userRing, previousUserRing := storegateway.GetShuffleShardingSubrings(s.storesRing, userID, s.limits, s.transitions)
 
 	// It's safe to reuse buffers across iterations, as far as we don't retain the ReplicationSet.Instances slice
 	// (retaining individual instances from the slice is fine).
@@ -120,16 +125,41 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 			ringOpts = append(ringOpts, ring.WithReplicationFactor(replicationFactor))
 		}
 
-		set, err := userRing.GetWithOptions(mimir_tsdb.HashBlockID(block.ID), storegateway.BlocksRead, ringOpts...)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get store-gateway replication set owning the block %s", block.ID)
+		// While the tenant's shard size is changing, try the new tenant shard first, then alternate with the
+		// previous one on each retry of the block, because the new owners may not have loaded it yet. Each attempt
+		// adds an excluded instance for the block, so their count tells which attempt this is. If a shard has no
+		// instance left to try, we use the other one.
+		userRings := [2]ring.ReadRing{userRing, previousUserRing}
+		numUserRings := 1
+		if previousUserRing != nil {
+			numUserRings = 2
+			if len(exclude[block.ID])%2 == 1 {
+				userRings[0], userRings[1] = userRings[1], userRings[0]
+			}
 		}
 
-		// Pick a non excluded store-gateway instance.
-		// We copy the instance descriptor, and we don't use the replication set's slice buffers any more beyond this point,
-		// so that it's safe to reuse ring buffers across iterations.
-		inst := getNonExcludedInstance(set, exclude[block.ID], s.balancingStrategy, s.preferredZones)
+		var (
+			inst   *ring.InstanceDesc
+			getErr error
+		)
+		for _, r := range userRings[:numUserRings] {
+			set, err := r.GetWithOptions(mimir_tsdb.HashBlockID(block.ID), storegateway.BlocksRead, ringOpts...)
+			if err != nil {
+				getErr = err
+				continue
+			}
+
+			// Pick a non excluded store-gateway instance.
+			// We copy the instance descriptor, and we don't use the replication set's slice buffers any more beyond this point,
+			// so that it's safe to reuse ring buffers across iterations.
+			if inst = getNonExcludedInstance(set, exclude[block.ID], s.balancingStrategy, s.preferredZones); inst != nil {
+				break
+			}
+		}
 		if inst == nil {
+			if getErr != nil {
+				return nil, errors.Wrapf(getErr, "failed to get store-gateway replication set owning the block %s", block.ID)
+			}
 			return nil, fmt.Errorf("no store-gateway instance left after checking exclude for block %s", block.ID)
 		}
 
@@ -151,6 +181,11 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 	}
 
 	return clients, nil
+}
+
+// InShardSizeTransition implements BlocksStoreSet.
+func (s *blocksStoreReplicationSet) InShardSizeTransition(userID string) bool {
+	return s.transitions.InTransition(userID)
 }
 
 // partitionBlocks splits blocks into consecutive partitions of at most max blocks each.

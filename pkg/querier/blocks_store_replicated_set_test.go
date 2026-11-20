@@ -40,6 +40,14 @@ func newBlock(id ulid.ULID, minT time.Time, maxT time.Time) *bucketindex.Block {
 }
 
 func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
+	testBlocksStoreReplicationSet_GetClientsFor(t, noShardSizeTransitions)
+}
+
+func TestBlocksStoreReplicationSet_GetClientsFor_WithShardSizeTransitions(t *testing.T) {
+	testBlocksStoreReplicationSet_GetClientsFor(t, newShardSizeTransitionsForTest)
+}
+
+func testBlocksStoreReplicationSet_GetClientsFor(t *testing.T, newTransitions func() *storegateway.ShardSizeTransitions) {
 	// The following block IDs have been picked to have increasing hash values
 	// in order to simplify the tests.
 	blockID1 := ulid.MustNew(1, nil) // hash: 283204220
@@ -372,7 +380,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 
 			reg := prometheus.NewPedanticRegistry()
 			pool := newStoreGatewayClientPool(client.NewRingServiceDiscovery(r), StoreGatewayClientConfig{}, log.NewNopLogger(), reg)
-			s, err := newBlocksStoreReplicationSet(r, pool, noLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), nil, limits)
+			s, err := newBlocksStoreReplicationSet(r, pool, noLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), nil, limits, newTransitions())
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 			defer services.StopAndAwaitTerminated(ctx, s) //nolint:errcheck
@@ -406,6 +414,14 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 }
 
 func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancingStrategy(t *testing.T) {
+	testBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancingStrategy(t, noShardSizeTransitions)
+}
+
+func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancingStrategy_WithShardSizeTransitions(t *testing.T) {
+	testBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancingStrategy(t, newShardSizeTransitionsForTest)
+}
+
+func testBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancingStrategy(t *testing.T, newTransitions func() *storegateway.ShardSizeTransitions) {
 	const (
 		numRuns      = 1000
 		numInstances = 3
@@ -444,7 +460,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 		limits := &blocksStoreLimitsMock{storeGatewayTenantShardSize: 0}
 		reg := prometheus.NewPedanticRegistry()
 		pool := newStoreGatewayClientPool(client.NewRingServiceDiscovery(r), StoreGatewayClientConfig{}, log.NewNopLogger(), reg)
-		s, err := newBlocksStoreReplicationSet(r, pool, randomLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), preferredZones, limits)
+		s, err := newBlocksStoreReplicationSet(r, pool, randomLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), preferredZones, limits, newTransitions())
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 		t.Cleanup(func() {
@@ -626,6 +642,14 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 // TestBlocksStoreReplicationSet_GetClientsFor_BufferReuseSafety verifies that reusing
 // ring buffers across multiple block lookups in GetClientsFor doesn't corrupt instance data.
 func TestBlocksStoreReplicationSet_GetClientsFor_BufferReuseSafety(t *testing.T) {
+	testBlocksStoreReplicationSet_GetClientsFor_BufferReuseSafety(t, noShardSizeTransitions)
+}
+
+func TestBlocksStoreReplicationSet_GetClientsFor_BufferReuseSafety_WithShardSizeTransitions(t *testing.T) {
+	testBlocksStoreReplicationSet_GetClientsFor_BufferReuseSafety(t, newShardSizeTransitionsForTest)
+}
+
+func testBlocksStoreReplicationSet_GetClientsFor_BufferReuseSafety(t *testing.T, newTransitions func() *storegateway.ShardSizeTransitions) {
 	// Use block IDs with different hash values to ensure they map to different instances.
 	blockID1 := ulid.MustNew(1, nil) // hash: 283204220
 	blockID2 := ulid.MustNew(2, nil) // hash: 444110359
@@ -679,7 +703,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_BufferReuseSafety(t *testing.T)
 
 	reg := prometheus.NewPedanticRegistry()
 	pool := newStoreGatewayClientPool(client.NewRingServiceDiscovery(r), StoreGatewayClientConfig{}, log.NewNopLogger(), reg)
-	s, err := newBlocksStoreReplicationSet(r, pool, noLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), nil, limits)
+	s, err := newBlocksStoreReplicationSet(r, pool, noLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), nil, limits, newTransitions())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 	t.Cleanup(func() {
@@ -821,7 +845,7 @@ func BenchmarkBlocksStoreReplicationSet_GetClientsFor(b *testing.B) {
 			// Create blocksStoreReplicationSet.
 			limits := &blocksStoreLimitsMock{storeGatewayTenantShardSize: 0}
 			pool := newStoreGatewayClientPool(client.NewRingServiceDiscovery(r), StoreGatewayClientConfig{}, log.NewNopLogger(), prometheus.NewPedanticRegistry())
-			s, err := newBlocksStoreReplicationSet(r, pool, noLoadBalancing, dynRepl, nil, limits)
+			s, err := newBlocksStoreReplicationSet(r, pool, noLoadBalancing, dynRepl, nil, limits, nil)
 			require.NoError(b, err)
 			require.NoError(b, services.StartAndAwaitRunning(ctx, s))
 			b.Cleanup(func() {
