@@ -902,11 +902,13 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 	// partitions may switch to ACTIVE between when the query-frontend fetches the offsets and the querier
 	// builds the replica set of partitions to query.
 	//
-	// INACTIVE partitions are only included until they're too old to be queried: queriers stop querying a
-	// partition that has been inactive for longer than the tenant's query-ingesters-within, so there's no
-	// point in fetching (and sending) its offset. The offsets are shared across tenants, so we use the
-	// largest query-ingesters-within of the default and all tenant overrides, evaluated on each call so
-	// that runtime config changes are picked up.
+	// INACTIVE partitions are only included until they're too old to be queried, with a small grace period
+	// after this: queriers stop querying a partition that has been inactive for longer than the tenant's
+	// query-ingesters-within, so there's no point in fetching (and sending) its offset. This also ensures
+	// there's no race between when a querier observes that an inactive partition is removed entirely and
+	// when the query-frontend observes the same transition: if a querier receives an offset for a partition
+	// that no longer exists in the ring, it will fail the request (as otherwise it's possible this means
+	// that the querier hasn't observed a partition from becoming active).
 	getPartitionIDs := func(readCompartmentID int) ingest.GetPartitionIDsFunc {
 		return func(_ context.Context) ([]int32, error) {
 			maxInactivePartitionAge := maxInactivePartitionAgeForReadConsistencyOffsets(t.Overrides, t.Cfg.IngestStorage.Query.IncludeInactivePartitionsOffsetDuration)
