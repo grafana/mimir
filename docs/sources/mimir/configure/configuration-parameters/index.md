@@ -6264,6 +6264,15 @@ ordered_consumption:
   # CLI flag: -ingest-storage.ordered-consumption.input-buffer-size
   [input_buffer_size: <int> | default = 0]
 
+query:
+  # (experimental) How long, in addition to -querier.query-ingesters-within, the
+  # query-frontend keeps including the offset of a partition in the strong read
+  # consistency offsets after the partition became inactive. 0 means the offset
+  # of an inactive partition is excluded as soon as the query-ingesters-within
+  # period has elapsed.
+  # CLI flag: -ingest-storage.query.include-inactive-partitions-offset-duration
+  [include_inactive_partitions_offset_duration: <duration> | default = 10m]
+
 # (advanced) Number of tenants to concurrently fsync WAL and WBL before Kafka
 # offsets are committed, must be at least 1.
 # CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency

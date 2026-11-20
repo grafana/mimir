@@ -1851,6 +1851,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Soft upper bound on records buffered before forcing a flush. Larger values give more cross-cluster mixing (better ordering) at the cost of memory and per-flush latency. (default 1024)
   -ingest-storage.ordered-consumption.max-batch-wait duration
     	[experimental] Maximum time records sit buffered before being flushed even if max-batch-records has not been reached. (default 50ms)
+  -ingest-storage.query.include-inactive-partitions-offset-duration duration
+    	[experimental] How long, in addition to -querier.query-ingesters-within, the query-frontend keeps including the offset of a partition in the strong read consistency offsets after the partition became inactive. 0 means the offset of an inactive partition is excluded as soon as the query-ingesters-within period has elapsed. (default 10m0s)
   -ingest-storage.read-consistency string
     	[experimental] The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual. (default "eventual")
   -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency int
