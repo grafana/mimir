@@ -643,6 +643,11 @@ func TestMaxInactivePartitionAgeForReadConsistencyOffsets(t *testing.T) {
 			tenantWithin:  map[string]time.Duration{"a": time.Hour},
 			expected:      13 * time.Hour,
 		},
+		"negative extra duration means no limit": {
+			defaultWithin: 13 * time.Hour,
+			extra:         -time.Second,
+			expected:      0,
+		},
 		"default disabled means no limit": {
 			defaultWithin: 0,
 			tenantWithin:  map[string]time.Duration{"a": time.Hour},

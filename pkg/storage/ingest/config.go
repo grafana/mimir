@@ -129,13 +129,14 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 type QueryConfig struct {
 	// IncludeInactivePartitionsOffsetDuration is added to the tenant's query-ingesters-within to determine
 	// how long after a partition becomes inactive the query-frontend keeps including its offset in the
-	// strong read consistency offsets.
+	// strong read consistency offsets. A negative value is valid and means the offsets of all partitions
+	// are always included, regardless of how long ago they became inactive.
 	IncludeInactivePartitionsOffsetDuration time.Duration `yaml:"include_inactive_partitions_offset_duration" category:"experimental"`
 }
 
 // RegisterFlagsWithPrefix registers QueryConfig flags under the given prefix.
 func (cfg *QueryConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.DurationVar(&cfg.IncludeInactivePartitionsOffsetDuration, prefix+"include-inactive-partitions-offset-duration", 10*time.Minute, "How long, in addition to -querier.query-ingesters-within, the query-frontend keeps including the offset of a partition in the strong read consistency offsets after the partition became inactive. 0 means the offset of an inactive partition is excluded as soon as the query-ingesters-within period has elapsed.")
+	f.DurationVar(&cfg.IncludeInactivePartitionsOffsetDuration, prefix+"include-inactive-partitions-offset-duration", 10*time.Minute, "How long, in addition to -querier.query-ingesters-within, the query-frontend keeps including the offset of a partition in the strong read consistency offsets after the partition became inactive. 0 means the offset of an inactive partition is excluded as soon as the query-ingesters-within period has elapsed. A negative value means the offsets of all partitions are always included.")
 }
 
 // Validate the config.

@@ -955,8 +955,12 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 
 // maxInactivePartitionAgeForReadConsistencyOffsets returns how long after becoming inactive a partition's offset
 // should still be included in the strong read consistency offsets. It returns 0 if there is no limit, which is
-// the case if any tenant (or the default) has query-ingesters-within disabled.
+// the case if extraDuration is negative, or if any tenant (or the default) has query-ingesters-within disabled.
 func maxInactivePartitionAgeForReadConsistencyOffsets(overrides *validation.Overrides, extraDuration time.Duration) time.Duration {
+	if extraDuration < 0 {
+		return 0
+	}
+
 	queryIngestersWithin := overrides.MaxDurationAcrossAllTenants(func(l *validation.Limits) time.Duration {
 		if l.QueryIngestersWithin <= 0 {
 			return math.MaxInt64 // Disabled: ingesters are always queried.
