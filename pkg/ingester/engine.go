@@ -26,7 +26,7 @@ type tenantEngine interface {
 
 	// Ingest commits valid samples and exemplars, reporting soft errors through ctx.
 	// A hard append error rolls back the batch.
-	Ingest(ctx *ingestContext, timeseries []mimirpb.PreallocTimeseries) error
+	Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcome, error)
 
 	// Configure applies tenant settings while the ingester is running.
 	Configure(engineSettings) error
@@ -48,12 +48,30 @@ type ingestContext struct {
 
 	i                  *Ingester
 	userID             string
-	startAppend        time.Time
 	stats              *pushStats
 	errProcessor       *mimir_storage.SoftAppendErrorProcessor
 	updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction)
 	activeSeries       *activeseries.ActiveSeries
-	isOTLP             bool
+	outOfOrderWindow   time.Duration
+}
+
+// ingestBatch holds the request's series and the limits that apply to them.
+type ingestBatch struct {
+	Series []mimirpb.PreallocTimeseries
+	// The bounds are inclusive and apply to samples, histograms and exemplars.
+	MinTimestampMs, MaxTimestampMs int64
+	NativeHistograms               bool
+	Exemplars                      bool
+	IngestedAt                     time.Time
+	OTLP                           bool
+}
+
+// ingestOutcome reports what was committed so the ingester can account for completed writes.
+type ingestOutcome struct {
+	// Samples includes floats, histograms and created-timestamp zero samples.
+	Samples        int
+	Exemplars      int
+	CommitDuration time.Duration
 }
 
 type engineSettings struct {

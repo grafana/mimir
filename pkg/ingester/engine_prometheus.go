@@ -14,7 +14,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -33,56 +32,37 @@ func (e prometheusEngine) ExemplarQuerier(ctx context.Context) (storage.Exemplar
 	return e.db.ExemplarQuerier(ctx)
 }
 
-func (e prometheusEngine) Ingest(ctx *ingestContext, timeseries []mimirpb.PreallocTimeseries) error {
-	i, userID, startAppend, stats := ctx.i, ctx.userID, ctx.startAppend, ctx.stats
+func (e prometheusEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcome, error) {
+	i := ctx.i
 	spanlog := spanlogger.FromContext(ctx, i.logger)
 	app := e.db.AppenderV2(ctx).(extendedAppender)
-	spanlog.DebugLog("event", "got appender for timeseries", "series", len(timeseries))
+	spanlog.DebugLog("event", "got appender for timeseries", "series", len(batch.Series))
 
 	minAppendTime, minAppendTimeAvailable := e.db.Head().AppendableMinValidTime()
-
-	if pushSamplesToAppenderErr := i.pushSamplesToAppender(
-		userID,
-		timeseries,
-		app,
-		startAppend,
-		stats,
-		ctx.errProcessor,
-		ctx.updateFirstPartial,
-		ctx.activeSeries,
-		i.limits.OutOfOrderTimeWindow(userID),
-		minAppendTimeAvailable,
-		minAppendTime,
-		ctx.isOTLP,
-	); pushSamplesToAppenderErr != nil {
-		if err := app.Rollback(); err != nil {
-			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
+	outcome, err := i.pushSamplesToAppender(ctx, batch, app, minAppendTimeAvailable, minAppendTime)
+	if err != nil {
+		if rollbackErr := app.Rollback(); rollbackErr != nil {
+			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", ctx.userID, "err", rollbackErr)
 		}
-
-		return pushSamplesToAppenderErr
+		return ingestOutcome{}, err
 	}
 
-	// At this point all samples have been added to the appender, so we can track the time it took.
-	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
+	i.metrics.appenderAddDuration.Observe(time.Since(batch.IngestedAt).Seconds())
 
 	spanlog.DebugLog(
 		"event", "start commit",
-		"succeededSamplesCount", stats.succeededSamplesCount,
-		"failedSamplesCount", stats.failedSamplesCount,
-		"succeededExemplarsCount", stats.succeededExemplarsCount,
-		"failedExemplarsCount", stats.failedExemplarsCount,
+		"succeededSamplesCount", outcome.Samples,
+		"failedSamplesCount", ctx.stats.failedSamplesCount,
+		"succeededExemplarsCount", outcome.Exemplars,
+		"failedExemplarsCount", ctx.stats.failedExemplarsCount,
 	)
 
 	startCommit := time.Now()
 	if err := app.Commit(); err != nil {
-		return err
+		return ingestOutcome{}, err
 	}
-
-	commitDuration := time.Since(startCommit)
-	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
-	spanlog.DebugLog("event", "complete commit", "commitDuration", commitDuration.String())
-
-	return nil
+	outcome.CommitDuration = time.Since(startCommit)
+	return outcome, nil
 }
 
 func (e prometheusEngine) Close() error {

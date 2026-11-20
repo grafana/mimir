@@ -396,19 +396,36 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		activeSeries = db.activeSeries
 	}
 
-	if err := db.engine().Ingest(&ingestContext{
+	minTimestampMs := int64(math.MinInt64)
+	if pastGracePeriod := i.limits.PastGracePeriod(userID); pastGracePeriod > 0 {
+		minTimestampMs = startAppend.Add(-pastGracePeriod).Add(-outOfOrderWindow).UnixMilli()
+	}
+
+	outcome, err := db.engine().Ingest(&ingestContext{
 		Context:            ctx,
 		i:                  i,
 		userID:             userID,
-		startAppend:        startAppend,
 		stats:              &stats,
 		errProcessor:       &errProcessor,
 		updateFirstPartial: updateFirstPartial,
 		activeSeries:       activeSeries,
-		isOTLP:             req.Source == mimirpb.OTLP,
-	}, req.Timeseries); err != nil {
+		outOfOrderWindow:   outOfOrderWindow,
+	}, ingestBatch{
+		Series:           req.Timeseries,
+		MinTimestampMs:   minTimestampMs,
+		MaxTimestampMs:   startAppend.Add(i.limits.CreationGracePeriod(userID)).UnixMilli(),
+		NativeHistograms: i.limits.NativeHistogramsIngestionEnabled(userID),
+		Exemplars:        i.limits.MaxGlobalExemplarsPerUser(userID) > 0,
+		IngestedAt:       startAppend,
+		OTLP:             req.Source == mimirpb.OTLP,
+	})
+	if err != nil {
 		return wrapOrAnnotateWithUser(err, userID)
 	}
+	stats.succeededSamplesCount = outcome.Samples
+	stats.succeededExemplarsCount = outcome.Exemplars
+	i.metrics.appenderCommitDuration.Observe(outcome.CommitDuration.Seconds())
+	spanlog.DebugLog("event", "complete commit", "commitDuration", outcome.CommitDuration.String())
 
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
 	if stats.succeededSamplesCount > 0 {
@@ -482,32 +499,19 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	}
 }
 
-// pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
-// but in case of unhandled errors, appender is rolled back and such error is returned. Errors handled by updateFirstPartial
-// must be of type softError.
+// pushSamplesToAppender returns hard errors for the engine to roll back. Soft errors are recorded
+// on the request so valid samples and exemplars can still be committed.
 func (i *Ingester) pushSamplesToAppender(
-	userID string,
-	timeseries []mimirpb.PreallocTimeseries,
+	ctx *ingestContext,
+	batch ingestBatch,
 	app extendedAppender,
-	startAppend time.Time,
-	stats *pushStats,
-	errProcessor *mimir_storage.SoftAppendErrorProcessor,
-	updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction),
-	activeSeries *activeseries.ActiveSeries,
-	outOfOrderWindow time.Duration,
 	minAppendTimeAvailable bool,
 	minAppendTime int64,
-	isOTLP bool,
-) error {
-	// Fetch limits once per push request both to avoid processing half the request differently.
-	var (
-		nativeHistogramsIngestionEnabled = i.limits.NativeHistogramsIngestionEnabled(userID)
-		maxTimestampMs                   = startAppend.Add(i.limits.CreationGracePeriod(userID)).UnixMilli()
-		minTimestampMs                   = int64(math.MinInt64)
-	)
-	if i.limits.PastGracePeriod(userID) > 0 {
-		minTimestampMs = startAppend.Add(-i.limits.PastGracePeriod(userID)).Add(-i.limits.OutOfOrderTimeWindow(userID)).UnixMilli()
-	}
+) (ingestOutcome, error) {
+	userID, stats, errProcessor := ctx.userID, ctx.stats, ctx.errProcessor
+	updateFirstPartial, activeSeries := ctx.updateFirstPartial, ctx.activeSeries
+	startAppend := batch.IngestedAt
+	var outcome ingestOutcome
 
 	var builder labels.ScratchBuilder
 	var nonCopiedLabels labels.Labels
@@ -522,7 +526,7 @@ func (i *Ingester) pushSamplesToAppender(
 	// Reused across series, since AppendExemplars must not retain the slice it's given.
 	var exemplarBuf []exemplar.Exemplar
 
-	for _, ts := range timeseries {
+	for _, ts := range batch.Series {
 		if len(ts.Samples) > 0 && len(ts.Histograms) > 0 {
 			stats.seriesWithFloatsAndHistogramsCount++
 		}
@@ -531,8 +535,8 @@ func (i *Ingester) pushSamplesToAppender(
 		// and out-of-order support is not enabled.
 		// TODO(jesus.vazquez) If we had too many old samples we might want to
 		// extend the fast path to fail early.
-		if nativeHistogramsIngestionEnabled {
-			if outOfOrderWindow <= 0 && minAppendTimeAvailable && len(ts.Exemplars) == 0 &&
+		if batch.NativeHistograms {
+			if ctx.outOfOrderWindow <= 0 && minAppendTimeAvailable && len(ts.Exemplars) == 0 &&
 				(len(ts.Samples) > 0 || len(ts.Histograms) > 0) &&
 				allOutOfBoundsFloats(ts.Samples, minAppendTime) &&
 				allOutOfBoundsHistograms(ts.Histograms, minAppendTime) {
@@ -555,7 +559,7 @@ func (i *Ingester) pushSamplesToAppender(
 			}
 		} else {
 			// ignore native histograms in the condition and statitics as well
-			if outOfOrderWindow <= 0 && minAppendTimeAvailable && len(ts.Exemplars) == 0 &&
+			if ctx.outOfOrderWindow <= 0 && minAppendTimeAvailable && len(ts.Exemplars) == 0 &&
 				len(ts.Samples) > 0 && allOutOfBoundsFloats(ts.Samples, minAppendTime) {
 				stats.failedSamplesCount += len(ts.Samples)
 				stats.sampleTimestampTooOldCount += len(ts.Samples)
@@ -590,7 +594,7 @@ func (i *Ingester) pushSamplesToAppender(
 		}
 
 		// To find out if any sample was added to this series, we keep old value.
-		oldSucceededSamplesCount := stats.succeededSamplesCount
+		oldSucceededSamplesCount := outcome.Samples
 
 		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
 
@@ -598,15 +602,15 @@ func (i *Ingester) pushSamplesToAppender(
 			var err error
 
 			// Ensure the sample is not too far in the future.
-			if s.TimestampMs > maxTimestampMs {
+			if s.TimestampMs > batch.MaxTimestampMs {
 				errProcessor.ProcessErr(globalerror.SampleTooFarInFuture, s.TimestampMs, ts.Labels)
 				continue
-			} else if s.TimestampMs < minTimestampMs {
+			} else if s.TimestampMs < batch.MinTimestampMs {
 				errProcessor.ProcessErr(globalerror.SampleTooFarInPast, s.TimestampMs, ts.Labels)
 				continue
 			}
 
-			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs && (!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
+			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs && (!batch.NativeHistograms || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
 				if ref != 0 {
 					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
 				} else {
@@ -615,7 +619,7 @@ func (i *Ingester) pushSamplesToAppender(
 					ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
 				}
 				if err == nil {
-					stats.succeededSamplesCount++
+					outcome.Samples++
 				} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
 					// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
 					// if the start time is unknown, then it should equal to the timestamp of the first sample,
@@ -631,7 +635,7 @@ func (i *Ingester) pushSamplesToAppender(
 			// If the cached reference exists, we try to use it.
 			if ref != 0 {
 				if _, err = app.Append(ref, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
-					stats.succeededSamplesCount++
+					outcome.Samples++
 					continue
 				}
 			} else {
@@ -640,7 +644,7 @@ func (i *Ingester) pushSamplesToAppender(
 
 				// Retain the reference in case there are multiple samples for the series.
 				if ref, err = app.Append(0, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
-					stats.succeededSamplesCount++
+					outcome.Samples++
 					continue
 				}
 			}
@@ -651,11 +655,11 @@ func (i *Ingester) pushSamplesToAppender(
 			}
 
 			// Otherwise, return a 500.
-			return err
+			return ingestOutcome{}, err
 		}
 
 		numNativeHistogramBuckets := -1
-		if nativeHistogramsIngestionEnabled {
+		if batch.NativeHistograms {
 			for _, h := range ts.Histograms {
 				var (
 					err error
@@ -663,10 +667,10 @@ func (i *Ingester) pushSamplesToAppender(
 					fh  *histogram.FloatHistogram
 				)
 
-				if h.Timestamp > maxTimestampMs {
+				if h.Timestamp > batch.MaxTimestampMs {
 					errProcessor.ProcessErr(globalerror.SampleTooFarInFuture, h.Timestamp, ts.Labels)
 					continue
-				} else if h.Timestamp < minTimestampMs {
+				} else if h.Timestamp < batch.MinTimestampMs {
 					errProcessor.ProcessErr(globalerror.SampleTooFarInPast, h.Timestamp, ts.Labels)
 					continue
 				}
@@ -687,7 +691,7 @@ func (i *Ingester) pushSamplesToAppender(
 						ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
 					}
 					if err == nil {
-						stats.succeededSamplesCount++
+						outcome.Samples++
 					} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
 						// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
 						// if the start time is unknown, then it should equal to the timestamp of the first sample,
@@ -703,7 +707,7 @@ func (i *Ingester) pushSamplesToAppender(
 				// If the cached reference exists, we try to use it.
 				if ref != 0 {
 					if _, err = app.Append(ref, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
-						stats.succeededSamplesCount++
+						outcome.Samples++
 						continue
 					}
 				} else {
@@ -712,7 +716,7 @@ func (i *Ingester) pushSamplesToAppender(
 
 					// Retain the reference in case there are multiple samples for the series.
 					if ref, err = app.Append(0, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
-						stats.succeededSamplesCount++
+						outcome.Samples++
 						continue
 					}
 				}
@@ -721,7 +725,7 @@ func (i *Ingester) pushSamplesToAppender(
 					continue
 				}
 
-				return err
+				return ingestOutcome{}, err
 			}
 			numNativeHistograms := len(ts.Histograms)
 			if numNativeHistograms > 0 {
@@ -733,11 +737,11 @@ func (i *Ingester) pushSamplesToAppender(
 			}
 		}
 
-		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
-			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, isOTLP, idx)
+		if activeSeries != nil && outcome.Samples > oldSucceededSamplesCount {
+			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, batch.OTLP, idx)
 		}
 
-		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
+		if len(ts.Exemplars) > 0 && batch.Exemplars {
 			// app.AppendExemplar currently doesn't create the series, it must
 			// already exist.  If it does not then drop.
 			if ref == 0 {
@@ -750,7 +754,7 @@ func (i *Ingester) pushSamplesToAppender(
 				// its own, and reports failures by their index in the appended slice.
 				exemplarBuf = exemplarBuf[:0]
 				for _, ex := range ts.Exemplars {
-					if ex.TimestampMs > maxTimestampMs || ex.TimestampMs < minTimestampMs {
+					if ex.TimestampMs > batch.MaxTimestampMs || ex.TimestampMs < batch.MinTimestampMs {
 						continue
 					}
 					exemplarBuf = append(exemplarBuf, exemplar.Exemplar{
@@ -779,13 +783,13 @@ func (i *Ingester) pushSamplesToAppender(
 				outOfOrderExemplars := 0
 				appendedIdx := 0
 				for _, ex := range ts.Exemplars {
-					if ex.TimestampMs > maxTimestampMs {
+					if ex.TimestampMs > batch.MaxTimestampMs {
 						stats.failedExemplarsCount++
 						updateFirstPartial(nil, func() softError {
 							return newExemplarTimestampTooFarInFutureError(model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
 						})
 						continue
-					} else if ex.TimestampMs < minTimestampMs {
+					} else if ex.TimestampMs < batch.MinTimestampMs {
 						stats.failedExemplarsCount++
 						updateFirstPartial(nil, func() softError {
 							return newExemplarTimestampTooFarInPastError(model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
@@ -800,7 +804,7 @@ func (i *Ingester) pushSamplesToAppender(
 					}
 					appendedIdx++
 					if err == nil {
-						stats.succeededExemplarsCount++
+						outcome.Exemplars++
 						continue
 					}
 
@@ -828,7 +832,7 @@ func (i *Ingester) pushSamplesToAppender(
 			}
 		}
 	}
-	return nil
+	return outcome, nil
 }
 
 // PushToStorageAndReleaseRequest implements ingest.Pusher interface for ingestion via ingest-storage.
