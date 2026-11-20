@@ -74,6 +74,12 @@ func (p UnlimitedMemoryTrackerPromQLEngine) NewInstantQuery(ctx context.Context,
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(ctx)
 	return newUnlimitedMemoryTrackingQuery(qry, memoryTracker), nil
 }
+
+// AcquireQuerySlot implements promql.QuerySlotAcquirer by delegating to the wrapped engine.
+func (p UnlimitedMemoryTrackerPromQLEngine) AcquireQuerySlot(ctx context.Context, qs string) (func(), error) {
+	return p.inner.AcquireQuerySlot(ctx, qs)
+}
+
 func (p UnlimitedMemoryTrackerPromQLEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
 	qry, err := p.inner.NewRangeQuery(ctx, q, opts, qs, start, end, interval)
 	if err != nil {

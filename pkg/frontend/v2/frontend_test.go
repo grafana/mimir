@@ -2542,9 +2542,10 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "tenant-0")
 
 			rangeHTTPReq := makeRangeHTTPRequest(ctx, testData.start, testData.end, 60)
+			rangeCostHTTPReq := withQueryCostPath(makeRangeHTTPRequest(ctx, testData.start, testData.end, 60))
 			labelValuesHTTPReq := makeLabelValuesHTTPRequest(ctx, &testData.start, &testData.end)
 
-			reqs := []*http.Request{rangeHTTPReq, labelValuesHTTPReq}
+			reqs := []*http.Request{rangeHTTPReq, rangeCostHTTPReq, labelValuesHTTPReq}
 
 			for _, req := range reqs {
 				httpgrpcReq, err := httpgrpc.FromHTTPRequest(req)
@@ -2589,18 +2590,41 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "tenant-0")
 
-			instantHTTPReq := makeInstantHTTPRequest(ctx, testData.time)
-			httpgrpcReq, err := httpgrpc.FromHTTPRequest(instantHTTPReq)
-			require.NoError(t, err)
+			for _, instantHTTPReq := range []*http.Request{makeInstantHTTPRequest(ctx, testData.time), withQueryCostPath(makeInstantHTTPRequest(ctx, testData.time))} {
+				httpgrpcReq, err := httpgrpc.FromHTTPRequest(instantHTTPReq)
+				require.NoError(t, err)
 
-			additionalQueueDimensions, err := frontend.extractTouchedQueryComponentsForHTTPRequest(
-				ctx, httpgrpcReq, now,
-			)
-			require.NoError(t, err)
-			require.Equal(t, testData.expectedAddlQueueDimensions, additionalQueueDimensions)
+				additionalQueueDimensions, err := frontend.extractTouchedQueryComponentsForHTTPRequest(
+					ctx, httpgrpcReq, now,
+				)
+				require.NoError(t, err)
+				require.Equal(t, testData.expectedAddlQueueDimensions, additionalQueueDimensions, instantHTTPReq.URL.Path)
+			}
 		})
 	}
 
+	t.Run("query cost requests with invalid parameters fail with bad data", func(t *testing.T) {
+		ctx := user.InjectOrgID(context.Background(), "tenant-0")
+		for _, target := range []string{"/api/v1/query_cost?query=sum(", "/api/v1/query_range_cost?query=up&start=0&end=60"} {
+			req, err := http.NewRequestWithContext(ctx, "GET", target, bytes.NewReader([]byte{}))
+			require.NoError(t, err)
+			req.RequestURI = req.URL.RequestURI()
+			httpgrpcReq, err := httpgrpc.FromHTTPRequest(req)
+			require.NoError(t, err)
+
+			_, err = frontend.extractTouchedQueryComponentsForHTTPRequest(ctx, httpgrpcReq, now)
+			var apiErr *apierror.APIError
+			require.ErrorAs(t, err, &apiErr, target)
+			require.Equal(t, apierror.TypeBadData, apiErr.Type, target)
+		}
+	})
+}
+
+// withQueryCostPath changes the path of a query request to the matching query cost endpoint.
+func withQueryCostPath(req *http.Request) *http.Request {
+	req.URL.Path += "_cost"
+	req.RequestURI = req.URL.RequestURI()
+	return req
 }
 
 func TestQueryDecoding(t *testing.T) {
