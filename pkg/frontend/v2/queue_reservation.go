@@ -5,7 +5,10 @@ package v2
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/go-kit/log"
@@ -169,7 +172,8 @@ func (r *queueReservation) run(ctx context.Context) {
 	var retryAfterTooManyRequests bool
 
 	maxAttempts := r.f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
-	for attempt := 0; attempt < maxAttempts; {
+	attempt := 0
+	for attempt < maxAttempts {
 		var target *frontendSchedulerWorker
 		if len(rejected) > 0 {
 			// The sub-requests do not use the plain path here. A plain ENQUEUE has a weaker limit
@@ -227,7 +231,8 @@ func (r *queueReservation) run(ctx context.Context) {
 
 		case res.status == schedulerpb.TOO_MANY_REQUESTS_PER_TENANT:
 			r.f.queueReservations.WithLabelValues(reservationOutcomeTooManyRequests).Inc()
-			level.Warn(r.logger(res.worker, reservationID)).Log("msg", "query-scheduler rejected queue reservation because the tenant has too many outstanding requests")
+			// The next attempt can get a grant, so the Warn comes only when the reservation fails.
+			level.Debug(r.logger(res.worker, reservationID)).Log("msg", "query-scheduler rejected queue reservation because the tenant has too many outstanding requests")
 			// The query-scheduler did not open the reservation, and no sub-request uses it yet, so
 			// another query-scheduler cannot queue a sub-request twice.
 			if rejected == nil {
@@ -263,6 +268,7 @@ func (r *queueReservation) run(ctx context.Context) {
 	}
 
 	if len(rejected) > 0 {
+		level.Warn(r.f.log).Log(rootqueryid.AppendLogFields([]any{"msg", "queue reservation failed because query-schedulers rejected it for too many outstanding requests from the tenant", "user", r.userID, "slots", r.slots, "attempts", attempt, "rejected_query_schedulers", strings.Join(slices.Sorted(maps.Keys(rejected)), ",")}, r.rootQueryID)...)
 		r.err = apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests")
 		r.errOutcome = "too_many_requests"
 		return

@@ -697,6 +697,70 @@ func TestQueueReservation_RetryCountsOnlyTheAttemptRightAfterTooManyRequests(t *
 	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservationRetries))
 }
 
+func TestQueueReservation_TooManyRequestsLogsOneWarningWhenTheReservationFails(t *testing.T) {
+	a := newTestReservationWorker(t, "a", true)
+	b := newTestReservationWorker(t, "b", true)
+	f := newTargetedTestFrontend(map[string]*frontendSchedulerWorker{
+		a.schedulerAddr: a,
+		b.schedulerAddr: b,
+	})
+	var logs bytes.Buffer
+	f.log = log.NewLogfmtLogger(&logs)
+	// With 3 attempts, the reservation stops because every query-scheduler rejected it.
+	f.cfg.WorkerConcurrency = 2
+	r := &queueReservation{f: f, userID: reservationTestUserID, slots: 1, allStreamsGone: make(chan struct{}), done: make(chan struct{})}
+
+	go func() {
+		req := <-f.reserveCh
+		req.reply <- reserveResult{worker: b, status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+		req = <-a.targetedReserveCh
+		req.reply <- reserveResult{worker: a, status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+	}()
+	r.run(t.Context())
+
+	require.Equal(t, "too_many_requests", r.errOutcome)
+	warnings := logLinesWithLevel(logs.String(), "warn")
+	require.Len(t, warnings, 1, logs.String())
+	require.Contains(t, warnings[0], "attempts=2")
+	require.Contains(t, warnings[0], "rejected_query_schedulers=a,b")
+	require.Len(t, logLinesWithLevel(logs.String(), "debug"), 2, "one line for each 429")
+}
+
+func TestQueueReservation_TooManyRequestsLogsNoWarningWhenTheRetryGetsAGrant(t *testing.T) {
+	rejecting := newTestReservationWorker(t, "rejecting", true)
+	granting := newTestReservationWorker(t, "granting", true)
+	f := newTargetedTestFrontend(map[string]*frontendSchedulerWorker{
+		rejecting.schedulerAddr: rejecting,
+		granting.schedulerAddr:  granting,
+	})
+	var logs bytes.Buffer
+	f.log = log.NewLogfmtLogger(&logs)
+	r := &queueReservation{f: f, userID: reservationTestUserID, slots: 1, allStreamsGone: make(chan struct{}), done: make(chan struct{})}
+
+	go func() {
+		req := <-f.reserveCh
+		req.reply <- reserveResult{worker: rejecting, status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+		req = <-granting.targetedReserveCh
+		req.reply <- reserveResult{worker: granting, streamsGone: granting.reservationStreams.gone(), status: schedulerpb.OK}
+	}()
+	r.run(t.Context())
+
+	require.NoError(t, r.err)
+	require.Empty(t, logLinesWithLevel(logs.String(), "warn"), logs.String())
+	require.Len(t, logLinesWithLevel(logs.String(), "debug"), 1, "one line for the 429")
+}
+
+// logLinesWithLevel returns the logfmt lines in logs that have the level lvl.
+func logLinesWithLevel(logs, lvl string) []string {
+	var lines []string
+	for line := range strings.Lines(logs) {
+		if strings.Contains(line, "level="+lvl+" ") {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
 // newTestReservationWorker returns a worker for addr. When streams is true, the worker has one
 // stream that supports queue reservation.
 func newTestReservationWorker(t *testing.T, addr string, streams bool) *frontendSchedulerWorker {
