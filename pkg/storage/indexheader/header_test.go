@@ -40,7 +40,7 @@ var implementations = []struct {
 			bkt, err := filesystem.NewBucket(filepath.Join(dir, "bkt"))
 			require.NoError(t, err)
 			instrBkt := objstore.WithNoopInstr(bkt)
-			br, err := NewStreamBinaryReader(ctx, id, instrBkt, dir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			br, err := NewStreamBinaryReader(ctx, id, instrBkt, dir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: 32}, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
 			return br
@@ -55,7 +55,7 @@ var implementations = []struct {
 			br, err := NewStreamBinaryReader(
 				ctx, id, instrBkt, dir,
 				Config{Version: BinaryFormatV2},
-				32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil),
+				streamindex.SamplingConfig{Factor: 32}, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil),
 			)
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
@@ -69,7 +69,7 @@ var implementations = []struct {
 			require.NoError(t, err)
 			instrBkt := objstore.WithNoopInstr(bkt)
 			readerFactory := func(ctx context.Context) (Reader, error) {
-				return NewStreamBinaryReader(ctx, id, instrBkt, dir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+				return NewStreamBinaryReader(ctx, id, instrBkt, dir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: 32}, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			}
 
 			br, err := NewLazyBinaryReader(ctx, testIndexHeaderV1Config(), readerFactory, log.NewNopLogger(), instrBkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
@@ -239,7 +239,7 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 			noopMetrics := NewStreamBinaryReaderMetrics(nil)
 
 			// write a sparse index-header file to disk
-			br1, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, testIndexHeaderV1Config(), tt.protoRate, log.NewNopLogger(), noopMetrics)
+			br1, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: tt.protoRate}, log.NewNopLogger(), noopMetrics)
 			require.NoError(t, err)
 			require.Equal(t, tt.protoRate, br1.postingsOffsetTable.PostingsOffsetsInMemSampling())
 
@@ -248,7 +248,7 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 
 			// a second call to NewStreamBinaryReader loads the previously written sparse index-header and downsamples
 			// the header from tt.protoRate to tt.inMemSamplingRate entries for each posting
-			br2, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, testIndexHeaderV1Config(), tt.inMemSamplingRate, log.NewNopLogger(), noopMetrics)
+			br2, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: tt.inMemSamplingRate}, log.NewNopLogger(), noopMetrics)
 			require.NoError(t, err)
 			require.Equal(t, tt.inMemSamplingRate, br2.postingsOffsetTable.PostingsOffsetsInMemSampling())
 
@@ -282,6 +282,63 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 				// check first and last entry from the original postings in downsampled set
 				require.NotZero(t, downsampleIdxTblProto.Postings[name].LastValOffset)
 			}
+		})
+	}
+}
+
+func TestStreamBinaryReader_CardinalityThreshold(t *testing.T) {
+	const factor = 4
+	sampling := streamindex.SamplingConfig{
+		Factor: factor,
+		// A threshold of 2*factor caps every label with more than 2 sampled entries,
+		// so lookups have to scan long, unevenly spaced sections of the table.
+		CardinalityThreshold: 2 * factor,
+	}
+
+	for name, cfg := range map[string]Config{
+		"bucket reader disabled": testIndexHeaderV1Config(),
+		"bucket reader enabled":  {Version: BinaryFormatV2}, // test that bucket reads, bounded by sampled entries, cover unevenly spaced entries
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			tmpDir := t.TempDir()
+			ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+			require.NoError(t, err)
+			requireCleanup(t, ubkt.Close)
+			bkt := objstore.WithNoopInstr(ubkt)
+
+			m := prepareIndexV2Block(t, tmpDir, bkt)
+			noopMetrics := NewStreamBinaryReaderMetrics(nil)
+
+			// The first reader builds the sparse index-header from the full index-header and writes it to disk (the cardinality threshold is unset here).
+			uncapped, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, cfg, streamindex.SamplingConfig{Factor: factor}, log.NewNopLogger(), noopMetrics)
+			require.NoError(t, err)
+			requireCleanup(t, uncapped.Close)
+
+			// The second reader loads it from disk, which is the path that applies the threshold.
+			capped, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, cfg, sampling, log.NewNopLogger(), noopMetrics)
+			require.NoError(t, err)
+			requireCleanup(t, capped.Close)
+
+			uncappedTbl := uncapped.postingsOffsetTable.(*streamindex.PostingsOffsetsTableV2).SparsePostingsOffsets
+			cappedTbl := capped.postingsOffsetTable.(*streamindex.PostingsOffsetsTableV2).SparsePostingsOffsets
+			uncappedProto := streamindex.SparsePostingsOffsetsTableToProto(uncappedTbl, factor)
+			cappedProto := streamindex.SparsePostingsOffsetsTableToProto(cappedTbl, factor)
+
+			anyCapped := false
+			for lname, u := range uncappedProto.Postings {
+				if len(cappedProto.Postings[lname].GetOffsets()) < len(u.Offsets) {
+					anyCapped = true
+					break
+				}
+			}
+			require.True(t, anyCapped, "threshold didn't cap any label; the test doesn't exercise capped lookups")
+
+			indexFile, err := fileutil.OpenMmapFile(filepath.Join(tmpDir, m.ULID.String(), block.IndexFilename))
+			require.NoError(t, err)
+			requireCleanup(t, indexFile.Close)
+
+			compareIndexToHeader(t, realByteSlice(indexFile.Bytes()), capped)
 		})
 	}
 }

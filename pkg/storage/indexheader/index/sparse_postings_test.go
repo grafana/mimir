@@ -18,6 +18,7 @@ func TestSparsePostingsOffsetsTableFromProto(t *testing.T) {
 		existingOffsetsLen              int
 		postingOffsetsInMemSamplingRate int
 		protoSamplingRate               int64
+		cardinalityThreshold            int
 		expectedLen                     int
 		expectErr                       bool
 		firstTableOff                   int64
@@ -115,11 +116,31 @@ func TestSparsePostingsOffsetsTableFromProto(t *testing.T) {
 			protoSamplingRate:               1,
 			expectedLen:                     2,
 		},
+		"cardinality_threshold_noop_at_threshold": {
+			existingOffsetsLen:              100,
+			postingOffsetsInMemSamplingRate: 32,
+			protoSamplingRate:               32,
+			cardinalityThreshold:            3200,
+			expectedLen:                     100,
+		},
+		"cardinality_threshold_exceeded": {
+			existingOffsetsLen:              1000,
+			postingOffsetsInMemSamplingRate: 32,
+			protoSamplingRate:               32,
+			cardinalityThreshold:            3200,
+			expectedLen:                     330, // 100 * (1 + ln(1000/100))
+		},
+		"cardinality_threshold_exceeded_after_downsample": {
+			existingOffsetsLen:              2000,
+			postingOffsetsInMemSamplingRate: 32,
+			protoSamplingRate:               16,
+			cardinalityThreshold:            3200,
+			expectedLen:                     330, // downsampled 2000/2 = 1000, then 100 * (1 + ln(1000/100))
+		},
 	}
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-
 			postingsMap := make(map[string]*indexheaderpb.PostingValueOffsets)
 			postingsMap["__name__"] = &indexheaderpb.PostingValueOffsets{
 				Offsets:       createPostingsOffsetsProto(testCase.existingOffsetsLen),
@@ -134,7 +155,11 @@ func TestSparsePostingsOffsetsTableFromProto(t *testing.T) {
 				PostingOffsetInMemorySampling: testCase.protoSamplingRate,
 			}
 
-			sparseTable, err := SparsePostingsOffsetsTableFromProto(&protoTbl, testCase.postingOffsetsInMemSamplingRate)
+			sampling := SamplingConfig{
+				Factor:               testCase.postingOffsetsInMemSamplingRate,
+				CardinalityThreshold: testCase.cardinalityThreshold,
+			}
+			sparseTable, err := SparsePostingsOffsetsTableFromProto(&protoTbl, sampling)
 
 			if testCase.expectedErr != "" {
 				assert.EqualError(t, err, testCase.expectedErr)
@@ -145,6 +170,7 @@ func TestSparsePostingsOffsetsTableFromProto(t *testing.T) {
 				offsets := sparseTable["__name__"]
 				assert.Equal(t, testCase.expectedLen, offsets.numOffsets())
 				assert.Equal(t, int64(12345), offsets.LastValOffset)
+				assert.Equal(t, "0", offsets.value(0))
 				assert.Equal(t, fmt.Sprintf("%d", testCase.existingOffsetsLen-1), offsets.value(offsets.numOffsets()-1))
 			}
 

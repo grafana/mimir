@@ -6569,6 +6569,14 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.posting-offsets-in-mem-sampling
   [postings_offsets_in_mem_sampling: <int> | default = 32]
 
+  # (experimental) Label cardinality above which the store holds progressively
+  # fewer postings offsets in memory for that label. Above the threshold, the
+  # number of postings offsets in memory grows logarithmically with the label
+  # cardinality, instead of linearly. The label cardinality is estimated as the
+  # number of sampled postings offsets times the sampling ratio. 0 to disable.
+  # CLI flag: -blocks-storage.bucket-store.posting-offsets-in-mem-sampling-cardinality-threshold
+  [postings_offsets_in_mem_sampling_cardinality_threshold: <int> | default = 0]
+
   index_header:
     # (advanced) Maximum number of idle file handles the store-gateway keeps
     # open for each index-header file.

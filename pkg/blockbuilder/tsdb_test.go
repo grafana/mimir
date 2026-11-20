@@ -31,6 +31,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -606,7 +607,7 @@ func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir st
 			sparseHeadersPath := path.Join(blockID.String(), block.SparseIndexHeaderFilename)
 
 			sparseSymbols, sparsePostingsOffsets, err := indexheader.LoadSparseIndexHeaderFromDisk(
-				ctx, blockID, dbDir, cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling, ll,
+				ctx, blockID, dbDir, streamindex.SamplingConfig{Factor: cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling}, ll,
 			)
 
 			require.NoErrorf(t, err, "expected sparse index headers not found %s", sparseHeadersPath)
