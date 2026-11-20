@@ -307,8 +307,15 @@ func (s *BlockBuilderScheduler) onMarkerBaseLoaded(m *offsetMarker) {
 		if entry == nil {
 			continue
 		}
+		logger := s.compartmentLogger(clusterID)
 		mismatches := compareMarkerToKafka(s.cfg.Kafka.Topic, entry.Offsets, s.startupKafka[clusterID])
-		s.recordMarkerComparison(s.compartmentLogger(clusterID), mismatches)
+		s.recordMarkerComparison(logger, mismatches)
+		// The marker's offset is overwritten once the scheduler moves past it, so log it now: together with the
+		// lookback-on-no-commit warning's resume_offset, it bounds any records that were skipped.
+		for partition, offset := range markerOffsetsMissingInKafka(s.cfg.Kafka.Topic, entry.Offsets, s.startupKafka[clusterID]) {
+			level.Warn(logger).Log("msg", "Kafka has no committed offset for partition, but the offset marker does: records from marker_offset up to where the scheduler resumed were not built into blocks if it resumed later",
+				"partition", partition, "marker_offset", offset)
+		}
 	}
 }
 

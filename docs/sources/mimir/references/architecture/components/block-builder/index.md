@@ -46,6 +46,7 @@ On a restart, the scheduler first reconstructs its state from Kafka consumer gro
 The scheduler also records its committed offsets in a marker object in the blocks storage bucket, at `__mimir_cluster/block-builder-scheduler/<topic>/<consumer-group>.json`.
 A background writer writes it, so a slow object store never delays scheduling or the Kafka commits.
 The marker is a record of the scheduler's progress that doesn't depend on Kafka retaining the consumer group's committed offsets. The scheduler doesn't resume from it yet: on startup it still uses the Kafka committed offsets.
+The marker never moves a partition's offset backwards. If you rewind the Kafka committed offsets on purpose, the marker stays ahead until the scheduler passes it again.
 This needs the scheduler to have write access to the blocks storage bucket.
 If it doesn't, the marker writes fail and are counted in `cortex_blockbuilder_scheduler_offset_marker_write_failures_total`, and scheduling is not affected.
 

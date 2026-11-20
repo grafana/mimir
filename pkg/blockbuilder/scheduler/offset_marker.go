@@ -251,9 +251,11 @@ func (g *markerWriteGate) recordWrite(offsets markerOffsets, now time.Time) {
 	g.lastWrite = now
 }
 
-// mergeMarkerOffsets returns current, plus any partition that is in base but absent from current.
-// An absent partition means this scheduler hasn't learned an offset for it (e.g. Kafka lost the commit),
-// not that the partition is gone, so the previously recorded offset is carried forward instead of dropped.
+// mergeMarkerOffsets returns, for each partition, the later of its offset in current and in base.
+// Both only hold offsets of completed jobs, so the marker never moves a partition backwards. A partition that
+// is absent from current, or behind base, means this scheduler lost track of it (e.g. Kafka lost the commit and
+// it resumed from lookback-on-no-commit), not that the work was undone, so the recorded offset is kept: it is
+// the only record of how far the scheduler really got.
 // A base entry whose Kafka identity conflicts with ids is for a different topic incarnation, so is not carried.
 func mergeMarkerOffsets(current markerOffsets, base *offsetMarker, ids []clusterIdentity) markerOffsets {
 	out := current.clone()
@@ -269,7 +271,7 @@ func mergeMarkerOffsets(current markerOffsets, base *offsetMarker, ids []cluster
 			continue
 		}
 		for p, o := range entry.Offsets {
-			if _, ok := out[clusterID][p]; !ok {
+			if cur, ok := out[clusterID][p]; !ok || o > cur {
 				out[clusterID][p] = o
 			}
 		}
@@ -313,6 +315,19 @@ func compareMarkerToKafka(topic string, marker map[int32]int64, kafka kadm.Offse
 		}
 	})
 	return mismatches
+}
+
+// markerOffsetsMissingInKafka returns the marker's offset for each partition of the topic that has no Kafka
+// commit. When the scheduler resumed such a partition from lookback-on-no-commit beyond this offset, the
+// records in between were not built into blocks, and the marker is the only record of where they start.
+func markerOffsetsMissingInKafka(topic string, marker map[int32]int64, kafka kadm.Offsets) map[int32]int64 {
+	missing := map[int32]int64{}
+	for p, mo := range marker {
+		if _, inKafka := kafka.Lookup(topic, p); !inKafka {
+			missing[p] = mo
+		}
+	}
+	return missing
 }
 
 // validateMarkerIdentity returns an error if the marker belongs to a different topic or consumer group.

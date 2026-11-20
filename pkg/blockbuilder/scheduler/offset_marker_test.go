@@ -162,6 +162,28 @@ func TestMergeMarkerOffsets(t *testing.T) {
 	assert.Equal(t, current, mergeMarkerOffsets(current, nil, nil))
 }
 
+func TestMergeMarkerOffsets_NeverMovesBackwards(t *testing.T) {
+	ids := []clusterIdentity{{kafkaTopicID: "t0"}}
+	// The marker recorded partition 0 at 1000. Kafka then lost the commit and the scheduler resumed from
+	// lookback-on-no-commit.
+	base := newOffsetMarker("ingest", "g", markerOffsets{{0: 1000, 1: 50}}, ids, time.Now())
+
+	t.Run("lookback behind the marker: the marker doesn't rewind while the range is rebuilt", func(t *testing.T) {
+		got := mergeMarkerOffsets(markerOffsets{{0: 400}}, base, ids)
+		assert.Equal(t, int64(1000), got[0][0])
+	})
+
+	t.Run("once the scheduler passes the marker, the live offset wins", func(t *testing.T) {
+		got := mergeMarkerOffsets(markerOffsets{{0: 1200, 1: 60}}, base, ids)
+		assert.Equal(t, markerOffsets{{0: 1200, 1: 60}}, got)
+	})
+
+	t.Run("a recreated topic's higher offsets are not kept", func(t *testing.T) {
+		got := mergeMarkerOffsets(markerOffsets{{0: 10}}, base, []clusterIdentity{{kafkaTopicID: "NEW"}})
+		assert.Equal(t, markerOffsets{{0: 10}}, got)
+	})
+}
+
 func TestCompareMarkerToKafka(t *testing.T) {
 	const topic = "ingest"
 	kafka := func(offs map[int32]int64) kadm.Offsets {
@@ -190,6 +212,19 @@ func TestCompareMarkerToKafka(t *testing.T) {
 	t.Run("no marker yet is not a mismatch", func(t *testing.T) {
 		assert.Empty(t, compareMarkerToKafka(topic, nil, kafka(map[int32]int64{0: 400})))
 	})
+}
+
+func TestMarkerOffsetsMissingInKafka(t *testing.T) {
+	const topic = "ingest"
+	k := make(kadm.Offsets)
+	k.AddOffset(topic, 0, 700, 0)
+	k.AddOffset("other-topic", 1, 900, 0)
+
+	// Partition 0 has a Kafka commit. Partition 1 only has one for another topic, and partition 2 has none.
+	got := markerOffsetsMissingInKafka(topic, map[int32]int64{0: 500, 1: 600, 2: 300}, k)
+	assert.Equal(t, map[int32]int64{1: 600, 2: 300}, got)
+
+	assert.Empty(t, markerOffsetsMissingInKafka(topic, nil, k))
 }
 
 // --- Writer.
