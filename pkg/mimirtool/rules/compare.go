@@ -8,6 +8,7 @@ package rules
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"strings"
 
@@ -27,6 +28,10 @@ var (
 	errDiffSourceTenants   = errors.New("rule groups have different source tenants")
 	errDiffEvaluationDelay = errors.New("rule groups have different evaluation delay")
 	errDiffQueryOffset     = errors.New("rule groups have different query offset")
+
+	errDiffLimit               = errors.New("rule groups have different limit")
+	errDiffLabels              = errors.New("rule groups have different labels")
+	errDiffAlignEvaluationTime = errors.New("rule groups have different align_evaluation_time_on_interval")
 )
 
 // NamespaceState is used to denote the difference between the staged namespace
@@ -142,6 +147,18 @@ func CompareGroups(groupOne, groupTwo rwrulefmt.RuleGroup) error {
 
 	if getEvaluationDelayOrQueryOffsetValue(groupOne.QueryOffset) != getEvaluationDelayOrQueryOffsetValue(groupTwo.QueryOffset) {
 		return errDiffQueryOffset
+	}
+
+	if groupOne.Limit != groupTwo.Limit {
+		return errDiffLimit
+	}
+
+	if !maps.Equal(groupOne.Labels, groupTwo.Labels) {
+		return errDiffLabels
+	}
+
+	if groupOne.AlignEvaluationTimeOnInterval != groupTwo.AlignEvaluationTimeOnInterval {
+		return errDiffAlignEvaluationTime
 	}
 
 	for i := range groupOne.RWConfigs {
