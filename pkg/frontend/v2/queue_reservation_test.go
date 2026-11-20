@@ -828,6 +828,55 @@ func TestQueueReservation_RetryPicksAnotherWorkerWhenTheTargetStops(t *testing.T
 	})
 }
 
+func TestQueueReservation_RetryPicksAnotherWorkerWhenTheTargetLosesItsStreams(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		rejecting := newTestReservationWorker(t, "rejecting", true)
+		// No stream reads the channel of reconnecting, so the retry waits until its streams end.
+		reconnecting := newTestReservationWorker(t, "reconnecting", true)
+		granting := newTestReservationWorker(t, "granting", true)
+		f := newTargetedTestFrontend(map[string]*frontendSchedulerWorker{
+			rejecting.schedulerAddr:    rejecting,
+			reconnecting.schedulerAddr: reconnecting,
+		})
+		// With WorkerConcurrency 1, the reservation makes 2 attempts. So the grant shows that the wait
+		// for reconnecting did not count as an attempt.
+		r := &queueReservation{f: f, userID: reservationTestUserID, slots: 1, allStreamsGone: make(chan struct{}), done: make(chan struct{})}
+
+		go func() {
+			req := <-f.reserveCh
+			req.reply <- reserveResult{worker: rejecting, status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+		}()
+		go func() {
+			req := <-granting.targetedReserveCh
+			req.reply <- reserveResult{worker: granting, streamsGone: granting.reservationStreams.gone(), status: schedulerpb.OK}
+		}()
+		go r.run(t.Context())
+
+		// reconnecting is the only worker that did not reject, so the retry waits on its channel.
+		synctest.Wait()
+		select {
+		case <-r.done:
+			require.FailNow(t, "the reservation must wait for reconnecting", "err: %v", r.err)
+		default:
+		}
+
+		// For example, the query-scheduler restarts at the same address. The worker stays in the map,
+		// and its last stream ends.
+		f.schedulerWorkers.mu.Lock()
+		f.schedulerWorkers.workers[granting.schedulerAddr] = granting
+		f.schedulerWorkers.mu.Unlock()
+		reconnecting.reservationStreams.remove()
+
+		<-r.done
+		require.NoError(t, r.err)
+		require.Same(t, granting, r.worker)
+		require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeTooManyRequests)))
+		require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeOK)))
+		// The wait for reconnecting sent no RESERVE, so only the grant counts as a retry.
+		require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservationRetries))
+	})
+}
+
 func TestQueueReservation_TargetedReserveStopsWhenTheQueryContextEnds(t *testing.T) {
 	// No stream reads the channel of target, so the RESERVE waits for one until ctx ends.
 	target := newTestReservationWorker(t, "target", true)
