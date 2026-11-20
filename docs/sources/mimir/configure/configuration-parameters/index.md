@@ -6249,7 +6249,8 @@ query:
   # query-frontend keeps including the offset of a partition in the strong read
   # consistency offsets after the partition became inactive. 0 means the offset
   # of an inactive partition is excluded as soon as the query-ingesters-within
-  # period has elapsed.
+  # period has elapsed. A negative value means the offsets of all partitions are
+  # always included.
   # CLI flag: -ingest-storage.query.include-inactive-partitions-offset-duration
   [include_inactive_partitions_offset_duration: <duration> | default = 10m]
 

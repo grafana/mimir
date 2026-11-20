@@ -10576,7 +10576,7 @@
               "kind": "field",
               "name": "include_inactive_partitions_offset_duration",
               "required": false,
-              "desc": "How long, in addition to -querier.query-ingesters-within, the query-frontend keeps including the offset of a partition in the strong read consistency offsets after the partition became inactive. 0 means the offset of an inactive partition is excluded as soon as the query-ingesters-within period has elapsed.",
+              "desc": "How long, in addition to -querier.query-ingesters-within, the query-frontend keeps including the offset of a partition in the strong read consistency offsets after the partition became inactive. 0 means the offset of an inactive partition is excluded as soon as the query-ingesters-within period has elapsed. A negative value means the offsets of all partitions are always included.",
               "fieldValue": null,
               "fieldDefaultValue": 600000000000,
               "fieldFlag": "ingest-storage.query.include-inactive-partitions-offset-duration",
