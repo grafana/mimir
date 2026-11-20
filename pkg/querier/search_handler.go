@@ -290,28 +290,9 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		return nil, err
 	}
 
-	// Time range. Defaults match Prometheus PR #18573: start defaults to one
-	// hour before now, end defaults to now. Keeps the default window narrow
-	// enough that searches over an unspecified range stay cheap.
-	now := model.Now()
-	startMs := int64(now.Add(-time.Hour))
-	if v := q.Get("start"); v != "" {
-		startMs, err = util.ParseTime(v)
-		if err != nil {
-			return nil, fmt.Errorf("invalid start: %w", err)
-		}
-	}
-	endMs := int64(now)
-	if v := q.Get("end"); v != "" {
-		endMs, err = util.ParseTime(v)
-		if err != nil {
-			return nil, fmt.Errorf("invalid end: %w", err)
-		}
-	}
-	// end == start is permitted (zero-duration snapshot); only strictly
-	// inverted ranges are rejected, mirroring Prometheus PR #18573.
-	if endMs < startMs {
-		return nil, errors.New("end timestamp must not be before start timestamp")
+	startMs, endMs, err := ParseSearchTimeRange(q, time.Now())
+	if err != nil {
+		return nil, err
 	}
 
 	// Matchers (match[]). Each entry is a PromQL series selector.
@@ -358,6 +339,35 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		includeMetadata: includeMetadata,
 		labelName:       labelName,
 	}, nil
+}
+
+// ParseSearchTimeRange returns the start and end of a search request in milliseconds.
+// The querier and the query-frontend both call it.
+// This keeps the default time range the same in both.
+func ParseSearchTimeRange(form url.Values, now time.Time) (startMs, endMs int64, err error) {
+	// Time range. Defaults match Prometheus PR #18573: start defaults to one
+	// hour before now, end defaults to now. Keeps the default window narrow
+	// enough that searches over an unspecified range stay cheap.
+	startMs = now.Add(-time.Hour).UnixMilli()
+	if v := form.Get("start"); v != "" {
+		startMs, err = util.ParseTime(v)
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid start: %w", err)
+		}
+	}
+	endMs = now.UnixMilli()
+	if v := form.Get("end"); v != "" {
+		endMs, err = util.ParseTime(v)
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid end: %w", err)
+		}
+	}
+	// end == start is permitted (zero-duration snapshot); only strictly
+	// inverted ranges are rejected, mirroring Prometheus PR #18573.
+	if endMs < startMs {
+		return 0, 0, errors.New("end timestamp must not be before start timestamp")
+	}
+	return startMs, endMs, nil
 }
 
 // parseBoolParam reads key from q and parses it with strconv.ParseBool. If

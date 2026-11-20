@@ -28,6 +28,7 @@ import (
 
 	"github.com/go-kit/log"
 	prototypes "github.com/gogo/protobuf/types"
+	"github.com/golang/snappy"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -41,6 +42,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -2475,6 +2477,7 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 		cfg:    Config{QueryStoreAfter: 12 * time.Hour},
 		limits: limits{queryIngestersWithin: 13 * time.Hour},
 		codec:  newTestCodec(),
+		log:    log.NewNopLogger(),
 	}
 
 	now := time.Now()
@@ -2601,6 +2604,138 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 		})
 	}
 
+	recentStart := now.Add(-frontend.cfg.QueryStoreAfter).Add(1 * time.Minute)
+	oldStart := now.Add(-frontend.limits.QueryIngestersWithin("")).Add(-1 * time.Hour)
+	oldEnd := now.Add(-frontend.limits.QueryIngestersWithin("")).Add(-1 * time.Minute)
+
+	// These requests have optional time params, time params in the body, or no time params.
+	otherQueryTests := map[string]struct {
+		method                      string
+		url                         string
+		contentType                 string
+		body                        []byte
+		expectedAddlQueueDimensions []string
+	}{
+		"labels query with start after query store after and no end is ingesters only": {
+			url:                         fmt.Sprintf(labelValuesURLFormatWithStartOnly, recentStart.Unix()),
+			expectedAddlQueueDimensions: []string{ingesterQueryComponent},
+		},
+		"labels query with no start or end is ingesters-and-store-gateways": {
+			url:                         labelValuesURLFormat,
+			expectedAddlQueueDimensions: []string{ingesterAndStoreGatewayQueryComponent},
+		},
+		"label names query with no start or end is ingesters-and-store-gateways": {
+			url:                         "/prometheus/api/v1/labels",
+			expectedAddlQueueDimensions: []string{ingesterAndStoreGatewayQueryComponent},
+		},
+		"series query with end before query ingesters within is store-gateways only": {
+			url:                         fmt.Sprintf("/prometheus/api/v1/series?match[]=up&start=%d&end=%d", oldStart.Unix(), oldEnd.Unix()),
+			expectedAddlQueueDimensions: []string{storeGatewayQueryComponent},
+		},
+		"series query with no start or end is ingesters-and-store-gateways": {
+			url:                         "/prometheus/api/v1/series?match[]=up",
+			expectedAddlQueueDimensions: []string{ingesterAndStoreGatewayQueryComponent},
+		},
+		"search query with no start or end is ingesters only": {
+			url:                         "/prometheus/api/v1/search/metric_names",
+			expectedAddlQueueDimensions: []string{ingesterQueryComponent},
+		},
+		"search query with end before query ingesters within is store-gateways only": {
+			url:                         fmt.Sprintf("/prometheus/api/v1/search/label_names?start=%d&end=%d", oldStart.Unix(), oldEnd.Unix()),
+			expectedAddlQueueDimensions: []string{storeGatewayQueryComponent},
+		},
+		"search query with time params in the form body is store-gateways only": {
+			method:                      http.MethodPost,
+			url:                         "/prometheus/api/v1/search/label_values",
+			contentType:                 "application/x-www-form-urlencoded",
+			body:                        []byte(fmt.Sprintf("label=job&start=%d&end=%d", oldStart.Unix(), oldEnd.Unix())),
+			expectedAddlQueueDimensions: []string{storeGatewayQueryComponent},
+		},
+		"search query for metric names with metadata and end before query ingesters within is ingesters-and-store-gateways": {
+			url:                         fmt.Sprintf("/prometheus/api/v1/search/metric_names?include_metadata=true&start=%d&end=%d", oldStart.Unix(), oldEnd.Unix()),
+			expectedAddlQueueDimensions: []string{ingesterAndStoreGatewayQueryComponent},
+		},
+		"search query with invalid start is unknown": {
+			url:                         "/prometheus/api/v1/search/label_names?start=invalid",
+			expectedAddlQueueDimensions: nil,
+		},
+		"remote read query with queries before query ingesters within and after query store after is ingesters-and-store-gateways": {
+			method: http.MethodPost,
+			url:    "/prometheus/api/v1/read",
+			body: makeRemoteReadBody(t,
+				&prompb.Query{StartTimestampMs: oldStart.UnixMilli(), EndTimestampMs: oldEnd.UnixMilli()},
+				&prompb.Query{StartTimestampMs: recentStart.UnixMilli(), EndTimestampMs: now.UnixMilli()},
+			),
+			expectedAddlQueueDimensions: []string{ingesterAndStoreGatewayQueryComponent},
+		},
+		"remote read query with a later query that starts before query store after is ingesters-and-store-gateways": {
+			method: http.MethodPost,
+			url:    "/prometheus/api/v1/read",
+			body: makeRemoteReadBody(t,
+				&prompb.Query{StartTimestampMs: recentStart.UnixMilli(), EndTimestampMs: now.UnixMilli()},
+				&prompb.Query{StartTimestampMs: oldStart.UnixMilli(), EndTimestampMs: now.UnixMilli()},
+			),
+			expectedAddlQueueDimensions: []string{ingesterAndStoreGatewayQueryComponent},
+		},
+		"remote read query with end before query ingesters within is store-gateways only": {
+			method: http.MethodPost,
+			url:    "/prometheus/api/v1/read",
+			body: makeRemoteReadBody(t,
+				&prompb.Query{StartTimestampMs: oldStart.UnixMilli(), EndTimestampMs: oldEnd.UnixMilli()},
+			),
+			expectedAddlQueueDimensions: []string{storeGatewayQueryComponent},
+		},
+		"remote read query with no queries is ingesters only": {
+			method:                      http.MethodPost,
+			url:                         "/prometheus/api/v1/read",
+			body:                        makeRemoteReadBody(t),
+			expectedAddlQueueDimensions: []string{ingesterQueryComponent},
+		},
+		"remote read query that does not decode is unknown": {
+			method:                      http.MethodPost,
+			url:                         "/prometheus/api/v1/read",
+			body:                        []byte("not snappy"),
+			expectedAddlQueueDimensions: nil,
+		},
+		"metadata query is ingesters only": {
+			url:                         "/prometheus/api/v1/metadata",
+			expectedAddlQueueDimensions: []string{ingesterQueryComponent},
+		},
+		"exemplars query with end before query ingesters within is ingesters only": {
+			url:                         fmt.Sprintf("/prometheus/api/v1/query_exemplars?query=up&start=%d&end=%d", oldStart.Unix(), oldEnd.Unix()),
+			expectedAddlQueueDimensions: []string{ingesterQueryComponent},
+		},
+		"format query is ingesters only": {
+			url:                         "/prometheus/api/v1/format_query?query=up",
+			expectedAddlQueueDimensions: []string{ingesterQueryComponent},
+		},
+	}
+	for testName, testData := range otherQueryTests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := user.InjectOrgID(t.Context(), "tenant-0")
+
+			req, err := http.NewRequestWithContext(ctx, testData.method, testData.url, bytes.NewReader(testData.body))
+			require.NoError(t, err)
+			req.RequestURI = req.URL.RequestURI()
+			if testData.contentType != "" {
+				req.Header.Set("Content-Type", testData.contentType)
+			}
+			httpgrpcReq, err := httpgrpc.FromHTTPRequest(req)
+			require.NoError(t, err)
+
+			additionalQueueDimensions, err := frontend.extractTouchedQueryComponentsForHTTPRequest(
+				ctx, httpgrpcReq, now,
+			)
+			require.NoError(t, err)
+			require.Equal(t, testData.expectedAddlQueueDimensions, additionalQueueDimensions)
+		})
+	}
+}
+
+func makeRemoteReadBody(t *testing.T, queries ...*prompb.Query) []byte {
+	data, err := (&prompb.ReadRequest{Queries: queries}).Marshal()
+	require.NoError(t, err)
+	return snappy.Encode(nil, data)
 }
 
 func TestQueryDecoding(t *testing.T) {

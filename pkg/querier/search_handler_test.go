@@ -934,7 +934,7 @@ func TestParseSearchRequest_DefaultTimeRange(t *testing.T) {
 
 	assert.Equal(t, int64(3600000), req.endMs-req.startMs, "default window must be exactly one hour")
 	// endMs should fall in [before, after] modulo the small slack of the
-	// internal model.Now() call between us reading "before" and the handler
+	// internal time.Now() call between us reading "before" and the handler
 	// stamping the default. Add a 1s tolerance either side.
 	assert.GreaterOrEqual(t, req.endMs, before-1000, "endMs must not predate the test start")
 	assert.LessOrEqual(t, req.endMs, after+1000, "endMs must not exceed the test end")
@@ -956,6 +956,63 @@ func TestParseSearchRequest_RejectsInvertedTimeRange(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, req.startMs, req.endMs)
 	})
+}
+
+func TestParseSearchTimeRange(t *testing.T) {
+	now := time.UnixMilli(10 * time.Hour.Milliseconds())
+
+	tests := map[string]struct {
+		form          url.Values
+		expectedStart int64
+		expectedEnd   int64
+		expectedErr   string
+	}{
+		"no start or end is the last hour": {
+			form:          url.Values{},
+			expectedStart: now.Add(-time.Hour).UnixMilli(),
+			expectedEnd:   now.UnixMilli(),
+		},
+		"start only ends now": {
+			form:          url.Values{"start": {"3600"}},
+			expectedStart: time.Hour.Milliseconds(),
+			expectedEnd:   now.UnixMilli(),
+		},
+		"end only starts one hour before now": {
+			form:          url.Values{"end": {"34200"}},
+			expectedStart: now.Add(-time.Hour).UnixMilli(),
+			expectedEnd:   now.Add(-30 * time.Minute).UnixMilli(),
+		},
+		"end equal to start": {
+			form:          url.Values{"start": {"3600"}, "end": {"3600"}},
+			expectedStart: time.Hour.Milliseconds(),
+			expectedEnd:   time.Hour.Milliseconds(),
+		},
+		"invalid start": {
+			form:        url.Values{"start": {"invalid"}},
+			expectedErr: `invalid start: cannot parse "invalid" to a valid timestamp`,
+		},
+		"invalid end": {
+			form:        url.Values{"end": {"invalid"}},
+			expectedErr: `invalid end: cannot parse "invalid" to a valid timestamp`,
+		},
+		"end before start": {
+			form:        url.Values{"start": {"7200"}, "end": {"3600"}},
+			expectedErr: "end timestamp must not be before start timestamp",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			startMs, endMs, err := ParseSearchTimeRange(tc.form, now)
+			if tc.expectedErr != "" {
+				require.EqualError(t, err, tc.expectedErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedStart, startMs)
+			require.Equal(t, tc.expectedEnd, endMs)
+		})
+	}
 }
 
 func TestParseSearchRequest_ParamRoundTrip(t *testing.T) {
