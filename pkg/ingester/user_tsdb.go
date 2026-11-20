@@ -760,54 +760,44 @@ func (u *userTSDB) takePendingNonOwnedRefs(notAfter time.Time) []storage.SeriesR
 }
 
 func (u *userTSDB) computeOwnedSeries() int {
-	// If no token ranges are assigned, all head series are non-owned.
-	// activeSeries.Clear handles the active-series state; the loop below collects
-	// refs for targeted eviction.
 	allNonOwned := len(u.ownedTokenRanges) == 0
+	trackNonOwned := u.cfg.EarlyCompactionNonOwnedSeriesEnabled
 	if allNonOwned {
 		u.activeSeries.Clear()
-	}
-
-	idx := u.db.Head().MustIndex()
-	defer idx.Close()
-
-	count := 0
-	// Build the non-owned snapshot as a map directly so the reconciliation in
-	// addPendingNonOwnedRefs doesn't have to re-hash a slice under the lock.
-	var nonOwnedRefs map[storage.SeriesRef]struct{}
-	trackNonOwned := u.cfg.EarlyCompactionNonOwnedSeriesEnabled
-	if trackNonOwned {
-		nonOwnedRefs = make(map[storage.SeriesRef]struct{})
-	}
-
-	u.db.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
-		// Fast path: when no token range is owned every series in this batch is non-owned.
-		// activeSeries.Clear() above already handled the active-series side.
-		if allNonOwned {
-			if trackNonOwned {
-				for _, ref := range refs {
-					nonOwnedRefs[storage.SeriesRef(ref)] = struct{}{}
-				}
-			}
-			return
+		if !trackNonOwned {
+			return 0
 		}
-		for i, sh := range secondaryHashes {
-			if u.ownedTokenRanges.IncludesKey(sh) {
-				count++
-				continue
+	}
+
+	var nonOwned []storage.SeriesRef
+	if allNonOwned {
+		nonOwned = make([]storage.SeriesRef, 0, u.Head().NumSeries())
+	}
+	var idx tsdb.IndexReader
+	defer func() {
+		if idx != nil {
+			idx.Close()
+		}
+	}()
+	count := u.Head().Ownership(u.ownedTokenRanges, func(ref storage.SeriesRef) {
+		if !allNonOwned {
+			if idx == nil {
+				idx = mustIndex(u.Head())
 			}
-			u.activeSeries.Delete(refs[i], idx)
-			if trackNonOwned {
-				nonOwnedRefs[storage.SeriesRef(refs[i])] = struct{}{}
-			}
+			u.activeSeries.Delete(chunks.HeadSeriesRef(ref), idx)
+		}
+		if trackNonOwned {
+			nonOwned = append(nonOwned, ref)
 		}
 	})
 
-	// Queue the non-owned refs for targeted eviction by the next compaction-loop iteration.
 	if trackNonOwned {
+		nonOwnedRefs := make(map[storage.SeriesRef]struct{}, len(nonOwned))
+		for _, ref := range nonOwned {
+			nonOwnedRefs[ref] = struct{}{}
+		}
 		u.addPendingNonOwnedRefs(nonOwnedRefs)
 	}
-
 	return count
 }
 

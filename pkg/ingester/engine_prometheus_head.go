@@ -5,8 +5,10 @@ package ingester
 import (
 	"slices"
 
+	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
@@ -27,6 +29,20 @@ func (h prometheusHead) TimeBounds() timeBounds {
 
 func (h prometheusHead) MinInOrderAppendTime() (int64, bool) {
 	return h.AppendableMinValidTime()
+}
+
+func (h prometheusHead) Ownership(owned ring.TokenRanges, nonOwned func(storage.SeriesRef)) int {
+	var count int
+	h.ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
+		for i, hash := range secondaryHashes {
+			if len(owned) > 0 && owned.IncludesKey(hash) {
+				count++
+			} else {
+				nonOwned(storage.SeriesRef(refs[i]))
+			}
+		}
+	})
+	return count
 }
 
 func (h prometheusHead) ShardSeries(shardIndex, shardCount uint64) index.Postings {
