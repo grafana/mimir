@@ -3394,3 +3394,20 @@ func getDefaultLimits() Limits {
 	flagext.DefaultValues(&limits)
 	return limits
 }
+
+func TestOverrides_UsageTrackerReceivedSeriesEstimationEnabled(t *testing.T) {
+	disabled := getDefaultLimits()
+	disabled.UsageTrackerReceivedSeriesEstimationEnabled = false
+	enabled := getDefaultLimits()
+
+	ov := NewOverrides(getDefaultLimits(), NewMockTenantLimits(map[string]*Limits{
+		"disabled": &disabled,
+		// The tenant's value applies to all its read compartments: an override of a compartment doesn't change it.
+		"disabled:source=test-run": &enabled,
+	}))
+
+	assert.True(t, ov.UsageTrackerReceivedSeriesEstimationEnabled("other"))
+	assert.True(t, ov.UsageTrackerReceivedSeriesEstimationEnabled("other:source=test-run"))
+	assert.False(t, ov.UsageTrackerReceivedSeriesEstimationEnabled("disabled"))
+	assert.False(t, ov.UsageTrackerReceivedSeriesEstimationEnabled("disabled:source=test-run"))
+}

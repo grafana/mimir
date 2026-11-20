@@ -12,13 +12,26 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/usagetracker/hll"
 )
 
 const testIdleTimeout = 20 * time.Minute
 
 func BenchmarkTrackerStoreTrackSeries(b *testing.B) {
+	benchmarkTrackerStoreTrackSeriesMatrix(b, false)
+}
+
+// BenchmarkTrackerStoreTrackSeriesWithReceivedSeries is BenchmarkTrackerStoreTrackSeries with the received series
+// estimation enabled for every tenant.
+func BenchmarkTrackerStoreTrackSeriesWithReceivedSeries(b *testing.B) {
+	benchmarkTrackerStoreTrackSeriesMatrix(b, true)
+}
+
+func benchmarkTrackerStoreTrackSeriesMatrix(b *testing.B, receivedSeries bool) {
 	for _, totalSeries := range []int{10e6, 100e6} {
 		b.Run(fmt.Sprintf("totalSeries=%dM", totalSeries/1e6), func(b *testing.B) {
 			seriesRefs := make([]uint64, totalSeries)
@@ -37,7 +50,7 @@ func BenchmarkTrackerStoreTrackSeries(b *testing.B) {
 						b.Run("tenants="+strconv.Itoa(tenantsCount), func(b *testing.B) {
 							for _, cleanupsEnabled := range []bool{true, false} {
 								b.Run("cleanups="+strconv.FormatBool(cleanupsEnabled), func(b *testing.B) {
-									benckmarkTrackerStoreTrackSeries(b, seriesRefs, seriesPerRequest, tenantsCount, cleanupsEnabled)
+									benckmarkTrackerStoreTrackSeries(b, seriesRefs, seriesPerRequest, tenantsCount, cleanupsEnabled, receivedSeries)
 								})
 							}
 						})
@@ -48,10 +61,13 @@ func BenchmarkTrackerStoreTrackSeries(b *testing.B) {
 	}
 }
 
-func benckmarkTrackerStoreTrackSeries(b *testing.B, seriesRefs []uint64, seriesPerRequest, tenantsCount int, cleanupsEnabled bool) {
+func benckmarkTrackerStoreTrackSeries(b *testing.B, seriesRefs []uint64, seriesPerRequest, tenantsCount int, cleanupsEnabled, receivedSeries bool) {
 	nowSeconds := atomic.NewInt64(0)
 	now := func() time.Time { return time.Unix(nowSeconds.Load(), 0) }
 	t := newTrackerStore(testIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, newTestShardFactory())
+	if receivedSeries {
+		t.receivedSeries = newReceivedSeriesEstimation(defaultReceivedSeriesEstimationHLLPrecision, 1, testIdleTimeout)
+	}
 
 	seriesPerTenant := len(seriesRefs) / tenantsCount
 	// Warmup each tenant.
@@ -214,5 +230,67 @@ func BenchmarkTrackerStoreTrackSeriesDuringSnapshot(b *testing.B) {
 			<-done
 			b.ReportMetric(float64(slowest.Microseconds())/1000, "max_ms")
 		})
+	}
+}
+
+// BenchmarkTrackerStoreCollect collects the metrics of a store whose tenants have a sketch in every minute of the
+// idle timeout. With estimates=warm, each estimate merges two sketches. With estimates=cold, each Collect is in
+// another minute than the previous one, so each estimate merges all the minutes of the window, like the first
+// Collect of each minute.
+func BenchmarkTrackerStoreCollect(b *testing.B) {
+	start := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	minutes := int(testIdleTimeout.Minutes())
+	// One sketch of 1000 random series per minute, for all the tenants: the timelines keep copies.
+	sketches := make([]hll.Sketch, minutes)
+	values := make([]uint64, 1000)
+	for m := range sketches {
+		for i := range values {
+			values[i] = rand.Uint64()
+		}
+		sketches[m] = hll.NewSketch(defaultReceivedSeriesEstimationHLLPrecision)
+		sketches[m].InsertAll(values, 1)
+	}
+
+	for _, tenantsCount := range []int{100, 1_000, 10_000} {
+		for _, estimates := range []string{"disabled", "warm", "cold"} {
+			b.Run(fmt.Sprintf("tenants=%d/estimates=%s", tenantsCount, estimates), func(b *testing.B) {
+				store := newTrackerStore(testIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, newTestShardFactory())
+				last := start.Add(time.Duration(minutes-1) * time.Minute)
+				scrapeTime := last
+				if estimates != "disabled" {
+					store.receivedSeries = newReceivedSeriesEstimation(defaultReceivedSeriesEstimationHLLPrecision, 1, testIdleTimeout)
+					store.receivedSeries.now = func() time.Time { return scrapeTime }
+				}
+				for tenant := range tenantsCount {
+					_, err := store.trackSeries(context.Background(), strconv.Itoa(tenant), nil, start)
+					require.NoError(b, err)
+				}
+				for _, tenant := range store.tenants {
+					if timeline := tenant.receivedSeries.Load(); timeline != nil {
+						for m, sketch := range sketches {
+							minute := unixMinute(start) + int64(m)
+							timeline.Merge(minute, minute, sketch)
+						}
+					}
+				}
+
+				// Two metrics per tenant: the active series and the estimate.
+				metrics := make(chan prometheus.Metric, 2*tenantsCount+10)
+				for b.Loop() {
+					if estimates == "cold" {
+						if scrapeTime.Equal(last) {
+							scrapeTime = last.Add(time.Minute)
+						} else {
+							scrapeTime = last
+						}
+					}
+					store.Collect(metrics)
+					for len(metrics) > 0 {
+						<-metrics
+					}
+				}
+				b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*tenantsCount), "ns/tenant")
+			})
+		}
 	}
 }
