@@ -31,11 +31,9 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// TestBlocksStoreQuerier_ConsistencyCheckWhileTenantShardSizeChanges reproduces the race between queriers and
-// store-gateways when a tenant's store-gateway shard size changes: queriers switch to the new tenant shard as soon
-// as they see the new shard size, while the store-gateways owning blocks in the new tenant shard load them only at
-// their next blocks sync. It runs the querier consistency check against store-gateways simulated with the real
-// sharding strategy, and the real store-gateways replication set.
+// TestBlocksStoreQuerier_ConsistencyCheckWhileTenantShardSizeChanges reproduces the race when a tenant's shard size
+// changes: queriers switch to the new tenant shard immediately, while its new owners load the blocks only at their
+// next sync.
 func TestBlocksStoreQuerier_ConsistencyCheckWhileTenantShardSizeChanges(t *testing.T) {
 	tests := map[string]struct {
 		fromShardSize int
@@ -51,7 +49,6 @@ func TestBlocksStoreQuerier_ConsistencyCheckWhileTenantShardSizeChanges(t *testi
 			t.Run("without shard size transitions the query fails until the new owners sync", func(t *testing.T) {
 				env := newShardSizeTransitionQueryEnv(t, testData.fromShardSize, 0)
 
-				// All store-gateways sync with the initial shard size and the query succeeds.
 				env.syncStoreGateways(t, env.allStoreGateways())
 				require.NoError(t, env.query(t))
 
@@ -62,7 +59,6 @@ func TestBlocksStoreQuerier_ConsistencyCheckWhileTenantShardSizeChanges(t *testi
 				require.ErrorAs(t, env.query(t), &consistencyErr)
 				require.NotEmpty(t, consistencyErr.remainingBlocks)
 
-				// Once the new owners sync, queries succeed again.
 				env.syncStoreGateways(t, env.allStoreGateways())
 				require.NoError(t, env.query(t))
 			})
@@ -70,7 +66,6 @@ func TestBlocksStoreQuerier_ConsistencyCheckWhileTenantShardSizeChanges(t *testi
 			t.Run("with shard size transitions the query succeeds while the store-gateways sync", func(t *testing.T) {
 				env := newShardSizeTransitionQueryEnv(t, testData.fromShardSize, time.Hour)
 
-				// All store-gateways sync with the initial shard size and the query succeeds in a single attempt.
 				env.syncStoreGateways(t, env.allStoreGateways())
 				require.NoError(t, env.query(t))
 				require.Len(t, env.lastQueryAttempts, 1)
@@ -87,7 +82,6 @@ func TestBlocksStoreQuerier_ConsistencyCheckWhileTenantShardSizeChanges(t *testi
 				env.syncStoreGateways(t, previousOwners)
 				require.NoError(t, env.query(t))
 
-				// All store-gateways sync, so the new owners load their blocks too.
 				env.syncStoreGateways(t, env.allStoreGateways())
 				require.NoError(t, env.query(t))
 
@@ -108,7 +102,6 @@ func TestBlocksStoreQuerier_ShardSizeTransitionShouldEnd(t *testing.T) {
 	require.NoError(t, env.query(t))
 	assert.Zero(t, env.querierTransitionEvents(t, "started"))
 
-	// The shard size shrinks, and every store-gateway syncs during the transition.
 	env.limits.storeGatewayTenantShardSize = 3
 	require.NoError(t, env.query(t))
 	env.syncStoreGateways(t, env.allStoreGateways())
@@ -120,15 +113,13 @@ func TestBlocksStoreQuerier_ShardSizeTransitionShouldEnd(t *testing.T) {
 	assert.Equal(t, 1.0, env.storeGatewayTransitionEvents(t, "started"))
 	assert.Zero(t, env.storeGatewayTransitionEvents(t, "ended"))
 
-	// The store-gateways leaving the tenant shard keep their blocks during the transition.
 	leaving := env.storeGatewaysLeavingTheTenantShard(t)
 	require.NotEmpty(t, leaving)
 	for _, addr := range leaving {
 		assert.NotEmpty(t, env.storeGateways[addr].loaded, "store-gateway %s", addr)
 	}
 
-	// After the transition period, the next sync unloads the blocks of the store-gateways leaving the tenant shard,
-	// while queries keep succeeding, in a single attempt, from the new owners.
+	// After the period, the next sync unloads the blocks of the leaving store-gateways, and queries keep using a single attempt.
 	time.Sleep(transitionPeriod + 100*time.Millisecond)
 	env.syncStoreGateways(t, env.allStoreGateways())
 	require.NoError(t, env.query(t))
@@ -257,7 +248,6 @@ func newShardSizeTransitionQueryEnv(t *testing.T, shardSize int, transitionPerio
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), env.stores))
 	})
 
-	// Wait until the ring client has initialised the state.
 	test.Poll(t, time.Second, numZones*instancesPerZone, func() interface{} {
 		all, err := env.ring.GetAllHealthy(storegateway.BlocksRead)
 		if err != nil {
@@ -337,8 +327,6 @@ func (e *shardSizeTransitionQueryEnv) storeGatewaysWithBlocks() []string {
 	return addrs
 }
 
-// storeGatewaysLeavingTheTenantShard returns the store-gateways which own blocks of the tenant, but aren't in the
-// tenant shard according to the current shard size.
 func (e *shardSizeTransitionQueryEnv) storeGatewaysLeavingTheTenantShard(t *testing.T) []string {
 	t.Helper()
 
@@ -382,8 +370,6 @@ func (e *shardSizeTransitionQueryEnv) syncStoreGateways(t *testing.T, addrs []st
 	}
 }
 
-// assertBlocksQueriedFromNewOwners asserts that, in the last query, every block was queried from an owner in the
-// tenant shard of the current shard size, and that every owner has the block loaded.
 func (e *shardSizeTransitionQueryEnv) assertBlocksQueriedFromNewOwners(t *testing.T) {
 	t.Helper()
 
@@ -417,7 +403,6 @@ func (e *shardSizeTransitionQueryEnv) storeGatewayTransitionEvents(t *testing.T,
 	return 0
 }
 
-// transitionEvents returns the value of the shard size transitions counter with the input component and event.
 func transitionEvents(t *testing.T, reg prometheus.Gatherer, component, event string) float64 {
 	t.Helper()
 

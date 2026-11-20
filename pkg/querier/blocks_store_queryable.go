@@ -69,8 +69,7 @@ type BlocksStoreSet interface {
 	// The exclude parameter is the map of blocks -> store-gateway addresses that should be excluded.
 	GetClientsFor(userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][][]ulid.ULID, error)
 
-	// InShardSizeTransition returns whether the tenant's shard size changed recently, as observed by the last call to
-	// GetClientsFor. During a transition GetClientsFor alternates between the new and the previous tenant shard.
+	// InShardSizeTransition returns whether the tenant's shard size changed recently, as of the last GetClientsFor call.
 	InShardSizeTransition(userID string) bool
 }
 
@@ -804,8 +803,8 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		}
 		spanLog.DebugLog("msg", "found store-gateway instances to query", "num instances", len(clients), "attempt", attempt)
 
-		// While the tenant's shard size is changing, attempts alternate between the new and previous tenant shards,
-		// starting with the new one. Double the attempts so that each shard is tried as many times as it would be alone.
+		// Attempts alternate between the new and previous tenant shards during a transition, so double them to try each
+		// shard as many times as it would be alone.
 		if attempt == 1 && stores.InShardSizeTransition(tenantID) {
 			maxAttempts *= 2
 		}

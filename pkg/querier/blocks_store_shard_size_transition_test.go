@@ -75,7 +75,6 @@ func newShardSizeTransitionTestEnv(t testing.TB, shardSize int, transitions *sto
 	require.NoError(t, services.StartAndAwaitRunning(ctx, set))
 	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, set)) })
 
-	// Wait until the ring client has initialised the state.
 	test.Poll(t, time.Second, numInstances, func() interface{} {
 		all, err := r.GetAllHealthy(storegateway.BlocksRead)
 		if err != nil {
@@ -99,7 +98,6 @@ func newShardSizeTransitionTestEnv(t testing.TB, shardSize int, transitions *sto
 	return env
 }
 
-// getClients returns the address of the store-gateway chosen for each block.
 func (e *shardSizeTransitionTestEnv) getClients(t testing.TB, userID string, exclude map[ulid.ULID][]string) map[ulid.ULID]string {
 	t.Helper()
 
@@ -143,7 +141,6 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShardSizeTransition(t *testing.
 	oldAddrs := env.addrsInShard(userID, oldShardSize)
 	newAddrs := env.addrsInShard(userID, newShardSize)
 
-	// Before any change, only the tenant shard is used.
 	for _, addr := range env.getClients(t, userID, nil) {
 		require.Contains(t, oldAddrs, addr)
 	}
@@ -276,7 +273,6 @@ func BenchmarkBlocksStoreReplicationSet_GetClientsFor_ShardSizeTransitions(b *te
 				env.limits.storeGatewayTenantShardSize = 9
 			}
 
-			// The retry excludes the instances picked by the first attempt.
 			var exclude map[ulid.ULID][]string
 			if testData.retry {
 				exclude = map[ulid.ULID][]string{}
@@ -375,11 +371,6 @@ func TestBlocksStoreQuerier_ShardSizeTransitionShouldDoubleAttempts(t *testing.T
 	}
 }
 
-// shardSizeTransitionsVariants returns the shard size transitions settings that the replication set tests run with:
-// disabled, and enabled. A tracker observing a tenant shard size that never changes is settled, so tests which don't
-// change the shard size expect the same results with and without it.
-
-// noShardSizeTransitions returns nil, which disables shard size transitions.
 func noShardSizeTransitions() *storegateway.ShardSizeTransitions {
 	return nil
 }
