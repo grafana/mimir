@@ -663,7 +663,9 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 		db.updateLastSeriesRemoval()
 
 		seriesAfter := db.Head().NumSeries()
-		// Eviction can return an error after removing series, or return nil without removing any.
+		// Count a drop in head series even if eviction returns an error. A nil error
+		// can mean nothing was removed, for example if refs no longer exist or the
+		// engine skips series with pending out-of-order data.
 		if seriesAfter < seriesBefore {
 			i.metrics.earlyCompactionNonOwnedSeriesTriggered.WithLabelValues(userID).Inc()
 		}
