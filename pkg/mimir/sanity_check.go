@@ -146,20 +146,37 @@ func checkObjectStoresConfig(ctx context.Context, cfg Config, logger log.Logger)
 	return errs.Err()
 }
 
-// checkBlocksStorageConfig checks connectivity to the blocks storage bucket. With compartments enabled the
-// querier's bucket name carries the read-compartment placeholder (it reads one bucket per read
-// compartment), so each compartment's resolved bucket is checked; otherwise the single configured bucket
-// is checked, as the placeholder is invalid as an actual bucket name.
+// checkBlocksStorageConfig checks connectivity to the blocks storage bucket and to the additional read
+// buckets of all read compartments. With compartments enabled the querier's bucket name carries the read-compartment placeholder (it
+// reads one bucket per read compartment), so each compartment's resolved bucket is checked; otherwise the
+// single configured bucket is checked, as the placeholder is invalid as an actual bucket name.
 func checkBlocksStorageConfig(ctx context.Context, cfg Config, logger log.Logger) error {
+	errs := multierror.New()
+
 	bucketCfg := cfg.BlocksStorage.Bucket
 	if !cfg.Compartments.Enabled || !strings.HasSuffix(bucketCfg.BucketName(), compartments.ReadCompartmentIDPlaceholder) {
-		return checkObjectStoreConfig(ctx, bucketCfg, logger)
+		errs.Add(checkObjectStoreConfig(ctx, bucketCfg, logger))
+	} else {
+		for c := 0; c < cfg.Compartments.Read.NumCompartments; c++ {
+			errs.Add(errors.Wrapf(checkObjectStoreConfig(ctx, bucketCfg.ReadCompartmentConfig(c), logger), "read compartment %d", c))
+		}
 	}
 
-	errs := multierror.New()
-	for c := 0; c < cfg.Compartments.Read.NumCompartments; c++ {
-		errs.Add(errors.Wrapf(checkObjectStoreConfig(ctx, bucketCfg.ReadCompartmentConfig(c), logger), "read compartment %d", c))
+	numReadCompartments := 1
+	if cfg.Compartments.Enabled {
+		numReadCompartments = cfg.Compartments.Read.NumCompartments
 	}
+	for c := 0; c < numReadCompartments; c++ {
+		additionalReadCfgs, err := cfg.BlocksStorage.AdditionalReadBucketConfigs(c)
+		if err != nil {
+			errs.Add(err)
+			break
+		}
+		for _, additionalReadCfg := range additionalReadCfgs {
+			errs.Add(errors.Wrapf(checkObjectStoreConfig(ctx, additionalReadCfg, logger), "additional read bucket %q", additionalReadCfg.BucketName()))
+		}
+	}
+
 	return errs.Err()
 }
 
