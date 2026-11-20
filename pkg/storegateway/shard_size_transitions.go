@@ -11,14 +11,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// ShardSizeTransitions tracks, in memory, the store-gateway shard size of each tenant and detects when it changes.
+// ShardSizeTransitions tracks, in memory, each tenant's store-gateway shard size. After a change, the new owners of
+// a tenant's blocks load them only at their next sync, so the previous shard size is reported for the transition
+// period, for store-gateways to keep their blocks and queriers to fall back to them.
 //
-// After a change, store-gateways that become owners of a tenant's blocks load them only at their next sync, while
-// queriers start using the new tenant shard immediately. For the duration of the transition, the previous shard size
-// is reported so that store-gateways keep the blocks they already loaded, and queriers can fall back to them.
-//
-// The state is not persisted: a process that restarts has no history and behaves as if no transition is in progress.
-// A nil *ShardSizeTransitions is valid and never reports a transition.
+// A restarted process has no history and reports no transition. A nil *ShardSizeTransitions never reports one.
 type ShardSizeTransitions struct {
 	period time.Duration
 	now    func() time.Time
@@ -30,19 +27,17 @@ type ShardSizeTransitions struct {
 	tenants map[string]*tenantShardSize
 }
 
-// TenantShardSize is a tenant's store-gateway shard size as configured: either a shard size per zone, or a total
-// shard size. It's tracked as configured, rather than as the total number of store-gateways it resolves to, so that
-// adding or removing a zone isn't a shard size change when the shard size is per zone: the tenant's shard in the other
-// zones doesn't change. It's comparable, and equal configurations are equal once normalized.
+// TenantShardSize is a tenant's shard size as configured, not as resolved to a total, so that adding or removing a
+// zone isn't a change when the shard size is per zone: the tenant's shard in the other zones doesn't change.
 type TenantShardSize struct {
-	// PerZone is the shard size per zone. If greater than 0, it takes precedence over Total.
+	// PerZone takes precedence over Total if greater than 0.
 	PerZone int
 
-	// Total is the total shard size. A shard size of 0 means shuffle sharding is disabled.
+	// Total of 0 means shuffle sharding is disabled.
 	Total int
 }
 
-// normalized returns the shard size with only the field in use set, so that equivalent configurations are equal.
+// normalized sets only the field in use, so that equivalent sizes are equal.
 func (s TenantShardSize) normalized() TenantShardSize {
 	if s.PerZone > 0 {
 		return TenantShardSize{PerZone: s.PerZone}
@@ -50,10 +45,8 @@ func (s TenantShardSize) normalized() TenantShardSize {
 	return TenantShardSize{Total: max(s.Total, 0)}
 }
 
-// total returns the total number of store-gateways in the tenant shard of the ring r. A per-zone shard size is
-// multiplied by the number of zones in the ring. ZonesCount() returns 0 only if there are no instances in the
-// ring, which is counted as 1 zone. In non-zone-aware setups, ZonesCount() returns 1 because the empty
-// zone string is counted as a zone.
+// total returns the number of store-gateways in the tenant shard of r. ZonesCount() is 0 only for an empty ring, and 1 in
+// non-zone-aware setups, where the empty zone counts as a zone.
 func (s TenantShardSize) total(r *ring.Ring) int {
 	if s.PerZone > 0 {
 		return s.PerZone * max(r.ZonesCount(), 1)
@@ -62,7 +55,6 @@ func (s TenantShardSize) total(r *ring.Ring) int {
 }
 
 type tenantShardSize struct {
-	// current is the observed shard size during the request or sync.
 	current TenantShardSize
 
 	// previous is the last settled shard size before the current one. It's only meaningful during a transition.
@@ -76,9 +68,9 @@ func (s *tenantShardSize) inTransition(now time.Time, period time.Duration) bool
 	return !s.since.IsZero() && now.Sub(s.since) < period
 }
 
-// NewShardSizeTransitions returns a ShardSizeTransitions in which a shard size change is a transition for the
-// input period. The component ("querier" or "store-gateway") labels the exported metrics, so that both can be
-// registered in the same registry when running in monolithic mode. The registerer can be nil.
+// NewShardSizeTransitions returns a ShardSizeTransitions where a shard size change is a transition for the input
+// period. The component labels the metrics, so that a querier and a store-gateway can share a registry in monolithic
+// mode. The registerer can be nil.
 func NewShardSizeTransitions(period time.Duration, component string, reg prometheus.Registerer) *ShardSizeTransitions {
 	transitions := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name:        "cortex_shard_size_transitions_total",
@@ -95,8 +87,7 @@ func NewShardSizeTransitions(period time.Duration, component string, reg prometh
 	}
 }
 
-// InTransition returns whether the tenant's last observed shard size changed less than the transition period ago.
-// It doesn't record anything, so it reflects the last call to Observe.
+// InTransition returns whether the tenant is in transition. It doesn't record anything, so it reflects the last Observe.
 func (t *ShardSizeTransitions) InTransition(userID string) bool {
 	if t == nil {
 		return false
@@ -109,11 +100,10 @@ func (t *ShardSizeTransitions) InTransition(userID string) bool {
 	return ok && !s.since.IsZero() && s.previous != s.current && s.inTransition(t.now(), t.period)
 }
 
-// Observe records shardSize as the current shard size of the tenant. If it changed less than the transition period
-// ago, it returns the shard size which was in use before the change and true.
+// Observe records shardSize as the tenant's current shard size, and returns the previous one if it's in transition.
 //
-// If the shard size changes again during a transition, the transition restarts and keeps reporting the shard size
-// from before the first change, since that's the last one all store-gateways are known to have loaded.
+// If the shard size changes again during a transition, the period restarts and the previous shard size is still the
+// one from before the first change, as it's the last one all store-gateways are known to have loaded.
 func (t *ShardSizeTransitions) Observe(userID string, shardSize TenantShardSize) (previous TenantShardSize, inTransition bool) {
 	if t == nil {
 		return TenantShardSize{}, false
@@ -159,8 +149,6 @@ func (t *ShardSizeTransitions) Observe(userID string, shardSize TenantShardSize)
 
 	if s.current != shardSize {
 		if !inTransition {
-			// The previous shard size is the last settled one, which keeps being reported if the shard size changes
-			// again during the transition.
 			s.previous = s.current
 			t.transitionsStarted.Inc()
 		}

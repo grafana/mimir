@@ -56,8 +56,7 @@ type ShuffleShardingStrategy struct {
 	logger             log.Logger
 }
 
-// NewShuffleShardingStrategy makes a new ShuffleShardingStrategy. The transitions can be nil to disable
-// shard size transitions.
+// NewShuffleShardingStrategy makes a new ShuffleShardingStrategy.
 func NewShuffleShardingStrategy(r *ring.Ring, instanceID, instanceAddr string, dynamicReplication DynamicReplication, limits ShardingLimits, transitions *ShardSizeTransitions, logger log.Logger) *ShuffleShardingStrategy {
 	return &ShuffleShardingStrategy{
 		r:                  r,
@@ -154,8 +153,8 @@ func (s *ShuffleShardingStrategy) FilterBlocks(_ context.Context, userID string,
 		// we can safely unload it only once at least 1 authoritative owner is available
 		// for queries.
 		if _, ok := loaded[blockID]; ok {
-			// If the tenant's shard size changed recently, the new owners may not have loaded the block yet,
-			// so keep it while this store-gateway was an owner before the change.
+			// The new owners may not have loaded the block yet after a shard size change, so keep it if this store-gateway
+			// owned it before.
 			if previousRing != nil {
 				if previousSet, err := previousRing.GetWithOptions(key, BlocksOwnerSync, ringOpts...); err == nil && previousSet.Includes(s.instanceAddr) {
 					continue
@@ -185,12 +184,11 @@ func GetShuffleShardingSubring(ring *ring.Ring, userID string, limits ShardingLi
 	return shuffleShardingSubring(ring, userID, configuredShardSize(userID, limits).total(ring))
 }
 
-// GetShuffleShardingSubrings returns the same subring as GetShuffleShardingSubring and, if the tenant's shard size
-// changed recently according to transitions, the subring of the shard size in use before the change. Otherwise, the
-// previous subring is nil. The transitions can be nil, in which case the previous subring is always nil.
+// GetShuffleShardingSubrings returns the same subring as GetShuffleShardingSubring and, if the tenant's shard size is in
+// transition, the subring of the previous shard size, resolved against the zones currently in the ring. Otherwise the
+// previous subring is nil.
 //
-// A change of the number of zones in the ring isn't a shard size change when the shard size is per zone, so it's not
-// a transition. The previous subring is always resolved against the zones currently in the ring.
+// A change of the number of zones isn't a transition when the shard size is per zone.
 func GetShuffleShardingSubrings(ring *ring.Ring, userID string, limits ShardingLimits, transitions *ShardSizeTransitions) (current, previous ring.ReadRing) {
 	shardSize := configuredShardSize(userID, limits)
 	current = shuffleShardingSubring(ring, userID, shardSize.total(ring))
@@ -201,10 +199,9 @@ func GetShuffleShardingSubrings(ring *ring.Ring, userID string, limits ShardingL
 	return current, previous
 }
 
-// configuredShardSize returns the tenant's configured shard size. The per-zone shard size takes precedence over the
-// total shard size. When set, the total shard size is computed as per-zone shard size * number of zones.
-// This is useful during zone migrations (e.g., RF 3 -> RF 4) because it ensures the
-// shard size scales with the number of zones, preventing block reshuffling in existing zones.
+// configuredShardSize returns the tenant's configured shard size. A per-zone shard size takes precedence over the total
+// one, and scales the shard with the number of zones, which prevents block reshuffling in existing zones during zone
+// migrations (e.g., RF 3 -> RF 4).
 func configuredShardSize(userID string, limits ShardingLimits) TenantShardSize {
 	if perZone := limits.StoreGatewayTenantShardSizePerZone(userID); perZone > 0 {
 		return TenantShardSize{PerZone: perZone}

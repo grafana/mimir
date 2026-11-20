@@ -275,14 +275,12 @@ func TestShuffleShardingStrategy_ShardSizeTransition(t *testing.T) {
 		return kept
 	}
 
-	// The store-gateway syncs before the change, and loads the blocks of the old tenant shard.
 	users, err := strategy.FilterUsers(ctx, []string{userID})
 	require.NoError(t, err)
 	require.Equal(t, []string{userID}, users)
 	loaded := filterBlocks(strategy, nil)
 	require.NotEmpty(t, loaded)
 
-	// The shard size changes.
 	limits.storeGatewayTenantShardSize = newShardSize
 
 	// Without transitions, the store-gateway would unload every block.
@@ -404,7 +402,6 @@ func BenchmarkShuffleShardingStrategy_FilterBlocks_ShardSizeTransition(b *testin
 		return m
 	}
 
-	// The blocks loaded before the shard size change, computed without transitions.
 	limits.storeGatewayTenantShardSize = 90
 	loaded := map[ulid.ULID]struct{}{}
 	initial := metas()
@@ -516,7 +513,6 @@ func TestShardSizeTransitions_Observe_PerZoneShardSize(t *testing.T) {
 	require.False(t, inTransition)
 }
 
-// noShardSizeTransitions returns nil, which disables shard size transitions.
 func noShardSizeTransitions() *ShardSizeTransitions {
 	return nil
 }
@@ -596,7 +592,6 @@ func TestShardSizeTransitions_MetricsOfQuerierAndStoreGatewayShouldRegisterInThe
 	`), "cortex_shard_size_transitions_total"))
 }
 
-// metricHelp returns the help text of the shard size transitions metric.
 func metricHelp(t *testing.T, reg prometheus.Gatherer) string {
 	t.Helper()
 

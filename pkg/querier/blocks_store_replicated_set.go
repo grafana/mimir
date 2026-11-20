@@ -40,7 +40,6 @@ type blocksStoreReplicationSet struct {
 	dynamicReplication storegateway.DynamicReplication
 	limits             BlocksStoreLimits
 
-	// transitions is nil if shard size transitions are disabled.
 	transitions *storegateway.ShardSizeTransitions
 
 	// When non empty, the querier prioritises querying blocks from store-gateways in these zones with equal priority.
@@ -125,10 +124,9 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 			ringOpts = append(ringOpts, ring.WithReplicationFactor(replicationFactor))
 		}
 
-		// While the tenant's shard size is changing, try the new tenant shard first, then alternate with the
-		// previous one on each retry of the block, because the new owners may not have loaded it yet. Each attempt
-		// adds an excluded instance for the block, so their count tells which attempt this is. If a shard has no
-		// instance left to try, we use the other one.
+		// During a transition, try the new tenant shard first and alternate on each retry of the block, because the new
+		// owners may not have loaded it yet. The attempt number is the count of excluded instances. A shard with no
+		// instance left falls back to the other one.
 		userRings := [2]ring.ReadRing{userRing, previousUserRing}
 		numUserRings := 1
 		if previousUserRing != nil {
@@ -183,7 +181,6 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 	return clients, nil
 }
 
-// InShardSizeTransition implements BlocksStoreSet.
 func (s *blocksStoreReplicationSet) InShardSizeTransition(userID string) bool {
 	return s.transitions.InTransition(userID)
 }
