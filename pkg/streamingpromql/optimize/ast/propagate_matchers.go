@@ -40,6 +40,10 @@ func (p *PropagateMatchers) Name() string {
 	return "Propagate matchers"
 }
 
+func (p *PropagateMatchers) Slug() string {
+	return "propagate-matchers"
+}
+
 func (p *PropagateMatchers) Apply(ctx context.Context, expr parser.Expr, _ *planning.QueryParameters) (parser.Expr, error) {
 	p.propagateMatchersAttempts.Inc()
 	mapper := NewPropagateMatchersMapper()

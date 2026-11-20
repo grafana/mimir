@@ -23,6 +23,10 @@ func (s *SortLabelsAndMatchers) Name() string {
 	return "Sort labels and matchers"
 }
 
+func (s *SortLabelsAndMatchers) Slug() string {
+	return "sort-labels-and-matchers"
+}
+
 func (s *SortLabelsAndMatchers) Apply(_ context.Context, expr parser.Expr, _ *planning.QueryParameters) (parser.Expr, error) {
 	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		switch expr := node.(type) {
