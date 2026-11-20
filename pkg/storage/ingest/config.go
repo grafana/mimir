@@ -72,6 +72,9 @@ var (
 	ErrSASLMSKIAMBadConfig               = fmt.Errorf("exactly one of static credentials, file path, or HTTP socket path must be configured to enable SASL AWS_MSK_IAM authentication")
 	ErrInvalidSASLMechanism              = fmt.Errorf("the configured SASL mechanism is invalid, must be one of: %s", util.JoinStrings(saslMechanismOptions, ", "))
 
+	ErrMissingAdditionalReadClusterTopic   = errors.New("the Kafka topic of the additional read cluster has not been configured")
+	ErrInvalidAdditionalReadClusterAddress = fmt.Errorf("the address of the additional read cluster must not contain the %q placeholder", compartments.WriteCompartmentIDPlaceholder)
+
 	ErrInvalidIngestionConcurrencyMax    = errors.New("ingest-storage.kafka.ingestion-concurrency-max must either be set to 0 or to a value greater than 0")
 	ErrInvalidIngestionConcurrencyParams = errors.New("ingest-storage.kafka.ingestion-concurrency-queue-capacity, ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample, ingest-storage.kafka.ingestion-concurrency-batch-size and ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard must be greater than 0")
 	ErrInvalidAutoCreateTopicParams      = errors.New("ingest-storage.kafka.auto-create-topic-default-partitions must be -1 or greater than 0 when ingest-storage.kafka.auto-create-topic-default-partitions=true")
@@ -106,10 +109,11 @@ var (
 )
 
 type Config struct {
-	Enabled            bool                     `yaml:"enabled"`
-	KafkaConfig        KafkaConfig              `yaml:"kafka"`
-	Migration          MigrationConfig          `yaml:"migration"`
-	OrderedConsumption OrderedConsumptionConfig `yaml:"ordered_consumption"`
+	Enabled               bool                        `yaml:"enabled"`
+	KafkaConfig           KafkaConfig                 `yaml:"kafka"`
+	AdditionalReadCluster AdditionalReadClusterConfig `yaml:"additional_read_cluster" doc:"hidden"`
+	Migration             MigrationConfig             `yaml:"migration"`
+	OrderedConsumption    OrderedConsumptionConfig    `yaml:"ordered_consumption"`
 
 	WriteLogsFsyncBeforeKafkaCommitConcurrency int `yaml:"write_logs_fsync_before_kafka_commit_concurrency" category:"advanced"`
 }
@@ -119,6 +123,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.WriteLogsFsyncBeforeKafkaCommitConcurrency, "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency", 4, "Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed, must be at least 1.")
 
 	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka.", f)
+	cfg.AdditionalReadCluster.RegisterFlagsWithPrefix("ingest-storage.additional-read-cluster.", f)
 	cfg.Migration.RegisterFlagsWithPrefix("ingest-storage.migration.", f)
 	cfg.OrderedConsumption.RegisterFlagsWithPrefix("ingest-storage.ordered-consumption.", f)
 }
@@ -135,6 +140,10 @@ func (cfg *Config) Validate() error {
 	}
 
 	if err := cfg.KafkaConfig.Validate(); err != nil {
+		return err
+	}
+
+	if err := cfg.AdditionalReadCluster.Validate(); err != nil {
 		return err
 	}
 
@@ -519,6 +528,60 @@ func divideBudget(budget, numCompartments int) int {
 		return budget
 	}
 	return max(1, budget/numCompartments)
+}
+
+// AdditionalReadClusterConfig holds a Kafka cluster that ingesters consume their partition from, in addition
+// to the Kafka clusters of the write compartments.
+type AdditionalReadClusterConfig struct {
+	Address      flagext.StringSliceCSV `yaml:"address" category:"experimental"`
+	Topic        string                 `yaml:"topic" category:"experimental"`
+	SASLUsername string                 `yaml:"sasl_username" category:"experimental"`
+	SASLPassword flagext.Secret         `yaml:"sasl_password" category:"experimental"`
+}
+
+func (cfg *AdditionalReadClusterConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.Var(&cfg.Address, prefix+"address", "The seed broker address, or a comma-separated list of seed broker addresses, of a Kafka cluster that ingesters consume their partition from, in addition to the Kafka clusters of the write compartments. Only used when compartments are enabled. The additional read cluster uses the same settings as the Kafka clusters of the write compartments, except the address, topic and SASL credentials.")
+	f.StringVar(&cfg.Topic, prefix+"topic", "", "The Kafka topic of the additional read cluster.")
+	f.StringVar(&cfg.SASLUsername, prefix+"sasl-username", "", "The SASL username of the additional read cluster.")
+	f.Var(&cfg.SASLPassword, prefix+"sasl-password", "The SASL password of the additional read cluster.")
+}
+
+// Enabled returns true if the additional read cluster is configured.
+func (cfg *AdditionalReadClusterConfig) Enabled() bool {
+	return len(cfg.Address) > 0
+}
+
+func (cfg *AdditionalReadClusterConfig) Validate() error {
+	if !cfg.Enabled() {
+		return nil
+	}
+	if cfg.Topic == "" {
+		return ErrMissingAdditionalReadClusterTopic
+	}
+	for _, addr := range cfg.Address {
+		if strings.Contains(addr, compartments.WriteCompartmentIDPlaceholder) {
+			return ErrInvalidAdditionalReadClusterAddress
+		}
+	}
+	return nil
+}
+
+// PartitionReaderConfigs returns the configs of the Kafka clusters that an ingester consumes its partition
+// from: one config for each write compartment, and one for the additional read cluster if it is enabled.
+// The per-client resource budgets are divided across all these Kafka clusters.
+func PartitionReaderConfigs(base KafkaConfig, numWriteCompartments int, topic string, additionalReadCluster AdditionalReadClusterConfig) (writeCompartmentConfigs []KafkaConfig, additionalReadClusterConfig *KafkaConfig) {
+	if !additionalReadCluster.Enabled() {
+		return WriteCompartmentConfigs(base, numWriteCompartments, topic), nil
+	}
+
+	// The last config gets the same budgets as the others, then the additional read cluster replaces its target.
+	configs := WriteCompartmentConfigs(base, numWriteCompartments+1, topic)
+	additional := configs[numWriteCompartments]
+	additional.Address = additionalReadCluster.Address
+	additional.Topic = additionalReadCluster.Topic
+	additional.SASL.Username = additionalReadCluster.SASLUsername
+	additional.SASL.Password = additionalReadCluster.SASLPassword
+	return configs[:numWriteCompartments], &additional
 }
 
 // MigrationConfig holds the configuration used to migrate Mimir to ingest storage. This config shouldn't be

@@ -44,6 +44,34 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.Topic = "test"
 			},
 		},
+		"should pass if the additional read cluster has an address and a topic": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.AdditionalReadCluster.Address = flagext.StringSliceCSV{"classic"}
+				cfg.AdditionalReadCluster.Topic = "ingest"
+			},
+		},
+		"should fail if the additional read cluster has an address but no topic": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.AdditionalReadCluster.Address = flagext.StringSliceCSV{"classic"}
+			},
+			expectedErr: ErrMissingAdditionalReadClusterTopic,
+		},
+		"should fail if the additional read cluster address has the write compartment placeholder": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.AdditionalReadCluster.Address = flagext.StringSliceCSV{"kafka-wc-<write-compartment-id>"}
+				cfg.AdditionalReadCluster.Topic = "ingest"
+			},
+			expectedErr: ErrInvalidAdditionalReadClusterAddress,
+		},
 		"should pass if backend is explicitly set to warpstream": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
@@ -671,6 +699,45 @@ func TestWriteCompartmentConfigs(t *testing.T) {
 			assert.Zero(t, cfg.MaxBufferedBytes)
 			assert.Zero(t, cfg.IngestionConcurrencyMax)
 		}
+	})
+}
+
+func TestPartitionReaderConfigs(t *testing.T) {
+	base := KafkaConfig{}
+	flagext.DefaultValues(&base)
+	base.Address = flagext.StringSliceCSV{"kafka-wc-<write-compartment-id>:9092"}
+	base.SASL.Username = "user-wc-<write-compartment-id>"
+	base.SASL.Password = flagext.SecretWithValue("pass-wc-<write-compartment-id>")
+	base.FetchConcurrencyMax = 12
+
+	t.Run("without the additional read cluster", func(t *testing.T) {
+		writeCompartmentCfgs, additionalCfg := PartitionReaderConfigs(base, 2, "ingest-rc-0", AdditionalReadClusterConfig{})
+		assert.Equal(t, WriteCompartmentConfigs(base, 2, "ingest-rc-0"), writeCompartmentCfgs)
+		assert.Nil(t, additionalCfg)
+	})
+
+	t.Run("with the additional read cluster", func(t *testing.T) {
+		additionalReadCluster := AdditionalReadClusterConfig{
+			Address:      flagext.StringSliceCSV{"classic:9092"},
+			Topic:        "ingest",
+			SASLUsername: "classic-user",
+			SASLPassword: flagext.SecretWithValue("classic-pass"),
+		}
+		writeCompartmentCfgs, additionalCfg := PartitionReaderConfigs(base, 2, "ingest-rc-0", additionalReadCluster)
+
+		require.Len(t, writeCompartmentCfgs, 2)
+		for writeCompartmentID, cfg := range writeCompartmentCfgs {
+			assert.Equal(t, flagext.StringSliceCSV{fmt.Sprintf("kafka-wc-%d:9092", writeCompartmentID)}, cfg.Address)
+			assert.Equal(t, "ingest-rc-0", cfg.Topic)
+			assert.Equal(t, 4, cfg.FetchConcurrencyMax)
+		}
+
+		require.NotNil(t, additionalCfg)
+		assert.Equal(t, flagext.StringSliceCSV{"classic:9092"}, additionalCfg.Address)
+		assert.Equal(t, "ingest", additionalCfg.Topic)
+		assert.Equal(t, "classic-user", additionalCfg.SASL.Username)
+		assert.Equal(t, "classic-pass", additionalCfg.SASL.Password.String())
+		assert.Equal(t, 4, additionalCfg.FetchConcurrencyMax)
 	})
 }
 
