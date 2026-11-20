@@ -352,6 +352,30 @@ func TestTripperware_Metrics(t *testing.T) {
 				cortex_query_frontend_queries_total{op="query",user="user-1"} 1
 			`,
 		},
+		"instant query cost": {
+			request: httptest.NewRequest("GET", "/api/v1/query_cost?query=up&time=1536673680", http.NoBody),
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="query_cost",user="user-1"} 1
+			`,
+		},
+		"range query cost": {
+			request: httptest.NewRequest("GET", "/api/v1/query_range_cost?query=up&start=1536673680&end=1536716880&step=120", http.NoBody),
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="query_cost",user="user-1"} 1
+			`,
+		},
 		"remote read, start/end is aligned to step": {
 			request: func() *http.Request {
 				return makeTestHTTPRequestFromRemoteRead(&prompb.ReadRequest{

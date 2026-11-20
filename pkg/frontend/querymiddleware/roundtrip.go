@@ -54,6 +54,7 @@ const (
 	queryTypeLabels                       = "label_names_and_values"
 	queryTypeActiveSeries                 = "active_series"
 	queryTypeActiveNativeHistogramMetrics = "active_native_histogram_metrics"
+	queryTypeQueryCost                    = "query_cost"
 	queryTypeOther                        = "other"
 
 	EnableRemoteExecutionFlag = "query-frontend.enable-remote-execution"
@@ -685,6 +686,8 @@ func newQueryCountTripperware(registerer prometheus.Registerer) Tripperware {
 				op = queryTypeActiveNativeHistogramMetrics
 			case IsLabelsQuery(r.URL.Path):
 				op = queryTypeLabels
+			case IsQueryCostQuery(r.URL.Path):
+				op = queryTypeQueryCost
 			}
 
 			tenantIDs, err := tenant.TenantIDs(r.Context())
