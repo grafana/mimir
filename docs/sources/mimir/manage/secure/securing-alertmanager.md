@@ -33,3 +33,18 @@ If you use the built-in firewall and need a custom certificate authority (CA), a
 {{< admonition type="note" >}}
 You can disable the Alertmanager configuration API by setting `-alertmanager.enable-api=false`.
 {{< /admonition >}}
+
+## Fallback configuration
+
+The Alertmanager uses the fallback configuration from `-alertmanager.configs.fallback` for each tenant that doesn't have its own configuration.
+The operator supplies the fallback configuration, so the restrictions for tenant configuration don't apply to it.
+For example, the fallback configuration can load files, and its Amazon SNS receivers can use the AWS credentials of the Alertmanager.
+
+Tenants still control the alerts that the fallback configuration sends.
+The Alertmanager fills some destination fields from the alert data.
+Examples are the SNS `api_url`, the webhook `url`, and the contents of the webhook `url_file`.
+If a destination field uses alert labels or annotations, a tenant can choose where the requests with the fallback credentials go.
+
+{{< admonition type="warning" >}}
+Don't use alert data in the destination fields of the fallback configuration.
+{{< /admonition >}}
