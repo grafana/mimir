@@ -41,6 +41,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// The paths are relative to the working directory, and Glob returns no error for a missing directory.
+	// Without this, running the tool from the wrong directory would silently do nothing.
+	if len(upstreamFiles) == 0 {
+		return fmt.Errorf("no upstream test files found in %s: run this tool from its own directory", upstreamDir)
+	}
 	ourFiles, err := filepath.Glob(filepath.Join(ourDir, "*.test*"))
 	if err != nil {
 		return err
