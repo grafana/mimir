@@ -197,6 +197,24 @@ func (cfg Config) ReadCompartmentConfig(readCompartmentID int) Config {
 	return cfg
 }
 
+// WithBucketName returns a copy of cfg with the given name in the active backend's bucket name field.
+// It must enumerate the same backends as BucketName so the two stay consistent.
+func (cfg Config) WithBucketName(name string) Config {
+	switch cfg.Backend {
+	case S3:
+		cfg.S3.BucketName = name
+	case GCS:
+		cfg.GCS.BucketName = name
+	case Azure:
+		cfg.Azure.ContainerName = name
+	case Swift:
+		cfg.Swift.ContainerName = name
+	case Filesystem:
+		cfg.Filesystem.Directory = name
+	}
+	return cfg
+}
+
 // NewClient creates a new bucket client based on the configured backend
 func NewClient(ctx context.Context, cfg Config, component string, logger log.Logger, reg prometheus.Registerer) (objstore.InstrumentedBucket, error) {
 	var (

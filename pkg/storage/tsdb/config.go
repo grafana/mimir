@@ -9,16 +9,19 @@ import (
 	"flag"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/alecthomas/units"
+	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -114,14 +117,95 @@ var (
 	errEarlyCompactionRequiresActiveSeries          = fmt.Errorf("early compaction requires -%s to be enabled", activeseries.EnabledFlag)
 	errEmptyBlockranges                             = errors.New("empty block ranges for TSDB")
 	errInvalidIgnoreDeletionMarksDelayConfig        = fmt.Errorf("value for -%s must be less than -%s", ignoreDeletionMarksWhileQueryingDelayFlag, ignoreDeletionMarksInStoreGatewayDelayFlag)
+	errEmptyAdditionalReadBucketName                = errors.New("the name of an additional read bucket must not be empty")
 	errIgnoreDeletionMarksDelayTooShort             = fmt.Errorf("value for -%s must be greater than %v× -%s to ensure that newly compacted blocks are queried before old blocks are ignored", ignoreDeletionMarksWhileQueryingDelayFlag, NewBlockDiscoveryDelayMultiplier, syncIntervalFlag)
 )
 
 // BlocksStorageConfig holds the config information for the blocks storage.
 type BlocksStorageConfig struct {
-	Bucket      bucket.Config     `yaml:",inline"`
-	BucketStore BucketStoreConfig `yaml:"bucket_store" doc:"description=This configures how the querier and store-gateway discover and synchronize blocks stored in the bucket."`
-	TSDB        TSDBConfig        `yaml:"tsdb"`
+	Bucket                bucket.Config               `yaml:",inline"`
+	AdditionalReadBuckets AdditionalReadBucketsConfig `yaml:"additional_read_buckets" doc:"hidden"`
+	BucketStore           BucketStoreConfig           `yaml:"bucket_store" doc:"description=This configures how the querier and store-gateway discover and synchronize blocks stored in the bucket."`
+	TSDB                  TSDBConfig                  `yaml:"tsdb"`
+}
+
+// AdditionalReadBucketsConfig holds the buckets that Mimir reads blocks from in addition to the blocks storage bucket.
+type AdditionalReadBucketsConfig struct {
+	BucketNames flagext.StringSliceCSV `yaml:"bucket_names" category:"experimental"`
+}
+
+// RegisterFlagsWithPrefix registers the flags of the additional read buckets with the given prefix.
+func (cfg *AdditionalReadBucketsConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.Var(&cfg.BucketNames, prefix+"bucket-names", "Comma-separated list of buckets to read blocks from, in addition to the blocks storage bucket. Mimir reads the blocks storage bucket first, then these buckets in the order of the list. Mimir uploads new blocks only to the blocks storage bucket. Each bucket uses the same settings as the blocks storage bucket, except the bucket name. When compartments are enabled, each entry has the format <read-compartment-id>:<bucket-name>, and each component reads only the buckets of its own read compartment. When compartments are disabled, each entry is only a bucket name.")
+}
+
+// Validate the config.
+func (cfg *AdditionalReadBucketsConfig) Validate(compartmentsCfg compartments.Config) error {
+	seen := make(map[string]struct{}, len(cfg.BucketNames))
+	for _, entry := range cfg.BucketNames {
+		readBucket, hasReadCompartmentID, err := parseAdditionalReadBucket(entry)
+		if err != nil {
+			return err
+		}
+		if compartmentsCfg.Enabled && !hasReadCompartmentID {
+			return fmt.Errorf("the additional read bucket %q must have the format <read-compartment-id>:<bucket-name> when compartments are enabled", entry)
+		}
+		if !compartmentsCfg.Enabled && hasReadCompartmentID {
+			return fmt.Errorf("the additional read bucket %q must not have a read compartment ID when compartments are disabled", entry)
+		}
+		if compartmentsCfg.Enabled && (readBucket.readCompartmentID < 0 || readBucket.readCompartmentID >= compartmentsCfg.Read.NumCompartments) {
+			return fmt.Errorf("the read compartment ID of the additional read bucket %q must be between 0 and %d", entry, compartmentsCfg.Read.NumCompartments-1)
+		}
+		if readBucket.name == "" {
+			return errEmptyAdditionalReadBucketName
+		}
+		if strings.Contains(readBucket.name, compartments.ReadCompartmentIDPlaceholder) {
+			return fmt.Errorf("the name of the additional read bucket %q must not contain %s", readBucket.name, compartments.ReadCompartmentIDPlaceholder)
+		}
+		// Two read compartments must not share a bucket, because the compactors of both read compartments would compact its blocks.
+		if _, ok := seen[readBucket.name]; ok {
+			return fmt.Errorf("the additional read bucket %q is in the list more than once", readBucket.name)
+		}
+		seen[readBucket.name] = struct{}{}
+	}
+	return nil
+}
+
+// additionalReadBucket is one entry of the additional read buckets list.
+type additionalReadBucket struct {
+	readCompartmentID int
+	name              string
+}
+
+// parseAdditionalReadBucket parses an entry with the format <read-compartment-id>:<bucket-name> or <bucket-name>.
+// An entry without a read compartment ID is in read compartment 0, which is the only read compartment when
+// compartments are disabled. hasReadCompartmentID tells if the entry has a read compartment ID.
+func parseAdditionalReadBucket(entry string) (readBucket additionalReadBucket, hasReadCompartmentID bool, err error) {
+	readCompartmentID, name, hasReadCompartmentID := strings.Cut(entry, ":")
+	if !hasReadCompartmentID {
+		return additionalReadBucket{name: entry}, false, nil
+	}
+	id, err := strconv.Atoi(readCompartmentID)
+	if err != nil {
+		return additionalReadBucket{}, true, fmt.Errorf("the read compartment ID of the additional read bucket %q must be an integer", entry)
+	}
+	return additionalReadBucket{readCompartmentID: id, name: name}, true, nil
+}
+
+// AdditionalReadBucketConfigs returns one bucket config for each additional read bucket of the read compartment,
+// in read order. Each config is a copy of the blocks storage bucket config with a different bucket name.
+func (cfg *BlocksStorageConfig) AdditionalReadBucketConfigs(readCompartmentID int) ([]bucket.Config, error) {
+	var cfgs []bucket.Config
+	for _, entry := range cfg.AdditionalReadBuckets.BucketNames {
+		readBucket, _, err := parseAdditionalReadBucket(entry)
+		if err != nil {
+			return nil, err
+		}
+		if readBucket.readCompartmentID == readCompartmentID {
+			cfgs = append(cfgs, cfg.Bucket.WithBucketName(readBucket.name))
+		}
+	}
+	return cfgs, nil
 }
 
 // DurationList is the block ranges for a tsdb
@@ -164,13 +248,18 @@ func (d *DurationList) ToMilliseconds() []int64 {
 // RegisterFlags registers the TSDB flags
 func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("blocks-storage.", "blocks", f)
+	cfg.AdditionalReadBuckets.RegisterFlagsWithPrefix("blocks-storage.additional-read-buckets.", f)
 	cfg.BucketStore.RegisterFlags(f)
 	cfg.TSDB.RegisterFlags(f)
 }
 
 // Validate the config.
-func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config) error {
+func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config, compartmentsCfg compartments.Config) error {
 	if err := cfg.Bucket.Validate(); err != nil {
+		return err
+	}
+
+	if err := cfg.AdditionalReadBuckets.Validate(compartmentsCfg); err != nil {
 		return err
 	}
 
