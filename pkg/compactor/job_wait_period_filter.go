@@ -23,17 +23,17 @@ type jobWaitPeriodFilter struct {
 	oooWaitPeriod     time.Duration
 	skipFutureMaxTime bool
 	concurrency       int
-	bkt               objstore.Bucket
+	buckets           *blockBuckets
 	logger            log.Logger
 }
 
-func newJobWaitPeriodFilter(waitPeriod time.Duration, oooWaitPeriod time.Duration, skipFutureMaxTime bool, concurrency int, bkt objstore.Bucket, logger log.Logger) *jobWaitPeriodFilter {
+func newJobWaitPeriodFilter(waitPeriod time.Duration, oooWaitPeriod time.Duration, skipFutureMaxTime bool, concurrency int, buckets *blockBuckets, logger log.Logger) *jobWaitPeriodFilter {
 	return &jobWaitPeriodFilter{
 		waitPeriod:        waitPeriod,
 		oooWaitPeriod:     oooWaitPeriod,
 		skipFutureMaxTime: skipFutureMaxTime,
 		concurrency:       concurrency,
-		bkt:               bkt,
+		buckets:           buckets,
 		logger:            logger,
 	}
 }
@@ -46,14 +46,14 @@ type jobWaitPeriodResult struct {
 // Filter filters out jobs for which the configured wait period hasn't been honored yet or jobs that couldn't be checked due to an error.
 // Context cancellation is either returned as an error or treated as a failed check, depending on when it's observed.
 func (f *jobWaitPeriodFilter) Filter(ctx context.Context, jobs []*Job) ([]*Job, error) {
-	results, err := jobsWaitPeriodElapsed(ctx, jobs, f.waitPeriod, f.oooWaitPeriod, f.skipFutureMaxTime, f.bkt, f.concurrency, f.logger)
+	results, err := jobsWaitPeriodElapsed(ctx, jobs, f.waitPeriod, f.oooWaitPeriod, f.skipFutureMaxTime, f.buckets, f.concurrency, f.logger)
 	if err != nil {
 		return nil, err
 	}
 
 	kept := jobs[:0]
 	for i, job := range jobs {
-		if res := results[i]; res.err != nil && f.bkt.IsObjNotFoundErr(res.err) {
+		if res := results[i]; res.err != nil && f.buckets.of(res.block.ULID).IsObjNotFoundErr(res.err) {
 			level.Info(f.logger).Log("msg", "skipping compaction job because a source block's meta.json was not found", "groupKey", job.Key(), "block", res.block.String())
 		} else if res.err != nil {
 			level.Warn(f.logger).Log("msg", "skipping compaction job because the check if it contains recently uploaded blocks has failed", "groupKey", job.Key(), "block", res.block.String(), "err", res.err)
@@ -70,7 +70,7 @@ func (f *jobWaitPeriodFilter) Filter(ctx context.Context, jobs []*Job) ([]*Job, 
 // jobsWaitPeriodElapsed returns a result for each input job.
 // Blocks are checked with up to maxConcurrency concurrent requests.
 // A job's remaining blocks are no longer checked once one of them excludes the job.
-func jobsWaitPeriodElapsed(ctx context.Context, jobs []*Job, waitPeriod time.Duration, oooWaitPeriod time.Duration, skipFutureMaxTime bool, userBucket objstore.Bucket, maxConcurrency int, logger log.Logger) ([]jobWaitPeriodResult, error) {
+func jobsWaitPeriodElapsed(ctx context.Context, jobs []*Job, waitPeriod time.Duration, oooWaitPeriod time.Duration, skipFutureMaxTime bool, buckets *blockBuckets, maxConcurrency int, logger log.Logger) ([]jobWaitPeriodResult, error) {
 	results := make([]jobWaitPeriodResult, len(jobs))
 
 	if waitPeriod <= 0 && oooWaitPeriod <= 0 {
@@ -87,7 +87,7 @@ func jobsWaitPeriodElapsed(ctx context.Context, jobs []*Job, waitPeriod time.Dur
 			return nil
 		}
 
-		elapsed, err := blockWaitPeriodElapsed(ctx, b.meta, waitPeriod, oooWaitPeriod, now, skipFutureMaxTime, userBucket, logger)
+		elapsed, err := blockWaitPeriodElapsed(ctx, b.meta, waitPeriod, oooWaitPeriod, now, skipFutureMaxTime, buckets.of(b.meta.ULID), logger)
 		if (err != nil || !elapsed) && done[b.jobIdx].CompareAndSwap(false, true) {
 			results[b.jobIdx] = jobWaitPeriodResult{block: b.meta, err: err}
 		}

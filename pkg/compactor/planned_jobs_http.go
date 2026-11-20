@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
@@ -133,7 +134,7 @@ func (c *MultitenantCompactor) PlannedJobsHandler(w http.ResponseWriter, req *ht
 		oooMergeShards: oooMergeShards,
 		splitGroups:    splitGroups,
 	}
-	jobs, err := estimateCompactionJobsFromBucketIndex(req.Context(), tenantID, bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider), idx, c.compactorCfg.BlockRanges, cfgOverride)
+	jobs, err := estimateCompactionJobsFromBucketIndexes(req.Context(), tenantID, []objstore.InstrumentedBucket{bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)}, []*bucketindex.Index{idx}, c.compactorCfg.BlockRanges, cfgOverride)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to compute compaction jobs from bucket index for tenant while listing compaction jobs", "user", tenantID, "err", err)
 		util.WriteTextResponse(w, "Failed to compute compaction jobs from bucket index")

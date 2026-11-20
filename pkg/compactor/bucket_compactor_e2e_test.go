@@ -126,7 +126,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 		require.NoError(t, err)
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-		sy, err := newMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, blocksMarkedForDeletion)
+		sy, err := newMetaSyncer(nil, nil, newBlockBuckets(objstore.WithNoopInstr(bkt)), metaFetcher, duplicateBlocksFilter, blocksMarkedForDeletion)
 		require.NoError(t, err)
 
 		// Do one initial synchronization with the bucket.
@@ -233,7 +233,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		require.NoError(t, err)
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-		sy, err := newMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, blocksMarkedForDeletion)
+		sy, err := newMetaSyncer(nil, nil, newBlockBuckets(objstore.WithNoopInstr(bkt)), metaFetcher, duplicateBlocksFilter, blocksMarkedForDeletion)
 		require.NoError(t, err)
 
 		comp, err := tsdb.NewLeveledCompactor(ctx, reg, util_log.SlogFromGoKit(logger), []int64{1000, 3000}, nil, nil)
@@ -242,7 +242,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		planner := NewSplitAndMergePlanner([]int64{1000, 3000})
 		grouper := NewSplitAndMergeGrouper("user-1", []int64{1000, 3000}, newMockConfigProvider(), logger)
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, prometheus.NewPedanticRegistry())
-		bComp, err := NewBucketCompactor(logger, grouper, planner, comp, dir, bkt, 2, true, 0, ownAllJobs, sortJobsByNewestBlocksFirst, &jobWaitPeriodFilter{}, 4, 2, metrics, 32, 8)
+		bComp, err := NewBucketCompactor(logger, grouper, planner, comp, dir, newBlockBuckets(objstore.WithNoopInstr(bkt)), 2, true, 0, ownAllJobs, sortJobsByNewestBlocksFirst, &jobWaitPeriodFilter{}, 4, 2, metrics, 32, 8)
 		require.NoError(t, err)
 
 		// Compaction on empty should not fail.
@@ -504,7 +504,7 @@ func TestGroupCompactE2E_PreemptiveNoCompactMarker(t *testing.T) {
 		require.NoError(t, err)
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-		sy, err := newMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, blocksMarkedForDeletion)
+		sy, err := newMetaSyncer(nil, nil, newBlockBuckets(objstore.WithNoopInstr(bkt)), metaFetcher, duplicateBlocksFilter, blocksMarkedForDeletion)
 		require.NoError(t, err)
 
 		comp, err := tsdb.NewLeveledCompactor(ctx, nil, promslog.NewNopLogger(), []int64{1000, 3000}, nil, nil)
@@ -520,7 +520,7 @@ func TestGroupCompactE2E_PreemptiveNoCompactMarker(t *testing.T) {
 		// This threshold sits below it.
 		const testSymbolTableSizeThreshold = 500
 
-		bComp, err := NewBucketCompactor(logger, grouper, planner, comp, dir, bkt, 2, true, testSymbolTableSizeThreshold, ownAllJobs, sortJobsByNewestBlocksFirst, &jobWaitPeriodFilter{}, 4, 2, metrics, 32, 8)
+		bComp, err := NewBucketCompactor(logger, grouper, planner, comp, dir, newBlockBuckets(objstore.WithNoopInstr(bkt)), 2, true, testSymbolTableSizeThreshold, ownAllJobs, sortJobsByNewestBlocksFirst, &jobWaitPeriodFilter{}, 4, 2, metrics, 32, 8)
 		require.NoError(t, err)
 
 		// Generate 50 series per block with distinct label values to produce enough symbols.
@@ -717,7 +717,7 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 		}, 0)
 		require.NoError(t, err)
 
-		sy, err := newMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, blocksMarkedForDeletion)
+		sy, err := newMetaSyncer(nil, nil, newBlockBuckets(objstore.WithNoopInstr(bkt)), metaFetcher, duplicateBlocksFilter, blocksMarkedForDeletion)
 		require.NoError(t, err)
 
 		// Do one initial synchronization with the bucket.

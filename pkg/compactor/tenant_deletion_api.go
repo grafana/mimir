@@ -31,12 +31,15 @@ func (c *MultitenantCompactor) DeleteTenant(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	err = mimir_tsdb.WriteTenantDeletionMark(r.Context(), c.bucketClient, userID, c.cfgProvider, mimir_tsdb.NewTenantDeletionMark(time.Now()))
-	if err != nil {
-		level.Error(c.logger).Log("msg", "failed to write tenant deletion mark", "user", userID, "err", err)
+	mark := mimir_tsdb.NewTenantDeletionMark(time.Now())
+	for _, bkt := range c.readBucketClients() {
+		err = mimir_tsdb.WriteTenantDeletionMark(r.Context(), bkt, userID, c.cfgProvider, mark)
+		if err != nil {
+			level.Error(c.logger).Log("msg", "failed to write tenant deletion mark", "user", userID, "err", err)
 
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	level.Info(c.logger).Log("msg", "tenant deletion mark in blocks storage created", "user", userID)
@@ -71,26 +74,28 @@ func (c *MultitenantCompactor) DeleteTenantStatus(w http.ResponseWriter, r *http
 func (c *MultitenantCompactor) isBlocksForUserDeleted(ctx context.Context, userID string) (bool, error) {
 	var errBlockFound = errors.New("block found")
 
-	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
-	err := userBucket.Iter(ctx, "", func(s string) error {
-		s = strings.TrimSuffix(s, "/")
+	for _, bkt := range c.readBucketClients() {
+		userBucket := bucket.NewUserBucketClient(userID, bkt, c.cfgProvider)
+		err := userBucket.Iter(ctx, "", func(s string) error {
+			s = strings.TrimSuffix(s, "/")
 
-		_, err := ulid.Parse(s)
-		if err != nil {
-			// not block, keep looking
-			return nil
+			_, err := ulid.Parse(s)
+			if err != nil {
+				// not block, keep looking
+				return nil
+			}
+
+			// Used as shortcut to stop iteration.
+			return errBlockFound
+		})
+
+		if errors.Is(err, errBlockFound) {
+			return false, nil
 		}
 
-		// Used as shortcut to stop iteration.
-		return errBlockFound
-	})
-
-	if errors.Is(err, errBlockFound) {
-		return false, nil
-	}
-
-	if err != nil {
-		return false, err
+		if err != nil {
+			return false, err
+		}
 	}
 
 	// No blocks found, all good.

@@ -5,6 +5,7 @@ package compactor
 import (
 	"context"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -684,6 +685,87 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 				assert.Equal(t, e.Thanos.Labels, actual[i].Thanos.Labels)
 			}
 		})
+	}
+}
+
+func TestMultitenantCompactor_ShouldCompactBlocksInAllReadBuckets(t *testing.T) {
+	const (
+		userInBothBuckets = "user-1"
+		userInReadBucket  = "user-2"
+		numSeries         = 100
+		blockRange        = 2 * time.Hour
+	)
+	blockRangeMillis := blockRange.Milliseconds()
+
+	storageCfg := mimir_tsdb.BlocksStorageConfig{}
+	flagext.DefaultValues(&storageCfg)
+	storageCfg.Bucket.Backend = bucket.Filesystem
+	storageCfg.Bucket.Filesystem.Directory = t.TempDir()
+	storageCfg.AdditionalReadBuckets.BucketNames = []string{t.TempDir()}
+
+	compactorCfg := prepareConfig(t)
+	compactorCfg.DataDir = t.TempDir()
+	compactorCfg.BlockRanges = mimir_tsdb.DurationList{blockRange}
+
+	logger := log.NewNopLogger()
+	ctx := context.Background()
+	writeBucket, err := bucket.NewClient(ctx, storageCfg.Bucket, "test", logger, nil)
+	require.NoError(t, err)
+	additionalReadCfgs, err := storageCfg.AdditionalReadBucketConfigs(0)
+	require.NoError(t, err)
+	readBucket, err := bucket.NewClient(ctx, additionalReadCfgs[0], "test", logger, nil)
+	require.NoError(t, err)
+
+	writeBucketBlock := createTSDBBlock(t, writeBucket, userInBothBuckets, blockRangeMillis, 2*blockRangeMillis, numSeries, nil)
+	readBucketBlock := createTSDBBlock(t, readBucket, userInBothBuckets, blockRangeMillis, 2*blockRangeMillis, numSeries, nil)
+	readBucketOnlyBlocks := []ulid.ULID{
+		createTSDBBlock(t, readBucket, userInReadBucket, blockRangeMillis, 2*blockRangeMillis, numSeries, nil),
+		createTSDBBlock(t, readBucket, userInReadBucket, blockRangeMillis, 2*blockRangeMillis, numSeries, nil),
+	}
+
+	reg := prometheus.NewPedanticRegistry()
+	c, err := NewMultitenantCompactor(compactorCfg, storageCfg, newMockConfigProvider(), logger, reg)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, c))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
+	})
+
+	test.Poll(t, 15*time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_compactor_runs_completed_total Total number of compaction runs successfully completed.
+			# TYPE cortex_compactor_runs_completed_total counter
+			cortex_compactor_runs_completed_total 1
+		`), "cortex_compactor_runs_completed_total")
+	})
+
+	// The compactor uploads the compacted blocks to the write bucket.
+	for userID, expectedSources := range map[string][]ulid.ULID{
+		userInBothBuckets: {writeBucketBlock, readBucketBlock},
+		userInReadBucket:  readBucketOnlyBlocks,
+	} {
+		fetcher, err := block.NewMetaFetcher(logger, 1, bucket.NewUserBucketClient(userID, writeBucket, nil), t.TempDir(), nil, nil, 0)
+		require.NoError(t, err)
+		metas, partials, err := fetcher.FetchWithoutMarkedForDeletion(ctx)
+		require.NoError(t, err)
+		require.Empty(t, partials)
+		require.Len(t, metas, 1, userID)
+		for _, meta := range metas {
+			require.ElementsMatch(t, expectedSources, meta.Compaction.Sources, userID)
+		}
+	}
+
+	// The compactor marks each source block for deletion in its own bucket.
+	requireExists := func(bkt objstore.Bucket, userID string, blockID ulid.ULID, expected bool) {
+		exists, err := bkt.Exists(ctx, path.Join(userID, blockID.String(), block.DeletionMarkFilename))
+		require.NoError(t, err)
+		require.Equal(t, expected, exists)
+	}
+	requireExists(writeBucket, userInBothBuckets, writeBucketBlock, true)
+	requireExists(readBucket, userInBothBuckets, readBucketBlock, true)
+	requireExists(writeBucket, userInBothBuckets, readBucketBlock, false)
+	for _, blockID := range readBucketOnlyBlocks {
+		requireExists(readBucket, userInReadBucket, blockID, true)
 	}
 }
 

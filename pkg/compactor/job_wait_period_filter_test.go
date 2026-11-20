@@ -314,7 +314,7 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 					userBucket.MockAttributes(path.Join(b.meta.ULID.String(), block.MetaFilename), b.attrs, b.attrsErr)
 				}
 
-				results, err := jobsWaitPeriodElapsed(t.Context(), []*Job{job}, testData.waitPeriod, testData.oooWaitPeriod, testData.skipFutureMaxTime, userBucket, maxConcurrency, log.NewNopLogger())
+				results, err := jobsWaitPeriodElapsed(t.Context(), []*Job{job}, testData.waitPeriod, testData.oooWaitPeriod, testData.skipFutureMaxTime, newBlockBuckets(objstore.WithNoopInstr(userBucket)), maxConcurrency, log.NewNopLogger())
 				require.NoError(t, err)
 				require.Len(t, results, 1)
 				assert.Equal(t, testData.expectedElapsed, results[0].block == nil)
@@ -350,7 +350,7 @@ func TestJobWaitPeriodFilter_Filter(t *testing.T) {
 
 	for _, maxConcurrency := range []int{1, 4} {
 		t.Run(fmt.Sprintf("concurrency=%d", maxConcurrency), func(t *testing.T) {
-			filter := newJobWaitPeriodFilter(waitPeriod, 0, false, maxConcurrency, userBucket, log.NewNopLogger())
+			filter := newJobWaitPeriodFilter(waitPeriod, 0, false, maxConcurrency, newBlockBuckets(objstore.WithNoopInstr(userBucket)), log.NewNopLogger())
 			kept, err := filter.Filter(t.Context(), []*Job{elapsedJob, recentJob, failedJob})
 			require.NoError(t, err)
 			assert.Equal(t, []*Job{elapsedJob}, kept)

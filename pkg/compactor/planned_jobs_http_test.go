@@ -31,7 +31,7 @@ func TestPlannedJobsHandler(t *testing.T) {
 
 	cfg := prepareConfig(t)
 	c, _, _, _, _ := prepare(t, cfg, bucketClient)
-	c.bucketClient = bucketClient // this is normally done in starting, but we these tests don't require running compactor. (TODO: check if we can get rid of bucketClientFactory)
+	c.bucketClient = bucketClient // this is normally done in starting, but we these tests don't require running compactor. (TODO: check if we can get rid of bucketSetFactory)
 
 	twoHoursMS := 2 * time.Hour.Milliseconds()
 	dayMS := 24 * time.Hour.Milliseconds()

@@ -50,12 +50,16 @@ type deduplicateFilter interface {
 	DuplicateIDs() []ulid.ULID
 }
 
+type metaFetcher interface {
+	FetchWithoutMarkedForDeletion(ctx context.Context) (metas map[ulid.ULID]*block.Meta, partials map[ulid.ULID]error, err error)
+}
+
 // metaSyncer synchronizes block metas from a bucket into a local directory.
 // It sorts them into compaction groups based on equal label sets.
 type metaSyncer struct {
 	logger                  log.Logger
-	bkt                     objstore.Bucket
-	fetcher                 *block.MetaFetcher
+	buckets                 *blockBuckets
+	fetcher                 metaFetcher
 	mtx                     sync.Mutex
 	blocks                  map[ulid.ULID]*block.Meta
 	metrics                 *syncerMetrics
@@ -93,13 +97,13 @@ func newSyncerMetrics(reg prometheus.Registerer, blocksMarkedForDeletion prometh
 
 // newMetaSyncer returns a new metaSyncer for the given Bucket and directory.
 // Blocks must be at least as old as the sync delay to be considered.
-func newMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bucket, fetcher *block.MetaFetcher, deduplicateBlocksFilter deduplicateFilter, blocksMarkedForDeletion prometheus.Counter) (*metaSyncer, error) {
+func newMetaSyncer(logger log.Logger, reg prometheus.Registerer, buckets *blockBuckets, fetcher metaFetcher, deduplicateBlocksFilter deduplicateFilter, blocksMarkedForDeletion prometheus.Counter) (*metaSyncer, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	return &metaSyncer{
 		logger:                  logger,
-		bkt:                     bkt,
+		buckets:                 buckets,
 		fetcher:                 fetcher,
 		blocks:                  map[ulid.ULID]*block.Meta{},
 		metrics:                 newSyncerMetrics(reg, blocksMarkedForDeletion),
@@ -138,11 +142,11 @@ func (s *metaSyncer) GarbageCollect(ctx context.Context) error {
 	defer s.mtx.Unlock()
 
 	duplicateIDs := s.deduplicateBlocksFilter.DuplicateIDs()
-	return garbageCollectBlocks(ctx, s.logger, s.bkt, duplicateIDs, s.metrics, s.blocks)
+	return garbageCollectBlocks(ctx, s.logger, s.buckets, duplicateIDs, s.metrics, s.blocks)
 }
 
 // garbageCollectBlocks marks duplicate blocks for deletion and removes them from the provided meta map.
-func garbageCollectBlocks(ctx context.Context, logger log.Logger, bkt objstore.Bucket, duplicateIDs []ulid.ULID, metrics *syncerMetrics, metas map[ulid.ULID]*block.Meta) error {
+func garbageCollectBlocks(ctx context.Context, logger log.Logger, buckets *blockBuckets, duplicateIDs []ulid.ULID, metrics *syncerMetrics, metas map[ulid.ULID]*block.Meta) error {
 	begin := time.Now()
 
 	// The deduplication filter is applied after all blocks marked for deletion have been excluded
@@ -158,7 +162,7 @@ func garbageCollectBlocks(ctx context.Context, logger log.Logger, bkt objstore.B
 		delCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 
 		level.Info(logger).Log("msg", "marking outdated block for deletion", "block", id)
-		err := block.MarkForDeletion(delCtx, logger, bkt, id, "outdated block", metrics.blocksMarkedForDeletion)
+		err := block.MarkForDeletion(delCtx, logger, buckets.of(id), id, "outdated block", metrics.blocksMarkedForDeletion)
 		cancel()
 		if err != nil {
 			metrics.garbageCollectionFailures.Inc()
@@ -253,7 +257,7 @@ type Compactor interface {
 }
 
 // runCompactionJob plans and runs a single compaction against the provided job. The compacted result
-// is uploaded into the bucket the blocks were retrieved from.
+// is uploaded into the write bucket.
 func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shouldRerun bool, compIDs []ulid.ULID, rerr error) {
 	jobBeginTime := time.Now()
 
@@ -325,8 +329,9 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		// Must be the same as in blocksToCompactDirs.
 		bdir := filepath.Join(subDir, meta.ULID.String())
 
-		if err := block.Download(ctx, jobLogger, c.bkt, meta.ULID, bdir); err != nil {
-			if c.bkt.IsObjNotFoundErr(err) {
+		bkt := c.buckets.of(meta.ULID)
+		if err := block.Download(ctx, jobLogger, bkt, meta.ULID, bdir); err != nil {
+			if bkt.IsObjNotFoundErr(err) {
 				return blockFileNotFoundError{err: err, id: meta.ULID}
 			}
 			return fmt.Errorf("download block %s: %w", meta.ULID, err)
@@ -402,7 +407,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		level.Info(jobLogger).Log("msg", "compacted block would have no samples, deleting source blocks", "block_count", blockCount, "blocks", toCompactStr)
 		for _, meta := range toCompact {
 			if meta.Stats.NumSamples == 0 {
-				if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(subDir, meta.ULID.String()), jobLogger, c.metrics.blocksMarkedForDeletion); err != nil {
+				if err := deleteBlock(c.buckets.of(meta.ULID), meta.ULID, filepath.Join(subDir, meta.ULID.String()), jobLogger, c.metrics.blocksMarkedForDeletion); err != nil {
 					level.Warn(jobLogger).Log("msg", "failed to mark for deletion an empty block found during compaction", "block", meta.ULID, "err", err)
 				}
 			}
@@ -499,7 +504,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			objstore.WithUploadConcurrency(c.maxPerBlockUploadConcurrency),
 		}
 
-		uploadedMeta, err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil, opts...)
+		uploadedMeta, err := block.Upload(ctx, jobLogger, c.buckets.write(), bdir, nil, opts...)
 		if err != nil {
 			var uploadErr *block.UploadError
 			if errors.As(err, &uploadErr) {
@@ -521,7 +526,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			if err := block.MarkForNoCompact(
 				ctx,
 				jobLogger,
-				c.bkt,
+				c.buckets.write(),
 				blockToUpload.ulid,
 				block.PreemptiveNoCompactReason,
 				"block exceeds configured size threshold",
@@ -569,14 +574,15 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	// into the next planning cycle.
 	// Eventually the block we just uploaded should get synced into the job again (including sync-delay).
 	for _, meta := range toCompact {
-		attrs, err := block.GetMetaAttributes(ctx, meta, c.bkt)
+		bkt := c.buckets.of(meta.ULID)
+		attrs, err := block.GetMetaAttributes(ctx, meta, bkt)
 		if err != nil {
 			level.Warn(jobLogger).Log("msg", "failed to determine block upload time", "block", meta.ULID.String(), "err", err)
 		} else {
 			c.metrics.blockCompactionDelay.WithLabelValues(strconv.Itoa(meta.Compaction.Level)).Observe(compactionBegin.Sub(attrs.LastModified).Seconds())
 		}
 
-		if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(subDir, meta.ULID.String()), jobLogger, c.metrics.blocksMarkedForDeletion); err != nil {
+		if err := deleteBlock(bkt, meta.ULID, filepath.Join(subDir, meta.ULID.String()), jobLogger, c.metrics.blocksMarkedForDeletion); err != nil {
 			return false, nil, fmt.Errorf("mark old block for deletion from bucket: %w", err)
 		}
 	}
@@ -753,7 +759,7 @@ func IsCriticalError(err error) (bool, CriticalError) {
 }
 
 // repairIssue347 repairs the https://github.com/prometheus/tsdb/issues/347 issue when having issue347Error.
-func repairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blocksMarkedForDeletion prometheus.Counter, ie issue347Error) error {
+func repairIssue347(ctx context.Context, logger log.Logger, buckets *blockBuckets, blocksMarkedForDeletion prometheus.Counter, ie issue347Error) error {
 	level.Info(logger).Log("msg", "Repairing block broken by https://github.com/prometheus/tsdb/issues/347", "id", ie.id, "err", ie)
 
 	tmpdir, err := os.MkdirTemp("", fmt.Sprintf("repair-issue-347-id-%s-", ie.id))
@@ -767,6 +773,7 @@ func repairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket,
 		}
 	}()
 
+	bkt := buckets.of(ie.id)
 	bdir := filepath.Join(tmpdir, ie.id.String())
 	if err := block.Download(ctx, logger, bkt, ie.id, bdir); err != nil {
 		return fmt.Errorf("download block %s: %w", ie.id, err)
@@ -788,7 +795,7 @@ func repairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket,
 	}
 
 	level.Info(logger).Log("msg", "uploading repaired block", "newID", resid)
-	if _, err = block.Upload(ctx, logger, bkt, filepath.Join(tmpdir, resid.String()), nil); err != nil {
+	if _, err = block.Upload(ctx, logger, buckets.write(), filepath.Join(tmpdir, resid.String()), nil); err != nil {
 		return fmt.Errorf("upload of %s failed: %w", resid, err)
 	}
 
@@ -955,7 +962,7 @@ type BucketCompactor struct {
 	comp                             Compactor
 	planner                          Planner
 	compactDir                       string
-	bkt                              objstore.Bucket
+	buckets                          *blockBuckets
 	concurrency                      int
 	skipUnhealthyBlocks              bool
 	blockSymbolTableSizeThreshold    uint64
@@ -976,7 +983,7 @@ func NewBucketCompactor(
 	planner Planner,
 	comp Compactor,
 	compactDir string,
-	bkt objstore.Bucket,
+	buckets *blockBuckets,
 	concurrency int,
 	skipUnhealthyBlocks bool,
 	blockSymbolTableSizeThreshold uint64,
@@ -1003,7 +1010,7 @@ func NewBucketCompactor(
 		planner:                          planner,
 		comp:                             comp,
 		compactDir:                       compactDir,
-		bkt:                              bkt,
+		buckets:                          buckets,
 		concurrency:                      concurrency,
 		skipUnhealthyBlocks:              skipUnhealthyBlocks,
 		blockSymbolTableSizeThreshold:    blockSymbolTableSizeThreshold,
@@ -1234,7 +1241,7 @@ jobLoop:
 // Returns nil if the error was recognized and handled successfully, otherwise returns a non-nil error.
 func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, job *Job, err error) error {
 	if ok, issue347Err := isIssue347Error(err); ok {
-		return repairIssue347(ctx, c.logger, c.bkt, c.metrics.blocksMarkedForDeletion, issue347Err)
+		return repairIssue347(ctx, c.logger, c.buckets, c.metrics.blocksMarkedForDeletion, issue347Err)
 	}
 
 	// If the block has an out of order chunk and we have been configured to skip it,
@@ -1244,7 +1251,7 @@ func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, job *
 		return block.MarkForNoCompact(
 			ctx,
 			c.logger,
-			c.bkt,
+			c.buckets.of(outOfOrderChunksErr.id),
 			outOfOrderChunksErr.id,
 			block.OutOfOrderChunksNoCompactReason,
 			"OutofOrderChunk: marking block with out-of-order series/chunks as no compact to unblock compaction",
@@ -1258,7 +1265,7 @@ func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, job *
 		return block.MarkForNoCompact(
 			ctx,
 			c.logger,
-			c.bkt,
+			c.buckets.of(criticalErr.id),
 			criticalErr.id,
 			block.CriticalNoCompactReason,
 			"UnhealthyBlock: marking unhealthy block as no compact to unblock compaction",
@@ -1306,7 +1313,7 @@ func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, job *
 			markErr := block.MarkForNoCompact(
 				ctx,
 				c.logger,
-				c.bkt,
+				c.buckets.of(meta.ULID),
 				meta.ULID,
 				pce.reason,
 				fmt.Sprintf("%s: marking input block as no compact to unblock compaction", pce.reason),

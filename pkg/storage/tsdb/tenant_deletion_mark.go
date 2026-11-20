@@ -43,6 +43,17 @@ func TenantDeletionMarkExists(ctx context.Context, bkt objstore.BucketReader, us
 	return bkt.Exists(ctx, markerFile)
 }
 
+// TenantDeletionMarkExistsInAnyBucket checks the buckets, in order, for the deletion mark for tenant.
+// Errors other than "object not found" are returned.
+func TenantDeletionMarkExistsInAnyBucket(ctx context.Context, bkts []objstore.Bucket, userID string) (bool, error) {
+	for _, bkt := range bkts {
+		if exists, err := TenantDeletionMarkExists(ctx, bkt, userID); err != nil || exists {
+			return exists, err
+		}
+	}
+	return false, nil
+}
+
 // WriteTenantDeletionMark uploads deletion mark to the tenant location in the bucket.
 func WriteTenantDeletionMark(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, mark *TenantDeletionMark) error {
 	bkt = bucket.NewUserBucketClient(userID, bkt, cfgProvider)
