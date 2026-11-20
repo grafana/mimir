@@ -122,6 +122,7 @@
 * [ENHANCEMENT] Query-scheduler: Add the `cortex_query_scheduler_max_outstanding_requests_per_tenant` metric, which exposes the value of `-query-scheduler.max-outstanding-requests-per-tenant`. #17299
 * [ENHANCEMENT] Store-gateway: Reduce the memory usage and garbage collection pressure of loaded sparse index-headers. #16266
 * [ENHANCEMENT] Compactor: Use the last tenant list for blocks cleanup when listing the bucket is slow or fails. #17335
+* [ENHANCEMENT] Mimirtool: `mimirtool runtime-config validate` now accepts Mimir flags after `--`. #17439
 * [BUGFIX] Ruler: Count write requests rejected by the tenant request-rate, ingestion-rate or active-series limits as `client_error` in `cortex_ruler_write_requests_failed_total`, so they no longer trigger `MimirRulerTooManyFailedPushes`. Ingester overload is still counted as `server_error`. #17302
 * [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
 * [BUGFIX] Store-gateway: Allow cancelling prepare-shutdown when the sync directory does not exist. #16049
