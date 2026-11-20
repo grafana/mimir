@@ -356,8 +356,8 @@ func (f *scoreCursorFilter) Accept(value string) (bool, float64) {
 }
 
 // BuildFilter constructs a storage.Filter from Params. Returns (nil, nil)
-// when Params is nil or has zero Terms — a nil storage.Filter accepts every
-// value with score 1.0 by Prometheus convention.
+// when Params is nil or has neither Terms nor an expression — a nil
+// storage.Filter accepts every value with score 1.0 by Prometheus convention.
 //
 // BuildFilter trusts that p has already been validated (via NewParams or
 // an equivalent caller-side check). Per-leaf constructors still reject
@@ -377,35 +377,54 @@ func (f *scoreCursorFilter) Accept(value string) (bool, float64) {
 //
 // The substring algorithms ignore FuzzThreshold.
 //
-// Across terms, combines with filterOr (OR-max). FuzzThreshold (int 0-100)
-// is divided by 100 internally.
+// Across terms, combines with filterOr (OR-max). When Params holds an
+// expression, the filter is the expression compiled with newTermFilterFactory
+// instead. FuzzThreshold (int 0-100) is divided by 100 internally.
 //
-// Case folding for !CaseSensitive is applied once per value at the OR root
-// via caseFoldingFilter; per-term filters are built case-sensitive against a
+// Case folding for !CaseSensitive is applied once per value at the root via
+// caseFoldingFilter; per-term filters are built case-sensitive against a
 // pre-lowercased term so they do not re-fold the same value per Accept call.
 //
 // Scores are rounded to 9 decimal places; see scoreScale for why.
+//
+// The filter is not safe for concurrent use, because the FilterSubsequence
+// matcher is not. Build one filter per request goroutine.
 func BuildFilter(p *Params) (storage.Filter, error) {
-	if p == nil || len(p.Terms) == 0 {
+	if p == nil {
 		return nil, nil
 	}
-	threshold := float64(p.FuzzThreshold) / 100.0
-	perTerm := make([]storage.Filter, 0, len(p.Terms))
-	for _, term := range p.Terms {
-		if !p.CaseSensitive {
-			term = strings.ToLower(term)
-		}
-		f, err := buildPerTermFilter(term, true, p.FuzzAlg, p.FuzzThreshold, threshold)
+	var inner storage.Filter
+	if p.expressionExpr != nil {
+		// Compile re-runs searchexpr.Validate, which NewExpressionParams already
+		// passed. The store-gateway builds one filter per block, so this repeats
+		// per block, but the walk is bounded by searchexpr's term and nesting
+		// limits. Skipping it needs a non-validating Compile in searchexpr.
+		var err error
+		inner, err = searchexpr.Compile(p.expressionExpr, newTermFilterFactory(p))
 		if err != nil {
 			return nil, err
 		}
-		perTerm = append(perTerm, f)
-	}
-	var inner storage.Filter
-	if len(perTerm) == 1 {
-		inner = perTerm[0]
 	} else {
-		inner = newFilterOr(perTerm...)
+		if len(p.Terms) == 0 {
+			return nil, nil
+		}
+		threshold := float64(p.FuzzThreshold) / 100.0
+		perTerm := make([]storage.Filter, 0, len(p.Terms))
+		for _, term := range p.Terms {
+			if !p.CaseSensitive {
+				term = strings.ToLower(term)
+			}
+			f, err := buildPerTermFilter(term, true, p.FuzzAlg, p.FuzzThreshold, threshold)
+			if err != nil {
+				return nil, err
+			}
+			perTerm = append(perTerm, f)
+		}
+		if len(perTerm) == 1 {
+			inner = perTerm[0]
+		} else {
+			inner = newFilterOr(perTerm...)
+		}
 	}
 	if !p.CaseSensitive {
 		inner = &caseFoldingFilter{inner: inner}
