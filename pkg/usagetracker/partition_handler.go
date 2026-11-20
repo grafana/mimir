@@ -945,9 +945,18 @@ func (p *partitionHandler) publishSnapshot(ctx context.Context) error {
 			}
 		}
 	}
-	// The received series go in the last file, so that loading them finds the tenants of all the shards.
-	file.ReceivedSeries = p.store.snapshotReceivedSeries(time.Now())
-	fileDataLen += len(file.ReceivedSeries)
+	// The received series go after the shards, so that loading them finds the tenants of all the shards.
+	// A file has one chunk of them at most.
+	for _, receivedSeries := range p.store.snapshotReceivedSeries(time.Now(), p.cfg.TargetSnapshotFileSizeBytes) {
+		if len(file.ReceivedSeries) > 0 || fileDataLen+len(receivedSeries) > p.cfg.TargetSnapshotFileSizeBytes {
+			// It does nothing if the file is still empty.
+			if err := writeFileAndPublishEvent(); err != nil {
+				return err
+			}
+		}
+		file.ReceivedSeries = receivedSeries
+		fileDataLen += len(receivedSeries)
+	}
 	if err := writeFileAndPublishEvent(); err != nil {
 		return err
 	}

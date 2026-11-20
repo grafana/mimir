@@ -65,8 +65,8 @@ func (t *Timeline) Merge(minute, now int64, s Sketch) {
 	}
 }
 
-// Cleanup drops the sketches of the minutes that are not in the window ending at now.
-// It also merges the minutes before now, so that the estimates at now don't have to.
+// Cleanup drops the sketches of the minutes before the window ending at now, and of the minutes a whole window or
+// more after now. It also merges the minutes before now, so that the estimates at now don't have to.
 func (t *Timeline) Cleanup(now int64) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
@@ -92,8 +92,8 @@ func (t *Timeline) Estimate(now int64, scratch Sketch) float64 {
 	return scratch.Estimate()
 }
 
-// updatePast drops the sketches of the minutes that are not in the window ending at now, and sets past to the union
-// of the minutes before now, unless it's already set for now. t.mtx must be held.
+// updatePast drops the sketches that Cleanup drops, and sets past to the union of the minutes before now,
+// unless it's already set for now. t.mtx must be held.
 func (t *Timeline) updatePast(now int64) {
 	if t.past != nil && t.pastNow == now {
 		return
@@ -104,6 +104,11 @@ func (t *Timeline) updatePast(now int64) {
 		slot := &t.slots[i]
 		switch {
 		case slot.sketch == nil || slot.minute == now:
+		case slot.minute > now && slot.minute < now+int64(len(t.slots)):
+			// A caller whose clock is ahead merged it, like a call just after the minute changed while a scrape or
+			// a cleanup that read the clock before runs. Keep it for when now gets there.
+			// The case below drops the minutes further ahead, which only a clock that went back a whole window
+			// leaves: they would take the slot of the current minute until the clock gets there.
 		case !t.inWindow(slot.minute, now):
 			*slot = timelineSlot{}
 		default:
@@ -125,6 +130,18 @@ func (t *Timeline) Sketches(now int64, f func(minute int64, s Sketch)) {
 			f(slot.minute, slot.sketch)
 		}
 	}
+}
+
+// Empty returns whether no sketch is in the window ending at now.
+func (t *Timeline) Empty(now int64) bool {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+	for _, slot := range t.slots {
+		if slot.sketch != nil && t.inWindow(slot.minute, now) {
+			return false
+		}
+	}
+	return true
 }
 
 func (t *Timeline) inWindow(minute, now int64) bool {

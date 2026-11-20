@@ -3402,12 +3402,16 @@ func TestOverrides_UsageTrackerReceivedSeriesEstimationEnabled(t *testing.T) {
 
 	ov := NewOverrides(getDefaultLimits(), NewMockTenantLimits(map[string]*Limits{
 		"disabled": &disabled,
-		// The tenant's value applies to all its read compartments: an override of a compartment doesn't change it.
+		// The tenant's value applies to all its read compartments and tenant metadata: an override of them doesn't change it.
 		"disabled:source=test-run": &enabled,
+		"disabled/rc/1":            &enabled,
 	}))
 
 	assert.True(t, ov.UsageTrackerReceivedSeriesEstimationEnabled("other"))
 	assert.True(t, ov.UsageTrackerReceivedSeriesEstimationEnabled("other:source=test-run"))
 	assert.False(t, ov.UsageTrackerReceivedSeriesEstimationEnabled("disabled"))
 	assert.False(t, ov.UsageTrackerReceivedSeriesEstimationEnabled("disabled:source=test-run"))
+	// The usage-tracker gets the IDs of the read compartments, with or without tenant metadata.
+	assert.False(t, ov.UsageTrackerReceivedSeriesEstimationEnabled("disabled/rc/1"))
+	assert.False(t, ov.UsageTrackerReceivedSeriesEstimationEnabled("disabled/rc/1:source=test-run"))
 }
