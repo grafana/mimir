@@ -62,7 +62,7 @@ func (i *Ingester) SearchLabelNames(req *client.SearchLabelNamesRequest, stream 
 
 	rs := searcher.SearchLabelNames(ctx, hints, matchers...)
 	defer rs.Close()
-	return streamSearchResults(ctx, rs, stream.Send)
+	return streamSearchResults(ctx, rs, req.Filter.GetResumeAfter() != "", stream.Send)
 }
 
 // SearchLabelValues streams label values for req.Name matching the search filter.
@@ -100,11 +100,12 @@ func (i *Ingester) SearchLabelValues(req *client.SearchLabelValuesRequest, strea
 
 	rs := searcher.SearchLabelValues(ctx, req.Name, hints, matchers...)
 	defer rs.Close()
-	return streamSearchResults(ctx, rs, stream.Send)
+	return streamSearchResults(ctx, rs, req.Filter.GetResumeAfter() != "", stream.Send)
 }
 
-// buildSearchHints constructs storage.SearchHints from the wire request.
-// limit follows the Prometheus PR #18573 convention: 0 means no limit;
+// buildSearchHints constructs storage.SearchHints from the wire request,
+// including the cursor of a previous page. limit follows the Prometheus PR
+// #18573 convention: 0 means no limit;
 // negatives are rejected as malformed input (the querier never sends them);
 // values above math.MaxInt are clamped to math.MaxInt so the int(limit)
 // cast cannot wrap on 32-bit builds.
@@ -117,7 +118,10 @@ func buildSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit 
 	if err != nil {
 		return nil, nil, err
 	}
-	filter, err := streaminglabelvalues.BuildFilter(params)
+	order := protoToOrdering(ord)
+	// With a cursor, every page reads and sorts all values of the label in
+	// each block; see BuildSearchFilter.
+	filter, err := streaminglabelvalues.BuildSearchFilter(params, order)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -130,23 +134,39 @@ func buildSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit 
 	}
 	hints := &storage.SearchHints{
 		Filter:  filter,
-		OrderBy: protoToOrdering(ord),
+		OrderBy: order,
 		Limit:   hintsLimit,
 	}
 	return hints, matchers, nil
 }
 
 // protoToParams converts a wire SearchFilter into a validated
-// streaminglabelvalues.Params via NewParams. A nil input returns (nil, nil).
+// streaminglabelvalues.Params via NewParams and WithCursor. A nil input
+// returns (nil, nil). An unknown FuzzAlg is an error. A sender that is newer
+// than this server can send a value that this server does not know, and a
+// silent fallback to another algorithm would return wrong results.
 func protoToParams(wf *client.SearchFilter) (*streaminglabelvalues.Params, error) {
 	if wf == nil {
 		return nil, nil
 	}
-	alg := streaminglabelvalues.FuzzAlgSubsequence
-	if wf.FuzzAlg == client.FUZZ_ALG_JARO_WINKLER {
+	var alg streaminglabelvalues.FuzzAlg
+	switch wf.FuzzAlg {
+	case client.FUZZ_ALG_SUBSEQUENCE:
+		alg = streaminglabelvalues.FuzzAlgSubsequence
+	case client.FUZZ_ALG_JARO_WINKLER:
 		alg = streaminglabelvalues.FuzzAlgJaroWinkler
+	case client.FUZZ_ALG_SUBSTRING_LEFT:
+		alg = streaminglabelvalues.FuzzAlgSubstringLeft
+	case client.FUZZ_ALG_SUBSTRING:
+		alg = streaminglabelvalues.FuzzAlgSubstring
+	default:
+		return nil, fmt.Errorf("unknown fuzz algorithm %d", wf.FuzzAlg)
 	}
-	return streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	params, err := streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	if err != nil {
+		return nil, err
+	}
+	return params.WithCursor(wf.ResumeAfter, wf.ScoreAfter)
 }
 
 // protoToOrdering maps the wire SearchOrdering enum onto the Prometheus
@@ -171,12 +191,13 @@ type searchResultSender func(*client.SearchResultBatch) error
 // final batch (or sent alone if no results were produced). Returns rs.Err()
 // at termination. The stream context is checked before iteration starts and
 // at each batch boundary so a cancelled client stops the loop promptly even
-// when rs.Next() does not yet honour context cancellation itself.
-func streamSearchResults(ctx context.Context, rs storage.SearchResultSet, send searchResultSender) error {
+// when rs.Next() does not yet honour context cancellation itself. cursorApplied
+// marks every batch, so the caller can tell this server applied its cursor.
+func streamSearchResults(ctx context.Context, rs storage.SearchResultSet, cursorApplied bool, send searchResultSender) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	batch := &client.SearchResultBatch{Results: make([]client.SearchResultBatch_Result, 0, searchBatchSize)}
+	batch := &client.SearchResultBatch{Results: make([]client.SearchResultBatch_Result, 0, searchBatchSize), CursorApplied: cursorApplied}
 	for rs.Next() {
 		if err := ctx.Err(); err != nil {
 			return err

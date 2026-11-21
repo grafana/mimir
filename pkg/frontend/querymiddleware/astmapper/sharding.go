@@ -139,6 +139,21 @@ func (summer *shardSummer) MapExpr(ctx context.Context, expr parser.Expr) (mappe
 			return e, !analysis.WillShardAllSelectors, nil
 		}
 
+		// info() performs a many-to-one join between its first argument (the vector to
+		// enrich) and the target_info series. When sharding, we shard only the first
+		// argument: each shard must see the full set of target_info series to correctly
+		// enrich its subset of the inner series, so the target_info (data label) selector
+		// must not be sharded. For the single-argument form of info(), the target_info
+		// selector is injected later by the query engine and is likewise never sharded.
+		if isInfoCall(e) && len(e.Args) > 0 {
+			mappedArg, err := NewASTExprMapper(summer).Map(ctx, e.Args[0])
+			if err != nil {
+				return nil, true, err
+			}
+			e.Args[0] = mappedArg
+			return e, true, nil
+		}
+
 		return e, false, nil
 
 	case *parser.BinaryExpr:
@@ -321,6 +336,13 @@ func (analyzer *ShardingAnalyzer) Analyze(expr parser.Expr) (result ShardingAnal
 			return ShardedExpression(1), nil
 		}
 
+		// info() always reads the info series, and that selector is never sharded.
+		// If we sharded only the first argument,
+		// info() would be evaluated by the query-frontend, which can't fetch the info series.
+		if isInfoCall(expr) {
+			return UnshardedExpression(), nil
+		}
+
 		for _, arg := range argsWithDefaults(expr) {
 			if result, err := analyzer.Analyze(arg); err != nil {
 				return UnshardedExpression(), err
@@ -438,6 +460,12 @@ func (summer *shardSummer) shardAggregate(ctx context.Context, expr *parser.Aggr
 		return mapped, true, nil
 	case parser.AVG:
 		mapped, err = summer.shardAvg(ctx, expr)
+		if err != nil {
+			return nil, false, err
+		}
+		return mapped, true, nil
+	case parser.TOPK, parser.BOTTOMK:
+		mapped, err = summer.shardTopKBottomK(ctx, expr)
 		if err != nil {
 			return nil, false, err
 		}
@@ -578,6 +606,32 @@ func (summer *shardSummer) shardMinMax(ctx context.Context, expr *parser.Aggrega
 	}, nil
 }
 
+// shardTopKBottomK attempts to shard the given TOPK/BOTTOMK aggregation expression.
+func (summer *shardSummer) shardTopKBottomK(ctx context.Context, expr *parser.AggregateExpr) (result parser.Expr, err error) {
+	// We expect the given aggregation is either a TOPK or BOTTOMK.
+	if expr.Op != parser.TOPK && expr.Op != parser.BOTTOMK {
+		return nil, errors.Errorf("expected TOPK or BOTTOMK aggregation while got %s", expr.Op.String())
+	}
+
+	summer.stats.AddShardedQueries(summer.shards)
+
+	// The TOPK/BOTTOMK aggregation can be parallelized as the TOPK/BOTTOMK of per-shard TOPK/BOTTOMK.
+	// Create a TOPK/BOTTOMK sub-query for each shard and squash it into a CONCAT expression.
+	sharded, err := summer.shardAndSquashAggregateExpr(ctx, expr, expr.Op)
+	if err != nil {
+		return nil, err
+	}
+
+	return &parser.AggregateExpr{
+		Op:       expr.Op,
+		Expr:     sharded,
+		Param:    expr.Param,
+		Grouping: expr.Grouping,
+		Without:  expr.Without,
+		PosRange: expr.PosRange,
+	}, nil
+}
+
 // shardAvg attempts to shard the given AVG aggregation expression.
 func (summer *shardSummer) shardAvg(ctx context.Context, expr *parser.AggregateExpr) (result parser.Expr, err error) {
 	// The AVG aggregation can be parallelized as per-shard SUM() divided by per-shard COUNT().
@@ -616,12 +670,20 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(ctx context.Context, expr
 			return nil, err
 		}
 
+		// Aggregations like topk() need their parameter in each shard too. It's nil for
+		// the other shardable aggregations, and CloneExpr returns nil for nil.
+		param, err := CloneExpr(expr.Param)
+		if err != nil {
+			return nil, err
+		}
+
 		// Create the child expression, which runs the given aggregation operation
 		// on a single shard. We need to preserve the grouping as it was
 		// in the original one.
 		aggExpr := &parser.AggregateExpr{
 			Op:       op,
 			Expr:     sharded,
+			Param:    param,
 			Without:  expr.Without,
 			PosRange: expr.PosRange,
 
@@ -727,6 +789,11 @@ func (summer *shardSummer) shardVectorSelector(selector *parser.VectorSelector) 
 	)
 
 	return shardedSelector, nil
+}
+
+// isInfoCall returns true if the given function call expression is a call to info().
+func isInfoCall(n *parser.Call) bool {
+	return n.Func != nil && n.Func.Name == "info"
 }
 
 // isSubqueryCall returns true if the given function call expression is a subquery,

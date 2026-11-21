@@ -122,7 +122,11 @@ The CPU and memory requirements are computed by estimating 1 CPU core and 1GB pe
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
-The disk requirement has been estimated assuming 2 bytes per sample for compacted blocks (both index and chunks), the index-header being 0.10% of a block size, a scrape interval of 15 seconds, a retention of 1 year and store-gateways replication factor configured to 3. The resulting estimated store-gateway disk space for one series is 13KB.
+The store-gateway only keeps the [index-headers](../../../references/architecture/binary-index-header/) on local disk. The full index and chunks stay in object storage.
+The disk requirement has been estimated assuming 2 bytes per sample for compacted blocks (both index and chunks). The index-header is assumed to be 0.10% of a
+block size (long or high-cardinality labels, or high churn, increase this ratio).
+For a scrape interval of 15 seconds, a retention of 1 year and store-gateway replication factor set to 3, the estimated store-gateway disk space per series is
+13KB, across all store-gateway replicas.
 {{< /admonition >}}
 
 **How to estimate the number of active series before ingesters replication:**
@@ -152,6 +156,10 @@ Assuming you run one compactor instance every 20 million active series, the esti
 - CPU: 1 core
 - Memory: 4GB
 - Disk: 300GB
+
+{{< admonition type="note" >}}
+The disk requirement has been estimated assuming a scrape interval of 15 seconds, the longest `-compactor.block-ranges` period 24h (default), and 2 bytes per sample per compacted TSDB block.
+{{< /admonition >}}
 
 For more information about disk requirements, refer to [Compactor disk utilization](../../../references/architecture/components/compactor/#compactor-disk-utilization).
 

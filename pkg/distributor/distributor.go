@@ -109,6 +109,7 @@ const (
 type usageTrackerGenericClient interface {
 	services.Service
 	TrackSeries(ctx context.Context, userID string, series []uint64) ([]uint64, error)
+	TrackSeriesMulti(ctx context.Context, users []usagetrackerclient.UserSeries) ([][]uint64, error)
 	TrackSeriesAsync(ctx context.Context, userID string, series []uint64) error
 	CanTrackAsync(userID string) bool
 }
@@ -313,8 +314,8 @@ type Config struct {
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
-	// This allows downstream projects to wrap the distributor push function
-	// and access the deserialized write requests before/after they are pushed.
+	// PushWrappers allows downstream projects to wrap the distributor push function.
+	// Decoded data is valid only before calling next; copy any values needed afterwards.
 	// These functions will only receive samples that don't get dropped by HA deduplication.
 	PushWrappers []PushWrapper `yaml:"-"`
 
@@ -344,6 +345,8 @@ type Config struct {
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
+// Decoded request data may be released during next(). Copy any data needed after
+// next() returns, including strings backed by request buffers, before calling it.
 type PushWrapper func(next PushFunc) PushFunc
 
 // WithCleanup wraps the given pushWrapper function with automatic resource cleanup handling.
@@ -1043,95 +1046,92 @@ func (d *Distributor) stopping(_ error) error {
 	return services.StopManagerAndAwaitStopped(context.Background(), d.subservices)
 }
 
-// validateSamples validates samples of a single timeseries and removes the ones with duplicated timestamps.
-// Returns an error explaining the first validation finding.
+// validateSamples removes invalid or duplicated samples from a single time
+// series, and records the removals in res. If res.Error() holds an error
+// afterwards, it explains the first invalid finding.
 // May alter timeseries data in-place.
-// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
-func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string, cfg sampleValidationConfig) error {
+func (d *Distributor) validateSamples(res *validationResult, now model.Time, ts *mimirpb.PreallocTimeseries, cfg sampleValidationConfig, sampleDelay prometheus.Observer) {
 	if len(ts.Samples) == 0 {
-		return nil
+		return
 	}
 
-	cat := d.costAttributionMgr.SampleTracker(userID)
-	if len(ts.Samples) == 1 {
-		delta := now - model.Time(ts.Samples[0].TimestampMs)
-		d.sampleDelay.WithLabelValues(userID).Observe(float64(delta) / 1000)
-		return validateSample(d.sampleValidationMetrics, now, cfg, userID, group, ts.Labels, ts.Samples[0], cat)
+	// Linear scan to assert whether the sample's timestamps are strictly ascending.
+	// We only have to check for duplicates if they aren't.
+	isAscending := true
+	for i := 0; i < len(ts.Samples)-1 && isAscending; i++ {
+		isAscending = ts.Samples[i+1].TimestampMs > ts.Samples[i].TimestampMs
 	}
 
-	timestamps := make(map[int64]struct{}, min(len(ts.Samples), 100))
 	currPos := 0
-	duplicatesFound := false
+	var timestamps map[int64]struct{}
+	if !isAscending {
+		timestamps = make(map[int64]struct{}, min(len(ts.Samples), 100))
+	}
 	for _, s := range ts.Samples {
-		if _, ok := timestamps[s.TimestampMs]; ok {
-			// A sample with the same timestamp has already been validated, so we skip it.
-			duplicatesFound = true
-			continue
+		if !isAscending {
+			if _, ok := timestamps[s.TimestampMs]; ok {
+				res.increment(reasonDuplicateTimestamp)
+				continue
+			}
+			timestamps[s.TimestampMs] = struct{}{}
 		}
-
-		timestamps[s.TimestampMs] = struct{}{}
-
 		delta := now - model.Time(s.TimestampMs)
-		d.sampleDelay.WithLabelValues(userID).Observe(float64(delta) / 1000)
+		sampleDelay.Observe(float64(delta) / 1000)
 
-		if err := validateSample(d.sampleValidationMetrics, now, cfg, userID, group, ts.Labels, s, cat); err != nil {
-			return err
+		if !validateSample(res, now, cfg, ts.Labels, s) {
+			continue
 		}
 
 		ts.Samples[currPos] = s
 		currPos++
 	}
 
-	if duplicatesFound {
+	if currPos < len(ts.Samples) {
 		ts.Samples = ts.Samples[:currPos]
 		ts.SamplesUpdated()
 	}
-
-	return nil
 }
 
-// validateHistograms validates histograms of a single timeseries and removes the ones with duplicated timestamps.
-// Returns an error explaining the first validation finding.
+// validateHistograms removes invalid or duplicated histograms from a single time
+// series, and records the removals in res. If res.Error() holds an error
+// afterwards, it explains the first invalid finding.
 // May alter timeseries data in-place.
-// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
-func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string, cfg sampleValidationConfig) error {
+func (d *Distributor) validateHistograms(res *validationResult, now model.Time, ts *mimirpb.PreallocTimeseries, cfg sampleValidationConfig, sampleDelay prometheus.Observer) {
 	if len(ts.Histograms) == 0 {
-		return nil
+		return
 	}
 
-	cat := d.costAttributionMgr.SampleTracker(userID)
-	if len(ts.Histograms) == 1 {
-		delta := now - model.Time(ts.Histograms[0].Timestamp)
-		d.sampleDelay.WithLabelValues(userID).Observe(float64(delta) / 1000)
-
-		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, cfg, userID, group, ts.Labels, &ts.Histograms[0], cat)
-		if err != nil {
-			return err
-		}
-		if updated {
-			ts.HistogramsUpdated()
-		}
-		return nil
+	// Linear scan to assert whether the histograms' timestamps are strictly ascending.
+	// We only have to check for duplicates if they aren't.
+	isAscending := true
+	for i := 0; i < len(ts.Histograms)-1 && isAscending; i++ {
+		isAscending = ts.Histograms[i+1].Timestamp > ts.Histograms[i].Timestamp
 	}
 
-	timestamps := make(map[int64]struct{}, min(len(ts.Histograms), 100))
 	currPos := 0
 	histogramsUpdated := false
+	var timestamps map[int64]struct{}
+	if !isAscending {
+		timestamps = make(map[int64]struct{}, min(len(ts.Histograms), 100))
+	}
 	for idx := range ts.Histograms {
-		if _, ok := timestamps[ts.Histograms[idx].Timestamp]; ok {
-			// A sample with the same timestamp has already been validated, so we skip it.
-			histogramsUpdated = true
-			continue
+		if !isAscending {
+			if _, ok := timestamps[ts.Histograms[idx].Timestamp]; ok {
+				// A sample with the same timestamp has already been validated, so we skip it.
+				res.increment(reasonDuplicateTimestamp)
+				histogramsUpdated = true
+				continue
+			}
+			timestamps[ts.Histograms[idx].Timestamp] = struct{}{}
 		}
 
-		timestamps[ts.Histograms[idx].Timestamp] = struct{}{}
-
 		delta := now - model.Time(ts.Histograms[idx].Timestamp)
-		d.sampleDelay.WithLabelValues(userID).Observe(float64(delta) / 1000)
+		sampleDelay.Observe(float64(delta) / 1000)
 
-		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, cfg, userID, group, ts.Labels, &ts.Histograms[idx], cat)
-		if err != nil {
-			return err
+		updated, valid := validateSampleHistogram(res, now, cfg, ts.Labels, &ts.Histograms[idx])
+		if !valid {
+			histogramsUpdated = true
+			continue
 		}
 		histogramsUpdated = histogramsUpdated || updated
 
@@ -1143,8 +1143,6 @@ func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTim
 		ts.Histograms = ts.Histograms[:currPos]
 		ts.HistogramsUpdated()
 	}
-
-	return nil
 }
 
 // validateExemplars validates exemplars of a single timeseries.
@@ -1187,37 +1185,30 @@ func (d *Distributor) validateExemplars(ts *mimirpb.PreallocTimeseries, userID s
 	}
 }
 
-// Validates a single series from a write request.
-// May alter timeseries data in-place.
-// Returns an error explaining the first validation finding. Non-nil error means the timeseries should be removed from the request.
-// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
-// It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, cfg validationConfig, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64, valueTooLongSummaries *labelValueTooLongSummaries) error {
-	cat := d.costAttributionMgr.SampleTracker(userID)
-
-	if err := validateLabels(d.sampleValidationMetrics, cfg.labels, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt, valueTooLongSummaries); err != nil {
-		return err
+// validateSeries removes invalid or duplicated samples and histograms from a
+// single time series, and records the removals in res. If res.Error() holds an
+// error afterwards, it explains the first validation finding. Returns true if
+// the entire series is considered valid. May alter timeseries data in-place.
+func (d *Distributor) validateSeries(res *validationResult, nowt time.Time, ts *mimirpb.PreallocTimeseries, userID string, cfg validationConfig, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64, valueTooLongSummaries *labelValueTooLongSummaries, sampleDelay prometheus.Observer) (valid bool) {
+	totalSamplesAndHistograms := len(ts.Samples) + len(ts.Histograms)
+	if !validateLabels(res, cfg.labels, ts.Labels, skipLabelValidation, skipLabelCountValidation, valueTooLongSummaries, totalSamplesAndHistograms) {
+		// The whole timeseries is invalid, all of its samples are rejected: drop them.
+		ts.Samples = ts.Samples[:0]
+		ts.Histograms = ts.Histograms[:0]
+		return false
 	}
 
 	now := model.TimeFromUnixNano(nowt.UnixNano())
-	totalSamplesAndHistograms := len(ts.Samples) + len(ts.Histograms)
-
-	if err := d.validateSamples(now, ts, userID, group, cfg.samples); err != nil {
-		return err
+	d.validateSamples(res, now, ts, cfg.samples, sampleDelay)
+	d.validateHistograms(res, now, ts, cfg.samples, sampleDelay)
+	if res.rejectedSamples > 0 && len(ts.Samples)+len(ts.Histograms) == 0 {
+		// The series is empty, as a result of validation. The
+		// prePushValidationMiddleware will remove it from the push request, hence, there
+		// is no point in validating its exemplars.
+		return false
 	}
-
-	if err := d.validateHistograms(now, ts, userID, group, cfg.samples); err != nil {
-		return err
-	}
-
 	d.validateExemplars(ts, userID, minExemplarTS, maxExemplarTS)
-
-	deduplicatedSamplesAndHistograms := totalSamplesAndHistograms - len(ts.Samples) - len(ts.Histograms)
-	if deduplicatedSamplesAndHistograms > 0 {
-		d.sampleValidationMetrics.duplicateTimestamp.WithLabelValues(userID, group).Add(float64(deduplicatedSamplesAndHistograms))
-	}
-
-	return nil
+	return true
 }
 
 // wrapPushWithMiddlewares returns push function wrapped in all Distributor's middlewares.
@@ -1610,12 +1601,9 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		countDroppedNativeHistograms := !d.limits.NativeHistogramsIngestionEnabled(userID)
 		var droppedNativeHistograms int
 
-		var firstPartialErr error
-		// firstValidationErr holds the first encountered series validation error.
-		// It is kept separately from firstPartialErr (which may also hold a metadata-validation error)
-		// so we can build a soft validationError when the request is partially accepted.
-		var firstValidationErr error
 		var rejectedSamplesCount int64
+		var seriesRes validationResult
+		sampleDelay := d.sampleDelay.WithLabelValues(userID)
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
 		const maxMetricsWithDeduplicatedSamplesToTrace = 10
@@ -1636,28 +1624,22 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			skipLabelCountValidation := d.cfg.SkipLabelCountValidation || req.GetSkipLabelCountValidation()
 
 			// Note that validateSeries may drop some data in ts.
-			rawSamples := len(ts.Samples)
-			rawHistograms := len(ts.Histograms)
-			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, pushReq.group, cfg, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS, &valueTooLongSummaries)
+			seriesRes.resetCounters()
+			valid := d.validateSeries(&seriesRes, now, &req.Timeseries[tsIdx], userID, cfg, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS, &valueTooLongSummaries, sampleDelay)
+			d.sampleValidationMetrics.update(seriesRes.discardedSamplesByReason, userID, pushReq.group)
+			d.updateCostAttribution(ts.Labels, userID, seriesRes.discardedSamplesByReason, now)
+			rejectedSamplesCount += int64(seriesRes.rejectedSamples)
 
 			if countDroppedNativeHistograms {
 				droppedNativeHistograms += len(ts.Histograms)
 			}
 
-			// Errors in validation are considered non-fatal, as one series in a request may contain
-			// invalid data but all the remaining series could be perfectly valid.
-			if validationErr != nil {
-				if firstPartialErr == nil {
-					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
-					firstPartialErr = newValidationError(validationErr)
-					firstValidationErr = validationErr
-				}
-				rejectedSamplesCount += int64(rawSamples + rawHistograms)
+			if !valid {
 				removeIndexes = append(removeIndexes, tsIdx)
 				continue
 			}
 
-			dedupedSamplesAndHistograms := (rawSamples - len(ts.Samples)) + (rawHistograms - len(ts.Histograms))
+			dedupedSamplesAndHistograms := int(seriesRes.discardedSamplesByReason[reasonDuplicateTimestamp])
 			if dedupedSamplesAndHistograms > 0 {
 				if dedupedPerUnsafeMetricName == nil {
 					dedupedPerUnsafeMetricName = make(map[string]int, maxMetricsWithDeduplicatedSamplesToTrace)
@@ -1713,11 +1695,13 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			removeIndexes = removeIndexes[:0]
 		}
 
+		// firstMetadataErr is the first metadata validation error of the request.
+		var firstMetadataErr error
 		for mIdx, m := range req.Metadata {
 			if validationErr := cleanAndValidateMetadata(d.metadataValidationMetrics, cfg.metadata, userID, m); validationErr != nil {
-				if firstPartialErr == nil {
+				if firstMetadataErr == nil {
 					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
-					firstPartialErr = newValidationError(validationErr)
+					firstMetadataErr = validationErr
 				}
 
 				removeIndexes = append(removeIndexes, mIdx)
@@ -1731,7 +1715,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		}
 
 		if validatedSamples == 0 && validatedMetadata == 0 {
-			return firstPartialErr
+			return firstValidationError(seriesRes.Error(), firstMetadataErr)
 		}
 
 		totalN := validatedSamples + validatedExemplars + validatedMetadata
@@ -1784,12 +1768,22 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
-		if firstValidationErr != nil && validatedSamples > 0 {
-			return newSoftValidationError(firstValidationErr, rejectedSamplesCount)
+		if seriesRes.Error() != nil && validatedSamples > 0 {
+			return newSoftValidationError(seriesRes.Error(), rejectedSamplesCount)
 		}
 
-		return firstPartialErr
+		return firstValidationError(seriesRes.Error(), firstMetadataErr)
 	})
+}
+
+// firstValidationError returns the first non-nil item of errs as a validation error.
+func firstValidationError(errs ...error) error {
+	for _, err := range errs {
+		if err != nil {
+			return newValidationError(err)
+		}
+	}
+	return nil
 }
 
 func (d *Distributor) logLabelValueTooLongSummaries(userID string, valueTooLongSummaries labelValueTooLongSummaries) {
@@ -1869,39 +1863,46 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 
 		// Track the series and check if anyone should be rejected because over the limit.
 		// For users that are far from their limits, we can do this asynchronously.
-		if d.usageTrackerClient.CanTrackAsync(limitsKey) {
-			// User is far from limit.
-			// We can perform the track call in parallel with the metrics ingestion hoping that no series would be rejected.
-
-			d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
-
-			if d.cfg.UsageTrackerClient.UseBatchedTracking {
-				if err := d.usageTrackerClient.TrackSeriesAsync(ctx, limitsKey, seriesHashes); err != nil {
-					level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", limitsKey, "series", len(seriesHashes))
-				}
-			} else {
-				cleanup := d.parallelUsageTrackerClientTrackSeriesCall(ctx, limitsKey, userID, seriesHashes)
-				pushReq.AddCleanup(cleanup)
-			}
-
-			return next(ctx, pushReq)
+		var (
+			trackedAsync   bool
+			rejectedHashes []uint64
+		)
+		if d.compartmentRouter == nil {
+			trackedAsync, rejectedHashes, err = d.trackTenantSeries(ctx, limitsKey, seriesHashes)
+		} else {
+			seriesHashesByReadCompartment := groupSeriesHashesByReadCompartment(d.compartmentRouter, userID, metadata, req.Timeseries, seriesHashes)
+			trackedAsync, rejectedHashes, err = d.trackReadCompartmentSeries(ctx, seriesHashesByReadCompartment)
 		}
-
-		// User is close to limit, track synchronously.
-		rejectedHashes, err := d.usageTrackerClient.TrackSeries(ctx, limitsKey, seriesHashes)
 		if err != nil {
 			return errors.Wrap(err, "failed to enforce max series limit")
 		}
 
-		var discardedSamples int
+		if trackedAsync {
+			// User is far from limit.
+			// We can perform the track call in parallel with the metrics ingestion hoping that no series would be rejected.
+			d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
+			return next(ctx, pushReq)
+		}
+
+		// User is close to limit, the series were tracked synchronously.
+		var (
+			discardedSamples       int
+			activeSeriesLimitedErr error
+		)
 		if len(rejectedHashes) > 0 {
 			discardedSamples = filterOutRejectedSeries(req, seriesHashes, rejectedHashes)
 			d.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID, pushReq.group).Add(float64(discardedSamples))
+
+			if d.compartmentRouter != nil {
+				activeSeriesLimitedErr = newActiveSeriesLimitedInReadCompartmentsError(totalTimeseries, len(rejectedHashes), d.limits.ActiveSeriesLimitResponseCode(limitsKey), int64(discardedSamples))
+			} else {
+				activeSeriesLimitedErr = newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.ActiveSeriesLimitResponseCode(limitsKey), int64(discardedSamples))
+			}
 		}
 
 		if len(req.Timeseries) == 0 {
 			// All series have been rejected, no need to talk to ingesters.
-			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(limitsKey), d.limits.ActiveSeriesLimitResponseCode(limitsKey), int64(discardedSamples))
+			return activeSeriesLimitedErr
 		}
 
 		// If there's an error coming from the ingesters, prioritize that one.
@@ -1919,54 +1920,62 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
-		if len(rejectedHashes) > 0 {
-			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(limitsKey), d.limits.ActiveSeriesLimitResponseCode(limitsKey), int64(discardedSamples))
-		}
-
-		return nil
+		return activeSeriesLimitedErr
 	})
 }
 
-func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Context, limitsKey, userID string, seriesHashes []uint64) func() {
-	done := make(chan struct{}, 1)
-	t0 := time.Now()
-	asyncTrackingCtx, cancelAsyncTracking := context.WithCancelCause(ctx)
-	go func() {
-		defer close(done)
-		rejected, err := d.usageTrackerClient.TrackSeries(asyncTrackingCtx, limitsKey, seriesHashes)
-		if err != nil {
-			level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", limitsKey, "series", len(seriesHashes))
-		}
-		if len(rejected) > 0 {
-			level.Warn(d.log).Log("msg", "ingested some series that should have been rejected, because they were tracked asynchronously", "user", limitsKey, "rejected", len(rejected))
-			d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Inc()
-		}
-	}()
+// trackTenantSeries tracks seriesHashes for limitsKey. When the usage-tracker client allows
+// asynchronous tracking, it does not wait for the result and returns trackedAsync true. Otherwise it
+// returns the rejected hashes.
+func (d *Distributor) trackTenantSeries(ctx context.Context, limitsKey string, seriesHashes []uint64) (trackedAsync bool, rejectedHashes []uint64, err error) {
+	if d.usageTrackerClient.CanTrackAsync(limitsKey) {
+		d.trackSeriesAsync(ctx, limitsKey, seriesHashes)
+		return true, nil, nil
+	}
+	rejectedHashes, err = d.usageTrackerClient.TrackSeries(ctx, limitsKey, seriesHashes)
+	return false, rejectedHashes, err
+}
 
-	// Add a cleanup function that will wait for the async tracking to complete.
-	return func() {
-		defer cancelAsyncTracking(nil)
-
-		tCleanup := time.Now()
-		select {
-		case <-done:
-			// No need to wait.
-			return
-		default:
+// trackReadCompartmentSeries tracks the series of each read compartment in
+// seriesHashesByReadCompartment. When the usage-tracker client allows asynchronous tracking for all
+// read compartments, it does not wait for the results and returns trackedAsync true. Otherwise it
+// tracks all read compartments in one synchronous call so they share the same per-partition sync
+// batches. Then it returns the rejected hashes of all read compartments.
+func (d *Distributor) trackReadCompartmentSeries(ctx context.Context, seriesHashesByReadCompartment []usagetrackerclient.UserSeries) (trackedAsync bool, rejectedHashes []uint64, err error) {
+	canTrackAsync := true
+	for _, seriesHashes := range seriesHashesByReadCompartment {
+		if !d.usageTrackerClient.CanTrackAsync(seriesHashes.UserID) {
+			canTrackAsync = false
+			break
 		}
-
-		select {
-		case <-done:
-			level.Info(d.log).Log("msg", "async tracking call took longer than ingestion", "user", limitsKey, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", time.Since(tCleanup))
-		case <-time.After(d.cfg.UsageTrackerClient.MaxTimeToWaitForAsyncTrackingResponseAfterIngestion):
-			level.Warn(d.log).Log("msg", "async tracking call took too long, canceling", "user", limitsKey, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", time.Since(tCleanup))
-			cancelAsyncTracking(errors.New("async tracking call took too long"))
+	}
+	if canTrackAsync {
+		for _, seriesHashes := range seriesHashesByReadCompartment {
+			d.trackSeriesAsync(ctx, seriesHashes.UserID, seriesHashes.Series)
 		}
+		return true, nil, nil
+	}
+
+	rejected, err := d.usageTrackerClient.TrackSeriesMulti(ctx, seriesHashesByReadCompartment)
+	if err != nil {
+		return false, nil, err
+	}
+
+	for _, hashes := range rejected {
+		rejectedHashes = append(rejectedHashes, hashes...)
+	}
+	return false, rejectedHashes, nil
+}
+
+// trackSeriesAsync tracks seriesHashes for usageTrackerUserID. It does not wait for the result.
+func (d *Distributor) trackSeriesAsync(ctx context.Context, usageTrackerUserID string, seriesHashes []uint64) {
+	if err := d.usageTrackerClient.TrackSeriesAsync(ctx, usageTrackerUserID, seriesHashes); err != nil {
+		level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", usageTrackerUserID, "series", len(seriesHashes))
 	}
 }
 
 func (d *Distributor) ObserveAsyncUsageTrackerRejection(userID string) {
-	userID = tenant.TrimMetadata(userID)
+	userID = compartments.BaseTenantID(userID)
 	d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Inc()
 }
 
@@ -2326,10 +2335,12 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 // Push is gRPC method registered as client.IngesterServer and distributor.DistributorServer.
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	pushReq := NewParsedRequest(req, req.Size())
-	pushReq.AddCleanup(func() {
+	pushReq.requestCleanup = func() {
 		req.FreeBuffer()
 		mimirpb.ReuseSlice(req.Timeseries)
-	})
+		req.Timeseries = nil
+	}
+	pushReq.AddCleanup(pushReq.releaseWriteRequest)
 
 	pushErr := d.PushWithMiddlewares(ctx, pushReq)
 	if pushErr == nil {
@@ -2352,6 +2363,7 @@ func (d *Distributor) handlePushError(pushErr error) error {
 }
 
 // push takes a write request and distributes it to ingesters using the ring.
+// Wrappers must finish using decoded data before next(); backend writes may release it.
 // Strings in pushReq may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
 // push does not check limits like ingestion rate and inflight requests.
 // These limits are checked either by Push gRPC method (when invoked via gRPC) or limitsMiddleware (when invoked via HTTP)
@@ -2410,12 +2422,11 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		ingestersSubring = d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
 	}
 
-	// we must not re-use buffers now until all writes to backends (e.g. ingesters) have completed, which can happen
-	// even after this function returns. For this reason, it's unsafe to cleanup in the defer and we'll do the cleanup
-	// once all backend requests have completed (see cleanup function passed to sendWriteRequestToBackends()).
+	// Completion cleanup must wait for all backends, including ingester requests
+	// that may outlive this call. Ingest storage can release decoded data earlier.
 	cleanupInDefer = false
 
-	return d.sendWriteRequestToBackends(ctx, userID, req, ingestersSubring, partitionSubrings, pushReq.CleanUp)
+	return d.sendWriteRequestToBackends(ctx, userID, req, ingestersSubring, partitionSubrings, pushReq.releaseWriteRequest, pushReq.CleanUp)
 }
 
 // sendWriteRequestToBackends sends the input req data to backends. The backends could be:
@@ -2423,7 +2434,8 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 // - Ingest storage partitions, when partitionSubrings is not empty (one subring per read compartment)
 //
 // The input cleanup function is guaranteed to be called after all requests to all backends have completed.
-func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, ingestersSubring ring.DoBatchRing, partitionSubrings []*ring.ActivePartitionBatchRing, cleanup func()) error {
+// When ingest storage is the only backend, releaseRequest is called once req has been serialized.
+func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, ingestersSubring ring.DoBatchRing, partitionSubrings []*ring.ActivePartitionBatchRing, releaseRequest, cleanup func()) error {
 	var (
 		wg            = sync.WaitGroup{}
 		partitionsErr error
@@ -2494,12 +2506,12 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 
 	if ingestersSubring == nil {
 		if d.cfg.Compartments.Enabled {
-			return d.sendWriteRequestToCompartments(ctx, tenantID, partitionSubrings, req, partitionsRequestContext, batchOptions.Cleanup)
+			return d.sendWriteRequestToCompartments(ctx, tenantID, partitionSubrings, req, partitionsRequestContext, releaseRequest, batchOptions.Cleanup)
 		}
 
 		// When compartments are disabled, New() guarantees there is exactly one partition ring.
 		keys, initialMetadataIndex := getSeriesAndMetadataTokens(tenantID, req)
-		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings[0], req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
+		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings[0], req, keys, initialMetadataIndex, partitionsRequestContext, releaseRequest, batchOptions.Cleanup)
 	}
 
 	// Dual-write to ingesters and partitions. Compartments are never enabled here: config validation
@@ -2526,7 +2538,8 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	go func() {
 		defer wg.Done()
 
-		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings[0], req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
+		// The ingester writes still read decoded data, so retain it until both backends finish.
+		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings[0], req, keys, initialMetadataIndex, partitionsRequestContext, nil, batchOptions.Cleanup)
 	}()
 
 	// Wait until all backends have done.
@@ -2570,7 +2583,7 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 	return errors.Wrap(err, "send data to ingesters")
 }
 
-func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing *ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, cleanup func()) error {
+func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing *ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, releaseRequest, cleanup func()) error {
 	defer cleanup()
 
 	// Group keys by partition.
@@ -2590,7 +2603,13 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 
 	// Write all partitions in a single ProduceSync call.
 	writeCtx := remoteRequestContext()
-	err = d.ingestStorageWriter.MultiWriteSync(writeCtx, d.cfg.IngestStorageConfig.KafkaConfig.Topic, tenantID, partitionRequests)
+	write, err := d.ingestStorageWriter.Serialize(d.cfg.IngestStorageConfig.KafkaConfig.Topic, tenantID, partitionRequests)
+	if err == nil {
+		if releaseRequest != nil {
+			releaseRequest()
+		}
+		err = d.ingestStorageWriter.Produce(writeCtx, write)
+	}
 	err = wrapPartitionsPushError(err)
 	err = wrapDeadlineExceededPushError(err)
 
@@ -2602,7 +2621,7 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 // partition ring and Kafka topic) and writes each compartment's partitions in a single ProduceSync
 // call. It is used only when compartments are enabled, where the distributor never also writes to
 // ingesters (config validation forbids combining compartments with distributor-send-to-ingesters).
-func (d *Distributor) sendWriteRequestToCompartments(ctx context.Context, tenantID string, partitionSubrings []*ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, remoteRequestContext func() context.Context, cleanup func()) error {
+func (d *Distributor) sendWriteRequestToCompartments(ctx context.Context, tenantID string, partitionSubrings []*ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, remoteRequestContext func() context.Context, releaseRequest, cleanup func()) error {
 	defer cleanup()
 
 	cts, initialMetadataIndex := getCompartmentTokensForWriteRequest(d.compartmentRouter, tenantID, req)
@@ -2612,31 +2631,42 @@ func (d *Distributor) sendWriteRequestToCompartments(ctx context.Context, tenant
 	// remote timeout.
 	g, writeCtx := errgroup.WithContext(remoteRequestContext())
 
+	// Every compartment reads the decoded request, so serialize all of them before releasing it.
+	writes := make([]ingest.SerializedWrite, 0, len(cts))
+	for _, ct := range cts {
+		// Group this compartment's keys by partition within its own partition ring.
+		partitionKeys, err := partitionSubrings[ct.compartmentID].GetKeysByPartition(ctx, ct.tokens)
+		if err != nil {
+			return errors.Wrap(err, "send data to partitions")
+		}
+
+		// Build per-partition write requests, remapping the per-compartment token indexes back to
+		// the original WriteRequest indexes.
+		partitionRequests := make([]ingest.PartitionWriteRequest, 0, len(partitionKeys))
+		for _, pk := range partitionKeys {
+			partitionRequests = append(partitionRequests, ingest.PartitionWriteRequest{
+				PartitionID:  pk.PartitionID,
+				WriteRequest: req.ForIndexes(ct.writeRequestIndexes(pk.Indexes), initialMetadataIndex),
+			})
+		}
+
+		write, err := d.ingestStorageWriter.Serialize(ct.topic, tenantID, partitionRequests)
+		if err != nil {
+			return errors.Wrap(wrapPartitionsPushError(err), "send data to partitions")
+		}
+		writes = append(writes, write)
+	}
+	releaseRequest()
+
 	var (
 		softErrsMu sync.Mutex
 		softErrs   []error
 	)
 
-	for _, ct := range cts {
+	for _, write := range writes {
 		g.Go(func() error {
-			// Group this compartment's keys by partition within its own partition ring.
-			partitionKeys, err := partitionSubrings[ct.compartmentID].GetKeysByPartition(ctx, ct.tokens)
-			if err != nil {
-				return err
-			}
-
-			// Build per-partition write requests, remapping the per-compartment token indexes back to
-			// the original WriteRequest indexes.
-			partitionRequests := make([]ingest.PartitionWriteRequest, 0, len(partitionKeys))
-			for _, pk := range partitionKeys {
-				partitionRequests = append(partitionRequests, ingest.PartitionWriteRequest{
-					PartitionID:  pk.PartitionID,
-					WriteRequest: req.ForIndexes(ct.writeRequestIndexes(pk.Indexes), initialMetadataIndex),
-				})
-			}
-
 			// Write all partitions of this compartment in a single ProduceSync call to its topic.
-			err = d.ingestStorageWriter.MultiWriteSync(writeCtx, ct.topic, tenantID, partitionRequests)
+			err := d.ingestStorageWriter.Produce(writeCtx, write)
 			err = wrapPartitionsPushError(err)
 			err = wrapDeadlineExceededPushError(err)
 			if err == nil {
@@ -4041,6 +4071,18 @@ func (d *Distributor) HealthyInstancesInZoneCount() int {
 // ZonesCount implements the ReadLifecycler interface.
 func (d *Distributor) ZonesCount() int {
 	return int(d.ringZonesCount.Load())
+}
+
+// updateCostAttribution reports the rejected samples of the series with the given labels to a user's cost attribution tracker.
+func (d *Distributor) updateCostAttribution(ls []mimirpb.UnsafeMutableLabel, userID string, reasons map[string]int, now time.Time) {
+	cat := d.costAttributionMgr.SampleTracker(userID)
+	for reason, count := range reasons {
+		// track everything but duplicated samples.
+		if reason == reasonDuplicateTimestamp {
+			continue
+		}
+		cat.IncrementDiscardedSamples(ls, float64(count), reason, now)
+	}
 }
 
 func cleanupIngestionRateLimiter(l *limiter.RateLimiter) services.Service {

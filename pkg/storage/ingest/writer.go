@@ -185,18 +185,30 @@ func (w *Writer) WriteSync(ctx context.Context, topic string, partitionID int32,
 // MultiWriteSync writes data for multiple partitions to the ingest storage in a single ProduceSync call.
 // The function blocks until all data has been successfully committed, or an error occurred.
 func (w *Writer) MultiWriteSync(ctx context.Context, topic string, userID string, partitionRequests []PartitionWriteRequest) error {
-	client := w.client.Load()
-	if client == nil {
-		return ErrWriterNotRunning
+	write, err := w.Serialize(topic, userID, partitionRequests)
+	if err != nil {
+		return err
+	}
+	return w.Produce(ctx, write)
+}
+
+// SerializedWrite holds the Kafka records built by Serialize, ready to be written by Produce.
+// It is single-use: Produce hands the records to the Kafka client, which may keep mutating them
+// after Produce returns, so a SerializedWrite must not be passed to Produce again, even on error.
+type SerializedWrite struct {
+	records    []*kgo.Record
+	inputBytes int
+	startTime  time.Time
+}
+
+// Serialize converts the partition requests to Kafka records. The records don't reference the
+// input requests, so the caller may release them before calling Produce.
+func (w *Writer) Serialize(topic string, userID string, partitionRequests []PartitionWriteRequest) (SerializedWrite, error) {
+	if w.client.Load() == nil {
+		return SerializedWrite{}, ErrWriterNotRunning
 	}
 
-	startTime := time.Now()
-
-	// Serialize all partition requests into a single records slice.
-	var (
-		allRecords       []*kgo.Record
-		requestSizeBytes int
-	)
+	write := SerializedWrite{startTime: time.Now()}
 	for _, pr := range partitionRequests {
 		// Nothing to do if the input data is empty.
 		if pr.WriteRequest.IsEmpty() {
@@ -205,7 +217,7 @@ func (w *Writer) MultiWriteSync(ctx context.Context, topic string, userID string
 
 		records, reqSizeBytes, err := w.serializer.ToRecords(topic, pr.PartitionID, userID, pr.WriteRequest, w.kafkaCfg.ProducerMaxRecordSizeBytes)
 		if err != nil {
-			return err
+			return SerializedWrite{}, err
 		}
 
 		// Track the number of records the given WriteRequest has been split into.
@@ -213,33 +225,47 @@ func (w *Writer) MultiWriteSync(ctx context.Context, topic string, userID string
 		// visibility over this metric if records are rejected by Kafka because of MESSAGE_TOO_LARGE).
 		w.recordsPerRequest.Observe(float64(len(records)))
 
-		allRecords = append(allRecords, records...)
-		requestSizeBytes += reqSizeBytes
+		write.records = append(write.records, records...)
+		write.inputBytes += reqSizeBytes
 	}
-	w.serializeDuration.Observe(time.Since(startTime).Seconds())
+	w.serializeDuration.Observe(time.Since(write.startTime).Seconds())
 
+	return write, nil
+}
+
+// Produce writes the serialized records in a single ProduceSync call. The function blocks until
+// all data has been successfully committed, or an error occurred. It consumes the input write.
+//
+// The tracked write latency spans from the start of Serialize to the return of Produce, so it
+// includes any time the caller spends between the two calls.
+func (w *Writer) Produce(ctx context.Context, write SerializedWrite) error {
 	// Nothing to do if all requests were empty.
-	if len(allRecords) == 0 {
+	if len(write.records) == 0 {
 		return nil
+	}
+
+	client := w.client.Load()
+	if client == nil {
+		return ErrWriterNotRunning
 	}
 
 	// Write to backend. The topic and partition fields are already set on each record by ToRecords,
 	// so the Kafka client routes records to the correct topic and partition.
-	res := client.ProduceSync(ctx, allRecords)
+	res := client.ProduceSync(ctx, write.records)
 
 	// We track the latency both in case of success and failure (but with a different label), to avoid misunderstandings
 	// when we look at it in case Kafka Produce requests time out (if latency wasn't tracked on error, we would see low
 	// latency but in practice many are very high latency and timing out).
 	//
-	// Since MultiWriteSync batches records for multiple partitions into a single ProduceSync call,
+	// Since records for multiple partitions are batched into a single ProduceSync call,
 	// we only track success metrics when all records succeeded. This keeps cortex_ingest_storage_writer_sent_bytes_total
 	// and cortex_ingest_storage_writer_input_bytes_total consistent with each other, avoiding inflation on partial failures.
-	if count, recordsSizeBytes := successfulProduceRecordsStats(res); count == len(allRecords) {
-		w.writeSuccessLatency.Observe(time.Since(startTime).Seconds())
+	if count, recordsSizeBytes := successfulProduceRecordsStats(res); count == len(write.records) {
+		w.writeSuccessLatency.Observe(time.Since(write.startTime).Seconds())
 		w.writeBytesTotal.Add(float64(recordsSizeBytes))
-		w.inputBytesTotal.Add(float64(requestSizeBytes))
+		w.inputBytesTotal.Add(float64(write.inputBytes))
 	} else {
-		w.writeFailureLatency.Observe(time.Since(startTime).Seconds())
+		w.writeFailureLatency.Observe(time.Since(write.startTime).Seconds())
 	}
 
 	return produceResultsErr(res)

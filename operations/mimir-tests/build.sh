@@ -36,6 +36,9 @@ for FILEPATH in $TESTS; do
   # We just need the default spec.json to get tk compile the environment.
   cp environments/default/spec.json "environments/test/spec.json"
 
-  echo "Compiling $TEST_NAME"
-  tk show --dangerous-allow-redirect "environments/test" > ../operations/mimir-tests/${TEST_NAME}-generated.yaml
+  START=$(date '+%s.%N')
+  tk show --dangerous-allow-redirect "environments/test" > "../operations/mimir-tests/${TEST_NAME}-generated.yaml"
+  END=$(date '+%s.%N')
+  TIME=$(printf '%.2f' "$(echo "$END - $START" | bc)")
+  echo "Compiled $TEST_NAME (${TIME}s)"
 done

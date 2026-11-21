@@ -2479,3 +2479,41 @@ func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEa
 		})
 	}
 }
+
+func TestOneToOneVectorVectorBinaryOperation_MemoryConsumptionEstimateCoversOutputSeriesMapKeys(t *testing.T) {
+	const seriesCount = 100
+
+	leftSeries := make([]labels.Labels, 0, seriesCount)
+	rightSeries := make([]labels.Labels, 0, seriesCount)
+	for i := range seriesCount {
+		leftSeries = append(leftSeries, labels.FromStrings(model.MetricNameLabel, "left_metric", "id", strconv.Itoa(i)))
+		rightSeries = append(rightSeries, labels.FromStrings(model.MetricNameLabel, "right_metric", "id", strconv.Itoa(i)))
+	}
+
+	ctx := t.Context()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	left := &operators.TestOperator{Series: leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+	right := &operators.TestOperator{Series: rightSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+	vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"id"}, Card: parser.CardOneToOne}
+	o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.MUL, false, memoryConsumptionTracker, posrange.PositionRange{}, types.NewInstantQueryTimeRange(time.Now()), nil, log.NewNopLogger())
+	require.NoError(t, err)
+
+	outputSeries, err := o.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Len(t, outputSeries, seriesCount)
+
+	var outputLabelsBytes uint64
+	for _, s := range outputSeries {
+		outputLabelsBytes += s.Labels.ByteSize()
+	}
+
+	// The output labels are still tracked after SeriesMetadata returns, so the map key copies show up only in the peak.
+	peakAboveCurrent := memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes() - memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes()
+	require.GreaterOrEqual(t, peakAboveCurrent, outputLabelsBytes, "outputSeriesMap keys should be counted while the map exists")
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BinaryOperationOutputSeries), "outputSeriesMap keys should be released once SeriesMetadata returns")
+
+	types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
+	require.NoError(t, o.FinishedReading(ctx))
+	o.Close()
+	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}

@@ -6,10 +6,13 @@
 package streaminglabelvalues
 
 import (
+	"fmt"
+	"math"
 	"strings"
 	"testing"
 
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/searchexpr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -42,7 +45,7 @@ func TestFilterContains(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f, err := NewFilterContains(tt.term, tt.caseSensitive)
+			f, err := NewFilterContains(tt.term, tt.caseSensitive, false)
 			require.NoError(t, err)
 			gotAccepted, gotScore := f.Accept(tt.value)
 			assert.Equal(t, tt.wantAccepted, gotAccepted)
@@ -51,10 +54,40 @@ func TestFilterContains(t *testing.T) {
 	}
 }
 
+func TestFilterContainsAnyPosition(t *testing.T) {
+	tests := []struct {
+		name          string
+		term          string
+		caseSensitive bool
+		value         string
+		wantAccepted  bool
+		wantScore     float64
+	}{
+		{name: "prefix scores 1.0", term: "kube", caseSensitive: true, value: "kubernetes", wantAccepted: true, wantScore: 1.0},
+		{name: "non-prefix substring scores 1.0", term: "ber", caseSensitive: true, value: "kubernetes", wantAccepted: true, wantScore: 1.0},
+		{name: "latest possible position scores 1.0", term: "x", caseSensitive: true, value: "abcdex", wantAccepted: true, wantScore: 1.0},
+		{name: "case-sensitive miss on case difference", term: "Ber", caseSensitive: true, value: "kubernetes", wantAccepted: false, wantScore: 0},
+		{name: "case-insensitive matches across cases", term: "Ber", caseSensitive: false, value: "KUBERNETES", wantAccepted: true, wantScore: 1.0},
+		{name: "non-substring rejected", term: "xyz", caseSensitive: true, value: "kubernetes", wantAccepted: false, wantScore: 0},
+		{name: "empty value rejected", term: "k", caseSensitive: true, value: "", wantAccepted: false, wantScore: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f, err := NewFilterContains(tt.term, tt.caseSensitive, true)
+			require.NoError(t, err)
+			gotAccepted, gotScore := f.Accept(tt.value)
+			assert.Equal(t, tt.wantAccepted, gotAccepted)
+			assert.Equal(t, tt.wantScore, gotScore)
+		})
+	}
+}
+
 func TestFilterContainsRejectsEmptyTerm(t *testing.T) {
-	_, err := NewFilterContains("", true)
-	require.Error(t, err)
-	assert.Contains(t, strings.ToLower(err.Error()), "empty")
+	for _, anyPosition := range []bool{false, true} {
+		_, err := NewFilterContains("", true, anyPosition)
+		require.Error(t, err)
+		assert.Contains(t, strings.ToLower(err.Error()), "empty")
+	}
 }
 
 func TestFilterJaroAcceptsAboveThreshold(t *testing.T) {
@@ -261,6 +294,48 @@ func TestBuildFilterJaroWinklerWithThresholdComposesFallback(t *testing.T) {
 	assert.InDelta(t, 1.0, score, 1e-9)
 }
 
+func TestBuildFilterSubstringAlgorithms(t *testing.T) {
+	// Score for "ber" in "kubernetes": idx=2, maxIdx=10-3=7, score = 1 - 0.9*2/7.
+	const berInKubernetes = 1.0 - 0.9*2.0/7.0
+
+	tests := []struct {
+		name          string
+		alg           FuzzAlg
+		caseSensitive bool
+		value         string
+		wantAccepted  bool
+		wantScore     float64
+	}{
+		{name: "substring_left prefix scores 1.0", alg: FuzzAlgSubstringLeft, caseSensitive: true, value: "berlin", wantAccepted: true, wantScore: 1.0},
+		{name: "substring_left scores by position", alg: FuzzAlgSubstringLeft, caseSensitive: true, value: "kubernetes", wantAccepted: true, wantScore: berInKubernetes},
+		{name: "substring_left rejects a subsequence that is not a substring", alg: FuzzAlgSubstringLeft, caseSensitive: true, value: "b_e_r", wantAccepted: false},
+		{name: "substring_left case-insensitive", alg: FuzzAlgSubstringLeft, caseSensitive: false, value: "KUBERNETES", wantAccepted: true, wantScore: berInKubernetes},
+		{name: "substring prefix scores 1.0", alg: FuzzAlgSubstring, caseSensitive: true, value: "berlin", wantAccepted: true, wantScore: 1.0},
+		{name: "substring non-prefix scores 1.0", alg: FuzzAlgSubstring, caseSensitive: true, value: "kubernetes", wantAccepted: true, wantScore: 1.0},
+		{name: "substring rejects a subsequence that is not a substring", alg: FuzzAlgSubstring, caseSensitive: true, value: "b_e_r", wantAccepted: false},
+		{name: "substring case-insensitive", alg: FuzzAlgSubstring, caseSensitive: false, value: "KUBERNETES", wantAccepted: true, wantScore: 1.0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// The substring algorithms ignore FuzzThreshold, so every threshold
+			// gives the same result.
+			for _, threshold := range []int{0, 50, 100} {
+				f, err := BuildFilter(&Params{
+					Terms:         []string{"ber"},
+					CaseSensitive: tt.caseSensitive,
+					FuzzAlg:       tt.alg,
+					FuzzThreshold: threshold,
+				})
+				require.NoError(t, err)
+				require.NotNil(t, f)
+				gotAccepted, gotScore := f.Accept(tt.value)
+				assert.Equal(t, tt.wantAccepted, gotAccepted, "threshold=%d", threshold)
+				assert.InDelta(t, tt.wantScore, gotScore, 1e-9, "threshold=%d", threshold)
+			}
+		})
+	}
+}
+
 func TestBuildFilterMultipleTermsORed(t *testing.T) {
 	f, err := BuildFilter(&Params{
 		Terms:         []string{"foo", "bar"},
@@ -302,8 +377,10 @@ func TestBuildFilterCaseInsensitiveWrapsAtORRoot(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, f)
-	_, ok := f.(*caseFoldingFilter)
-	assert.True(t, ok, "case-insensitive BuildFilter must return *caseFoldingFilter root")
+	q, ok := f.(*quantizingFilter)
+	require.True(t, ok, "BuildFilter must return a *quantizingFilter root")
+	_, ok = q.inner.(*caseFoldingFilter)
+	assert.True(t, ok, "case-insensitive BuildFilter must wrap a *caseFoldingFilter under the root")
 
 	// Functional check: the wrapper folds the value before delegating, and the
 	// inner per-term filters were built against pre-lowered terms, so an
@@ -322,8 +399,35 @@ func TestBuildFilterCaseSensitiveReturnsLeafDirectly(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, f)
-	_, ok := f.(*caseFoldingFilter)
+	q, ok := f.(*quantizingFilter)
+	require.True(t, ok, "BuildFilter must return a *quantizingFilter root")
+	_, ok = q.inner.(*caseFoldingFilter)
 	assert.False(t, ok, "case-sensitive BuildFilter must not wrap in caseFoldingFilter")
+}
+
+// TestBuildFilter_ScoresRoundToSameDecimal protects the cross-architecture
+// contract of score cursors: a score that a backend computes one bit off, as a
+// fused multiply-add can, must round to the same score as the exact one.
+func TestBuildFilter_ScoresRoundToSameDecimal(t *testing.T) {
+	t.Run("scores round to a decimal", func(t *testing.T) {
+		// FuzzAlgSubstringLeft scores "b" in "abc" 1 - 0.9*1/2 = 0.55. The
+		// rounded score must be exactly 0.55, so that API responses print it as
+		// 0.55.
+		f, err := BuildFilter(&Params{Terms: []string{"b"}, CaseSensitive: true, FuzzAlg: FuzzAlgSubstringLeft})
+		require.NoError(t, err)
+		accepted, score := f.Accept("abc")
+		require.True(t, accepted)
+		assert.Equal(t, 0.55, score)
+	})
+
+	t.Run("one-bit neighbours round to the same score", func(t *testing.T) {
+		// 0.55 is not near a rounding boundary, so its neighbours one bit away
+		// round to it. The filter is the root that BuildFilter returns.
+		for _, raw := range []float64{math.Nextafter(0.55, 0), 0.55, math.Nextafter(0.55, 1)} {
+			_, got := (&quantizingFilter{inner: &scoreFilter{accepted: true, score: raw}}).Accept("abc")
+			assert.Equal(t, 0.55, got, "raw score %v", raw)
+		}
+	})
 }
 
 // recordingFilter captures every value passed to Accept so a test can assert
@@ -370,6 +474,149 @@ func TestCaseFoldingFilterFeedsORChildrenLoweredValue(t *testing.T) {
 		"second leaf must see only the lowered value (folded once at the root, not per-leaf)")
 }
 
+func TestTermFilterFactoryLeaves(t *testing.T) {
+	tests := []struct {
+		name          string
+		alg           FuzzAlg
+		threshold     int
+		caseSensitive bool
+		wantTerm      string
+	}{
+		{name: "subsequence case-sensitive", alg: FuzzAlgSubsequence, threshold: 50, caseSensitive: true, wantTerm: "Kube"},
+		{name: "subsequence case-insensitive", alg: FuzzAlgSubsequence, threshold: 50, caseSensitive: false, wantTerm: "kube"},
+		{name: "jaro-winkler threshold 0 case-sensitive", alg: FuzzAlgJaroWinkler, threshold: 0, caseSensitive: true, wantTerm: "Kube"},
+		{name: "jaro-winkler threshold 0 case-insensitive", alg: FuzzAlgJaroWinkler, threshold: 0, caseSensitive: false, wantTerm: "kube"},
+		{name: "jaro-winkler threshold 80 case-sensitive", alg: FuzzAlgJaroWinkler, threshold: 80, caseSensitive: true, wantTerm: "Kube"},
+		{name: "jaro-winkler threshold 80 case-insensitive", alg: FuzzAlgJaroWinkler, threshold: 80, caseSensitive: false, wantTerm: "kube"},
+		{name: "substring_left case-sensitive", alg: FuzzAlgSubstringLeft, caseSensitive: true, wantTerm: "Kube"},
+		{name: "substring_left case-insensitive", alg: FuzzAlgSubstringLeft, caseSensitive: false, wantTerm: "kube"},
+		{name: "substring case-sensitive", alg: FuzzAlgSubstring, caseSensitive: true, wantTerm: "Kube"},
+		{name: "substring case-insensitive", alg: FuzzAlgSubstring, caseSensitive: false, wantTerm: "kube"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &Params{
+				Terms:         []string{"Kube"},
+				CaseSensitive: tt.caseSensitive,
+				FuzzAlg:       tt.alg,
+				FuzzThreshold: tt.threshold,
+			}
+			newTermFilter := newTermFilterFactory(p)
+
+			t.Run("positive term uses the BuildFilter leaf", func(t *testing.T) {
+				want, err := BuildFilter(p)
+				require.NoError(t, err)
+				quantizing, ok := want.(*quantizingFilter)
+				require.True(t, ok, "BuildFilter must return a *quantizingFilter root")
+				want = quantizing.inner
+				if folding, ok := want.(*caseFoldingFilter); ok {
+					want = folding.inner
+				}
+				got, err := newTermFilter("Kube", false)
+				require.NoError(t, err)
+				assert.Equal(t, want, got)
+			})
+
+			t.Run("negated term is a case-sensitive literal substring", func(t *testing.T) {
+				got, err := newTermFilter("Kube", true)
+				require.NoError(t, err)
+				assert.Equal(t, &FilterContains{term: tt.wantTerm, caseSensitive: true, anyPosition: true}, got)
+			})
+		})
+	}
+}
+
+func TestTermFilterFactoryCompile(t *testing.T) {
+	// Score for "net" in "kubernetes": idx=5, maxIdx=10-3=7, score = 1 - 0.9*5/7.
+	const netInKubernetes = 1.0 - 0.9*5.0/7.0
+
+	tests := []struct {
+		name          string
+		expr          string
+		alg           FuzzAlg
+		caseSensitive bool
+		value         string
+		wantAccepted  bool
+		wantScore     float64
+	}{
+		{name: "AND scores the mean of positive terms", expr: "kube AND net", alg: FuzzAlgSubstringLeft, value: "Kubernetes", wantAccepted: true, wantScore: (1.0 + netInKubernetes) / 2},
+		{name: "AND rejects when one term misses", expr: "kube AND prod", alg: FuzzAlgSubstringLeft, value: "kubernetes", wantAccepted: false},
+		{name: "OR accepts either term", expr: "foo OR bar", alg: FuzzAlgSubstring, value: "BAR_total", wantAccepted: true, wantScore: 1.0},
+		{name: "OR rejects when no term matches", expr: "foo OR bar", alg: FuzzAlgSubstring, value: "baz_total", wantAccepted: false},
+		{name: "NOT adds no score", expr: "net AND NOT test", alg: FuzzAlgSubstringLeft, value: "kubernetes", wantAccepted: true, wantScore: netInKubernetes},
+		{name: "case-insensitive NOT excludes across cases", expr: "kube AND NOT test", alg: FuzzAlgSubstring, value: "Kube-TEST", wantAccepted: false},
+		{name: "case-sensitive NOT ignores a case difference", expr: "Kube AND NOT Test", alg: FuzzAlgSubstring, caseSensitive: true, value: "Kube-test", wantAccepted: true, wantScore: 1.0},
+		{name: "case-sensitive NOT excludes an exact match", expr: "Kube AND NOT Test", alg: FuzzAlgSubstring, caseSensitive: true, value: "Kube-Test", wantAccepted: false},
+		{name: "case-sensitive positive term misses a case difference", expr: "Kube AND NOT Test", alg: FuzzAlgSubstring, caseSensitive: true, value: "kube-prod", wantAccepted: false},
+		{name: "nested NOT OR accepts", expr: "(foo OR kube) AND NOT (test OR dev)", alg: FuzzAlgSubstring, value: "kube-prod", wantAccepted: true, wantScore: 1.0},
+		{name: "nested NOT OR rejects", expr: "(foo OR kube) AND NOT (test OR dev)", alg: FuzzAlgSubstring, value: "kube-dev", wantAccepted: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &Params{CaseSensitive: tt.caseSensitive, FuzzAlg: tt.alg}
+			f := compileForTest(t, tt.expr, p)
+			gotAccepted, gotScore := f.Accept(tt.value)
+			assert.Equal(t, tt.wantAccepted, gotAccepted)
+			assert.InDelta(t, tt.wantScore, gotScore, 1e-9)
+		})
+	}
+}
+
+func TestTermFilterFactoryNegatedFuzzyTermDoesNotOverExclude(t *testing.T) {
+	// Each negated term is a fuzzy match for the value but not a substring of it.
+	// The substring algorithms have no fuzzy recall, so they are not listed.
+	tests := []struct {
+		name        string
+		alg         FuzzAlg
+		threshold   int
+		negatedTerm string
+	}{
+		{name: "subsequence", alg: FuzzAlgSubsequence, threshold: 0, negatedTerm: "kbs"},
+		{name: "jaro-winkler", alg: FuzzAlgJaroWinkler, threshold: 80, negatedTerm: "kubernetis"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fuzzy, err := buildPerTermFilter(tt.negatedTerm, true, tt.alg, tt.threshold, float64(tt.threshold)/100.0)
+			require.NoError(t, err)
+			accepted, _ := fuzzy.Accept("kubernetes")
+			require.True(t, accepted, "precondition: a fuzzy negated leaf would exclude the value")
+
+			f := compileForTest(t, "kube AND NOT "+tt.negatedTerm, &Params{FuzzAlg: tt.alg, FuzzThreshold: tt.threshold})
+			accepted, score := f.Accept("kubernetes")
+			assert.True(t, accepted)
+			assert.InDelta(t, 1.0, score, 1e-9)
+		})
+	}
+}
+
+func TestTermFilterFactoryErrors(t *testing.T) {
+	t.Run("negated empty term", func(t *testing.T) {
+		_, err := newTermFilterFactory(&Params{})("", true)
+		require.EqualError(t, err, "FilterContains: empty term")
+	})
+
+	t.Run("Compile wraps a factory error", func(t *testing.T) {
+		expr, err := searchexpr.Parse("kube")
+		require.NoError(t, err)
+		_, err = searchexpr.Compile(expr, newTermFilterFactory(&Params{FuzzAlg: FuzzAlgSubsequence, FuzzThreshold: 101}))
+		require.EqualError(t, err, `search expression: compile term "kube": FilterSubsequence: threshold 1.01 out of [0,1]`)
+	})
+}
+
+// compileForTest wraps the compiled root in caseFoldingFilter the same way
+// BuildFilter does.
+func compileForTest(t *testing.T, input string, p *Params) storage.Filter {
+	t.Helper()
+	expr, err := searchexpr.Parse(input)
+	require.NoError(t, err)
+	f, err := searchexpr.Compile(expr, newTermFilterFactory(p))
+	require.NoError(t, err)
+	if p.CaseSensitive {
+		return f
+	}
+	return &caseFoldingFilter{inner: f}
+}
+
 // BenchmarkBuildFilterCaseInsensitiveAccept measures allocs/op for repeated
 // Accept calls against a case-insensitive 4-term Jaro-Winkler filter; this is
 // the load shape at a multi-term streaming search.
@@ -387,4 +634,210 @@ func BenchmarkBuildFilterCaseInsensitiveAccept(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_, _ = f.Accept(values[i%len(values)])
 	}
+}
+
+type mapScoreFilter map[string]float64
+
+func (m mapScoreFilter) Accept(value string) (bool, float64) {
+	score, ok := m[value]
+	return ok, score
+}
+
+var allOrderings = []storage.Ordering{storage.OrderByValueAsc, storage.OrderByValueDesc, storage.OrderByScoreDesc}
+
+func TestApplyCursorReturnsInnerWithoutCursor(t *testing.T) {
+	inner := &scoreFilter{accepted: true, score: 0.5}
+	noCursor, err := NewParams([]string{"a"}, true, FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+
+	for _, order := range allOrderings {
+		assert.Same(t, storage.Filter(inner), applyCursor(inner, nil, order))
+		assert.Same(t, storage.Filter(inner), applyCursor(inner, noCursor, order))
+	}
+	assert.Nil(t, applyCursor(nil, noCursor, storage.OrderByValueAsc))
+}
+
+func TestApplyCursor(t *testing.T) {
+	values := []string{"a", "b", "c", "d", "e"}
+	scores := mapScoreFilter{"a": 0.9, "b": 0.5, "c": 0.5, "d": 0.5, "e": 0.1}
+
+	tests := []struct {
+		name        string
+		inner       storage.Filter
+		order       storage.Ordering
+		resumeAfter string
+		scoreAfter  float64
+		want        []storage.SearchResult
+	}{
+		{
+			name:        "ascending drops values at or before the cursor",
+			inner:       scores,
+			order:       storage.OrderByValueAsc,
+			resumeAfter: "c",
+			want:        []storage.SearchResult{{Value: "d", Score: 0.5}, {Value: "e", Score: 0.1}},
+		},
+		{
+			name:        "descending drops values at or after the cursor",
+			inner:       scores,
+			order:       storage.OrderByValueDesc,
+			resumeAfter: "c",
+			want:        []storage.SearchResult{{Value: "a", Score: 0.9}, {Value: "b", Score: 0.5}},
+		},
+		{
+			name:        "score drops higher scores and tied scores at or before the cursor",
+			inner:       scores,
+			order:       storage.OrderByScoreDesc,
+			resumeAfter: "c",
+			scoreAfter:  0.5,
+			want:        []storage.SearchResult{{Value: "d", Score: 0.5}, {Value: "e", Score: 0.1}},
+		},
+		{
+			name:        "score keeps lower scores whatever the value",
+			inner:       scores,
+			order:       storage.OrderByScoreDesc,
+			resumeAfter: "z",
+			scoreAfter:  0.5,
+			want:        []storage.SearchResult{{Value: "e", Score: 0.1}},
+		},
+		{
+			name:        "inner rejection wins over the value cursor",
+			inner:       mapScoreFilter{"a": 1},
+			order:       storage.OrderByValueAsc,
+			resumeAfter: "b",
+		},
+		{
+			name:        "inner rejection wins over the score cursor",
+			inner:       mapScoreFilter{"a": 0.9, "e": 0.1},
+			order:       storage.OrderByScoreDesc,
+			resumeAfter: "c",
+			scoreAfter:  0.5,
+			want:        []storage.SearchResult{{Value: "e", Score: 0.1}},
+		},
+		{
+			name:        "nil inner scores 1.0 under ascending order",
+			order:       storage.OrderByValueAsc,
+			resumeAfter: "c",
+			want:        []storage.SearchResult{{Value: "d", Score: 1}, {Value: "e", Score: 1}},
+		},
+		{
+			name:        "nil inner scores 1.0 under descending order",
+			order:       storage.OrderByValueDesc,
+			resumeAfter: "c",
+			want:        []storage.SearchResult{{Value: "a", Score: 1}, {Value: "b", Score: 1}},
+		},
+		{
+			name:        "nil inner scores 1.0 under score order",
+			order:       storage.OrderByScoreDesc,
+			resumeAfter: "c",
+			scoreAfter:  1,
+			want:        []storage.SearchResult{{Value: "d", Score: 1}, {Value: "e", Score: 1}},
+		},
+		{
+			name:        "nil inner under score order drops every value above a lower cursor score",
+			order:       storage.OrderByScoreDesc,
+			resumeAfter: "c",
+			scoreAfter:  0.5,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := (&Params{}).WithCursor(tc.resumeAfter, tc.scoreAfter)
+			require.NoError(t, err)
+			f := applyCursor(tc.inner, p, tc.order)
+
+			var got []storage.SearchResult
+			for _, v := range values {
+				if accepted, score := f.Accept(v); accepted {
+					got = append(got, storage.SearchResult{Value: v, Score: score})
+				} else {
+					assert.Zero(t, score, v)
+				}
+			}
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestBuildSortedSearch(t *testing.T) {
+	values := []string{"a", "b", "c", "d"}
+
+	tests := []struct {
+		name        string
+		terms       []string
+		order       storage.Ordering
+		resumeAfter string
+		scoreAfter  float64
+		wantValues  []string
+		wantFilter  bool
+	}{
+		{name: "no cursor keeps every value", order: storage.OrderByValueAsc, wantValues: values},
+		{name: "ascending cuts at a present cursor", order: storage.OrderByValueAsc, resumeAfter: "b", wantValues: []string{"c", "d"}},
+		{name: "ascending cuts at an absent cursor", order: storage.OrderByValueAsc, resumeAfter: "bb", wantValues: []string{"c", "d"}},
+		{name: "descending cuts at the cursor", order: storage.OrderByValueDesc, resumeAfter: "c", wantValues: []string{"a", "b"}},
+		{name: "score without terms cuts like ascending", order: storage.OrderByScoreDesc, resumeAfter: "b", scoreAfter: 1, wantValues: []string{"c", "d"}},
+		{name: "score without terms below 1.0 keeps nothing", order: storage.OrderByScoreDesc, resumeAfter: "b", scoreAfter: 0.5},
+		{name: "terms keep the filter", terms: []string{"a"}, order: storage.OrderByValueAsc, resumeAfter: "a", wantValues: []string{"b", "c", "d"}, wantFilter: true},
+		{name: "score with terms needs the filter", terms: []string{"a"}, order: storage.OrderByScoreDesc, resumeAfter: "a", scoreAfter: 1, wantValues: values, wantFilter: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := (&Params{Terms: tc.terms}).WithCursor(tc.resumeAfter, tc.scoreAfter)
+			require.NoError(t, err)
+			gotValues, filter, err := BuildSortedSearch(values, p, tc.order)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantValues, gotValues)
+			assert.Equal(t, tc.wantFilter, filter != nil)
+		})
+	}
+}
+
+// TestCursorPagesMatchUnpagedResult pages with limit 1, which takes the
+// limited paths of storage.ApplySearchHints, and checks that the pages
+// together equal one unpaged search.
+func TestCursorPagesMatchUnpagedResult(t *testing.T) {
+	// The case-insensitive term "B" scores b and bb 1.0, abc 0.55, Ab and cab
+	// 0.1, so the score order also has ties.
+	values := []string{"Ab", "abc", "b", "bb", "cab"}
+	searches := map[string]*Params{
+		"no terms":         {},
+		"scored with ties": {Terms: []string{"B"}, FuzzAlg: FuzzAlgSubstringLeft},
+	}
+	for name, base := range searches {
+		for _, order := range allOrderings {
+			for _, sorted := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/order %d/sorted %t", name, order, sorted), func(t *testing.T) {
+					filter, err := BuildFilter(base)
+					require.NoError(t, err)
+					want := storage.ApplySearchHints(values, &storage.SearchHints{Filter: filter, OrderBy: order})
+
+					var got []storage.SearchResult
+					p := base
+					for len(got) <= len(values) {
+						page := searchPage(t, values, p, order, sorted)
+						if len(page) == 0 {
+							break
+						}
+						got = append(got, page...)
+						p, err = base.WithCursor(page[0].Value, page[0].Score)
+						require.NoError(t, err)
+					}
+					assert.Equal(t, want, got)
+				})
+			}
+		}
+	}
+}
+
+func searchPage(t *testing.T, values []string, p *Params, order storage.Ordering, sorted bool) []storage.SearchResult {
+	var (
+		filter storage.Filter
+		err    error
+	)
+	if sorted {
+		values, filter, err = BuildSortedSearch(values, p, order)
+	} else {
+		filter, err = BuildSearchFilter(p, order)
+	}
+	require.NoError(t, err)
+	return storage.ApplySearchHints(values, &storage.SearchHints{Filter: filter, OrderBy: order, Limit: 1})
 }

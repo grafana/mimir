@@ -33,6 +33,13 @@ func failureMessages(failures []Failure) []string {
 	return out
 }
 
+// withShard returns a copy of ref labelled with the given compactor shard ID.
+// It allocates a fresh label map so refs never alias each other.
+func withShard(ref BlockRef, shard string) BlockRef {
+	ref.Meta.Thanos.Labels = map[string]string{block.CompactorShardIDExternalLabel: shard}
+	return ref
+}
+
 // sampleAt returns a chunks.Sample suitable for chunks.ChunkFromSamples and
 // block.GenerateBlockFromSpec.
 func sampleAt(ts int64, v float64) chunks.Sample {

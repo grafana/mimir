@@ -169,12 +169,14 @@ groups:
           expr: |
             (
               sum by(cluster, namespace, name, operation) (
-                rate(thanos_cache_operation_failures_total{operation!~"add|delete"}[4m])
+                rate(thanos_cache_operation_failures_total{operation!~"add|delete", reason!="canceled"}[4m])
               )
               /
-              sum by(cluster, namespace, name, operation) (
-                rate(thanos_cache_operations_total{operation!~"add|delete"}[4m])
-              ) > 10
+              (
+                sum by(cluster, namespace, name, operation) (
+                  rate(thanos_cache_operations_total{operation!~"add|delete"}[4m])
+                ) > 10
+              )
             ) * 100 > 5
           for: 5m
           labels:
@@ -939,13 +941,31 @@ groups:
         - alert: MimirAlertmanagerPersistStateFailing
           annotations:
             message: |
-                Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} is unable to persist full state snaphots to remote storage.
+                Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} has failed every attempt to persist full state snapshots to remote storage for at least 3 persist intervals.
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimiralertmanagerpersiststatefailing
           expr: |
-            rate(cortex_alertmanager_state_persist_failed_total[15m]) > 0
-          for: 1h
+            increase(cortex_alertmanager_state_persist_failed_total[20m]) > 0
+            unless
+            (increase(cortex_alertmanager_state_persist_total[20m]) - increase(cortex_alertmanager_state_persist_failed_total[20m])) > 0.5
+          for: 35m
           labels:
             severity: critical
+        - alert: MimirAlertmanagerPersistStateFailing
+          annotations:
+            message: |
+                Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} failed {{ $value | humanizePercentage }} of its attempts to persist full state snapshots to remote storage over the last 6h.
+            runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimiralertmanagerpersiststatefailing
+          expr: |
+            (
+              increase(cortex_alertmanager_state_persist_failed_total[6h])
+              /
+              increase(cortex_alertmanager_state_persist_total[6h])
+            ) > 0.05
+            and
+            count_over_time((increase(cortex_alertmanager_state_persist_failed_total[1h]) > 0)[6h:1h]) >= 4
+          for: 1h
+          labels:
+            severity: warning
         - alert: MimirAlertmanagerInitialSyncFailed
           annotations:
             message: |
@@ -1169,6 +1189,17 @@ groups:
             # The "last successful run" metric is updated even if the compactor owns no tenants,
             # so this alert correctly doesn't fire if compactor has nothing to do.
             (time() - cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds > 60 * 60 * 6)
+          for: 1h
+          labels:
+            severity: critical
+        - alert: MimirCompactorNotDiscoveringTenants
+          annotations:
+            message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not successfully discovered tenants for blocks cleanup in the last 6 hours.
+            runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimircompactornotdiscoveringtenants
+          expr: |
+            (time() - cortex_compactor_block_cleanup_last_tenants_list_timestamp_seconds > 60 * 60 * 6)
+            and
+            (cortex_compactor_block_cleanup_last_tenants_list_timestamp_seconds > 0)
           for: 1h
           labels:
             severity: critical
@@ -1628,7 +1659,11 @@ groups:
             message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to compact and upload blocks.
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirblockbuildercompactanduploadfailed
           expr: |
-            sum by (cluster, namespace, instance) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[4m])) > 0
+            sum by (cluster, namespace, instance) (
+              (cortex_blockbuilder_tsdb_compact_and_upload_failed_total unless present_over_time(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[1h] offset 4m))
+              or
+              rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[4m])
+            ) > 0
           labels:
             severity: critical
         - alert: MimirBlockBuilderHasNotShippedBlocks

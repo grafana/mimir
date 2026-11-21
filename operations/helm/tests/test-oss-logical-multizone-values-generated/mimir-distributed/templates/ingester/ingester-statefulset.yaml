@@ -14,9 +14,9 @@ metadata:
     rollout-group: ingester
     zone: zone-a
     grafana.com/prepare-downscale: "true"
-    grafana.com/min-time-between-zones-downscale: 12h
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/min-time-between-zones-downscale: 12h
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
   namespace: "citestns"
@@ -141,9 +141,9 @@ metadata:
     rollout-group: ingester
     zone: zone-b
     grafana.com/prepare-downscale: "true"
-    grafana.com/min-time-between-zones-downscale: 12h
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/min-time-between-zones-downscale: 12h
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
     grafana.com/rollout-downscale-leader: test-oss-logical-multizone-values-mimir-ingester-zone-a
@@ -269,9 +269,9 @@ metadata:
     rollout-group: ingester
     zone: zone-c
     grafana.com/prepare-downscale: "true"
-    grafana.com/min-time-between-zones-downscale: 12h
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/min-time-between-zones-downscale: 12h
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
     grafana.com/rollout-downscale-leader: test-oss-logical-multizone-values-mimir-ingester-zone-b

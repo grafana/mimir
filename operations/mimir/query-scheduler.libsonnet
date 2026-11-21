@@ -17,6 +17,10 @@
       if $._config.query_scheduler_service_discovery_mode != 'ring' then {} else {
         'query-scheduler.service-discovery-mode': 'ring',
       }
+    ) + (
+      if !$._config.queue_reservation_enabled then {} else {
+        'query-scheduler.queue-reservation-enabled': true,
+      }
     ),
 
   query_scheduler_ports:: $.util.defaultPorts,
@@ -36,12 +40,16 @@
 
   query_scheduler_node_affinity_matchers:: [],
 
+  // Add key-value pairs as annotations specifically to query-scheduler.
+  query_scheduler_annotations:: {},
+
   query_scheduler_container::
     self.newQuerySchedulerContainer('query-scheduler', $.query_scheduler_args, $.query_scheduler_env_map),
 
-  newQuerySchedulerDeployment(name, container, nodeAffinityMatchers=[])::
+  newQuerySchedulerDeployment(name, container, nodeAffinityMatchers=[], annotations={})::
     deployment.new(name, 2, [container]) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
+    $.newMimirDeploymentAnnotationsMixin($.mimirComponentAnnotations + annotations) +
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     $.util.antiAffinity +
@@ -52,7 +60,7 @@
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(180),
 
   query_scheduler_deployment:
-    self.newQuerySchedulerDeployment('query-scheduler', $.query_scheduler_container, $.query_scheduler_node_affinity_matchers),
+    self.newQuerySchedulerDeployment('query-scheduler', $.query_scheduler_container, $.query_scheduler_node_affinity_matchers, $.query_scheduler_annotations),
 
   query_scheduler_service:
     $.util.serviceFor($.query_scheduler_deployment, $._config.service_ignored_labels),

@@ -120,8 +120,7 @@ type BucketStore struct {
 	seriesLimiterFactory SeriesLimiterFactory
 	partitioners         blockPartitioners
 
-	// Every how many posting offset entry we pool in heap memory. Default in Prometheus is 32.
-	postingOffsetsInMemSampling int
+	postingOffsetsSampling streamindex.SamplingConfig
 
 	// Additional configuration for experimental indexheader.BinaryReader behaviour.
 	indexHeaderCfg indexheader.Config
@@ -216,26 +215,26 @@ func NewBucketStore(
 	options ...BucketStoreOption,
 ) (*BucketStore, error) {
 	s := &BucketStore{
-		logger:                      log.NewNopLogger(),
-		bkt:                         bkt,
-		bucketIndexMeta:             bucketIndexMeta,
-		fetcher:                     fetcher,
-		dir:                         dir,
-		indexCache:                  noopCache{},
-		blockSet:                    newBucketBlockSet(),
-		blockSyncConcurrency:        bucketStoreConfig.BlockSyncConcurrency,
-		queryGate:                   gate.NewNoop(),
-		lazyLoadingGate:             gate.NewNoop(),
-		chunksLimiterFactory:        chunksLimiterFactory,
-		seriesLimiterFactory:        seriesLimiterFactory,
-		partitioners:                partitioners,
-		postingOffsetsInMemSampling: bucketStoreConfig.PostingOffsetsInMemSampling,
-		indexHeaderCfg:              bucketStoreConfig.IndexHeader,
-		seriesHashCache:             seriesHashCache,
-		metrics:                     metrics,
-		userID:                      userID,
-		maxSeriesPerBatch:           bucketStoreConfig.StreamingBatchSize,
-		postingsStrategy:            postingsStrategy,
+		logger:                 log.NewNopLogger(),
+		bkt:                    bkt,
+		bucketIndexMeta:        bucketIndexMeta,
+		fetcher:                fetcher,
+		dir:                    dir,
+		indexCache:             noopCache{},
+		blockSet:               newBucketBlockSet(),
+		blockSyncConcurrency:   bucketStoreConfig.BlockSyncConcurrency,
+		queryGate:              gate.NewNoop(),
+		lazyLoadingGate:        gate.NewNoop(),
+		chunksLimiterFactory:   chunksLimiterFactory,
+		seriesLimiterFactory:   seriesLimiterFactory,
+		partitioners:           partitioners,
+		postingOffsetsSampling: streamindex.SamplingConfig{Factor: bucketStoreConfig.PostingOffsetsInMemSampling, CardinalityThreshold: bucketStoreConfig.PostingOffsetsInMemSamplingCardinalityThreshold},
+		indexHeaderCfg:         bucketStoreConfig.IndexHeader,
+		seriesHashCache:        seriesHashCache,
+		metrics:                metrics,
+		userID:                 userID,
+		maxSeriesPerBatch:      bucketStoreConfig.StreamingBatchSize,
+		postingsStrategy:       postingsStrategy,
 	}
 
 	for _, option := range options {
@@ -477,7 +476,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 		s.bkt,
 		s.dir,
 		meta.ULID,
-		s.postingOffsetsInMemSampling,
+		s.postingOffsetsSampling,
 		s.indexHeaderCfg,
 	)
 	if err != nil {

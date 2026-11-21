@@ -3,9 +3,10 @@
 Mimir offers a few docker-compose based development environments for different [deployment modes][deployment-modes], including:
 
 - [Microservices mode](./mimir-microservices-mode)
-- [Monolothic mode](./mimir-monolithic-mode)
+- [Monolithic mode](./mimir-monolithic-mode)
 - [Monolithic mode with swift storage](./mimir-monolithic-mode-with-swift-storage)
-- [Read-write mode](./mimir-read-write-mode)
+- [Ingest storage](./mimir-ingest-storage)
+- [Compartments](./mimir-compartments)
 
 ## Running
 
@@ -17,7 +18,8 @@ Choose a sub-folder for whichever Mimir deployment mode you want to run. Then, t
 
 This should give you a running Mimir system with Grafana available at [http://localhost:3000](http://localhost:3000), and other Mimir service UIs available via different ports (check `docker ps` for exact ports).
 
-The Minio console is available in most dev environments at [http://localhost:9001](http://localhost:9001), with the credentials defined in [mimir.yaml][minio-creds].
+Most environments use [Silo](https://github.com/pgsty/silo) as the object storage. Silo is a community fork of MinIO with the same S3 API.
+The Silo console is available at [http://localhost:9001](http://localhost:9001), or [http://localhost:9101](http://localhost:9101) in monolithic mode, with the credentials defined in [mimir.yaml][minio-creds].
 
 ## Profiles
 

@@ -22,8 +22,6 @@ import (
 )
 
 func TestIngester_ActiveSeries(t *testing.T) {
-	samples := []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}}
-
 	seriesWithLabelsOfSize := func(size, index int) mimirpb.PreallocTimeseries {
 		// 24 bytes of static strings and slice overhead, the remaining bytes are used to
 		// pad the value of the "lbl" label.
@@ -33,7 +31,9 @@ func TestIngester_ActiveSeries(t *testing.T) {
 			TimeSeries: &mimirpb.TimeSeries{
 				Labels: mimirpb.FromLabelsToLabelAdapters(
 					labels.FromStrings(model.MetricNameLabel, "test", "lbl", fmt.Sprintf(tpl, index))),
-				Samples: samples,
+				// Make a new slice for each series: Push returns the series to a pool that keeps their slices for reuse,
+				// so the series must not share a backing array.
+				Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}},
 			},
 		}
 	}
@@ -101,9 +101,6 @@ func TestIngester_ActiveSeries(t *testing.T) {
 }
 
 func TestIngester_ActiveNativeHistogramSeries(t *testing.T) {
-	samples := []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}}
-	histograms := []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1_000, util_test.GenerateTestHistogram(1))}
-
 	seriesWithLabelsOfSize := func(size, index int, isHistogram bool) mimirpb.PreallocTimeseries {
 		// 24 bytes of static strings and slice overhead, the remaining bytes are used to
 		// pad the value of the "lbl" label.
@@ -112,10 +109,12 @@ func TestIngester_ActiveNativeHistogramSeries(t *testing.T) {
 		ts := &mimirpb.TimeSeries{
 			Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "test", "lbl", fmt.Sprintf(tpl, index))),
 		}
+		// Make a new slice for each series: Push returns the series to a pool that keeps their slices for reuse,
+		// so the series must not share a backing array.
 		if isHistogram {
-			ts.Histograms = histograms
+			ts.Histograms = []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1_000, util_test.GenerateTestHistogram(1))}
 		} else {
-			ts.Samples = samples
+			ts.Samples = []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}}
 		}
 		return mimirpb.PreallocTimeseries{TimeSeries: ts}
 	}
@@ -177,7 +176,6 @@ func BenchmarkIngester_ActiveSeries(b *testing.B) {
 	in := prepareHealthyIngester(b, nil)
 	ctx := user.InjectOrgID(context.Background(), userID)
 
-	samples := []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}}
 	writeReq := &mimirpb.WriteRequest{Source: mimirpb.API}
 	for s := 0; s < numSeries; s++ {
 		writeReq.Timeseries = append(writeReq.Timeseries, mimirpb.PreallocTimeseries{
@@ -187,7 +185,9 @@ func BenchmarkIngester_ActiveSeries(b *testing.B) {
 					// Use mod prime to make label values repeat every n series
 					"mod_10", strconv.Itoa(s%(2*5)),
 					"mod_4199", strconv.Itoa(s%(13*17*19)))),
-				Samples: samples,
+				// Make a new slice for each series: Push returns the series to a pool that keeps their slices for reuse,
+				// so the series must not share a backing array.
+				Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}},
 			},
 		})
 	}

@@ -63,18 +63,60 @@
             ||| % $._config,
           },
         },
+        // Each tenant persists its state once per -alertmanager.persist-interval (15m by default),
+        // and only on the replica at ring position 0. The counters are summed over the tenants
+        // of a pod, so both alerts are per pod.
         {
+          // The last 3 or 4 persist attempts of each tenant on the pod failed. The expression holds
+          // while the last 20m (one persist interval plus slack) had failures and no success, and
+          // `for` requires that for 35m (3rd attempt after the first observed failure, plus slack). A
+          // range window alone would fire on the first failed cycle of a new series (e.g. a new pod,
+          // or one that just started persisting), because increase() only sees samples that exist.
+          // When the failed counter was 0 before the outage, increase() doesn't extrapolate it below
+          // zero while it does extrapolate the total, so the success term stays above 0.5 until the
+          // last pre-outage sample leaves the window: the alert then fires after the 4th attempt.
+          // Resolves on the first successful persist.
           alert: $.alertName('AlertmanagerPersistStateFailing'),
           expr: |||
-            rate(cortex_alertmanager_state_persist_failed_total[%s]) > 0
-          ||| % $.rateInterval('15m'),
-          'for': '1h',
+            increase(cortex_alertmanager_state_persist_failed_total[%(window)s]) > 0
+            unless
+            (increase(cortex_alertmanager_state_persist_total[%(window)s]) - increase(cortex_alertmanager_state_persist_failed_total[%(window)s])) > 0.5
+          ||| % { window: $.rateInterval('20m') },
+          'for': '35m',
           labels: {
             severity: 'critical',
           },
           annotations: {
             message: |||
-              %(product)s Alertmanager {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s is unable to persist full state snaphots to remote storage.
+              %(product)s Alertmanager {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has failed every attempt to persist full state snapshots to remote storage for at least 3 persist intervals.
+            ||| % $._config,
+          },
+        },
+        {
+          // Persists keep failing intermittently: more than 5% of attempts failed over the last 6h,
+          // with failures in at least 4 of the last 6 hours, so that a single outage (covered by the
+          // critical alert) does not also raise this one for the next 6h.
+          alert: $.alertName('AlertmanagerPersistStateFailing'),
+          expr: |||
+            (
+              increase(cortex_alertmanager_state_persist_failed_total[%(long_window)s])
+              /
+              increase(cortex_alertmanager_state_persist_total[%(long_window)s])
+            ) > 0.05
+            and
+            count_over_time((increase(cortex_alertmanager_state_persist_failed_total[%(short_window)s]) > 0)[%(long_window)s:%(step)s]) >= 4
+          ||| % {
+            long_window: $.rateInterval('6h'),
+            short_window: $.rateInterval('1h'),
+            step: $.stepInterval('1h'),
+          },
+          'for': '1h',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              %(product)s Alertmanager {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s failed {{ $value | humanizePercentage }} of its attempts to persist full state snapshots to remote storage over the last 6h.
             ||| % $._config,
           },
         },

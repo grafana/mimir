@@ -2,65 +2,30 @@
 
 package assert
 
-import (
-	"sync"
+import "sync"
 
-	"github.com/antithesishq/antithesis-sdk-go/internal"
-)
+// TODO: Someday this tracker should also start deduplicating
+// guidance, but there are some complicated policy questions
+// to settle before we do that.
+type booleanGuidance struct{}
 
-// TODO: Tracker is intended to prevent sending the same guidance
-// more than once.  In this case, we always send, so the tracker
-// is not presently used.
-type booleanGuidance struct {
-	n int
-}
+// booleanGuidanceTracker keeps the per-id entries: a grow-only map with
+// stable keys, read on every rich-assert evaluation and written once per
+// guidance id.
+var booleanGuidanceTracker sync.Map // message key -> *booleanGuidance
 
-type booleanGuidanceTracker map[string]*booleanGuidance
-
-var (
-	boolean_guidance_tracker       booleanGuidanceTracker = make(booleanGuidanceTracker)
-	boolean_guidance_tracker_mutex sync.Mutex
-	boolean_guidance_info_mutex    sync.Mutex
-)
-
-func (tracker booleanGuidanceTracker) getTrackerEntry(messageKey string) *booleanGuidance {
-	var trackerEntry *booleanGuidance
-	var ok bool
-
-	if tracker == nil {
-		return nil
+func getBooleanGuidanceEntry(messageKey string) *booleanGuidance {
+	if entry, ok := booleanGuidanceTracker.Load(messageKey); ok {
+		return entry.(*booleanGuidance)
 	}
-
-	boolean_guidance_tracker_mutex.Lock()
-	defer boolean_guidance_tracker_mutex.Unlock()
-	if trackerEntry, ok = boolean_guidance_tracker[messageKey]; !ok {
-		trackerEntry = newBooleanGuidance()
-		tracker[messageKey] = trackerEntry
-	}
-
-	return trackerEntry
+	entry, _ := booleanGuidanceTracker.LoadOrStore(messageKey, &booleanGuidance{})
+	return entry.(*booleanGuidance)
 }
 
-// Create a boolean guidance tracker
-func newBooleanGuidance() *booleanGuidance {
-	trackerInfo := booleanGuidance{}
-	return &trackerInfo
-}
-
-func (tI *booleanGuidance) send_value(bgI *booleanGuidanceInfo) {
+func (tI *booleanGuidance) send_value(bgI *guidanceInfo) {
 	if tI == nil {
 		return
 	}
 
-	boolean_guidance_info_mutex.Lock()
-	defer boolean_guidance_info_mutex.Unlock()
-
-	// The tracker entry should be consulted to determine
-	// if this Guidance info has already been sent, or not.
-
-	emitBooleanGuidance(bgI)
-}
-
-func emitBooleanGuidance(bgI *booleanGuidanceInfo) error {
-	return internal.Json_data(map[string]any{"antithesis_guidance": bgI})
+	emitGuidance(bgI)
 }

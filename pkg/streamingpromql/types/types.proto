@@ -20,6 +20,14 @@ message EncodedSubsetStats {
   repeated int64 samplesProcessedPerStep = 1;
   repeated int64 samplesReadIfSubsequentStep = 2;
   repeated int64 samplesReadIfFirstStep = 3;
+  repeated EncodedSamplesPerNode samplesPerNode = 4 [(gogoproto.nullable) = false];
+}
+
+message EncodedSamplesPerNode {
+  int64 nodeId = 1;
+  repeated int64 samplesProcessedPerStep = 2;
+  repeated int64 samplesReadIfSubsequentStep = 3;
+  repeated int64 samplesReadIfFirstStep = 4;
 }
 
 message EncodedQueryTimeRange {

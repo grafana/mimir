@@ -61,6 +61,8 @@ func (t QueryErrorType) ToPrometheusString() (string, error) {
 		return "too_large_entry", nil
 	case QUERY_ERROR_TYPE_TOO_MANY_REQUESTS:
 		return "too_many_requests", nil
+	case QUERY_ERROR_TYPE_COST_LIMIT:
+		return "cost_limit", nil
 	default:
 		return "", fmt.Errorf("unknown QueryErrorType value: %v (%v)", int32(t), t.String())
 	}
@@ -90,6 +92,8 @@ func ErrorTypeFromPrometheusString(s string) (QueryErrorType, error) {
 		return QUERY_ERROR_TYPE_TOO_LARGE_ENTRY, nil
 	case "too_many_requests":
 		return QUERY_ERROR_TYPE_TOO_MANY_REQUESTS, nil
+	case "cost_limit":
+		return QUERY_ERROR_TYPE_COST_LIMIT, nil
 	default:
 		return QUERY_ERROR_TYPE_NONE, fmt.Errorf("unknown Prometheus error type value: '%v'", s)
 	}
@@ -119,6 +123,8 @@ func ErrorTypeFromAPIErrorType(t apierror.Type) (QueryErrorType, error) {
 		return QUERY_ERROR_TYPE_TOO_LARGE_ENTRY, nil
 	case apierror.TypeNotAcceptable:
 		return QUERY_ERROR_TYPE_NOT_ACCEPTABLE, nil
+	case apierror.TypeCostLimit:
+		return QUERY_ERROR_TYPE_COST_LIMIT, nil
 	default:
 		return QUERY_ERROR_TYPE_NONE, fmt.Errorf("unknown API error type %q", t)
 	}

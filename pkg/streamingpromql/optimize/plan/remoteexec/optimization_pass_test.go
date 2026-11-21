@@ -114,22 +114,22 @@ func TestOptimizationPass(t *testing.T) {
 			`,
 		},
 		"unshardable instant vector expression with an aggregation with multiple arguments": {
-			expr: "topk(5, my_metric)",
+			expr: "quantile(0.5, my_metric)",
 			expectedPlan: `
 				- RemoteExecutionConsumer: node 0
 					- RemoteExecutionGroup
-						- node 0: AggregateExpression: topk
+						- node 0: AggregateExpression: quantile
 							- expression: VectorSelector: {__name__="my_metric"}
-							- parameter: NumberLiteral: 5
+							- parameter: NumberLiteral: 0.5
 			`,
 			expectedPlanWithSplittingAndCachingInsideMQE: `
 				- TimeRangeSplit: interval 24h0m0s
 					- Cache: split interval 24h0m0s
 						- RemoteExecutionConsumer: node 0
 							- RemoteExecutionGroup: eager load
-								- node 0: AggregateExpression: topk
+								- node 0: AggregateExpression: quantile
 									- expression: VectorSelector: {__name__="my_metric"}
-									- parameter: NumberLiteral: 5
+									- parameter: NumberLiteral: 0.5
 			`,
 		},
 		"shardable instant vector expression": {
@@ -1348,7 +1348,7 @@ func rewriteForQuerySharding(ctx context.Context, expr string) (string, error) {
 func rewriteForSubquerySpinoff(ctx context.Context, expr string) (string, error) {
 	stats := astmapper.NewSubquerySpinOffMapperStats()
 	defaultStepFunc := func(rangeMillis int64) int64 { return 1000 }
-	mapper := astmapper.NewSubquerySpinOffMapper(astmapper.NewSelectorSubquerySpinOffWrapper(), defaultStepFunc, false, log.NewNopLogger(), stats, false)
+	mapper := astmapper.NewSubquerySpinOffMapper(astmapper.NewSelectorSubquerySpinOffWrapper(), defaultStepFunc, log.NewNopLogger(), stats, false)
 	ast, err := promqlext.NewPromQLParser().ParseExpr(expr)
 	if err != nil {
 		return "", err

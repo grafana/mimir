@@ -316,17 +316,20 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('CacheRequestErrors'),
           // Specifically exclude "add" and "delete" operations which are used for cache invalidation and "locking"
           // since they are expected to sometimes fail in normal operation (such as when a "lock" already exists or
-          // key being invalidated does not exist). We also only alert when there at least 10 req/sec to the cache
-          // to avoid flapping alerts in low-traffic environments.
+          // key being invalidated does not exist). We ignore context cancellation errors since these don't actually
+          // indicate a problem with the cache. We only alert when there at least 10 req/sec to the cache to avoid
+          // flapping alerts in low-traffic environments.
           expr: |||
             (
               sum by(%(group_by)s, name, operation) (
-                rate(thanos_cache_operation_failures_total{operation!~"add|delete"}[%(rate_interval)s])
+                rate(thanos_cache_operation_failures_total{operation!~"add|delete", reason!="canceled"}[%(rate_interval)s])
               )
               /
-              sum by(%(group_by)s, name, operation) (
-                rate(thanos_cache_operations_total{operation!~"add|delete"}[%(rate_interval)s])
-              ) > 10
+              (
+                sum by(%(group_by)s, name, operation) (
+                  rate(thanos_cache_operations_total{operation!~"add|delete"}[%(rate_interval)s])
+                ) > 10
+              )
             ) * 100 > 5
           ||| % {
             group_by: $._config.alert_aggregation_labels,

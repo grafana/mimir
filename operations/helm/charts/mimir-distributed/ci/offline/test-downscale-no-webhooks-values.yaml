@@ -1,0 +1,31 @@
+# Pin kube version so results are the same in CI and locally.
+kubeVersionOverride: "1.32"
+
+# No leaders are derived when the bundled operator's webhooks are disabled,
+# even though all zones prepare downscales.
+rollout_operator:
+  enabled: true
+  webhooks:
+    enabled: false
+
+ingester:
+  zoneAwareReplication:
+    enabled: true
+    zones:
+    - name: zone-a
+      prepareDownscale: true
+    - name: zone-b
+      prepareDownscale: true
+    - name: zone-c
+      prepareDownscale: true
+
+store_gateway:
+  zoneAwareReplication:
+    enabled: true
+    zones:
+    - name: zone-a
+      prepareDownscale: true
+    - name: zone-b
+      prepareDownscale: true
+    - name: zone-c
+      prepareDownscale: true

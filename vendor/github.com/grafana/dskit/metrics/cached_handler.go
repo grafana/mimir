@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/singleflight"
+	"google.golang.org/protobuf/proto"
 )
 
 const metricsResponseCacheSize = 8
@@ -24,9 +26,10 @@ const metricsResponseCacheSize = 8
 // CachedHandlerFor is promhttp.HandlerFor with an in-memory response cache.
 // A non-positive cacheDuration disables caching. Successful GET responses are
 // cached for at most cacheDuration from the start of collection, independently
-// for up to eight Accept/Accept-Encoding combinations. Requests with query
-// parameters bypass the cache. Cached metrics can lag behind live values by
-// cacheDuration; choose a duration appropriate for scrape intervals and alerts.
+// for up to eight Accept/Accept-Encoding combinations. Full and name[]-filtered
+// GETs share one cached Gather result; filtered responses are encoded per request.
+// Other query parameters and methods bypass both caches. Cached metrics can lag
+// behind live values by cacheDuration; consider scrape intervals and alerts.
 // With caching enabled, overlapping collections are always coalesced across
 // variants and bypassed requests, regardless of opts.CoalesceGather.
 func CachedHandlerFor(reg prometheus.Gatherer, opts promhttp.HandlerOpts, cacheDuration time.Duration) http.Handler {
@@ -43,29 +46,45 @@ func CachedHandlerFor(reg prometheus.Gatherer, opts promhttp.HandlerOpts, cacheD
 		inFlight = make(chan struct{}, opts.MaxRequestsInFlight)
 		opts.MaxRequestsInFlight = 0
 	}
-	reg = &metricsCoalescingGatherer{reg: reg}
 	opts.CoalesceGather = false
 	responses, err := lru.New[metricsResponseCacheKey, *metricsResponse](metricsResponseCacheSize)
 	if err != nil {
 		panic(err)
 	}
-	// Refreshes need separate error logs, but concurrency controls must span
-	// every representation and the uncached path.
-	bypass := limitMetricsRequests(promhttp.HandlerFor(reg, opts), inFlight)
-	if timeout > 0 {
-		bypass = http.TimeoutHandler(bypass, timeout, metricsTimeoutBody(timeout))
-	}
-	return &cachedMetricsHandler{
-		reg:       reg,
+	h := &cachedMetricsHandler{
 		opts:      opts,
 		inFlight:  inFlight,
-		bypass:    bypass,
-		duration:  cacheDuration,
 		timeout:   timeout,
 		now:       time.Now,
 		responses: responses,
 		refreshes: map[metricsResponseCacheKey]*metricsRefresh{},
 	}
+	now := func() time.Time { return h.now() }
+	coalesced := &metricsCoalescingGatherer{
+		collect: func() metricsGatherResult {
+			start := now()
+			families, err := reg.Gather()
+			return metricsGatherResult{families: families, err: err, started: start}
+		},
+		now: now,
+	}
+	// Refreshes need separate error logs, but concurrency controls must span
+	// every representation and the uncached path.
+	h.bypass = limitMetricsRequests(promhttp.HandlerFor(coalesced, opts), inFlight)
+	if timeout > 0 {
+		h.bypass = http.TimeoutHandler(h.bypass, timeout, metricsTimeoutBody(timeout))
+	}
+	h.reg = &metricsCoalescingGatherer{
+		collect:       func() metricsGatherResult { return *coalesced.gather() },
+		duration:      cacheDuration,
+		now:           now,
+		acceptPartial: opts.ErrorHandling == promhttp.ContinueOnError,
+	}
+	h.filtered = limitMetricsRequests(promhttp.HandlerFor(h.reg, opts), inFlight)
+	if timeout > 0 {
+		h.filtered = http.TimeoutHandler(h.filtered, timeout, metricsTimeoutBody(timeout))
+	}
+	return h
 }
 
 // metricsTimeoutBody matches the body promhttp writes when its own timeout expires.
@@ -106,11 +125,11 @@ type metricsRefresh struct {
 }
 
 type cachedMetricsHandler struct {
-	reg      prometheus.Gatherer
+	reg      *metricsCoalescingGatherer
 	opts     promhttp.HandlerOpts
 	inFlight chan struct{}
 	bypass   http.Handler
-	duration time.Duration
+	filtered http.Handler
 	timeout  time.Duration
 	now      func() time.Time
 
@@ -120,10 +139,17 @@ type cachedMetricsHandler struct {
 }
 
 func (h *cachedMetricsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Filtered scrapes must not populate the full-registry snapshot, and arbitrary
-	// query strings must not create an unbounded number of cache entries.
-	if r.Method != http.MethodGet || (r.URL != nil && r.URL.RawQuery != "") {
+	if r.Method != http.MethodGet {
 		h.bypass.ServeHTTP(w, r)
+		return
+	}
+	if r.URL != nil && r.URL.RawQuery != "" {
+		params, err := url.ParseQuery(r.URL.RawQuery)
+		if err == nil && len(params) == 1 && len(params["name[]"]) > 0 {
+			h.filtered.ServeHTTP(w, r)
+		} else {
+			h.bypass.ServeHTTP(w, r)
+		}
 		return
 	}
 	key := metricsResponseCacheKey{accept: r.Header.Get("Accept"), encoding: strings.Join(r.Header.Values("Accept-Encoding"), "\x00")}
@@ -183,14 +209,19 @@ func (h *cachedMetricsHandler) refresh(r *http.Request, key metricsResponseCache
 	errorLog := &metricsHandlerErrorLog{next: h.opts.ErrorLog}
 	opts := h.opts
 	opts.ErrorLog = errorLog
-	start := h.now()
+	var expires time.Time
+	reg := prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
+		result := h.reg.gather()
+		expires = result.expires
+		return slices.Clone(result.families), result.err
+	})
 	writer := &metricsResponseWriter{header: make(http.Header)}
-	limitMetricsRequests(promhttp.HandlerFor(h.reg, opts), h.inFlight).ServeHTTP(writer, r)
+	limitMetricsRequests(promhttp.HandlerFor(reg, opts), h.inFlight).ServeHTTP(writer, r)
 	if writer.code == 0 {
 		writer.code = http.StatusOK
 	}
 	refresh.code = writer.code
-	refresh.response = &metricsResponse{header: writer.header, body: writer.body.Bytes(), expires: start.Add(h.duration)}
+	refresh.response = &metricsResponse{header: writer.header, body: writer.body.Bytes(), expires: expires}
 	// With ContinueOnError, a partial response is what every uncached scrape would
 	// get, so caching it avoids repeating a failing collection on each scrape.
 	errorsAccepted := opts.ErrorHandling == promhttp.ContinueOnError || errorLog.errors.Load() == 0
@@ -217,31 +248,75 @@ func limitMetricsRequests(next http.Handler, inFlight chan struct{}) http.Handle
 }
 
 type metricsCoalescingGatherer struct {
-	reg   prometheus.Gatherer
-	group singleflight.Group
+	collect       func() metricsGatherResult
+	group         singleflight.Group
+	duration      time.Duration
+	now           func() time.Time
+	acceptPartial bool
+	mu            sync.Mutex
+	cached        *metricsGatherResult
 }
 
 type metricsGatherResult struct {
 	families []*dto.MetricFamily
 	err      error
 	panicked any
+	started  time.Time
+	expires  time.Time
 }
 
 func (g *metricsCoalescingGatherer) Gather() ([]*dto.MetricFamily, error) {
+	result := g.gather()
+	return slices.Clone(result.families), result.err
+}
+
+func (g *metricsCoalescingGatherer) cachedResult() *metricsGatherResult {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.cached != nil && g.now().Before(g.cached.expires) {
+		return g.cached
+	}
+	return nil
+}
+
+func (g *metricsCoalescingGatherer) gather() *metricsGatherResult {
+	if cached := g.cachedResult(); cached != nil {
+		return cached
+	}
 	v, _, _ := g.group.Do("", func() (any, error) {
+		if cached := g.cachedResult(); cached != nil {
+			return cached, nil
+		}
 		result := &metricsGatherResult{}
+		cacheable := false
 		func() {
 			// Keep the original panic value so each handler applies normal recovery.
 			defer func() { result.panicked = recover() }()
-			result.families, result.err = g.reg.Gather()
+			*result = g.collect()
+			// Joined collections retain their original deadline across cache layers.
+			result.expires = result.started.Add(g.duration)
+			if g.duration > 0 && (result.err == nil || g.acceptPartial && len(result.families) > 0) {
+				// Own the protobufs because collectors may reuse them on a later Gather.
+				families := make([]*dto.MetricFamily, len(result.families))
+				for i, family := range result.families {
+					families[i] = proto.Clone(family).(*dto.MetricFamily)
+				}
+				result.families = families
+				cacheable = true
+			}
 		}()
+		if cacheable && g.now().Before(result.expires) {
+			g.mu.Lock()
+			g.cached = result
+			g.mu.Unlock()
+		}
 		return result, nil
 	})
 	result := v.(*metricsGatherResult)
 	if result.panicked != nil {
 		panic(result.panicked)
 	}
-	return slices.Clone(result.families), result.err
+	return result
 }
 
 type metricsResponseWriter struct {

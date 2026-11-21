@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/gogo/status"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
 func TestNewReplicasNotMatchError(t *testing.T) {
@@ -113,6 +115,9 @@ func TestNewRequestRateError(t *testing.T) {
 	assert.Error(t, err)
 	assert.EqualError(t, err, expectedErrorMsg)
 	checkDistributorError(t, err, mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED)
+	// Ingester overload shares this cause, so the ruler relies on this error ID to classify
+	// tenant request-rate rejections as client errors.
+	assert.Contains(t, err.Error(), strings.TrimSpace(globalerror.RequestRateLimited.Message("")))
 
 	anotherErr := newRequestRateLimitedError(20, 20)
 	assert.NotErrorIs(t, err, anotherErr)
@@ -671,7 +676,7 @@ func TestActiveSeriesLimitedErrorHTTPStatusCode(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := newActiveSeriesLimitedError(100, 100, 50, tc.httpStatusCode, 0)
+			err := newActiveSeriesLimitedError(100, 100, tc.httpStatusCode, 0)
 			assert.Equal(t, tc.expectedHTTPStatus, err.HTTPStatusCode())
 			assert.Equal(t, mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED, err.Cause())
 			assert.False(t, err.IsSoft())
@@ -692,7 +697,7 @@ func TestActiveSeriesLimitedError_IsSoft(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := newActiveSeriesLimitedError(tc.total, tc.rejected, 100, http.StatusTooManyRequests, 5)
+			err := newActiveSeriesLimitedError(tc.total, tc.rejected, http.StatusTooManyRequests, 5)
 			assert.Equal(t, tc.soft, err.IsSoft())
 		})
 	}

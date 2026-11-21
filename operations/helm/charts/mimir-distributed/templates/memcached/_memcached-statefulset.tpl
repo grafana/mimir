@@ -113,7 +113,9 @@ spec:
             limits:
               memory: {{ $limitMemory }}Mi
             requests:
-              cpu: 500m
+              {{- with .allocatedCPU }}
+              cpu: {{ . }}
+              {{- end }}
               memory: {{ $requestMemory }}Mi
           {{- end }}
           ports:

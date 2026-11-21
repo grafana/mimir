@@ -52,6 +52,8 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Ingesters ring status](#ingesters-ring-status) | Distributor,Ingester | `GET /ingester/ring` |
 | [Ingester tenants](#ingester-tenants) | Ingester | `GET /ingester/tenants` |
 | [Ingester tenant TSDB](#ingester-tenant-tsdb) | Ingester | `GET /ingester/tsdb/{tenant}` |
+| [Ingester tenant label churn page](#ingester-tenant-label-churn-page) | Ingester | `GET /ingester/tsdb/{tenant}/label_churn` |
+| [Ingester tenant label churn](#ingester-tenant-label-churn) | Ingester | `GET /ingester/tsdb/{tenant}/label_churn.json` |
 | [Instant query](#instant-query) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query` |
 | [Range query](#range-query) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_range` |
 | [Exemplar query](#exemplar-query) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_exemplars` |
@@ -210,7 +212,7 @@ This endpoint displays a web page with the status of internal Grafana Mimir serv
 GET /ready
 ```
 
-This endoint returns 200 when Grafana Mimir is ready to serve traffic.
+This endpoint returns 200 when Grafana Mimir is ready to serve traffic.
 
 ### Metrics
 
@@ -528,6 +530,7 @@ GET /ingester/ring
 ```
 
 This endpoint displays a web page with the ingesters hash ring status, including the state, health, and last heartbeat time of each ingester.
+Each ingester links to its tenants page. To change the link, for example to go through a proxy, set `-ingester.ring.status-page-ingester-link-template`.
 
 ### Ingester tenants
 
@@ -535,7 +538,7 @@ This endpoint displays a web page with the ingesters hash ring status, including
 GET /ingester/tenants
 ```
 
-Displays a web page with the list of tenants with open TSDB on given ingester.
+Displays a web page with the list of tenants with open TSDB on given ingester, sorted by the number of head series.
 
 ### Ingester tenant TSDB
 
@@ -544,6 +547,38 @@ GET /ingester/tsdb/{tenant}
 ```
 
 Displays a web page with details about tenant's open TSDB on given ingester.
+With `-ingester.label-churn-enabled`, the page links to the label churn page of the tenant.
+
+### Ingester tenant label churn page
+
+```
+GET /ingester/tsdb/{tenant}/label_churn
+```
+
+Displays a web page with the label names whose new values created the most new series for the tenant on given ingester, in the lookback window.
+The page explains how the ingester collects the scores and how to read them, and links to the same scores as JSON.
+It accepts the same `lookback` and `limit` parameters as the [label churn endpoint](#ingester-tenant-label-churn).
+
+This page is an [experimental feature](../../configure/about-versioning/#experimental-features).
+To enable it, set `-ingester.label-churn-enabled`.
+
+### Ingester tenant label churn
+
+```
+GET /ingester/tsdb/{tenant}/label_churn.json
+```
+
+Returns, as JSON, the label names whose new values created the most new series for the tenant on given ingester, in the lookback window.
+The score of a label name is the number of series that have a new value of the label.
+For each label name, the response also includes the metric names of a sample of the new series.
+
+The optional `lookback` parameter sets the start of the lookback window. The default is `30m`.
+The optional `limit` parameter sets the maximum number of returned label names. The default is `30`. `0` returns all label names.
+
+The endpoint returns `503 Service Unavailable` when the ingester has no record in the lookback window yet, or when a head compaction recently removed series. Retry later, or use a shorter lookback.
+
+This endpoint is an [experimental feature](../../configure/about-versioning/#experimental-features).
+To enable it, set `-ingester.label-churn-enabled`.
 
 ## Query-frontend
 
@@ -804,11 +839,12 @@ When `include_score=true`, each result also carries a `score` field. When `inclu
 The stream always ends with a single trailer object reporting the final status:
 
 ```json
-{ "status": "success", "has_more": false }
+{ "status": "success", "has_more": false, "returned": 2 }
 ```
 
 - **status** - `success` when iteration completed without error.
 - **has_more** - `true` when more results matched than were returned because the `limit` was reached.
+- **returned** - the number of results in this response, across all `results` batches.
 - **warnings** - _optional_ - an array of non-fatal warning messages, for example when a per-tenant limit clamped the requested `limit`.
 
 #### Search errors
@@ -1175,7 +1211,7 @@ To retrieve a single rule group from Mimir, use [`mimirtool rules get` command](
 ### Set rule group
 
 ```
-POST /<prometheus-http-prefix>/config/v1/rules/{namespace}
+POST <prometheus-http-prefix>/config/v1/rules/{namespace}
 ```
 
 Creates or updates a rule group.
@@ -1212,7 +1248,7 @@ rules:
 ### Delete rule group
 
 ```
-DELETE /<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}
+DELETE <prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}
 ```
 
 Deletes a rule group by namespace and group name. This endpoints returns `202` on success.
@@ -1230,7 +1266,7 @@ To delete a rule group from Mimir, use [`mimirtool rules delete` command](../../
 ### Delete namespace
 
 ```
-DELETE /<prometheus-http-prefix>/config/v1/rules/{namespace}
+DELETE <prometheus-http-prefix>/config/v1/rules/{namespace}
 ```
 
 Deletes all the rule groups in a namespace (including the namespace itself). This endpoint returns `202` on success.
@@ -1282,7 +1318,7 @@ Displays a web page with the Alertmanager hash ring status, including the state,
 ### Alertmanager API
 
 ```
-GET,POST,DELETE /<alertmanager-http-prefix>
+GET,POST,DELETE <alertmanager-http-prefix>
 ```
 
 Manage the Alertmanager.

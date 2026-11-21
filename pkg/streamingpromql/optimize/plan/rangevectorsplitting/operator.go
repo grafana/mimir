@@ -71,6 +71,9 @@ type FunctionOverRangeVectorSplit[T any] struct {
 	finishedReadingCalled bool
 	storedInCache         bool
 
+	hasRangesToCache     bool
+	unconsumedSeriesRead int
+
 	logger     log.Logger
 	cacheStats *cache.CacheStats
 
@@ -185,10 +188,6 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 	var currentUncachedRanges []Range
 	var currentRangeLength int64
 
-	// Subquery's operator can't attribute annotations from its nested content to a specific combined range,
-	// so do not combine ranges for Subquery split targets, each uncached range gets its own split instead.
-	innerIsSubquery := containsSubquery(m.innerNode)
-
 	flushCurrentUncachedRanges := func() error {
 		if len(currentUncachedRanges) == 0 {
 			return nil
@@ -218,11 +217,12 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 				m.splits = append(m.splits, cachedSplit)
 				continue
 			}
+			m.hasRangesToCache = true
 		}
 
 		thisRangeLength := splitRange.End - splitRange.Start
 
-		if !innerIsSubquery && len(currentUncachedRanges) > 0 && thisRangeLength == currentRangeLength {
+		if len(currentUncachedRanges) > 0 && thisRangeLength == currentRangeLength {
 			currentUncachedRanges = append(currentUncachedRanges, splitRange)
 		} else {
 			if err := flushCurrentUncachedRanges(); err != nil {
@@ -471,6 +471,10 @@ func (m *FunctionOverRangeVectorSplit[T]) FinishedReading(ctx context.Context) e
 
 	m.finishedReadingStart = time.Now()
 
+	if err := m.consumeRemainingSeries(ctx); err != nil {
+		return err
+	}
+
 	for _, split := range m.splits {
 		if err := split.FinishedReading(ctx); err != nil {
 			return err
@@ -479,6 +483,33 @@ func (m *FunctionOverRangeVectorSplit[T]) FinishedReading(ctx context.Context) e
 
 	m.finishedReadingEnd = time.Now()
 	m.finishedReadingCalled = true
+	return nil
+}
+
+// consumeRemainingSeries reads any series the parent did not consume, so complete intermediate results can be cached.
+func (m *FunctionOverRangeVectorSplit[T]) consumeRemainingSeries(ctx context.Context) error {
+	if !m.hasRangesToCache {
+		return nil
+	}
+
+	if !m.metadataConsumed {
+		metadata, err := m.SeriesMetadata(ctx, nil)
+		if err != nil {
+			return err
+		}
+		// The parent will not use the returned slice, and returning it to the pool does not modify the retained label data.
+		types.SeriesMetadataSlicePool.Put(&metadata, m.MemoryConsumptionTracker)
+	}
+
+	m.unconsumedSeriesRead = len(m.seriesToSplits) - m.currentSeriesIdx
+	for m.currentSeriesIdx < len(m.seriesToSplits) {
+		data, err := m.NextSeries(ctx)
+		if err != nil {
+			return err
+		}
+		// NextSeries retains intermediate results for the cache. The parent will not read the final result.
+		types.PutInstantVectorSeriesData(data, m.MemoryConsumptionTracker)
+	}
 	return nil
 }
 
@@ -493,10 +524,8 @@ func (m *FunctionOverRangeVectorSplit[T]) storeResultsInCache(ctx context.Contex
 		return errors.New("should not call FunctionOverRangeVectorSplit.storeResultsInCache before FinishedReading")
 	}
 
-	// Don't cache in cases where not all series have been processed. It's possible for not all series to be processed
-	// if a binary operation short-circuits evaluation early. A cached partial intermediate result might result in an
-	// incorrect calculation for a query spanning a different time range.
-	// TODO: It might be worth processing any remaining series so we can cache the result.
+	// These checks are defensive, FinishedReading consumes all remaining data when there are cacheable range misses.
+	// Metadata or series may remain unread when there are no cacheable ranges to populate.
 	shouldCache := true
 	if !m.metadataConsumed {
 		level.Debug(logger).Log("msg", "skipping caching as SeriesMetadata() was not called")
@@ -544,6 +573,8 @@ func (m *FunctionOverRangeVectorSplit[T]) storeResultsInCache(ctx context.Contex
 		"ranges_total", uncachedRangeCount+cachedRangeCount,
 		"ranges_cached", cachedRangeCount,
 		"ranges_uncached", uncachedRangeCount,
+		"series_read", m.currentSeriesIdx,
+		"unconsumed_series_read", m.unconsumedSeriesRead,
 		"eligible_to_store_results_in_cache", shouldCache,
 		"cache_entries_read", m.cacheStats.ReadEntries,
 		"cache_entries_written", m.cacheStats.WrittenEntries,
@@ -634,10 +665,11 @@ type SplitSeries struct {
 }
 
 type CachedSplit[T any] struct {
-	seriesMetadata []types.SeriesMetadata
-	annotations    querierpb.Annotations
-	results        []T
-	stats          *types.OperatorEvaluationStats
+	seriesMetadata           []types.SeriesMetadata
+	annotations              querierpb.Annotations
+	results                  []T
+	stats                    *types.OperatorEvaluationStats
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
 func (c *CachedSplit[T]) RangeCount() int {
@@ -673,10 +705,11 @@ func NewCachedSplit[T any](
 	}
 
 	return &CachedSplit[T]{
-		seriesMetadata: seriesMetadata,
-		annotations:    annotations,
-		results:        results,
-		stats:          stats,
+		seriesMetadata:           seriesMetadata,
+		annotations:              annotations,
+		results:                  results,
+		stats:                    stats,
+		memoryConsumptionTracker: parent.MemoryConsumptionTracker,
 	}, nil
 }
 
@@ -715,6 +748,7 @@ func (c *CachedSplit[T]) StoreResultsInCache(_ context.Context) error {
 }
 
 func (c *CachedSplit[T]) Close() {
+	types.SeriesMetadataSlicePool.Put(&c.seriesMetadata, c.memoryConsumptionTracker)
 	c.stats.Close()
 }
 
@@ -881,6 +915,15 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) ([]*types.OperatorEvalu
 	// Clone before merging rangeAnnotations in below: Annotations.Merge mutates its receiver in place, and we
 	// need operatorAnnotations to hold only what operator.Finalize() itself returned.
 	p.operatorAnnotations = types.CloneAnnotations(combinedAnnos)
+
+	if len(p.ranges) > 1 && len(p.operatorAnnotations) > 0 {
+		// Annotations from the inner operator (for example, a function nested inside a subquery) cannot be
+		// attributed to individual ranges. Keep them in the query response, but don't cache any range in
+		// this group, doing so could return an annotation for a range that did not produce it.
+		for i := range p.ranges {
+			p.ranges[i].Cacheable = false
+		}
+	}
 
 	for _, annos := range p.rangeAnnotations {
 		if len(*annos) > 0 {

@@ -36,6 +36,11 @@
     querier_max_concurrency: 8,
     ruler_querier_max_concurrency: $._config.querier_max_concurrency,
 
+    // Path to file that currently executing queries are written to that is
+    // preserved between pod restarts. This allows operators to debug what
+    // queries were running when a process crashed.
+    activity_tracker_path: '/active-query-tracker/activity.log',
+
     test_exporter_enabled: false,
     test_exporter_start_time: error 'must specify test exporter start time',
     test_exporter_user_id: error 'must specify test exporter used id',
@@ -87,7 +92,7 @@
     // Ephemeral storage requested by Mimir component containers, reserving node-local scratch
     // space (logs, tmp) so pods aren't evicted first under node disk pressure. Set to null to
     // disable the request.
-    ephemeral_storage_request_size: '50Mi',
+    ephemeral_storage_request_size: '128Mi',
 
     // Enable the experimental compactor-scheduler. When enabled, compactors pull jobs from
     // the scheduler instead of planning them locally.
@@ -104,9 +109,6 @@
     // Maximum number of unavailable replicas during a compactor rollout when using cortex_compactor_concurrent_rollout_enabled feature.
     // Computed from compactor replicas by default, but can also be specified as percentage, for example "25%".
     cortex_compactor_max_unavailable: std.max(std.floor($.compactor_statefulset.spec.replicas / 2), 1),
-
-    // Enable use of bucket index by querier, ruler and store-gateway.
-    bucket_index_enabled: true,
 
     store_gateway_replication_factor: 3,
 
@@ -130,6 +132,7 @@
     memcached_chunks_replicas: 3,
     memcached_metadata_replicas: 3,
     memcached_range_vector_splitting_replicas: 3,
+    memcached_cardinality_replicas: 3,
 
     cache_frontend_enabled: true,
     cache_frontend_max_item_size_mb: 25,
@@ -151,6 +154,11 @@
     cache_metadata_connection_limit: 16384,
     cache_metadata_min_ready_seconds: 60,
 
+    cache_cardinality_enabled: false,
+    cache_cardinality_max_item_size_mb: 1,
+    cache_cardinality_connection_limit: 16384,
+    cache_cardinality_min_ready_seconds: 60,
+
     query_engine_range_vector_splitting_enabled: false,
     // Per-path overrides for range vector splitting.
     query_engine_range_vector_splitting_regular_path_enabled: $._config.query_engine_range_vector_splitting_enabled,
@@ -167,11 +175,6 @@
     query_tee_backend_endpoints: [],
     query_tee_backend_preferred: '',
     query_tee_node_port: null,
-
-    // Active query tracker stores currently executing queries in a file that
-    // survives pod restarts. Useful for debugging crashes. This configuration
-    // setting is temporary to help with migration in Grafana Cloud.
-    active_query_tracker_enabled: true,
 
     // Common configuration parameters
     commonConfig:: if !$._config.trace_request_headers then {} else {
@@ -223,12 +226,21 @@
 
     blocks_storage_bucket_name: error 'must specify blocks storage bucket name',
 
+    activityTrackerConfig: {
+      'activity-tracker.filepath': $._config.activity_tracker_path,
+    },
+
     blocksStorageConfig: {
       [
       if $._config.storage_backend == 'gcs' then 'blocks-storage.gcs.bucket-name'
       else if $._config.storage_backend == 's3' then 'blocks-storage.s3.bucket-name'
       else if $._config.storage_backend == 'azure' then 'blocks-storage.azure.container-name'
       ]: $._config.blocks_storage_bucket_name,
+    },
+
+    bucketIndexConfig:: {
+      // Bucket index is updated by compactor on each cleanup cycle.
+      'blocks-storage.bucket-store.sync-interval': $._config.compactor_cleanup_interval,
     },
 
     queryBlocksStorageConfig:: {
@@ -543,6 +555,11 @@
     // How query-schedulers are discovered by other components. Supported values: 'dns', 'ring'.
     query_scheduler_service_discovery_mode: 'dns',
 
+    // Set to true to enable queue reservations on the query-scheduler and the query-frontend.
+    // It also applies to the ruler variants, because their args extend query_scheduler_args and query_frontend_args.
+    // The query-frontend requires remote execution and MQE splitting and caching results, which are enabled by default.
+    queue_reservation_enabled: false,
+
     // Migrating a Mimir cluster from DNS to ring-based service discovery is a two steps process:
     // 1. Set `query_scheduler_service_discovery_mode: 'ring' and `query_scheduler_service_discovery_ring_read_path_enabled: false`,
     //    so that query-schedulers join a ring, but queriers and query-frontends will still discover the query-scheduler via DNS.
@@ -679,7 +696,14 @@
       'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+memcached-frontend.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
       'query-frontend.results-cache.memcached.max-item-size': $._config.cache_frontend_max_item_size_mb * 1024 * 1024,
       'query-frontend.results-cache.memcached.timeout': '500ms',
-    } else {}
+    } + (
+      if $._config.cache_cardinality_enabled then {
+        'query-frontend.cardinality-estimation-cache.backend': 'memcached',
+        'query-frontend.cardinality-estimation-cache.memcached.addresses': 'dnssrvnoa+memcached-cardinality.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
+        'query-frontend.cardinality-estimation-cache.memcached.max-item-size': $._config.cache_cardinality_max_item_size_mb * 1024 * 1024,
+        'query-frontend.cardinality-estimation-cache.memcached.timeout': '500ms',
+      } else {}
+    ) else {}
   ),
 
   blocks_chunks_concurrency_connection_config::
@@ -755,12 +779,6 @@
       } else {}
     ),
 
-  bucket_index_config:: if $._config.bucket_index_enabled then {
-    // Bucket index is updated by compactor on each cleanup cycle.
-    'blocks-storage.bucket-store.sync-interval': $._config.compactor_cleanup_interval,
-  } else {
-    'blocks-storage.bucket-store.bucket-index.enabled': false,
-  },
 
   base_range_vector_splitting_config:: {
     'querier.mimir-query-engine.range-vector-splitting.enabled': true,

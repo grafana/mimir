@@ -78,6 +78,9 @@
 
   distributor_node_affinity_matchers:: [],
 
+  // Add key-value pairs as annotations specifically to distributor.
+  distributor_annotations:: {},
+
   newDistributorContainer(name, args, envVarMap={})::
     container.new(name, $._images.distributor) +
     container.withPorts($.distributor_ports) +
@@ -98,6 +101,7 @@
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
+    $.newMimirDeploymentAnnotationsMixin($.mimirComponentAnnotations + $.distributor_annotations) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(termination_grace_period_seconds),

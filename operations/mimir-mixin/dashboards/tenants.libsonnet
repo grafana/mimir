@@ -784,7 +784,6 @@ local filename = 'mimir-tenants.json';
       .addPanel(
         local title = 'Number of Queries Queued - query-scheduler';
         $.timeseriesPanel(title) +
-        $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.queryPanel(
           [
             'sum(cortex_query_scheduler_queue_length{%(job)s, user="$user"})'
@@ -793,10 +792,18 @@ local filename = 'mimir-tenants.json';
           [
             'Queue Length',
           ],
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            Number of queries for this tenant waiting in query-scheduler queues to be picked up by a querier, summed across query-scheduler replicas.
+            A single query can produce multiple queued requests after splitting and sharding.
+          |||
         )
       )
       .addPanel(
-        $.timeseriesPanel('Query Expression Length - query-frontend') +
+        local title = 'Query Expression Length - query-frontend';
+        $.timeseriesPanel(title) +
         $.queryPanel([
           'histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{%(job)s, user="$user"}[$__rate_interval])))'
           % { job: $.jobMatcher($._config.job_names.query_frontend) },
@@ -809,7 +816,14 @@ local filename = 'mimir-tenants.json';
           '90th Percentile',
           'Average',
         ])
-        { fieldConfig+: { defaults+: { unit: 'bytes' } } }
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } } +
+        $.panelDescription(
+          title,
+          |||
+            99th percentile, 90th percentile and average length in bytes of query expressions received by the query-frontend for this tenant.
+            Values are calculated over the rate interval across all query-frontend replicas.
+          |||
+        )
       )
       .addPanel(
         local title = 'Rejected queries rate - query-frontend';
@@ -843,7 +857,6 @@ local filename = 'mimir-tenants.json';
       .addPanel(
         local title = 'Number of Queries Queued - ruler-query-scheduler';
         $.timeseriesPanel(title) +
-        $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.queryPanel(
           [
             'sum(cortex_query_scheduler_queue_length{%(job)s, user="$user"})'
@@ -852,10 +865,18 @@ local filename = 'mimir-tenants.json';
           [
             'Queue Length',
           ],
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            Number of queries for this tenant waiting in ruler-query-scheduler queues to be picked up by a querier, summed across ruler-query-scheduler replicas.
+            A single rule query can produce multiple queued requests after splitting and sharding.
+          |||
         )
       )
       .addPanel(
-        $.timeseriesPanel('Query Expression Length - ruler-query-frontend') +
+        local title = 'Query Expression Length - ruler-query-frontend';
+        $.timeseriesPanel(title) +
         $.queryPanel([
           'histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{%(job)s, user="$user"}[$__rate_interval])))'
           % { job: $.jobMatcher($._config.job_names.ruler_query_frontend) },
@@ -868,7 +889,14 @@ local filename = 'mimir-tenants.json';
           '90th Percentile',
           'Average',
         ])
-        { fieldConfig+: { defaults+: { unit: 'bytes' } } }
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } } +
+        $.panelDescription(
+          title,
+          |||
+            99th percentile, 90th percentile and average length in bytes of rule query expressions received by the ruler-query-frontend for this tenant.
+            Values are calculated over the rate interval across all ruler-query-frontend replicas.
+          |||
+        )
       )
     )
 

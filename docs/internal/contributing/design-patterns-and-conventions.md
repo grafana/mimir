@@ -22,6 +22,29 @@ Do not add extra blank lines within a group.
 
 - Do not use global variables
 
+## Mutex annotations
+
+To have the linter enforce which mutex guards a field, or must be held to call a function, annotate it for [checklocks](https://pkg.go.dev/gvisor.dev/gvisor/tools/checklocks):
+
+```go
+type querierWorker struct {
+	mu sync.Mutex
+
+	// +checklocks:mu
+	instances map[string]servicediscovery.Instance
+}
+
+// +checklocks:w.mu
+func (w *querierWorker) resetConcurrency() {
+	// ...
+}
+```
+
+Use `+checklocksread` instead for a function that only needs a read lock on a `sync.RWMutex`.
+
+`make lint` only checks the packages listed in the `lint-checklocks` Makefile target. When you annotate a package, add it to that list, otherwise its annotations aren't enforced.
+A misspelled annotation prefix, such as `+checklock:mu`, is an ordinary comment and isn't reported.
+
 ## Prometheus metrics
 
 When registering a metric:
@@ -40,7 +63,7 @@ Naming:
 
 - Config file options should be lowercase with words `_` (underscore) separated (ie. `memcached_client`)
 - CLI flags should be lowercase with words `-` (dash) separated (ie. `memcached-client`)
-- When adding a new config option, look if a similar one already exists within the [config](../configuration/config-file-reference.md) and keep the same naming (ie. `addresses` for a list of network endpoints)
+- When adding a new config option, look if a similar one already exists within the [config](../../sources/mimir/configure/configuration-parameters/index.md) and keep the same naming (ie. `addresses` for a list of network endpoints)
 
 Documentation:
 
