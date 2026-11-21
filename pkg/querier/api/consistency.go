@@ -4,6 +4,7 @@ package api
 
 import (
 	"context"
+	"iter"
 	"slices"
 	"strconv"
 	"strings"
@@ -445,49 +446,55 @@ func (p EncodedOffsets) lookupV2(readCompartment int, partitionID int32) (kmeta.
 	return kmeta.NewMultiClusterPartitionOffsets(clusterOffsets), true
 }
 
-// PartitionIDs returns the IDs of the partitions that have an entry for the input read compartment.
-// Entries that can't be parsed are skipped, consistently with Lookup.
-func (p EncodedOffsets) PartitionIDs(readCompartment int) []int32 {
-	const versionLen = 3
-	if len(p) < versionLen {
-		return nil
-	}
-
-	var isV2 bool
-	switch p[:versionLen] {
-	case "v1=":
-		// The v1 encoding only supports a single read compartment.
-		if readCompartment != 0 {
-			return nil
-		}
-	case "v2=":
-		isV2 = true
-	default:
-		return nil
-	}
-
-	desiredCompartmentKey := strconv.Itoa(readCompartment) + "/"
-	var ids []int32
-	for entry := range strings.SplitSeq(string(p[versionLen:]), ",") {
-		key, _, ok := strings.Cut(entry, ":")
-		if !ok {
-			continue
+// PartitionIDs returns an iterator over the IDs of the partitions that have an entry for the input read
+// compartment, in the order they appear in the encoded offsets. Entries that can't be parsed are skipped,
+// consistently with Lookup. It doesn't allocate, as it is called on the query path.
+func (p EncodedOffsets) PartitionIDs(readCompartment int) iter.Seq[int32] {
+	return func(yield func(int32) bool) {
+		const versionLen = 3
+		if len(p) < versionLen {
+			return
 		}
 
-		partitionKey := key
+		var isV2 bool
+		switch p[:versionLen] {
+		case "v1=":
+			// The v1 encoding only supports a single read compartment.
+			if readCompartment != 0 {
+				return
+			}
+		case "v2=":
+			isV2 = true
+		default:
+			return
+		}
+
+		var desiredCompartmentKey string
 		if isV2 {
-			if !strings.HasPrefix(key, desiredCompartmentKey) {
+			desiredCompartmentKey = strconv.Itoa(readCompartment) + "/"
+		}
+
+		for entry := range strings.SplitSeq(string(p[versionLen:]), ",") {
+			key, _, ok := strings.Cut(entry, ":")
+			if !ok {
 				continue
 			}
-			partitionKey = key[len(desiredCompartmentKey):]
-		}
 
-		id, err := strconv.ParseInt(partitionKey, 10, 32)
-		if err != nil {
-			continue
+			partitionKey := key
+			if isV2 {
+				if !strings.HasPrefix(key, desiredCompartmentKey) {
+					continue
+				}
+				partitionKey = key[len(desiredCompartmentKey):]
+			}
+
+			id, err := strconv.ParseInt(partitionKey, 10, 32)
+			if err != nil {
+				continue
+			}
+			if !yield(int32(id)) {
+				return
+			}
 		}
-		ids = append(ids, int32(id))
 	}
-
-	return ids
 }

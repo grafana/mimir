@@ -239,20 +239,34 @@ func (d *Distributor) checkStrongReadConsistencyPartitionsKnown(ctx context.Cont
 	// The partition ring contains partitions in all states. We don't require the partition to be pending or
 	// active: inactive partitions are legitimately present in the offsets, and have already been observed
 	// as pending or active before becoming inactive.
-	knownPartitionIDs := d.partitionInstanceRings.Get(readCompartment).PartitionRing().PartitionIDs()
+	partitionRing := d.partitionInstanceRings.Get(readCompartment).PartitionRing()
 
-	for _, id := range encoded.PartitionIDs(readCompartment) {
-		if _, found := slices.BinarySearch(knownPartitionIDs, id); !found {
-			d.strongReadConsistencyUnknownPartitionRequests.Inc()
+	// This runs for every strongly consistent query, so avoid building the ring's sorted partition IDs
+	// unless a partition has no owners (and so can't be confirmed to exist without listing all partitions).
+	var knownPartitionIDs []int32
 
-			if !d.cfg.IngestStorageConfig.Query.RejectUnknownPartitionsInStrongConsistencyOffsets {
-				// If -ingest-storage.query.reject-unknown-partitions-in-strong-consistency-offsets is disabled, such requests are
-				// still counted but not rejected.
-				return nil
-			}
-
-			return errors.Wrapf(errUnknownPartitionForStrongReadConsistency, "partition %d of read compartment %d", id, readCompartment)
+	for id := range encoded.PartitionIDs(readCompartment) {
+		if len(partitionRing.PartitionOwnerIDs(id)) > 0 {
+			continue
 		}
+
+		if knownPartitionIDs == nil {
+			knownPartitionIDs = partitionRing.PartitionIDs()
+		}
+
+		if _, found := slices.BinarySearch(knownPartitionIDs, id); found {
+			continue
+		}
+
+		d.strongReadConsistencyUnknownPartitionRequests.Inc()
+
+		if !d.cfg.IngestStorageConfig.Query.RejectUnknownPartitionsInStrongConsistencyOffsets {
+			// If -ingest-storage.query.reject-unknown-partitions-in-strong-consistency-offsets is disabled, such requests are
+			// still counted but not rejected.
+			return nil
+		}
+
+		return errors.Wrapf(errUnknownPartitionForStrongReadConsistency, "partition %d of read compartment %d", id, readCompartment)
 	}
 
 	return nil
