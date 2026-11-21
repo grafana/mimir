@@ -193,6 +193,7 @@
 * [BUGFIX] MQE: Fix an issue where only part of a query that couldn't return results was optimized, resulting in trying to remotely execute an invalid query plan. #17152
 * [BUGFIX] Alertmanager: Fix tenants without a configuration getting no Alertmanager when the fallback configuration (`-alertmanager.configs.fallback`) fails validation. For example, the fallback loads files or has an SNS receiver without explicit credentials. The load-time validation added in #17315 now checks tenant configuration only. #17399
 * [BUGFIX] Admin: Use relative links for the config, runtime config and ingester links in the administration web UI, so that they work when the UI is served behind a reverse proxy that adds a path prefix. #17271
+* [BUGFIX] Ingest storage: Fix the `duplicate metrics collector registration attempted` panic when the ingester and the query-frontend run in the same process with ingest storage enabled, for example with `-target=all`. Offset clients created with the same registerer now share their metrics. #17130
 
 ### Mixin
 
