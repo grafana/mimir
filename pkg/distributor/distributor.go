@@ -579,16 +579,15 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		costAttributionMgr:          costAttributionMgr,
 		ingestionRate:               util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
-		strongReadConsistencyUnknownPartitionRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_querier_strong_read_consistency_unknown_partition_requests_total",
-			Help: "Total number of strongly consistent requests received with an offset for a partition that the querier has not observed in the partition ring.",
-		}),
-
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "cortex_distributor_query_duration_seconds",
 			Help:    "Time spent executing expression and exemplar queries.",
 			Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30},
 		}, []string{"method", "status_code"})),
+		strongReadConsistencyUnknownPartitionRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_distributor_query_strong_read_consistency_unknown_partition_requests_total",
+			Help: "Total number of strongly consistent requests received with an offset for a partition that the querier has not observed in the partition ring.",
+		}),
 		receivedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_requests_total",
 			Help: "The total number of received requests, excluding rejected and deduped requests.",
