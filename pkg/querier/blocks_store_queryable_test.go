@@ -3285,20 +3285,34 @@ type blocksStoreSetMock struct {
 
 	mockedResponses []interface{}
 	nextResult      int
-	inTransition    bool
-}
 
-func (m *blocksStoreSetMock) InShardSizeTransition(_ string) bool {
-	return m.inTransition
+	// mockedPreviousResponses are the responses of GetPreviousClientsFor.
+	mockedPreviousResponses []interface{}
+	nextPreviousResult      int
+
+	inTransition bool
 }
 
 func (m *blocksStoreSetMock) GetClientsFor(_ string, _ bucketindex.Blocks, _ map[ulid.ULID][]string) (map[BlocksStoreClient][][]ulid.ULID, error) {
-	if m.nextResult >= len(m.mockedResponses) {
+	return nextMockedClients(m.mockedResponses, &m.nextResult)
+}
+
+func (m *blocksStoreSetMock) GetPreviousClientsFor(_ string, _ bucketindex.Blocks, _ map[ulid.ULID][]string) (map[BlocksStoreClient][][]ulid.ULID, bool, error) {
+	if !m.inTransition {
+		return nil, false, nil
+	}
+
+	clients, err := nextMockedClients(m.mockedPreviousResponses, &m.nextPreviousResult)
+	return clients, true, err
+}
+
+func nextMockedClients(mockedResponses []interface{}, next *int) (map[BlocksStoreClient][][]ulid.ULID, error) {
+	if *next >= len(mockedResponses) {
 		panic("not enough mocked results")
 	}
 
-	res := m.mockedResponses[m.nextResult]
-	m.nextResult++
+	res := mockedResponses[*next]
+	*next++
 
 	if err, ok := res.(error); ok {
 		return nil, err

@@ -109,9 +109,28 @@ func (s *blocksStoreReplicationSet) stopping(_ error) error {
 }
 
 func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][][]ulid.ULID, error) {
+	userRing, _ := storegateway.GetShuffleShardingSubrings(s.storesRing, userID, s.limits, s.transitions)
+	return s.getClientsFor(userRing, userID, blocks, exclude)
+}
+
+// GetPreviousClientsFor implements BlocksStoreSet.
+func (s *blocksStoreReplicationSet) GetPreviousClientsFor(userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][][]ulid.ULID, bool, error) {
+	if s.transitions == nil {
+		return nil, false, nil
+	}
+
+	_, previousUserRing := storegateway.GetShuffleShardingSubrings(s.storesRing, userID, s.limits, s.transitions)
+	if previousUserRing == nil {
+		return nil, false, nil
+	}
+
+	clients, err := s.getClientsFor(previousUserRing, userID, blocks, exclude)
+	return clients, true, err
+}
+
+func (s *blocksStoreReplicationSet) getClientsFor(userRing ring.ReadRing, userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][][]ulid.ULID, error) {
 	blocksByAddr := make(map[string][]ulid.ULID)
 	instances := make(map[string]ring.InstanceDesc)
-	userRing, previousUserRing := storegateway.GetShuffleShardingSubrings(s.storesRing, userID, s.limits, s.transitions)
 
 	// It's safe to reuse buffers across iterations, as far as we don't retain the ReplicationSet.Instances slice
 	// (retaining individual instances from the slice is fine).
@@ -124,40 +143,16 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 			ringOpts = append(ringOpts, ring.WithReplicationFactor(replicationFactor))
 		}
 
-		// During a transition, try the new tenant shard first and alternate on each retry of the block, because the new
-		// owners may not have loaded it yet. The attempt number is the count of excluded instances. A shard with no
-		// instance left falls back to the other one.
-		userRings := [2]ring.ReadRing{userRing, previousUserRing}
-		numUserRings := 1
-		if previousUserRing != nil {
-			numUserRings = 2
-			if len(exclude[block.ID])%2 == 1 {
-				userRings[0], userRings[1] = userRings[1], userRings[0]
-			}
+		set, err := userRing.GetWithOptions(mimir_tsdb.HashBlockID(block.ID), storegateway.BlocksRead, ringOpts...)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get store-gateway replication set owning the block %s", block.ID)
 		}
 
-		var (
-			inst   *ring.InstanceDesc
-			getErr error
-		)
-		for _, r := range userRings[:numUserRings] {
-			set, err := r.GetWithOptions(mimir_tsdb.HashBlockID(block.ID), storegateway.BlocksRead, ringOpts...)
-			if err != nil {
-				getErr = err
-				continue
-			}
-
-			// Pick a non excluded store-gateway instance.
-			// We copy the instance descriptor, and we don't use the replication set's slice buffers any more beyond this point,
-			// so that it's safe to reuse ring buffers across iterations.
-			if inst = getNonExcludedInstance(set, exclude[block.ID], s.balancingStrategy, s.preferredZones); inst != nil {
-				break
-			}
-		}
+		// Pick a non excluded store-gateway instance.
+		// We copy the instance descriptor, and we don't use the replication set's slice buffers any more beyond this point,
+		// so that it's safe to reuse ring buffers across iterations.
+		inst := getNonExcludedInstance(set, exclude[block.ID], s.balancingStrategy, s.preferredZones)
 		if inst == nil {
-			if getErr != nil {
-				return nil, errors.Wrapf(getErr, "failed to get store-gateway replication set owning the block %s", block.ID)
-			}
 			return nil, fmt.Errorf("no store-gateway instance left after checking exclude for block %s", block.ID)
 		}
 
@@ -179,10 +174,6 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 	}
 
 	return clients, nil
-}
-
-func (s *blocksStoreReplicationSet) InShardSizeTransition(userID string) bool {
-	return s.transitions.InTransition(userID)
 }
 
 // partitionBlocks splits blocks into consecutive partitions of at most max blocks each.

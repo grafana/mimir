@@ -71,8 +71,8 @@ func TestBlocksStoreQuerier_ConsistencyCheckWhileTenantShardSizeChanges(t *testi
 				require.Len(t, env.lastQueryAttempts, 1)
 				previousOwners := env.storeGatewaysWithBlocks()
 
-				// The shard size changes, and the query runs before any store-gateway has synced. The first attempt queries
-				// the new owners, which don't have all the blocks, so the second attempt falls back to the previous owners.
+				// The shard size changes, and the query runs before any store-gateway has synced. The attempt queries the
+				// new owners, which don't have all the blocks, and then the previous owners.
 				env.limits.storeGatewayTenantShardSize = testData.toShardSize
 				require.NoError(t, env.query(t))
 				require.Len(t, env.lastQueryAttempts, 2)
@@ -107,7 +107,7 @@ func TestBlocksStoreQuerier_ShardSizeTransitionShouldEnd(t *testing.T) {
 	env.syncStoreGateways(t, env.allStoreGateways())
 	require.NoError(t, env.query(t))
 
-	assert.True(t, env.stores.InShardSizeTransition(env.userID))
+	assert.True(t, env.inShardSizeTransition(t))
 	assert.Equal(t, 1.0, env.querierTransitionEvents(t, "started"))
 	assert.Zero(t, env.querierTransitionEvents(t, "ended"))
 	assert.Equal(t, 1.0, env.storeGatewayTransitionEvents(t, "started"))
@@ -126,7 +126,7 @@ func TestBlocksStoreQuerier_ShardSizeTransitionShouldEnd(t *testing.T) {
 
 	require.Len(t, env.lastQueryAttempts, 1)
 	env.assertBlocksQueriedFromNewOwners(t)
-	assert.False(t, env.stores.InShardSizeTransition(env.userID))
+	assert.False(t, env.inShardSizeTransition(t))
 	for _, addr := range leaving {
 		assert.Empty(t, env.storeGateways[addr].loaded, "store-gateway %s", addr)
 	}
@@ -150,7 +150,7 @@ type shardSizeTransitionQueryEnv struct {
 	finder        *blocksFinderMock
 	querierReg    *prometheus.Registry
 
-	// lastQueryAttempts records, for each attempt of the last query, the store-gateway each block was sent to.
+	// lastQueryAttempts records, for each query to store-gateways of the last request, the store-gateway each block was sent to.
 	lastQueryAttempts []map[ulid.ULID]string
 }
 
@@ -307,6 +307,14 @@ func (e *shardSizeTransitionQueryEnv) query(t *testing.T) error {
 	spanLog, ctx := spanlogger.New(t.Context(), log.NewNopLogger(), tracer, "test")
 	_, err := e.querier.queryWithConsistencyCheck(ctx, spanLog, e.finder, e.stores, e.querier.minT, e.querier.maxT, e.userID, nil, queryF)
 	return err
+}
+
+func (e *shardSizeTransitionQueryEnv) inShardSizeTransition(t *testing.T) bool {
+	t.Helper()
+
+	_, inTransition, err := e.stores.GetPreviousClientsFor(e.userID, nil, nil)
+	require.NoError(t, err)
+	return inTransition
 }
 
 func (e *shardSizeTransitionQueryEnv) allStoreGateways() []string {

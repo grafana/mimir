@@ -87,19 +87,6 @@ func NewShardSizeTransitions(period time.Duration, component string, reg prometh
 	}
 }
 
-// InTransition returns whether the tenant is in transition. It doesn't record anything, so it reflects the last Observe.
-func (t *ShardSizeTransitions) InTransition(userID string) bool {
-	if t == nil {
-		return false
-	}
-
-	t.mtx.RLock()
-	defer t.mtx.RUnlock()
-
-	s, ok := t.tenants[userID]
-	return ok && !s.since.IsZero() && s.previous != s.current && s.inTransition(t.now(), t.period)
-}
-
 // Observe records shardSize as the tenant's current shard size, and returns the previous one if it's in transition.
 //
 // If the shard size changes again during a transition, the period restarts and the previous shard size is still the
