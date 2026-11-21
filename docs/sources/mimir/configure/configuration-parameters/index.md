@@ -1517,9 +1517,11 @@ partition_ring:
   # How long to wait before an INACTIVE partition is eligible for deletion. The
   # partition is deleted only if it has been in INACTIVE state for at least the
   # configured duration and it has no owners registered. A value of 0 disables
-  # partitions deletion.
+  # partitions deletion. This value should be greater than the value of
+  # -querier.query-ingesters-within +
+  # -ingest-storage.query.include-inactive-partitions-offset-duration.
   # CLI flag: -ingester.partition-ring.delete-inactive-partition-after
-  [delete_inactive_partition_after: <duration> | default = 13h]
+  [delete_inactive_partition_after: <duration> | default = 13h20m]
 
   # (experimental) When the ingester creates its partition, create it with
   # tokens that are derived from the partition ID instead of storing the tokens
