@@ -45,7 +45,7 @@ var (
 
 	errStreamClosed = cancellation.NewErrorf("stream closed")
 
-	errUnknownPartitionForStrongReadConsistency = errors.New("the strong read consistency offsets include a partition that is not yet known to this querier")
+	errUnknownPartitionForStrongReadConsistency = errors.New("the strong read consistency offsets include a partition that is not known to this querier")
 )
 
 // QueryExemplars returns exemplars with timestamp between from and to, for the series matching the input series
