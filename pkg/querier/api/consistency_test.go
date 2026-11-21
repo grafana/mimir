@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -768,7 +769,7 @@ func TestEncodedOffsets_PartitionIDs(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			require.Equal(t, testData.expected, testData.encoded.PartitionIDs(testData.readCompartment))
+			require.Equal(t, testData.expected, slices.Collect(testData.encoded.PartitionIDs(testData.readCompartment)))
 		})
 	}
 }
