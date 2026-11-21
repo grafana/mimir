@@ -4775,9 +4775,9 @@
               "kind": "field",
               "name": "delete_inactive_partition_after",
               "required": false,
-              "desc": "How long to wait before an INACTIVE partition is eligible for deletion. The partition is deleted only if it has been in INACTIVE state for at least the configured duration and it has no owners registered. A value of 0 disables partitions deletion.",
+              "desc": "How long to wait before an INACTIVE partition is eligible for deletion. The partition is deleted only if it has been in INACTIVE state for at least the configured duration and it has no owners registered. A value of 0 disables partitions deletion. This value should be greater than the value of -querier.query-ingesters-within + -ingest-storage.query.include-inactive-partitions-offset-duration.",
               "fieldValue": null,
-              "fieldDefaultValue": 46800000000000,
+              "fieldDefaultValue": 48000000000000,
               "fieldFlag": "ingester.partition-ring.delete-inactive-partition-after",
               "fieldType": "duration"
             },
@@ -10560,6 +10560,38 @@
               "fieldDefaultValue": 0,
               "fieldFlag": "ingest-storage.ordered-consumption.input-buffer-size",
               "fieldType": "int",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "query",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "include_inactive_partitions_offset_duration",
+              "required": false,
+              "desc": "How long, in addition to -querier.query-ingesters-within, the query-frontend keeps including the offset of a partition in the strong read consistency offsets after the partition became inactive. 0 means the offset of an inactive partition is excluded as soon as the query-ingesters-within period has elapsed. A negative value means the offsets of all partitions are always included.",
+              "fieldValue": null,
+              "fieldDefaultValue": 600000000000,
+              "fieldFlag": "ingest-storage.query.include-inactive-partitions-offset-duration",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "reject_unknown_partitions_in_strong_consistency_offsets",
+              "required": false,
+              "desc": "If enabled, queriers reject strongly consistent requests whose offsets include a partition that is not yet known to the querier, rather than silently omitting that partition's data from the query result.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "ingest-storage.query.reject-unknown-partitions-in-strong-consistency-offsets",
+              "fieldType": "boolean",
               "fieldCategory": "experimental"
             }
           ],

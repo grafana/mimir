@@ -54,6 +54,8 @@ const (
 	// MinKafkaRequestTimeoutOverhead is the minimum allowed request timeout overhead. It matches
 	// the lower bound the franz-go client enforces on its request timeout overhead.
 	MinKafkaRequestTimeoutOverhead = 100 * time.Millisecond
+
+	DefaultIncludeInactivePartitionsOffsetDuration = 10 * time.Minute
 )
 
 var kafkaBackendOptions = []string{KafkaBackendKafka, KafkaBackendWarpstream}
@@ -110,6 +112,7 @@ type Config struct {
 	KafkaConfig        KafkaConfig              `yaml:"kafka"`
 	Migration          MigrationConfig          `yaml:"migration"`
 	OrderedConsumption OrderedConsumptionConfig `yaml:"ordered_consumption"`
+	Query              QueryConfig              `yaml:"query"`
 
 	WriteLogsFsyncBeforeKafkaCommitConcurrency int `yaml:"write_logs_fsync_before_kafka_commit_concurrency" category:"advanced"`
 }
@@ -121,6 +124,26 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka.", f)
 	cfg.Migration.RegisterFlagsWithPrefix("ingest-storage.migration.", f)
 	cfg.OrderedConsumption.RegisterFlagsWithPrefix("ingest-storage.ordered-consumption.", f)
+	cfg.Query.RegisterFlagsWithPrefix("ingest-storage.query.", f)
+}
+
+// QueryConfig holds the configuration of the ingest storage read path.
+type QueryConfig struct {
+	// IncludeInactivePartitionsOffsetDuration is added to the tenant's query-ingesters-within to determine
+	// how long after a partition becomes inactive the query-frontend keeps including its offset in the
+	// strong read consistency offsets. A negative value is valid and means the offsets of all partitions
+	// are always included, regardless of how long ago they became inactive.
+	IncludeInactivePartitionsOffsetDuration time.Duration `yaml:"include_inactive_partitions_offset_duration" category:"experimental"`
+
+	// RejectUnknownPartitionsInStrongConsistencyOffsets controls whether queriers reject strongly consistent
+	// requests whose offsets include a partition that the querier doesn't know about yet.
+	RejectUnknownPartitionsInStrongConsistencyOffsets bool `yaml:"reject_unknown_partitions_in_strong_consistency_offsets" category:"experimental"`
+}
+
+// RegisterFlagsWithPrefix registers QueryConfig flags under the given prefix.
+func (cfg *QueryConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.DurationVar(&cfg.IncludeInactivePartitionsOffsetDuration, prefix+"include-inactive-partitions-offset-duration", DefaultIncludeInactivePartitionsOffsetDuration, "How long, in addition to -querier.query-ingesters-within, the query-frontend keeps including the offset of a partition in the strong read consistency offsets after the partition became inactive. 0 means the offset of an inactive partition is excluded as soon as the query-ingesters-within period has elapsed. A negative value means the offsets of all partitions are always included.")
+	f.BoolVar(&cfg.RejectUnknownPartitionsInStrongConsistencyOffsets, prefix+"reject-unknown-partitions-in-strong-consistency-offsets", true, "If enabled, queriers reject strongly consistent requests whose offsets include a partition that is not yet known to the querier, rather than silently omitting that partition's data from the query result.")
 }
 
 // Validate the config.

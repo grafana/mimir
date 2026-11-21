@@ -3394,3 +3394,36 @@ func getDefaultLimits() Limits {
 	flagext.DefaultValues(&limits)
 	return limits
 }
+
+func TestOverrides_MaxDurationAcrossAllTenants(t *testing.T) {
+	getQueryIngestersWithin := func(l *Limits) time.Duration { return time.Duration(l.QueryIngestersWithin) }
+
+	t.Run("no tenant limits returns the default", func(t *testing.T) {
+		overrides := NewOverrides(Limits{QueryIngestersWithin: model.Duration(time.Hour)}, nil)
+		assert.Equal(t, time.Hour, overrides.MaxDurationAcrossAllTenants(getQueryIngestersWithin))
+	})
+
+	t.Run("no tenants with overrides returns the default", func(t *testing.T) {
+		overrides := MockOverrides(func(defaults *Limits, _ map[string]*Limits) {
+			defaults.QueryIngestersWithin = model.Duration(time.Hour)
+		})
+		assert.Equal(t, time.Hour, overrides.MaxDurationAcrossAllTenants(getQueryIngestersWithin))
+	})
+
+	t.Run("tenant override larger than the default", func(t *testing.T) {
+		overrides := MockOverrides(func(defaults *Limits, tenantLimits map[string]*Limits) {
+			defaults.QueryIngestersWithin = model.Duration(time.Hour)
+			tenantLimits["user1"] = &Limits{QueryIngestersWithin: model.Duration(2 * time.Hour)}
+			tenantLimits["user2"] = &Limits{QueryIngestersWithin: model.Duration(3 * time.Hour)}
+		})
+		assert.Equal(t, 3*time.Hour, overrides.MaxDurationAcrossAllTenants(getQueryIngestersWithin))
+	})
+
+	t.Run("default larger than all tenant overrides", func(t *testing.T) {
+		overrides := MockOverrides(func(defaults *Limits, tenantLimits map[string]*Limits) {
+			defaults.QueryIngestersWithin = model.Duration(4 * time.Hour)
+			tenantLimits["user1"] = &Limits{QueryIngestersWithin: model.Duration(2 * time.Hour)}
+		})
+		assert.Equal(t, 4*time.Hour, overrides.MaxDurationAcrossAllTenants(getQueryIngestersWithin))
+	})
+}

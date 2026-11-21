@@ -111,15 +111,25 @@
     $.ingest_storage_kafka_producer_args +
     $.ingest_storage_ruler_args,
 
+  local get_duration_arg_or_default(args, argName) =
+      if argName in args then
+        $.util.parseDuration(args[argName])
+      else
+        $.util.getFlagDefaultSeconds(argName),
+
+  local query_ingesters_within = get_duration_arg_or_default($.querier_args, 'querier.query-ingesters-within'),
+  local include_inactive_partitions_offset = get_duration_arg_or_default($.query_frontend_args, 'ingest-storage.query.include-inactive-partitions-offset-duration'),
+
   ingester_args+:: if !$._config.ingest_storage_enabled then {} else (
     $.ingest_storage_kafka_ingestion_args +
     $.ingest_storage_ingester_args +
     {
       // How long to wait before deleting an inactive partition, that doesn't have an owner.
-      'ingester.partition-ring.delete-inactive-partition-after': if 'querier.query-ingesters-within' in $.querier_args then
-        $.querier_args['querier.query-ingesters-within']
-      else
-        '13h',  // The default -querier.query-ingesters-within in Mimir is 13 hours.
+      'ingester.partition-ring.delete-inactive-partition-after': $.util.formatDuration(
+        query_ingesters_within +
+        include_inactive_partitions_offset +
+        $.util.parseDuration('10m')  // Only remove partitions once they're no longer being included in strong-consistency partition offset headers.
+      ),
     } + (
       if $._config.ingest_storage_ingester_ring_tokens_enabled then {} else {
         'ingester.ring.num-tokens': 0,
