@@ -178,7 +178,7 @@
 * [BUGFIX] MQE: Fix binary operations with `on (__name__, ...)` returning empty results when narrowing binary selectors is enabled and the other side has no metric name, for example `sum by (pod) (a) / on (__name__, pod) abs(b)`. Narrowing added a matcher for an empty metric name, which selects no series. #17156
 * [BUGFIX] MQE: Fix an issue where only part of a query that couldn't return results was optimized, resulting in trying to remotely execute an invalid query plan. #17152
 * [BUGFIX] Admin: Use relative links for the config, runtime config and ingester links in the administration web UI, so that they work when the UI is served behind a reverse proxy that adds a path prefix. #17271
-* [BUGFIX] Querier: Mitigate strongly-consistent requests possibly omitting data from newly started partitions. #17456
+* [BUGFIX] Querier: Mitigate strongly-consistent requests possibly omitting data from newly started partitions. Strongly-consistent requests that contain an offset for a partition unknown to the handling querier are rejected. #17456
 
 ### Mixin
 
