@@ -1040,7 +1040,8 @@ func captureState(t *testing.T, ctx context.Context, r *ring.Ring, instances []i
 	// zones, so it must not be mistaken for a shard size change.
 	if limits.StoreGatewayTenantShardSizePerZone("") > 0 {
 		for _, userID := range userIDs {
-			require.False(t, transitions.InTransition(userID), "user %s", userID)
+			_, previous := GetShuffleShardingSubrings(r, userID, limits, transitions)
+			require.Nil(t, previous, "user %s", userID)
 		}
 	}
 

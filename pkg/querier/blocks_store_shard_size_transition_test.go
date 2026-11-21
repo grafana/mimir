@@ -102,6 +102,29 @@ func (e *shardSizeTransitionTestEnv) getClients(t testing.TB, userID string, exc
 	t.Helper()
 
 	clients, err := e.set.GetClientsFor(userID, e.blocks, exclude)
+	return e.chosenAddrs(t, clients, err)
+}
+
+func (e *shardSizeTransitionTestEnv) getPreviousClients(t testing.TB, userID string, exclude map[ulid.ULID][]string) map[ulid.ULID]string {
+	t.Helper()
+
+	clients, inTransition, err := e.set.GetPreviousClientsFor(userID, e.blocks, exclude)
+	require.True(t, inTransition)
+	return e.chosenAddrs(t, clients, err)
+}
+
+func (e *shardSizeTransitionTestEnv) inTransition(t testing.TB, userID string) bool {
+	t.Helper()
+
+	clients, inTransition, err := e.set.GetPreviousClientsFor(userID, nil, nil)
+	require.NoError(t, err)
+	require.Empty(t, clients)
+	return inTransition
+}
+
+// chosenAddrs returns the address of the store-gateway chosen for each block.
+func (e *shardSizeTransitionTestEnv) chosenAddrs(t testing.TB, clients map[BlocksStoreClient][][]ulid.ULID, err error) map[ulid.ULID]string {
+	t.Helper()
 	require.NoError(t, err)
 
 	chosen := map[ulid.ULID]string{}
@@ -129,108 +152,59 @@ func (e *shardSizeTransitionTestEnv) addrsInShard(userID string, shardSize int) 
 	return addrs
 }
 
-func TestBlocksStoreReplicationSet_GetClientsFor_ShardSizeTransition(t *testing.T) {
+func TestBlocksStoreReplicationSet_ShardSizeTransition(t *testing.T) {
 	const (
 		userID       = "user-1"
 		oldShardSize = 4
 		newShardSize = 8
 	)
 
-	oldTransitionPeriod := time.Hour
-	env := newShardSizeTransitionTestEnv(t, oldShardSize, storegateway.NewShardSizeTransitions(oldTransitionPeriod, "querier", nil))
+	env := newShardSizeTransitionTestEnv(t, oldShardSize, storegateway.NewShardSizeTransitions(time.Hour, "querier", nil))
 	oldAddrs := env.addrsInShard(userID, oldShardSize)
 	newAddrs := env.addrsInShard(userID, newShardSize)
 
 	for _, addr := range env.getClients(t, userID, nil) {
 		require.Contains(t, oldAddrs, addr)
 	}
+	require.False(t, env.inTransition(t, userID))
 
 	env.limits.storeGatewayTenantShardSize = newShardSize
 
-	// Replay the retries of the querier: each attempt excludes the instances tried in previous attempts.
+	// GetClientsFor only uses the new tenant shard, and GetPreviousClientsFor only the previous one, which doesn't
+	// pick again the instance picked by the new one if it's in both shards.
 	exclude := map[ulid.ULID][]string{}
-	var oldOnlyAttempts, newOnlyAttempts int
-	for attempt := 0; attempt < 3; attempt++ {
-		chosen := env.getClients(t, userID, exclude)
-		for id, addr := range chosen {
-			exclude[id] = append(exclude[id], addr)
-
-			_, inOld := oldAddrs[addr]
-			_, inNew := newAddrs[addr]
-			require.True(t, inOld || inNew, "attempt %d queried an instance outside both shards", attempt)
-
-			if attempt%2 == 0 {
-				// The first attempt, and every other one, goes to the new tenant shard.
-				require.True(t, inNew, "attempt %d should query the new shard", attempt)
-				newOnlyAttempts++
-			} else {
-				require.True(t, inOld, "attempt %d should query the previous shard", attempt)
-				oldOnlyAttempts++
-			}
-		}
+	for id, addr := range env.getClients(t, userID, exclude) {
+		require.Contains(t, newAddrs, addr)
+		exclude[id] = append(exclude[id], addr)
 	}
-	require.NotZero(t, newOnlyAttempts)
-	require.NotZero(t, oldOnlyAttempts)
-}
+	require.True(t, env.inTransition(t, userID))
 
-func TestBlocksStoreReplicationSet_GetClientsFor_ShardSizeTransitionShouldFallBackWhenAShardHasNoInstanceLeft(t *testing.T) {
-	const (
-		userID       = "user-1"
-		oldShardSize = 3
-		newShardSize = 12
-	)
-
-	env := newShardSizeTransitionTestEnv(t, oldShardSize, storegateway.NewShardSizeTransitions(time.Hour, "querier", nil))
-	oldAddrs := env.addrsInShard(userID, oldShardSize)
-
-	env.getClients(t, userID, nil)
-	env.limits.storeGatewayTenantShardSize = newShardSize
-
-	// Exclude every instance of the previous shard for every block, as if they had all been tried, and
-	// pretend this is an odd attempt: the previous shard is preferred but has no instance left.
-	exclude := map[ulid.ULID][]string{}
-	for _, b := range env.blocks {
-		for addr := range oldAddrs {
-			exclude[b.ID] = append(exclude[b.ID], addr)
-		}
-		if len(exclude[b.ID])%2 == 0 {
-			// Keep the attempt odd without excluding an instance from the new shard.
-			exclude[b.ID] = append(exclude[b.ID], "unrelated")
-		}
-	}
-
-	for _, addr := range env.getClients(t, userID, exclude) {
-		require.NotContains(t, oldAddrs, addr)
+	for id, addr := range env.getPreviousClients(t, userID, exclude) {
+		require.Contains(t, oldAddrs, addr)
+		require.NotContains(t, exclude[id], addr)
 	}
 }
 
-func TestBlocksStoreReplicationSet_GetClientsFor_ShardSizeTransitionShouldEnd(t *testing.T) {
-	const (
-		userID       = "user-1"
-		oldShardSize = 3
-		newShardSize = 6
-	)
+func TestBlocksStoreReplicationSet_ShardSizeTransitionShouldEnd(t *testing.T) {
+	const userID = "user-1"
 
-	env := newShardSizeTransitionTestEnv(t, oldShardSize, storegateway.NewShardSizeTransitions(100*time.Millisecond, "querier", nil))
-	newAddrs := env.addrsInShard(userID, newShardSize)
+	env := newShardSizeTransitionTestEnv(t, 3, storegateway.NewShardSizeTransitions(100*time.Millisecond, "querier", nil))
+	newAddrs := env.addrsInShard(userID, 6)
 
 	env.getClients(t, userID, nil)
-	env.limits.storeGatewayTenantShardSize = newShardSize
+	env.limits.storeGatewayTenantShardSize = 6
 	env.getClients(t, userID, nil)
+	require.True(t, env.inTransition(t, userID))
 
 	time.Sleep(150 * time.Millisecond)
 
-	// Once settled, every attempt only uses the new shard, as it does when transitions are disabled.
-	exclude := map[ulid.ULID][]string{}
-	for attempt := 0; attempt < 2; attempt++ {
-		for id, addr := range env.getClients(t, userID, exclude) {
-			exclude[id] = append(exclude[id], addr)
-			require.Contains(t, newAddrs, addr)
-		}
+	for _, addr := range env.getClients(t, userID, nil) {
+		require.Contains(t, newAddrs, addr)
 	}
+	require.False(t, env.inTransition(t, userID))
 }
 
-func TestBlocksStoreReplicationSet_GetClientsFor_ShardSizeTransitionDisabled(t *testing.T) {
+func TestBlocksStoreReplicationSet_ShardSizeTransitionDisabled(t *testing.T) {
 	const userID = "user-1"
 
 	env := newShardSizeTransitionTestEnv(t, 3, nil)
@@ -238,27 +212,26 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShardSizeTransitionDisabled(t *
 	env.limits.storeGatewayTenantShardSize = 6
 	newAddrs := env.addrsInShard(userID, 6)
 
-	exclude := map[ulid.ULID][]string{}
-	for attempt := 0; attempt < 2; attempt++ {
-		for id, addr := range env.getClients(t, userID, exclude) {
-			exclude[id] = append(exclude[id], addr)
-			require.Contains(t, newAddrs, addr)
-		}
+	for _, addr := range env.getClients(t, userID, nil) {
+		require.Contains(t, newAddrs, addr)
 	}
+	require.False(t, env.inTransition(t, userID))
 }
 
 func BenchmarkBlocksStoreReplicationSet_GetClientsFor_ShardSizeTransitions(b *testing.B) {
 	const userID = "user-1"
 
 	tests := map[string]struct {
-		enabled      bool
-		inTransition bool
-		retry        bool
+		enabled       bool
+		inTransition  bool
+		previousShard bool
 	}{
-		"disabled":                             {},
-		"enabled and settled":                  {enabled: true},
-		"enabled and in transition":            {enabled: true, inTransition: true},
-		"enabled and in transition, 2nd tries": {enabled: true, inTransition: true, retry: true},
+		"disabled":                                  {},
+		"disabled, previous shard":                  {previousShard: true},
+		"enabled and settled":                       {enabled: true},
+		"enabled and settled, previous shard":       {enabled: true, previousShard: true},
+		"enabled and in transition":                 {enabled: true, inTransition: true},
+		"enabled and in transition, previous shard": {enabled: true, inTransition: true, previousShard: true},
 	}
 
 	for name, testData := range tests {
@@ -273,23 +246,30 @@ func BenchmarkBlocksStoreReplicationSet_GetClientsFor_ShardSizeTransitions(b *te
 				env.limits.storeGatewayTenantShardSize = 9
 			}
 
-			var exclude map[ulid.ULID][]string
-			if testData.retry {
-				exclude = map[ulid.ULID][]string{}
+			// The previous shard is queried after the new one, excluding the instances it picked.
+			exclude := map[ulid.ULID][]string{}
+			if testData.previousShard {
 				for id, addr := range env.getClients(b, userID, nil) {
 					exclude[id] = []string{addr}
+				}
+			}
+
+			getClientsFor := env.set.GetClientsFor
+			if testData.previousShard {
+				getClientsFor = func(userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][][]ulid.ULID, error) {
+					clients, _, err := env.set.GetPreviousClientsFor(userID, blocks, exclude)
+					return clients, err
 				}
 			}
 
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				clients, err := env.set.GetClientsFor(userID, env.blocks, exclude)
+				clients, err := getClientsFor(userID, env.blocks, exclude)
 				if err != nil {
 					b.Fatal(err)
 				}
 				_ = clients
-				_ = env.set.InShardSizeTransition(userID)
 			}
 
 			// Register the pooled clients, to close them at the end.
@@ -299,7 +279,7 @@ func BenchmarkBlocksStoreReplicationSet_GetClientsFor_ShardSizeTransitions(b *te
 	}
 }
 
-func TestBlocksStoreQuerier_ShardSizeTransitionShouldDoubleAttempts(t *testing.T) {
+func TestBlocksStoreQuerier_ShardSizeTransitionShouldQueryThePreviousShardInEachAttempt(t *testing.T) {
 	const (
 		replicationFactor = 3
 		minT              = int64(10)
@@ -308,39 +288,60 @@ func TestBlocksStoreQuerier_ShardSizeTransitionShouldDoubleAttempts(t *testing.T
 
 	block := ulid.MustNew(1, nil)
 
-	// The store-gateways queried by the first 5 attempts don't have the block.
-	newResponses := func() []interface{} {
-		responses := make([]interface{}, 0, 2*replicationFactor)
-		for i := 0; i < 2*replicationFactor; i++ {
+	// newResponses returns a response for each attempt, and only the one at index found has the block.
+	newResponses := func(prefix string, found int) []interface{} {
+		responses := make([]interface{}, 0, replicationFactor)
+		for i := 0; i < replicationFactor; i++ {
 			series := newSeriesResponseBuilder()
-			if i == 2*replicationFactor-1 {
+			if i == found {
 				series = series.addValue(labels.FromStrings(model.MetricNameLabel, "some_metric"), minT, 1).addBlocks(block)
 			}
 			responses = append(responses, map[BlocksStoreClient][][]ulid.ULID{
-				&storeGatewayClientMock{remoteAddr: fmt.Sprintf("1.1.1.%d", i), mockedSeriesResponses: series.build()}: {{block}},
+				&storeGatewayClientMock{remoteAddr: fmt.Sprintf("%s.%d", prefix, i), mockedSeriesResponses: series.build()}: {{block}},
 			})
 		}
 		return responses
 	}
 
 	tests := map[string]struct {
-		inTransition     bool
-		expectedAttempts int
-		expectedErr      bool
+		inTransition             bool
+		foundInNew               int
+		foundInPrevious          int
+		expectedNewQueries       int
+		expectedPreviousQueries  int
+		expectedConsistencyError bool
 	}{
-		"outside of a transition, attempts are limited to the replication factor": {
-			expectedAttempts: replicationFactor,
-			expectedErr:      true,
+		"outside of a transition, only the new shard is queried": {
+			foundInNew: -1, foundInPrevious: 0,
+			expectedNewQueries:       replicationFactor,
+			expectedConsistencyError: true,
 		},
-		"during a transition, attempts are doubled": {
-			inTransition:     true,
-			expectedAttempts: 2 * replicationFactor,
+		"during a transition, each attempt queries the new shard and then the previous one": {
+			inTransition: true,
+			foundInNew:   -1, foundInPrevious: replicationFactor - 1,
+			expectedNewQueries:      replicationFactor,
+			expectedPreviousQueries: replicationFactor,
+		},
+		"during a transition, the previous shard isn't queried if the new one has all the blocks": {
+			inTransition: true,
+			foundInNew:   0, foundInPrevious: -1,
+			expectedNewQueries: 1,
+		},
+		"during a transition, the query stops at the first shard with all the blocks": {
+			inTransition: true,
+			foundInNew:   -1, foundInPrevious: 0,
+			expectedNewQueries:      1,
+			expectedPreviousQueries: 1,
 		},
 	}
 
 	for name, testData := range tests {
 		t.Run(name, func(t *testing.T) {
-			stores := &blocksStoreSetMock{mockedResponses: newResponses(), inTransition: testData.inTransition}
+			stores := &blocksStoreSetMock{
+				mockedResponses:         newResponses("1.1.1", testData.foundInNew),
+				mockedPreviousResponses: newResponses("2.2.2", testData.foundInPrevious),
+				inTransition:            testData.inTransition,
+			}
 			finder := &blocksFinderMock{}
 			finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{{ID: block}}, &bucketindex.Metadata{}, nil)
 
@@ -360,13 +361,13 @@ func TestBlocksStoreQuerier_ShardSizeTransitionShouldDoubleAttempts(t *testing.T
 			}
 
 			seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: minT, End: maxT}, labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".*"))
-			if testData.expectedErr {
-				require.Error(t, seriesSet.Err())
+			if testData.expectedConsistencyError {
 				require.ErrorContains(t, seriesSet.Err(), "err-mimir-store-consistency-check-failed")
 			} else {
 				require.NoError(t, seriesSet.Err())
 			}
-			require.Equal(t, testData.expectedAttempts, stores.nextResult)
+			require.Equal(t, testData.expectedNewQueries, stores.nextResult)
+			require.Equal(t, testData.expectedPreviousQueries, stores.nextPreviousResult)
 		})
 	}
 }

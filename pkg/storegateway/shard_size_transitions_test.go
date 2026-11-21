@@ -140,25 +140,6 @@ func TestShardSizeTransitions_ShouldTrackTenantsIndependently(t *testing.T) {
 	assert.False(t, inTransition)
 }
 
-func TestShardSizeTransitions_InTransition(t *testing.T) {
-	tr, clock := newTestShardSizeTransitions(time.Hour)
-
-	assert.False(t, tr.InTransition("user-1"))
-
-	tr.Observe("user-1", TenantShardSize{Total: 3})
-	assert.False(t, tr.InTransition("user-1"))
-
-	tr.Observe("user-1", TenantShardSize{Total: 6})
-	assert.True(t, tr.InTransition("user-1"))
-	assert.False(t, tr.InTransition("user-2"))
-
-	clock.Advance(time.Hour)
-	assert.False(t, tr.InTransition("user-1"))
-
-	var nilTransitions *ShardSizeTransitions
-	assert.False(t, nilTransitions.InTransition("user-1"))
-}
-
 func TestShardSizeTransitions_NilShouldNeverTransition(t *testing.T) {
 	var tr *ShardSizeTransitions
 
@@ -482,7 +463,6 @@ func TestGetShuffleShardingSubrings_ShouldNotTreatZonesCountChangeAsShardSizeCha
 
 			_, previous := GetShuffleShardingSubrings(r, userID, limits, transitions)
 			require.Nil(t, previous, "the tenant's shard size per zone didn't change")
-			require.False(t, transitions.InTransition(userID))
 		})
 	}
 }
