@@ -768,6 +768,15 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 
 	spanLog.DebugLog("msg", "found blocks to query", "expected", knownBlocks.String())
 
+	var (
+		// At the beginning the list of blocks to query are all known blocks.
+		remainingBlocks = knownBlocks
+		attemptedBlocks = map[ulid.ULID][]string{}
+		touchedStores   = map[string]struct{}{}
+		queriedStores   = 0
+		previousQueries = 0
+	)
+
 	consistencyTracker := q.consistency.NewTracker(knownBlocks, spanLog)
 	defer func() {
 		// Do not track consistency check metrics if query failed with an error unrelated to consistency check (e.g. context canceled),
@@ -780,24 +789,10 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		consistencyTracker.Complete()
 	}()
 
-	query := &blocksQuery{
-		spanLog:            spanLog,
-		queryF:             queryF,
-		minT:               minT,
-		maxT:               maxT,
-		indexMeta:          indexMeta,
-		consistencyTracker: consistencyTracker,
-
-		// At the beginning the list of blocks to query are all known blocks.
-		remainingBlocks: knownBlocks,
-		attemptedBlocks: map[ulid.ULID][]string{},
-		touchedStores:   map[string]struct{}{},
-	}
-
 	for attempt := 1; attempt <= q.dynamicReplication.MaxReplicationFactor(); attempt++ {
 		// Find the set of store-gateway instances having the blocks. The exclude parameter is the
 		// map of blocks queried so far, with the list of store-gateway addresses for each block.
-		clients, err := stores.GetClientsFor(tenantID, query.remainingBlocks, query.attemptedBlocks)
+		clients, err := stores.GetClientsFor(tenantID, remainingBlocks, attemptedBlocks)
 		if err != nil {
 			// If it's a retry and we get an error, it means there are no more store-gateways left
 			// from which running another attempt, so we're just stopping retrying.
@@ -808,81 +803,70 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 
 			return storeGatewayQueryStats{}, err
 		}
+		spanLog.DebugLog("msg", "found store-gateway instances to query", "num instances", len(clients), "attempt", attempt)
 
-		if stats, done, err := query.queryClients(ctx, clients, attempt); err != nil || done {
-			return stats, err
+		// Fetch series from stores. If an error occur we do not retry because retries
+		// are only meant to cover missing blocks.
+		queriedBlocks, err := queryF(ctx, clients, minT, maxT, indexMeta)
+		if err != nil {
+			return storeGatewayQueryStats{}, err
 		}
+		spanLog.DebugLog("msg", "received series from all store-gateways", "queried blocks", strings.Join(convertULIDsToString(queriedBlocks), " "))
+
+		// Update the map of blocks we attempted to query.
+		for client, partitions := range clients {
+			touchedStores[client.RemoteAddress()] = struct{}{}
+			queriedStores += len(partitions)
+
+			for _, part := range partitions {
+				for _, blockID := range part {
+					attemptedBlocks[blockID] = append(attemptedBlocks[blockID], client.RemoteAddress())
+				}
+			}
+		}
+
+		// Ensure all expected blocks have been queried (during all tries done so far).
+		// The next attempt should just query the missing blocks.
+		remainingBlocks = consistencyTracker.Check(queriedBlocks)
 
 		// After a shard size change the new owners may not have loaded all the blocks yet, so also query the previous owners.
-		clients, inTransition, err := stores.GetPreviousClientsFor(tenantID, query.remainingBlocks, query.attemptedBlocks)
-		if err != nil {
-			level.Warn(spanLog).Log("msg", "unable to get previous store-gateway clients while retrying to fetch missing blocks", "err", err)
-			continue
-		}
-		if !inTransition {
-			continue
+		if len(remainingBlocks) > 0 {
+			previousClients, inTransition, err := stores.GetPreviousClientsFor(tenantID, remainingBlocks, attemptedBlocks)
+			if err != nil {
+				level.Warn(spanLog).Log("msg", "unable to get previous store-gateway clients while retrying to fetch missing blocks", "err", err)
+			} else if inTransition {
+				queriedBlocks, err := queryF(ctx, previousClients, minT, maxT, indexMeta)
+				if err != nil {
+					return storeGatewayQueryStats{}, err
+				}
+				previousQueries++
+
+				for client, partitions := range previousClients {
+					touchedStores[client.RemoteAddress()] = struct{}{}
+					queriedStores += len(partitions)
+
+					for _, part := range partitions {
+						for _, blockID := range part {
+							attemptedBlocks[blockID] = append(attemptedBlocks[blockID], client.RemoteAddress())
+						}
+					}
+				}
+
+				remainingBlocks = consistencyTracker.Check(queriedBlocks)
+			}
 		}
 
-		if stats, done, err := query.queryClients(ctx, clients, attempt); err != nil || done {
-			return stats, err
+		if len(remainingBlocks) == 0 {
+			return storeGatewayQueryStats{storesHit: len(touchedStores), storesQueried: queriedStores, refetches: attempt - 1 + previousQueries, queried: true}, nil
 		}
+
+		spanLog.DebugLog("msg", "couldn't query all blocks", "attempt", attempt, "missing blocks", strings.Join(convertULIDsToString(remainingBlocks.GetULIDs()), " "))
 	}
 
 	// We've not been able to query all expected blocks after all retries.
-	err = newStoreConsistencyCheckFailedError(query.remainingBlocks.GetULIDs())
+	err = newStoreConsistencyCheckFailedError(remainingBlocks.GetULIDs())
 	level.Warn(util_log.WithContext(ctx, spanLog)).Log("msg", "failed consistency check after all attempts", "err", err)
 	return storeGatewayQueryStats{}, err
-}
-
-// blocksQuery is the state of a query of the blocks of a tenant, which is shared by its attempts.
-type blocksQuery struct {
-	spanLog            *spanlogger.SpanLogger
-	queryF             queryFunc
-	minT, maxT         int64
-	indexMeta          *bucketindex.Metadata
-	consistencyTracker BlocksConsistencyTracker
-
-	remainingBlocks bucketindex.Blocks
-	attemptedBlocks map[ulid.ULID][]string
-	touchedStores   map[string]struct{}
-	queriedStores   int
-	numQueries      int
-}
-
-// queryClients queries the remaining blocks from the clients. It returns the stats once all blocks have been queried.
-func (b *blocksQuery) queryClients(ctx context.Context, clients map[BlocksStoreClient][][]ulid.ULID, attempt int) (stats storeGatewayQueryStats, done bool, err error) {
-	b.spanLog.DebugLog("msg", "found store-gateway instances to query", "num instances", len(clients), "attempt", attempt)
-
-	// Fetch series from stores. If an error occur we do not retry because retries
-	// are only meant to cover missing blocks.
-	queriedBlocks, err := b.queryF(ctx, clients, b.minT, b.maxT, b.indexMeta)
-	if err != nil {
-		return storeGatewayQueryStats{}, false, err
-	}
-	b.numQueries++
-	b.spanLog.DebugLog("msg", "received series from all store-gateways", "queried blocks", strings.Join(convertULIDsToString(queriedBlocks), " "))
-
-	// Update the map of blocks we attempted to query.
-	for client, partitions := range clients {
-		b.touchedStores[client.RemoteAddress()] = struct{}{}
-		b.queriedStores += len(partitions)
-
-		for _, part := range partitions {
-			for _, blockID := range part {
-				b.attemptedBlocks[blockID] = append(b.attemptedBlocks[blockID], client.RemoteAddress())
-			}
-		}
-	}
-
-	// Ensure all expected blocks have been queried (during all tries done so far).
-	// The next attempt should just query the missing blocks.
-	b.remainingBlocks = b.consistencyTracker.Check(queriedBlocks)
-	if len(b.remainingBlocks) == 0 {
-		return storeGatewayQueryStats{storesHit: len(b.touchedStores), storesQueried: b.queriedStores, refetches: b.numQueries - 1, queried: true}, true, nil
-	}
-
-	b.spanLog.DebugLog("msg", "couldn't query all blocks", "attempt", attempt, "missing blocks", strings.Join(convertULIDsToString(b.remainingBlocks.GetULIDs()), " "))
-	return storeGatewayQueryStats{}, false, nil
 }
 
 // targetCompartments returns the read compartments to query for the given matchers. With compartments
