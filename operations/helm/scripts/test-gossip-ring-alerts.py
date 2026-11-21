@@ -86,6 +86,11 @@ class GossipRingDeploymentTest(unittest.TestCase):
                     self.assertEqual('15m' if rule["labels"]["severity"] == 'warning' else '5m', rule["for"])
                 sample = {"__name__": "kube_endpoint_address", "namespace": namespace, "endpoint": endpoint}
                 self.assertTrue(kept(monitor, sample))
+                ksm_sample = {**sample, "pod": "kube-state-metrics-6f8b9c7d5-abcde"}
+                self.assertTrue(kept(monitor, ksm_sample))
+                self.assertFalse(kept(monitor, {**ksm_sample, "endpoint": "other-mimir-gossip-ring"}))
+                self.assertFalse(kept(monitor, {**ksm_sample, "namespace": "different-ns"}))
+                self.assertFalse(kept(monitor, {**ksm_sample, "__name__": "unrelated_metric"}))
                 self.assertFalse(kept(monitor, {**sample, "endpoint": "other-mimir-gossip-ring"}))
                 self.assertFalse(kept(monitor, {**sample, "namespace": "different-ns"}))
                 self.assertFalse(kept(monitor, {**sample, "__name__": "unrelated_metric"}))

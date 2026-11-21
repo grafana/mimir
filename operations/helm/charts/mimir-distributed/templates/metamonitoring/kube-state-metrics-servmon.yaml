@@ -21,7 +21,7 @@ spec:
       metricRelabelings:
         - action: keep
           # Retain workload metrics and this release gossip-ring endpoint addresses.
-          regex: "(?:[^;]*;){0,2}{{ include "mimir.resourceName" (dict "ctx" $) }}[^;]*;.*|;;;kube_endpoint_address;{{ $.Release.Namespace }};{{ include "mimir.resourceName" (dict "ctx" $ "component" "gossip-ring") }}"
+          regex: "(?:[^;]*;){0,2}{{ include "mimir.resourceName" (dict "ctx" $) }}[^;]*;.*|(?:[^;]*;){3}kube_endpoint_address;{{ $.Release.Namespace }};{{ include "mimir.resourceName" (dict "ctx" $ "component" "gossip-ring") }}"
           sourceLabels:
             - deployment
             - statefulset

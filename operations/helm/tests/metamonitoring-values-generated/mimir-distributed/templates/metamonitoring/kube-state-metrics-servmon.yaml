@@ -16,7 +16,7 @@ spec:
       metricRelabelings:
         - action: keep
           # Retain workload metrics and this release gossip-ring endpoint addresses.
-          regex: "(?:[^;]*;){0,2}metamonitoring-values-mimir[^;]*;.*|;;;kube_endpoint_address;citestns;metamonitoring-values-mimir-gossip-ring"
+          regex: "(?:[^;]*;){0,2}metamonitoring-values-mimir[^;]*;.*|(?:[^;]*;){3}kube_endpoint_address;citestns;metamonitoring-values-mimir-gossip-ring"
           sourceLabels:
             - deployment
             - statefulset
