@@ -895,10 +895,10 @@ func TestDistributor_getIngesterReplicationSetsForQuery_StrongReadConsistencyUnk
 				}
 
 				require.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(fmt.Sprintf(`
-					# HELP cortex_querier_strong_read_consistency_unknown_partition_requests_total Total number of strongly consistent requests received with an offset for a partition that the querier has not observed in the partition ring.
-					# TYPE cortex_querier_strong_read_consistency_unknown_partition_requests_total counter
-					cortex_querier_strong_read_consistency_unknown_partition_requests_total %d
-				`, expectedRequestsWithUnknownPartitions)), "cortex_querier_strong_read_consistency_unknown_partition_requests_total"))
+					# HELP cortex_distributor_query_strong_read_consistency_unknown_partition_requests_total Total number of strongly consistent requests received with an offset for a partition that the querier has not observed in the partition ring.
+					# TYPE cortex_distributor_query_strong_read_consistency_unknown_partition_requests_total counter
+					cortex_distributor_query_strong_read_consistency_unknown_partition_requests_total %d
+				`, expectedRequestsWithUnknownPartitions)), "cortex_distributor_query_strong_read_consistency_unknown_partition_requests_total"))
 			})
 		}
 	}
