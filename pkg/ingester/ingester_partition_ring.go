@@ -10,6 +10,9 @@ import (
 
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
+
+	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type PartitionRingConfig struct {
@@ -44,7 +47,7 @@ func (cfg *PartitionRingConfig) RegisterFlags(f *flag.FlagSet) {
 
 	f.IntVar(&cfg.MinOwnersCount, "ingester.partition-ring.min-partition-owners-count", 1, "Minimum number of owners to wait before a PENDING partition gets switched to ACTIVE.")
 	f.DurationVar(&cfg.MinOwnersDuration, "ingester.partition-ring.min-partition-owners-duration", 10*time.Second, "How long the minimum number of owners are enforced before a PENDING partition gets switched to ACTIVE.")
-	f.DurationVar(&cfg.DeleteInactivePartitionAfter, "ingester.partition-ring.delete-inactive-partition-after", 13*time.Hour, "How long to wait before an INACTIVE partition is eligible for deletion. The partition is deleted only if it has been in INACTIVE state for at least the configured duration and it has no owners registered. A value of 0 disables partitions deletion.")
+	f.DurationVar(&cfg.DeleteInactivePartitionAfter, "ingester.partition-ring.delete-inactive-partition-after", validation.DefaultQueryIngestersWithin+ingest.DefaultIncludeInactivePartitionsOffsetDuration+10*time.Minute, "How long to wait before an INACTIVE partition is eligible for deletion. The partition is deleted only if it has been in INACTIVE state for at least the configured duration and it has no owners registered. A value of 0 disables partitions deletion. This value should be greater than the value of -querier.query-ingesters-within + -ingest-storage.query.include-inactive-partitions-offset-duration.")
 	f.BoolVar(&cfg.CreatePartitionsWithDerivedTokens, "ingester.partition-ring.create-partitions-with-derived-tokens", false, "When the ingester creates its partition, create it with tokens that are derived from the partition ID instead of storing the tokens in the partition ring. Only ingesters, which create partitions, read this flag. Before you enable it, ensure that -ingester.partition-ring.max-derived-token-partitions is applied to all partition ring readers and ingesters, with a value higher than the highest partition ID.")
 	f.IntVar(&cfg.MaxDerivedTokenPartitions, "ingester.partition-ring.max-derived-token-partitions", 0, "Partitions with an ID lower than this value can use derived tokens. "+
 		"Set it on all partition ring readers and ingesters. "+

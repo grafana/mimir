@@ -4775,9 +4775,9 @@
               "kind": "field",
               "name": "delete_inactive_partition_after",
               "required": false,
-              "desc": "How long to wait before an INACTIVE partition is eligible for deletion. The partition is deleted only if it has been in INACTIVE state for at least the configured duration and it has no owners registered. A value of 0 disables partitions deletion.",
+              "desc": "How long to wait before an INACTIVE partition is eligible for deletion. The partition is deleted only if it has been in INACTIVE state for at least the configured duration and it has no owners registered. A value of 0 disables partitions deletion. This value should be greater than the value of -querier.query-ingesters-within + -ingest-storage.query.include-inactive-partitions-offset-duration.",
               "fieldValue": null,
-              "fieldDefaultValue": 46800000000000,
+              "fieldDefaultValue": 48000000000000,
               "fieldFlag": "ingester.partition-ring.delete-inactive-partition-after",
               "fieldType": "duration"
             },
