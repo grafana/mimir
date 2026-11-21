@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"runtime/debug"
 	"testing"
+	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
@@ -66,4 +67,31 @@ func TestInstrumentRefLeaks(t *testing.T) {
 
 	require.Equal(t, 2.0, testutil.ToFloat64(codec.instrumentedBuffersTotalMetric))
 	require.Zero(t, testutil.ToFloat64(codec.inflightInstrumentedBytesMetric))
+}
+
+// Content read without decoding it is instrumented as decoding it would be: a reference to it that outlives the
+// release faults.
+func TestInstrumentRefLeaksOfContent(t *testing.T) {
+	if !refLeaksInstrumentationSupported {
+		t.Skip(errRefLeaksNotAvailable)
+	}
+
+	prev := debug.SetPanicOnFault(true)
+	defer debug.SetPanicOnFault(prev)
+
+	content := []byte("a record's content")
+	instrumented, release := InstrumentRefLeaks(content)
+	require.Equal(t, content, instrumented)
+	require.NotSame(t, &content[0], &instrumented[0], "a copy in pages of its own")
+	leaking := unsafe.String(unsafe.SliceData(instrumented), len(instrumented))
+
+	release()
+	var recovered any
+	func() {
+		defer func() {
+			recovered = recover()
+		}()
+		t.Log(leaking)
+	}()
+	require.Equal(t, "runtime error: invalid memory address or nil pointer dereference", fmt.Sprint(recovered))
 }

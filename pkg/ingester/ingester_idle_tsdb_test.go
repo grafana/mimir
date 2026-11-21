@@ -73,6 +73,7 @@ func TestIngester_ReopenedTSDBWithoutInOrderSamplesIsNotIdle(t *testing.T) {
 }
 
 func testReopenedTSDBWithoutInOrderSamples(t *testing.T, oooSeries bool, oooTimeWindow, oooSampleAge, closeIdleTSDBTimeout time.Duration) {
+	skipIfSeriesstore(t, "tests Prometheus WAL replay and local blocks")
 	const numSeries = 3000 // Enough WAL data for the idle compaction to checkpoint the WAL.
 
 	dataDir := t.TempDir()
@@ -130,7 +131,7 @@ func testReopenedTSDBWithoutInOrderSamples(t *testing.T, oooSeries bool, oooTime
 
 		// Early compaction of non-owned series, as done by compactBlocksDueToNonOwnedSeries,
 		// with every series non-owned.
-		require.NoError(t, db.db.CompactSelectedSeries(headSeriesRefsForTest(t, db)))
+		require.NoError(t, db.db.(prometheusEngine).CompactSelectedSeries(headSeriesRefsForTest(t, db)))
 		require.Equal(t, expectedSeries, db.Head().NumSeries(), "only the series with out-of-order data should stay in the head")
 
 		// Idle compaction: no in-order data is left, but the WAL is checkpointed.
@@ -145,7 +146,7 @@ func testReopenedTSDBWithoutInOrderSamples(t *testing.T, oooSeries bool, oooTime
 		// which would raise the head max time on reopen. Remove it, so that the local blocks only
 		// have blocks that are skipped for that, like the ones written by CompactSelectedSeries.
 		var removed int
-		for _, b := range db.db.Blocks() {
+		for _, b := range db.Blocks() {
 			if len(b.Meta().Compaction.Hints) == 0 {
 				removed++
 				require.NoError(t, os.RemoveAll(b.Dir()))
@@ -163,7 +164,7 @@ func testReopenedTSDBWithoutInOrderSamples(t *testing.T, oooSeries bool, oooTime
 
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	dir := db.db.Dir()
+	dir := db.dir
 
 	// Preconditions: the reopened head has no series, or only the one with out-of-order data and no in-order samples.
 	// With an empty head, the WAL replay still sets the head max time from samples of the deleted series,

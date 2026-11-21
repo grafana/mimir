@@ -170,6 +170,23 @@ func (c *ActiveSeries) ReloadSeriesConfig(asm *asmodel.Matchers, cat *costattrib
 
 // UpdateSeries updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
 // Pass -1 in numNativeHistogramBuckets if the series is not a native histogram series.
+// ActiveRefs tells which series are active: the tracker does, and so does an engine that keeps it in its series.
+type ActiveRefs interface {
+	// ContainsRef reports whether the series is active.
+	ContainsRef(ref storage.SeriesRef) bool
+	// NativeHistogramBuckets returns the bucket count of the series' last native histogram, when it is active and ended with one.
+	NativeHistogramBuckets(ref storage.SeriesRef) (int, bool)
+}
+
+var _ ActiveRefs = (*ActiveSeries)(nil)
+
+// UpdateSeriesIfTracked updates the timestamp of a series the tracker already has and that needs no other update,
+// without its labels, which callers may have to build. It returns false when it did nothing, and the caller
+// has to call UpdateSeries.
+func (c *ActiveSeries) UpdateSeriesIfTracked(ref storage.SeriesRef, now time.Time, numNativeHistogramBuckets int) bool {
+	return c.stripes[ref%numStripes].updateTrackedSeriesTimestamp(now, ref, numNativeHistogramBuckets)
+}
+
 func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref storage.SeriesRef, now time.Time, numNativeHistogramBuckets int, isOTLP bool, idx tsdb.IndexReader) {
 	stripeID := ref % numStripes
 
@@ -353,6 +370,35 @@ func (s *seriesStripe) getTotalAndUpdateMatching(matching []int, matchingNativeH
 	}
 
 	return s.active, s.activeOTLP, s.activeNativeHistograms, s.activeNativeHistogramBuckets
+}
+
+func (s *seriesStripe) updateTrackedSeriesTimestamp(now time.Time, ref storage.SeriesRef, numNativeHistogramBuckets int) bool {
+	e, needsUpdating := s.findEntryForSeries(ref, numNativeHistogramBuckets)
+	if e == nil || needsUpdating {
+		return false
+	}
+	s.touchEntry(e, now.UnixNano(), false)
+	return true
+}
+
+// touchEntry moves the entry's timestamp up to nowNanos, and the stripe's oldest one down.
+func (s *seriesStripe) touchEntry(e *atomic.Int64, nowNanos int64, created bool) {
+	entryTimeSet := created
+	if !entryTimeSet {
+		if prev := e.Load(); nowNanos > prev {
+			entryTimeSet = e.CompareAndSwap(prev, nowNanos)
+		}
+	}
+
+	if entryTimeSet {
+		for prevOldest := s.oldestEntryTs.Load(); nowNanos < prevOldest; {
+			// If recent purge already removed entries older than "oldest entry timestamp", setting this to 0 will make
+			// sure that next purge doesn't take the shortcut route.
+			if s.oldestEntryTs.CompareAndSwap(prevOldest, 0) {
+				break
+			}
+		}
+	}
 }
 
 func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref storage.SeriesRef, numNativeHistogramBuckets int, isOTLP bool) bool {
