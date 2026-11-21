@@ -68,6 +68,11 @@ type BlocksStoreSet interface {
 	// each to be queried separately.
 	// The exclude parameter is the map of blocks -> store-gateway addresses that should be excluded.
 	GetClientsFor(userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][][]ulid.ULID, error)
+
+	// GetPreviousClientsFor is like GetClientsFor, but for the tenant shard in use before a recent change of the
+	// tenant's shard size. The returned bool is false, and there are no clients, if the tenant's shard size didn't
+	// change recently.
+	GetPreviousClientsFor(userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (clients map[BlocksStoreClient][][]ulid.ULID, inTransition bool, err error)
 }
 
 // BlocksFinder is the interface used to find blocks for a given user and time range.
@@ -364,9 +369,15 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	}
 	clientsPool := newStoreGatewayClientPool(client.NewRingsServiceDiscovery(readRings), querierCfg.StoreGatewayClient, logger, reg)
 
+	// The tenant shard size is the same in all compartments, so they share the transitions.
+	var shardSizeTransitions *storegateway.ShardSizeTransitions
+	if gatewayCfg.ShardSizeTransitionEnabled {
+		shardSizeTransitions = storegateway.NewShardSizeTransitions(mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval, "querier", reg)
+	}
+
 	stores := make([]blocksStoreCompartment, numCompartments)
 	for idx := range stores {
-		storeSet, err := newBlocksStoreReplicationSet(storesRings[idx], clientsPool, randomLoadBalancing, dynamicReplication, querierCfg.PreferAvailabilityZones, limits)
+		storeSet, err := newBlocksStoreReplicationSet(storesRings[idx], clientsPool, randomLoadBalancing, dynamicReplication, querierCfg.PreferAvailabilityZones, limits, shardSizeTransitions)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create store set")
 		}
@@ -763,6 +774,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		attemptedBlocks = map[ulid.ULID][]string{}
 		touchedStores   = map[string]struct{}{}
 		queriedStores   = 0
+		previousQueries = 0
 	)
 
 	consistencyTracker := q.consistency.NewTracker(knownBlocks, spanLog)
@@ -816,8 +828,36 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		// Ensure all expected blocks have been queried (during all tries done so far).
 		// The next attempt should just query the missing blocks.
 		remainingBlocks = consistencyTracker.Check(queriedBlocks)
+
+		// After a shard size change the new owners may not have loaded all the blocks yet, so also query the previous owners.
+		if len(remainingBlocks) > 0 {
+			previousClients, inTransition, err := stores.GetPreviousClientsFor(tenantID, remainingBlocks, attemptedBlocks)
+			if err != nil {
+				level.Warn(spanLog).Log("msg", "unable to get previous store-gateway clients while retrying to fetch missing blocks", "err", err)
+			} else if inTransition {
+				queriedBlocks, err := queryF(ctx, previousClients, minT, maxT, indexMeta)
+				if err != nil {
+					return storeGatewayQueryStats{}, err
+				}
+				previousQueries++
+
+				for client, partitions := range previousClients {
+					touchedStores[client.RemoteAddress()] = struct{}{}
+					queriedStores += len(partitions)
+
+					for _, part := range partitions {
+						for _, blockID := range part {
+							attemptedBlocks[blockID] = append(attemptedBlocks[blockID], client.RemoteAddress())
+						}
+					}
+				}
+
+				remainingBlocks = consistencyTracker.Check(queriedBlocks)
+			}
+		}
+
 		if len(remainingBlocks) == 0 {
-			return storeGatewayQueryStats{storesHit: len(touchedStores), storesQueried: queriedStores, refetches: attempt - 1, queried: true}, nil
+			return storeGatewayQueryStats{storesHit: len(touchedStores), storesQueried: queriedStores, refetches: attempt - 1 + previousQueries, queried: true}, nil
 		}
 
 		spanLog.DebugLog("msg", "couldn't query all blocks", "attempt", attempt, "missing blocks", strings.Join(convertULIDsToString(remainingBlocks.GetULIDs()), " "))

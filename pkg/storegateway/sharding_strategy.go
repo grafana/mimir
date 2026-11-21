@@ -52,17 +52,19 @@ type ShuffleShardingStrategy struct {
 	instanceAddr       string
 	dynamicReplication DynamicReplication
 	limits             ShardingLimits
+	transitions        *ShardSizeTransitions
 	logger             log.Logger
 }
 
 // NewShuffleShardingStrategy makes a new ShuffleShardingStrategy.
-func NewShuffleShardingStrategy(r *ring.Ring, instanceID, instanceAddr string, dynamicReplication DynamicReplication, limits ShardingLimits, logger log.Logger) *ShuffleShardingStrategy {
+func NewShuffleShardingStrategy(r *ring.Ring, instanceID, instanceAddr string, dynamicReplication DynamicReplication, limits ShardingLimits, transitions *ShardSizeTransitions, logger log.Logger) *ShuffleShardingStrategy {
 	return &ShuffleShardingStrategy{
 		r:                  r,
 		instanceID:         instanceID,
 		instanceAddr:       instanceAddr,
 		dynamicReplication: dynamicReplication,
 		limits:             limits,
+		transitions:        transitions,
 		logger:             logger,
 	}
 }
@@ -81,10 +83,10 @@ func (s *ShuffleShardingStrategy) FilterUsers(_ context.Context, userIDs []strin
 	var filteredIDs []string
 
 	for _, userID := range userIDs {
-		subRing := GetShuffleShardingSubring(s.r, userID, s.limits)
+		subRing, previousSubRing := GetShuffleShardingSubrings(s.r, userID, s.limits, s.transitions)
 
-		// Include the user only if it belongs to this store-gateway shard.
-		if subRing.HasInstance(s.instanceID) {
+		// Include the user only if it belongs to this store-gateway shard, or it did before a recent shard size change.
+		if subRing.HasInstance(s.instanceID) || (previousSubRing != nil && previousSubRing.HasInstance(s.instanceID)) {
 			filteredIDs = append(filteredIDs, userID)
 		}
 	}
@@ -113,7 +115,7 @@ func (s *ShuffleShardingStrategy) FilterBlocks(_ context.Context, userID string,
 		return nil
 	}
 
-	r := GetShuffleShardingSubring(s.r, userID, s.limits)
+	r, previousRing := GetShuffleShardingSubrings(s.r, userID, s.limits, s.transitions)
 	bufDescs, bufHosts, bufZones := ring.MakeBuffersForGet()
 	bufOption := ring.WithBuffers(bufDescs, bufHosts, bufZones)
 
@@ -151,6 +153,14 @@ func (s *ShuffleShardingStrategy) FilterBlocks(_ context.Context, userID string,
 		// we can safely unload it only once at least 1 authoritative owner is available
 		// for queries.
 		if _, ok := loaded[blockID]; ok {
+			// The new owners may not have loaded the block yet after a shard size change, so keep it if this store-gateway
+			// owned it before.
+			if previousRing != nil {
+				if previousSet, err := previousRing.GetWithOptions(key, BlocksOwnerSync, ringOpts...); err == nil && previousSet.Includes(s.instanceAddr) {
+					continue
+				}
+			}
+
 			// The ring GetWithOptions() method returns an error if there's no available instance.
 			if _, err := r.GetWithOptions(key, BlocksOwnerRead, ringOpts...); err != nil {
 				// Keep the block.
@@ -171,32 +181,42 @@ func (s *ShuffleShardingStrategy) FilterBlocks(_ context.Context, userID string,
 // GetShuffleShardingSubring returns the subring to be used for a given user. This function
 // should be used both by store-gateway and querier in order to guarantee the same logic is used.
 func GetShuffleShardingSubring(ring *ring.Ring, userID string, limits ShardingLimits) ring.ReadRing {
-	var shardSize int
+	return shuffleShardingSubring(ring, userID, configuredShardSize(userID, limits).total(ring))
+}
 
-	// Check per-zone shard size first (takes precedence over the total shard size).
-	// When set, the total shard size is computed as per-zone shard size * number of zones.
-	// This is useful during zone migrations (e.g., RF 3 -> RF 4) because it ensures the
-	// shard size scales with the number of zones, preventing block reshuffling in existing zones.
-	if shardSizePerZone := limits.StoreGatewayTenantShardSizePerZone(userID); shardSizePerZone > 0 {
-		zonesCount := ring.ZonesCount()
-		if zonesCount == 0 {
-			// ZonesCount() returns 0 only if there are no instances in the ring.
-			// In non-zone-aware setups, ZonesCount() returns 1 because the empty
-			// zone string is counted as a zone.
-			zonesCount = 1
-		}
-		shardSize = shardSizePerZone * zonesCount
-	} else {
-		shardSize = limits.StoreGatewayTenantShardSize(userID)
+// GetShuffleShardingSubrings returns the same subring as GetShuffleShardingSubring and, if the tenant's shard size is in
+// transition, the subring of the previous shard size, resolved against the zones currently in the ring. Otherwise the
+// previous subring is nil.
+//
+// A change of the number of zones isn't a transition when the shard size is per zone.
+func GetShuffleShardingSubrings(ring *ring.Ring, userID string, limits ShardingLimits, transitions *ShardSizeTransitions) (current, previous ring.ReadRing) {
+	shardSize := configuredShardSize(userID, limits)
+	current = shuffleShardingSubring(ring, userID, shardSize.total(ring))
+
+	if previousShardSize, inTransition := transitions.Observe(userID, shardSize); inTransition {
+		previous = shuffleShardingSubring(ring, userID, previousShardSize.total(ring))
 	}
+	return current, previous
+}
 
+// configuredShardSize returns the tenant's configured shard size. A per-zone shard size takes precedence over the total
+// one, and scales the shard with the number of zones, which prevents block reshuffling in existing zones during zone
+// migrations (e.g., RF 3 -> RF 4).
+func configuredShardSize(userID string, limits ShardingLimits) TenantShardSize {
+	if perZone := limits.StoreGatewayTenantShardSizePerZone(userID); perZone > 0 {
+		return TenantShardSize{PerZone: perZone}
+	}
+	return TenantShardSize{Total: max(limits.StoreGatewayTenantShardSize(userID), 0)}
+}
+
+func shuffleShardingSubring(r *ring.Ring, userID string, shardSize int) ring.ReadRing {
 	// A shard size of 0 means shuffle sharding is disabled for this specific user,
 	// so we just return the full ring so that blocks will be sharded across all store-gateways.
 	if shardSize <= 0 {
-		return ring
+		return r
 	}
 
-	return ring.ShuffleShard(userID, shardSize)
+	return r.ShuffleShard(userID, shardSize)
 }
 
 type shardingMetadataFilterAdapter struct {
