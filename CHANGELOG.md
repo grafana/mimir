@@ -260,6 +260,10 @@
 * [BUGFIX] Fail with an explicit error when `ingester_automated_downscale_v2_enabled` is used together with `ingest_storage_enabled`. That downscale mode relies on the ingester read-only mode, which the ingest storage architecture doesn't support: use `ingest_storage_ingester_autoscaling_enabled` instead. #16469
 * [BUGFIX] Autoscaling: the distributor OOM protection trigger (`autoscaling_oom_protection_enabled`, used when `distributor_gomemlimit_enabled` is true) now also prevents scale-down for compartment distributors. Before, the compartment weight scaled the trigger value below its threshold of 1, so the HPA didn't keep the current replica count while pods were OOM-killed. The trigger matches all distributor pods in the zone, so an OOM-killed pod in one compartment prevents scale-down in all compartments of that zone. #17241
 
+### Mimirtool
+
+* [BUGFIX] Fix `rules diff` and `rules sync` ignoring changes to a rule's `keep_firing_for`, so a change to only that field was never uploaded. #16717
+
 ### Documentation
 
 * [ENHANCEMENT] Add documentation for deploying Mimir with Juju. #16485
