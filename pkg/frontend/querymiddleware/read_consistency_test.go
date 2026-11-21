@@ -109,6 +109,11 @@ func TestReadConsistencyRoundTripper_SingleCluster(t *testing.T) {
 				req = req.WithContext(querierapi.ContextWithReadConsistencyLevel(req.Context(), testData.reqConsistency))
 			}
 
+			if testData.expectedOffsets {
+				// A client-supplied offsets header must be replaced, not added to.
+				req.Header.Set(querierapi.ReadConsistencyOffsetsHeader, "v1=99:1")
+			}
+
 			offsetsReader := NewSingleClusterReadConsistencyOffsetsReader(reader)
 
 			reg := prometheus.NewPedanticRegistry()
@@ -119,6 +124,7 @@ func TestReadConsistencyRoundTripper_SingleCluster(t *testing.T) {
 			require.NotNil(t, downstreamReq)
 
 			if testData.expectedOffsets {
+				require.Len(t, downstreamReq.Header.Values(querierapi.ReadConsistencyOffsetsHeader), 1)
 				offsets := querierapi.EncodedOffsets(downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))
 
 				for partitionID, expectedOffset := range expectedOffsets {

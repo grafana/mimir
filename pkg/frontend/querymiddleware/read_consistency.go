@@ -71,7 +71,7 @@ func (r *readConsistencyRoundTripper) RoundTrip(req *http.Request) (_ *http.Resp
 	}
 
 	headerValue := string(encoded)
-	req.Header.Add(querierapi.ReadConsistencyOffsetsHeader, headerValue)
+	req.Header.Set(querierapi.ReadConsistencyOffsetsHeader, headerValue)
 
 	spanLog.DebugLog("msg", "got offsets for strong read consistency", "header", querierapi.ReadConsistencyOffsetsHeader, "value", headerValue)
 	spanLog.DebugLog("msg", "evaluating query with strong read consistency")
