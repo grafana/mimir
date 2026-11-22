@@ -58,7 +58,12 @@ type DashboardMetrics struct {
 }
 
 func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board, promqlParser parser.Parser, logger log.Logger) {
-	var parseErrors []error
+	ParseMetricsInBoardWithParseErrors(mig, board, nil, promqlParser, logger)
+}
+
+// ParseMetricsInBoardWithParseErrors parses the metrics used by a board and includes the supplied parse errors in the output.
+func ParseMetricsInBoardWithParseErrors(mig *MetricsInGrafana, board minisdk.Board, parseErrors []error, promqlParser parser.Parser, logger log.Logger) {
+	parseErrors = slices.Clone(parseErrors)
 	metrics := make(map[string]struct{})
 
 	// Iterate through all the panels and collect metrics
