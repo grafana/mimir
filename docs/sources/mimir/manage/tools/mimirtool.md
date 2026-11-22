@@ -877,6 +877,9 @@ mimirtool analyze prometheus --address=<url> --id=<tenant_id>
 | -                    | `--ruler-metrics-file`     | `mimirtool analyze ruler` or `mimirtool analyze rule-file` output file, which by default is `metrics-in-ruler.json`.            |
 | -                    | `--output`                 | Sets the output file path, which by default is `prometheus-metrics.json`.                                                       |
 | -                    | `--prometheus-http-prefix` | Sets the HTTP URL path under which the Prometheus api will be served.                                                           |
+| -                    | `--backoff-min-period`     | Minimum delay when backing off, which by default is `100ms`.                                                                    |
+| -                    | `--backoff-max-period`     | Maximum delay when backing off, which by default is `10s`.                                                                      |
+| -                    | `--backoff-retries`        | Number of times to back off and retry before failing, which by default is `10`.                                                 |
 
 ##### Example output
 
