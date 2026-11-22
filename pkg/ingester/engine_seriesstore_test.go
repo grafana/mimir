@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -122,6 +123,55 @@ func TestIngester_SeriesstoreRewindsKafkaOffsetsToCheckpoints(t *testing.T) {
 			require.Equal(t, tc.expected, offset)
 		})
 	}
+}
+
+func TestIngester_SeriesstoreRestartsWithTenantOpenedAfterSnapshotRound(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
+	cfg.BlocksStorageConfig.TSDB.SeriesstoreSnapshotInterval = time.Hour
+	dataDir := t.TempDir()
+	before, ring, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), nil, dataDir, nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, before, ring)
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), before)) })
+
+	writeOffset := func(offset int64) {
+		t.Helper()
+		require.NoError(t, ingest.WriteOffsetFile(filepath.Join(dataDir, "kafka-offset.json"), 0, offset, before.logger))
+	}
+	push := func(i *Ingester, tenantID string) {
+		t.Helper()
+		ctx := user.InjectOrgID(t.Context(), tenantID)
+		req := mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "up"}}}, []mimirpb.Sample{{TimestampMs: 1000, Value: 1}}, nil, nil, mimirpb.API)
+		_, err := i.Push(ctx, req)
+		require.NoError(t, err)
+	}
+
+	writeOffset(40)
+	push(before, "existing-tenant")
+	before.snapshotSeriesstoreHeads(t.Context())
+
+	writeOffset(60)
+	push(before, "new-tenant")
+	writeOffset(80)
+
+	// Copy the state before a graceful shutdown can write the new tenant's head.
+	crashDir := t.TempDir()
+	require.NoError(t, os.CopyFS(crashDir, os.DirFS(dataDir)))
+	after, ring, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), nil, crashDir, nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, after, ring)
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), after)) })
+
+	offset, ok := ingest.ReadOffsetFile(filepath.Join(crashDir, "kafka-offset.json"), 0, after.logger)
+	require.True(t, ok, "a new tenant should not force a rewind to the retention period")
+	require.Equal(t, int64(40), offset)
+	require.Equal(t, uint64(1), after.getTSDB("existing-tenant").Head().NumSeries())
+	fresh := after.getTSDB("new-tenant")
+	require.JSONEq(t, `{"kafka-offset.json":60}`, string(restoredCheckpoint(fresh.db)))
+	require.Zero(t, fresh.Head().NumSeries())
+	push(after, "new-tenant") // Replay the write that followed the empty checkpoint.
+	require.Equal(t, uint64(1), fresh.Head().NumSeries())
 }
 
 // Each tenant's checkpoint has the offsets committed before it started.

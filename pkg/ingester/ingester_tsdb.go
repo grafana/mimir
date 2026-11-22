@@ -109,7 +109,7 @@ func (i *Ingester) getOrCreateTSDB(userID string) (*userTSDB, error) {
 	}
 
 	// Create the database and a shipper for a user
-	db, err := i.createTSDB(userID, 0)
+	db, err := i.createTSDB(userID, 0, true)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +122,7 @@ func (i *Ingester) getOrCreateTSDB(userID string) (*userTSDB, error) {
 }
 
 // createTSDB creates a TSDB for a given userID, and returns the created db.
-func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSDB, error) {
+func (i *Ingester) createTSDB(userID string, walReplayConcurrency int, checkpointOnCreate bool) (*userTSDB, error) {
 	tsdbPromReg := prometheus.NewRegistry()
 	udir := i.cfg.BlocksStorageConfig.TSDB.BlocksDir(userID)
 	userLogger := util_log.WithUserID(userID, i.logger)
@@ -182,7 +182,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
-	db, err := i.openTenantEngine(udir, userID, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
+	db, err := i.openTenantEngine(udir, userID, util_log.SlogFromGoKit(userLogger), tsdbPromReg, checkpointOnCreate, &tsdb.Options{
 		RetentionDuration:                    i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
 		MinBlockDuration:                     blockRanges[0],
 		MaxBlockDuration:                     blockRanges[len(blockRanges)-1],
@@ -434,7 +434,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	for n := 0; n < tsdbOpenConcurrency; n++ {
 		group.Go(func() error {
 			for userID := range queue {
-				db, err := i.createTSDB(userID, tsdbWALReplayConcurrency)
+				db, err := i.createTSDB(userID, tsdbWALReplayConcurrency, false)
 				if err != nil {
 					level.Error(i.logger).Log("msg", "unable to open TSDB", "err", err, "user", userID)
 					return errors.Wrapf(err, "unable to open TSDB for user %s", userID)

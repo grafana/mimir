@@ -78,7 +78,7 @@ func idleEvictionMs(activeIdleTimeout time.Duration) int64 {
 	return (activeIdleTimeout + seriesstoreIdleEvictionMargin).Milliseconds()
 }
 
-func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *tsdb.Options, shards int, checkpoints bool, activeIdleTimeout time.Duration) (tenantEngine, error) {
+func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *tsdb.Options, shards int, checkpoints bool, initialCheckpoint func() ([]byte, error), activeIdleTimeout time.Duration) (tenantEngine, error) {
 	// The ingester's memory series metrics are the TSDB head's, which the engine has to provide.
 	callback := &countingSeriesCallback{
 		SeriesLifecycleCallback: opts.SeriesLifecycleCallback,
@@ -99,6 +99,7 @@ func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *
 		TimelyCompaction:        opts.TimelyCompaction,
 		IdleEvictionMs:          idleEvictionMs(activeIdleTimeout),
 		Checkpoints:             checkpoints,
+		InitialCheckpoint:       initialCheckpoint,
 		SeriesLifecycleCallback: callback,
 		SecondaryHashFunction:   opts.SecondaryHashFunction,
 	})

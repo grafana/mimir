@@ -153,10 +153,15 @@ var testEngine string
 var testNoNativeActive bool
 
 // openTenantEngine opens the tenant's TSDB in dir with the engine the ingester is configured with.
-func (i *Ingester) openTenantEngine(dir, userID string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options) (tenantEngine, error) {
+func (i *Ingester) openTenantEngine(dir, userID string, logger *slog.Logger, reg prometheus.Registerer, checkpointOnCreate bool, opts *tsdb.Options) (tenantEngine, error) {
 	if i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore || testEngine == mimir_tsdb.EngineSeriesstore {
 		checkpoints := i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore && i.cfg.BlocksStorageConfig.TSDB.SeriesstoreSnapshotInterval > 0
-		return openSeriesstoreEngine(dir, userID, reg, opts, seriesstoreShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)), checkpoints, i.cfg.ActiveSeriesMetrics.IdleTimeout)
+		var initialCheckpoint func() ([]byte, error)
+		// Startup opens tenants before rewinding the offset files. Only an engine opened during ingestion can use those offsets.
+		if checkpoints && checkpointOnCreate {
+			initialCheckpoint = i.committedKafkaOffsets
+		}
+		return openSeriesstoreEngine(dir, userID, reg, opts, seriesstoreShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)), checkpoints, initialCheckpoint, i.cfg.ActiveSeriesMetrics.IdleTimeout)
 	}
 	return openPrometheusEngine(dir, logger, reg, opts)
 }

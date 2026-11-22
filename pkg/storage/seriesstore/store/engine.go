@@ -56,7 +56,9 @@ type EngineOptions struct {
 	// Checkpoints are head snapshots written while ingestion goes on, with Checkpoint. The chunk files and cold blocks
 	// that compactions drop then stay on disk until the next snapshot, which the last one needs, and a restored
 	// checkpoint stays in place until then too: a crash restores it again.
-	Checkpoints             bool
+	Checkpoints bool
+	// InitialCheckpoint supplies the replay position for a new persistent tenant before it can accept any writes.
+	InitialCheckpoint       func() ([]byte, error)
 	SeriesLifecycleCallback tsdb.SeriesLifecycleCallback
 	// Mimir's owned series token of a series, `tsdb.Options.SecondaryHashFunction`.
 	SecondaryHashFunction func(promlabels.Labels) uint32
@@ -133,6 +135,8 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 	if opts.Shards > maxShards {
 		return nil, fmt.Errorf("at most %d store shards", maxShards)
 	}
+	initialCheckpoint := opts.InitialCheckpoint
+	opts.InitialCheckpoint = nil
 	e := &Engine{tenantID: tenantID, dir: dir, opts: opts, callback: opts.SeriesLifecycleCallback}
 	// A restored head may hold out-of-order data that was never compacted.
 	e.oooDirty.Store(true)
@@ -199,6 +203,14 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 	} else {
 		e.restored = true
 	}
+	var checkpoint []byte
+	if initialCheckpoint != nil && opts.Checkpoints && e.restored && storeDir != "" {
+		var err error
+		checkpoint, err = initialCheckpoint()
+		if err != nil {
+			return nil, fmt.Errorf("read initial checkpoint offsets: %w", err)
+		}
+	}
 	s, err := newStore(storeDir, tenantID, opts.Shards)
 	if err != nil {
 		return nil, err
@@ -209,6 +221,13 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 		s.DeferRemovals()
 	}
 	e.oooWatermarks = make([]uint64, len(s.shards))
+	if checkpoint != nil {
+		// The next periodic snapshot may be minutes away. A crash in that window must still have a replay position.
+		if err := e.Checkpoint(context.Background(), checkpoint, 0); err != nil {
+			// The new store has accepted no writes, so a failed initialization must leave it safe to retry.
+			return nil, errors.Join(fmt.Errorf("write initial checkpoint: %w", err), s.Close(), os.RemoveAll(storeDir))
+		}
+	}
 	return e, nil
 }
 

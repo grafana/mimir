@@ -74,6 +74,26 @@ func TestEngineRestoresItsCheckpointAfterACrash(t *testing.T) {
 	require.False(t, crashed.Restored())
 }
 
+func TestEngineDoesNotSeedAnInitialCheckpointForALostHead(t *testing.T) {
+	dir := t.TempDir()
+	original := openCheckpointedEngine(t, dir, 0)
+	appendSeries(t, original, 1, 1000)
+	require.NoError(t, original.store.Close())
+
+	reopened, err := OpenEngine(dir, "user", EngineOptions{
+		Shards:      2,
+		Checkpoints: true,
+		InitialCheckpoint: func() ([]byte, error) {
+			t.Error("the current offsets are unsafe for a store that lost its head")
+			return []byte("offsets"), nil
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+	require.False(t, reopened.Restored())
+	require.Nil(t, reopened.RestoredCheckpoint())
+}
+
 // The cold blocks and chunk files retention drops after a checkpoint are what restoring it needs, until the next one.
 func TestEngineCheckpointKeepsTheFilesItReferences(t *testing.T) {
 	withExpiredBlock := func(t *testing.T) (*Engine, string) {
