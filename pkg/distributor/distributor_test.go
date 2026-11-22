@@ -87,6 +87,7 @@ var (
 
 func TestConfig_Validate(t *testing.T) {
 	tests := map[string]struct {
+		initConfig func(*Config)
 		initLimits func(*validation.Limits)
 		expected   error
 	}{
@@ -106,6 +107,14 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expected: nil,
 		},
+		"should fail if the retry-after min backoff is greater than the max backoff": {
+			initConfig: func(cfg *Config) {
+				cfg.RetryConfig.MinBackoff = 10 * time.Second
+				cfg.RetryConfig.MaxBackoff = 5 * time.Second
+			},
+			initLimits: func(_ *validation.Limits) {},
+			expected:   errMinBackoffAboveMaxBackoff,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -114,6 +123,9 @@ func TestConfig_Validate(t *testing.T) {
 			limits := validation.Limits{}
 			flagext.DefaultValues(&cfg, &limits)
 
+			if testData.initConfig != nil {
+				testData.initConfig(&cfg)
+			}
 			testData.initLimits(&limits)
 
 			assert.Equal(t, testData.expected, cfg.Validate(limits, compartments.Config{}))
