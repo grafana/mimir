@@ -16386,6 +16386,14 @@
         },
         {
           "kind": "block",
+          "name": "external_labels",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
           "name": "ruler_client",
           "required": false,
           "desc": "",

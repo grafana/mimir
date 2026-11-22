@@ -613,3 +613,55 @@ func (m *managerMock) Update(time.Duration, []string, labels.Labels, string, pro
 func (m *managerMock) RuleGroups() []*promRules.Group {
 	return nil
 }
+
+func TestDefaultMultiTenantManager_ExternalLabels(t *testing.T) {
+	// Fake Alertmanager capturing the raw request bodies.
+	receivedBodies := make(chan string, 2)
+	am := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		receivedBodies <- string(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer am.Close()
+
+	ctx := context.Background()
+	logger := testutil.NewTestingLogger(t)
+
+	const user1 = "user-1"
+	user1Group := createRuleGroup("group-1", user1, createAlertingRule("alert-1", "1"))
+
+	cfg := Config{
+		RulePath:                  t.TempDir(),
+		NotificationQueueCapacity: 1000,
+		NotificationTimeout:       10 * time.Second,
+		ExternalLabels:            labels.FromStrings("env", "prod", "cluster", "eu"),
+	}
+
+	overrides := validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+		*defaults = *validation.MockDefaultLimits()
+		defaults.RulerAlertmanagerClientConfig = rulernotifier.AlertmanagerClientConfig{
+			AlertmanagerURL: am.URL,
+		}
+	})
+
+	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, overrides, afero.NewMemMapFs())
+	require.NoError(t, err)
+	defer m.Stop()
+	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{user1: {user1Group}})
+	m.Start()
+
+	userNotifier := assertNotifierRunningForUser(t, m, user1)
+	waitForAlertmanagerToBeDiscovered(t, userNotifier.notifier)
+
+	// Send an alert; the notifier must add the configured external labels.
+	userNotifier.notifier.Send(&notifier.Alert{Labels: labels.FromStrings(labels.AlertName, "alert-1")})
+
+	select {
+	case body := <-receivedBodies:
+		require.Contains(t, body, `"alertname":"alert-1"`)
+		require.Contains(t, body, `"env":"prod"`)
+		require.Contains(t, body, `"cluster":"eu"`)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for the alertmanager to receive the alert")
+	}
+}

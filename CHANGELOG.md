@@ -1,4 +1,5 @@
 # Changelog
+* [FEATURE] Ruler: add `external_labels` (`-ruler.external-labels`) to attach configured labels to all alerts sent to Alertmanager and to expose them as `$externalLabels` in alert templates. #3490
 
 ## main / unreleased
 

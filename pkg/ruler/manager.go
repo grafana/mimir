@@ -19,7 +19,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
@@ -216,7 +215,7 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(user string, groups rules
 	level.Debug(r.logger).Log("msg", "updating rules", "user", user)
 	r.configUpdatesTotal.WithLabelValues(user).Inc()
 
-	err = manager.Update(r.cfg.EvaluationInterval, files, labels.EmptyLabels(), r.cfg.ExternalURL.String(), nil)
+	err = manager.Update(r.cfg.EvaluationInterval, files, r.cfg.ExternalLabels, r.cfg.ExternalURL.String(), nil)
 	if err != nil {
 		r.lastReloadSuccessful.WithLabelValues(user).Set(0)
 		level.Error(r.logger).Log("msg", "unable to update rule manager", "user", user, "err", err)
@@ -324,7 +323,7 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 	n.run()
 
 	userSpecificCfg := r.limits.RulerAlertmanagerClientConfig(userID)
-	notifierCfg, err := buildNotifierConfig(userSpecificCfg.AlertmanagerURL, userSpecificCfg.NotifierConfig, r.dnsResolver, r.cfg.NotificationTimeout, r.cfg.AlertmanagerRefreshInterval, r.refreshMetrics)
+	notifierCfg, err := buildNotifierConfig(userSpecificCfg.AlertmanagerURL, userSpecificCfg.NotifierConfig, r.dnsResolver, r.cfg.NotificationTimeout, r.cfg.AlertmanagerRefreshInterval, r.refreshMetrics, r.cfg.ExternalLabels)
 	if err != nil {
 		return nil, err
 	}

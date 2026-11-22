@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"math/rand"
@@ -49,6 +50,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -3102,4 +3104,27 @@ func TestConfig_Validate(t *testing.T) {
 
 		require.NoError(t, cfg.Validate(*limits))
 	})
+}
+
+func TestExternalLabelsFlag(t *testing.T) {
+	var cfg Config
+	f := flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg.RegisterFlags(f, log.NewNopLogger())
+
+	require.NoError(t, f.Parse([]string{"-ruler.external-labels=env=prod,cluster=eu"}))
+	require.Equal(t, labels.FromStrings("cluster", "eu", "env", "prod"), cfg.ExternalLabels)
+
+	// empty value resets to no labels
+	require.NoError(t, f.Parse([]string{"-ruler.external-labels="}))
+	require.Equal(t, labels.EmptyLabels(), cfg.ExternalLabels)
+
+	// invalid pairs are rejected
+	require.Error(t, f.Parse([]string{"-ruler.external-labels=env"}))
+	require.Error(t, f.Parse([]string{"-ruler.external-labels==x"}))
+}
+
+func TestConfigExternalLabelsYAML(t *testing.T) {
+	var cfg Config
+	require.NoError(t, yaml.Unmarshal([]byte("external_labels:\n  env: prod\n  cluster: eu\n"), &cfg))
+	require.Equal(t, labels.FromStrings("cluster", "eu", "env", "prod"), cfg.ExternalLabels)
 }

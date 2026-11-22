@@ -835,6 +835,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable the ruler config API. (default true)
   -ruler.evaluation-delay-duration duration
     	Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed. (default 1m)
+  -ruler.external-labels value
+    	Comma-separated list of name=value labels to add to all alerts sent to the Alertmanager by the ruler.
   -ruler.external.url string
     	URL of alerts return path.
   -ruler.max-rule-groups-per-tenant int

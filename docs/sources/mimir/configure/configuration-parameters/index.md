@@ -2794,6 +2794,9 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.external.url
 [external_url: <url> | default = ]
 
+# Labels to add to all alerts sent to the Alertmanager by the ruler.
+external_labels:
+
 # Configures the gRPC client used to communicate between ruler instances.
 ruler_client:
   # (advanced) gRPC client max receive message size (bytes).
