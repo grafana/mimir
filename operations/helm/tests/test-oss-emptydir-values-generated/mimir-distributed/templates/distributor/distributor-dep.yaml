@@ -5,10 +5,12 @@ kind: Deployment
 metadata:
   name: test-oss-emptydir-values-mimir-distributor
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-emptydir-values
     app.kubernetes.io/component: distributor
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -31,10 +33,12 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-emptydir-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: distributor
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: d2343a86bf33730538d065467a6ea944d150dc340bd9f8f628c88f02c8070aa1
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-emptydir-values-mimir
@@ -47,6 +51,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: distributor
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=distributor"

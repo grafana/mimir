@@ -38,8 +38,8 @@ spec:
     whenDeleted: {{ .Values.ingester.persistentVolume.whenDeleted }}
     whenScaled: {{ .Values.ingester.persistentVolume.whenScaled }}
   {{- end }}
-  {{- with .Values.ingester.revisionHistoryLimit }}
-  revisionHistoryLimit: {{ . }}
+  {{- if not (kindIs "invalid" .Values.ingester.revisionHistoryLimit) }}
+  revisionHistoryLimit: {{ .Values.ingester.revisionHistoryLimit }}
   {{- end }}
   selector:
     matchLabels:

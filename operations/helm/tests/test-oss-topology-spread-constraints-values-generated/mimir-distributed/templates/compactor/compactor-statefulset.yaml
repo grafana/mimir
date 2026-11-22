@@ -5,10 +5,12 @@ kind: StatefulSet
 metadata:
   name: test-oss-topology-spread-constraints-values-mimir-compactor
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
     app.kubernetes.io/component: compactor
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -41,10 +43,12 @@ spec:
         foo: bar
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: compactor
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: 7e62e0089e69caea655fda885a02452ff211e53a85307400439c3ed57e772785
         baz: qux
       namespace: "citestns"
     spec:
@@ -98,6 +102,7 @@ spec:
           emptyDir: {}
       containers:
         - name: compactor
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=compactor"

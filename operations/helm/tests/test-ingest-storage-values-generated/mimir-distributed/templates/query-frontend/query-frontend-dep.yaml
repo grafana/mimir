@@ -5,9 +5,11 @@ kind: Deployment
 metadata:
   name: test-ingest-storage-values-mimir-query-frontend
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-ingest-storage-values
     app.kubernetes.io/component: query-frontend
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -30,9 +32,11 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-ingest-storage-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: query-frontend
       annotations:
+        checksum/config: c4031f0e7e070b442ec1e54fd4d53298f4c5d1402dc285f397d104377bb69611
       namespace: "citestns"
     spec:
       serviceAccountName: test-ingest-storage-values-mimir
@@ -45,6 +49,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: query-frontend
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=query-frontend"

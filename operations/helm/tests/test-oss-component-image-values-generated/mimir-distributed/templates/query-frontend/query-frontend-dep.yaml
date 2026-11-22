@@ -5,9 +5,11 @@ kind: Deployment
 metadata:
   name: test-oss-component-image-values-mimir-query-frontend
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-component-image-values
     app.kubernetes.io/component: query-frontend
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -30,9 +32,11 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-component-image-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: query-frontend
       annotations:
+        checksum/config: cb5764e22b48500b81166ab76756b26a072ba806040a346a26047a3b2e68d431
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-component-image-values-mimir

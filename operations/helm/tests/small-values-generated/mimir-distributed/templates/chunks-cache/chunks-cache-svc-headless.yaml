@@ -5,9 +5,11 @@ kind: Service
 metadata:
   name: small-values-mimir-chunks-cache
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: small-values
     app.kubernetes.io/component: chunks-cache
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}

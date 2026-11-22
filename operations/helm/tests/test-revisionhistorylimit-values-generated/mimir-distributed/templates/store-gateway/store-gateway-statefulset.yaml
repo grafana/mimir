@@ -5,10 +5,12 @@ kind: StatefulSet
 metadata:
   name: test-revisionhistorylimit-values-mimir-store-gateway-zone-a
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-revisionhistorylimit-values
     app.kubernetes.io/component: store-gateway
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     name: "store-gateway-zone-a"
     rollout-group: store-gateway
@@ -50,6 +52,7 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-revisionhistorylimit-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: store-gateway
         app.kubernetes.io/part-of: memberlist
@@ -57,6 +60,7 @@ spec:
         rollout-group: store-gateway
         zone: zone-a
       annotations:
+        checksum/config: c88835eb97ea42e0f9633845df38594ea831a84d5757e240971a2f942f626a2c
       namespace: "citestns"
     spec:
       serviceAccountName: test-revisionhistorylimit-values-mimir
@@ -91,6 +95,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -139,6 +144,8 @@ spec:
               value: "5"
             - name: GOMEMLIMIT
               value: "536870912"
+
+
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
 apiVersion: apps/v1
@@ -146,10 +153,12 @@ kind: StatefulSet
 metadata:
   name: test-revisionhistorylimit-values-mimir-store-gateway-zone-b
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-revisionhistorylimit-values
     app.kubernetes.io/component: store-gateway
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     name: "store-gateway-zone-b"
     rollout-group: store-gateway
@@ -192,6 +201,7 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-revisionhistorylimit-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: store-gateway
         app.kubernetes.io/part-of: memberlist
@@ -199,6 +209,7 @@ spec:
         rollout-group: store-gateway
         zone: zone-b
       annotations:
+        checksum/config: c88835eb97ea42e0f9633845df38594ea831a84d5757e240971a2f942f626a2c
       namespace: "citestns"
     spec:
       serviceAccountName: test-revisionhistorylimit-values-mimir
@@ -233,6 +244,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -281,6 +293,8 @@ spec:
               value: "5"
             - name: GOMEMLIMIT
               value: "536870912"
+
+
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
 apiVersion: apps/v1
@@ -288,10 +302,12 @@ kind: StatefulSet
 metadata:
   name: test-revisionhistorylimit-values-mimir-store-gateway-zone-c
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-revisionhistorylimit-values
     app.kubernetes.io/component: store-gateway
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     name: "store-gateway-zone-c"
     rollout-group: store-gateway
@@ -334,6 +350,7 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-revisionhistorylimit-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: store-gateway
         app.kubernetes.io/part-of: memberlist
@@ -341,6 +358,7 @@ spec:
         rollout-group: store-gateway
         zone: zone-c
       annotations:
+        checksum/config: c88835eb97ea42e0f9633845df38594ea831a84d5757e240971a2f942f626a2c
       namespace: "citestns"
     spec:
       serviceAccountName: test-revisionhistorylimit-values-mimir
@@ -375,6 +393,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -423,3 +442,5 @@ spec:
               value: "5"
             - name: GOMEMLIMIT
               value: "536870912"
+
+

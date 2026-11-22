@@ -6,9 +6,11 @@ metadata:
   annotations:
     {}
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: small-values
     app.kubernetes.io/component: gateway
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   name: small-values-mimir-gateway
   namespace: "citestns"
@@ -29,9 +31,11 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: small-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: gateway
       annotations:
+        checksum/config: bcf749102c64abe8f0462e54c64e62d4cfd7d547f102a81ddcd09d03febd5fe6
       namespace: "citestns"
     spec:
       serviceAccountName: small-values-mimir

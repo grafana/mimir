@@ -6,9 +6,11 @@ metadata:
   annotations:
     {}
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-downscale-no-webhooks-values
     app.kubernetes.io/component: gateway
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   name: test-downscale-no-webhooks-values-mimir-gateway
   namespace: "citestns"
@@ -29,9 +31,11 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-downscale-no-webhooks-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: gateway
       annotations:
+        checksum/config: 2d71b534b14227a71fb89bd18c2162a32386b66dbc581e2daef67ea20538ecc2
       namespace: "citestns"
     spec:
       serviceAccountName: test-downscale-no-webhooks-values-mimir

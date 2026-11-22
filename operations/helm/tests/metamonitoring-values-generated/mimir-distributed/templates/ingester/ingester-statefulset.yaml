@@ -5,10 +5,12 @@ kind: StatefulSet
 metadata:
   name: metamonitoring-values-mimir-ingester
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
     app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -40,10 +42,12 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: metamonitoring-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: ingester
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: 68cc06a6587aca7f14fb0427f18aea54a1ba8df2732ac9cc40b74aa13f96a061
       namespace: "citestns"
     spec:
       serviceAccountName: metamonitoring-values-mimir
@@ -78,6 +82,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
@@ -125,3 +130,4 @@ spec:
           env:
             - name: GOMAXPROCS
               value: "4"
+

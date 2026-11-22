@@ -1,0 +1,34 @@
+---
+# Source: mimir-distributed/templates/gateway/gateway-v2-hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway-nginx-values-mimir-gateway
+  labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: gateway-nginx-values
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/version: "r421-c066c71e"
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gateway-nginx-values-mimir-gateway
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

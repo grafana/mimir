@@ -5,10 +5,12 @@ kind: StatefulSet
 metadata:
   name: test-vault-agent-values-mimir-compactor
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-vault-agent-values
     app.kubernetes.io/component: compactor
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -40,10 +42,12 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-vault-agent-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: compactor
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: d6cf9c71dd5fcce05984d367a1e716863b4086fdb0dee75dbb6ab9d2e4c49186
         vault.hashicorp.com/agent-inject: 'true'
         vault.hashicorp.com/role: 'test-role-name'
         vault.hashicorp.com/agent-inject-secret-client.crt: 'client-cert-path'
@@ -85,6 +89,7 @@ spec:
           emptyDir: {}
       containers:
         - name: compactor
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=compactor"

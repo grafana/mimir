@@ -5,10 +5,12 @@ kind: StatefulSet
 metadata:
   name: test-oss-multizone-values-mimir-ingester-zone-a
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-multizone-values
     app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     name: "ingester-zone-a"
     rollout-group: ingester
@@ -45,6 +47,7 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-multizone-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: ingester
         app.kubernetes.io/part-of: memberlist
@@ -52,6 +55,7 @@ spec:
         rollout-group: ingester
         zone: zone-a
       annotations:
+        checksum/config: edc5c967357c4075cae88d356bc68978d45b9ab1bde3fa1571e03c00b93f1508
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-multizone-values-mimir
@@ -109,6 +113,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
@@ -156,6 +161,7 @@ spec:
           env:
             - name: GOMAXPROCS
               value: "4"
+
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
 apiVersion: apps/v1
@@ -163,10 +169,12 @@ kind: StatefulSet
 metadata:
   name: test-oss-multizone-values-mimir-ingester-zone-b
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-multizone-values
     app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     name: "ingester-zone-b"
     rollout-group: ingester
@@ -203,6 +211,7 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-multizone-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: ingester
         app.kubernetes.io/part-of: memberlist
@@ -210,6 +219,7 @@ spec:
         rollout-group: ingester
         zone: zone-b
       annotations:
+        checksum/config: edc5c967357c4075cae88d356bc68978d45b9ab1bde3fa1571e03c00b93f1508
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-multizone-values-mimir
@@ -267,6 +277,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
@@ -314,3 +325,4 @@ spec:
           env:
             - name: GOMAXPROCS
               value: "4"
+

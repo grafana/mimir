@@ -6,9 +6,11 @@ metadata:
   annotations:
     {}
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-vault-agent-values
     app.kubernetes.io/component: gateway
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   name: test-vault-agent-values-mimir-gateway
   namespace: "citestns"
@@ -29,9 +31,11 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-vault-agent-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: gateway
       annotations:
+        checksum/config: dd1a15f415e2606b6c91d932fa455637b485847537a2018177862ce968d31931
         vault.hashicorp.com/agent-inject: "true"
         vault.hashicorp.com/agent-inject-secret-client.crt: client-cert-path
         vault.hashicorp.com/agent-inject-secret-client.key: client-key-path

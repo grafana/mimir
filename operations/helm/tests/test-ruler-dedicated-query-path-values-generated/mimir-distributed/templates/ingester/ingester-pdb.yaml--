@@ -1,0 +1,22 @@
+---
+# Source: mimir-distributed/templates/ingester/ingester-pdb.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: test-ruler-dedicated-query-path-values-mimir-ingester
+  labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
+    app.kubernetes.io/component: ingester
+    app.kubernetes.io/version: "r421-c066c71e"
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
+      app.kubernetes.io/component: ingester
+  maxUnavailable: 1
+

@@ -5,10 +5,12 @@ kind: Deployment
 metadata:
   name: test-downscale-external-values-mimir-distributor
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-downscale-external-values
     app.kubernetes.io/component: distributor
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -31,10 +33,12 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-downscale-external-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: distributor
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: d3f9f8e87f43c5f28a39a789beb7c10361528b863b4caf0fea0e21f1a0b4b54b
       namespace: "citestns"
     spec:
       serviceAccountName: test-downscale-external-values-mimir
@@ -47,6 +51,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: distributor
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=distributor"

@@ -5,10 +5,12 @@ kind: Deployment
 metadata:
   name: keda-autoscaling-values-mimir-ruler-querier
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: keda-autoscaling-values
     app.kubernetes.io/component: ruler-querier
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -31,10 +33,12 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: keda-autoscaling-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: ruler-querier
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: 9dfd9a77c57045db6d18b47e34d24e937cf12fd9047861c25530a3f30ba66c83
     spec:
       serviceAccountName: keda-autoscaling-values-mimir
       securityContext:
@@ -46,6 +50,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ruler-querier
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=querier"

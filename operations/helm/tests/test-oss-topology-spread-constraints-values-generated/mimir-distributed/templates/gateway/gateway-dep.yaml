@@ -6,9 +6,11 @@ metadata:
   annotations:
     {}
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
     app.kubernetes.io/component: gateway
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   name: test-oss-topology-spread-constraints-values-mimir-gateway
   namespace: "citestns"
@@ -30,10 +32,12 @@ spec:
         foo: bar
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: gateway
       annotations:
         baz: qux
+        checksum/config: 0ccde2e6db97f7c6b7f29722cd01cb82c87c78f349557b92114020923e893697
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-topology-spread-constraints-values-mimir

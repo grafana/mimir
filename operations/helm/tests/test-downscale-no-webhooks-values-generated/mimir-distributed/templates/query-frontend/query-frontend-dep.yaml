@@ -5,9 +5,11 @@ kind: Deployment
 metadata:
   name: test-downscale-no-webhooks-values-mimir-query-frontend
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-downscale-no-webhooks-values
     app.kubernetes.io/component: query-frontend
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -30,9 +32,11 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-downscale-no-webhooks-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: query-frontend
       annotations:
+        checksum/config: 6171c8bb555da86a8eeb49fe74b2dc2fba7073f3c47e4fe07a254b5b565df2e9
       namespace: "citestns"
     spec:
       serviceAccountName: test-downscale-no-webhooks-values-mimir
@@ -45,6 +49,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: query-frontend
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=query-frontend"

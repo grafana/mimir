@@ -5,9 +5,11 @@ kind: StatefulSet
 metadata:
   name: test-volume-attributes-class-values-mimir-kafka
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-volume-attributes-class-values
     app.kubernetes.io/component: kafka
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -26,9 +28,11 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-volume-attributes-class-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: kafka
       annotations:
+        checksum/config: e455342898cdd555dc08ba77c21c706839650330b9202a18d81d3a9714ab39a9
       namespace: "citestns"
     spec:
       serviceAccountName: test-volume-attributes-class-values-mimir

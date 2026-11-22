@@ -5,9 +5,11 @@ kind: StatefulSet
 metadata:
   name: test-requests-and-limits-values-mimir-kafka
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-requests-and-limits-values
     app.kubernetes.io/component: kafka
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -26,9 +28,11 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-requests-and-limits-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: kafka
       annotations:
+        checksum/config: 0c5ee4e9d95d2d5609a52c8ee8f9b74b9ef94f4c2e8d5b85d197977087b61abb
       namespace: "citestns"
     spec:
       serviceAccountName: test-requests-and-limits-values-mimir

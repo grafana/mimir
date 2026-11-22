@@ -16,8 +16,8 @@ spec:
     whenScaled: {{ .Values.compactor.persistentVolume.whenScaled }}
   {{- end }}
   replicas: {{ .Values.compactor.replicas }}
-  {{- with .Values.compactor.revisionHistoryLimit }}
-  revisionHistoryLimit: {{ . }}
+  {{- if not (kindIs "invalid" .Values.compactor.revisionHistoryLimit) }}
+  revisionHistoryLimit: {{ .Values.compactor.revisionHistoryLimit }}
   {{- end }}
   selector:
     matchLabels:

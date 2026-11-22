@@ -6,9 +6,11 @@ metadata:
   annotations:
     {}
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-extra-objects-values
     app.kubernetes.io/component: overrides-exporter
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   name: test-extra-objects-values-mimir-overrides-exporter
   namespace: "citestns"
@@ -29,9 +31,11 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-extra-objects-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: overrides-exporter
       annotations:
+        checksum/config: 1701f750da4b0bac81730f08827b0e670ad647ba85c4f43613b85cb77fd99486
       namespace: "citestns"
     spec:
       serviceAccountName: test-extra-objects-values-mimir
@@ -44,6 +48,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: overrides-exporter
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=overrides-exporter"

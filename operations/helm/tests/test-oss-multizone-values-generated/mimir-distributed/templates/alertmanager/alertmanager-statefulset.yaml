@@ -5,10 +5,12 @@ kind: StatefulSet
 metadata:
   name: test-oss-multizone-values-mimir-alertmanager-zone-a
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-multizone-values
     app.kubernetes.io/component: alertmanager
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     name: "alertmanager-zone-a"
     rollout-group: alertmanager
@@ -44,6 +46,7 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-multizone-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
@@ -51,6 +54,8 @@ spec:
         rollout-group: alertmanager
         zone: zone-a
       annotations:
+        checksum/config: edc5c967357c4075cae88d356bc68978d45b9ab1bde3fa1571e03c00b93f1508
+        checksum/alertmanager-fallback-config: 2e160f97810151e397fc2578b303616141955b2d5e65e1a9b88d4eb3c80cab4d
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-multizone-values-mimir
@@ -104,6 +109,7 @@ spec:
             name: test-oss-multizone-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"
@@ -156,6 +162,8 @@ spec:
             readOnlyRootFilesystem: true
           env:
             []
+
+
 ---
 # Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
 apiVersion: apps/v1
@@ -163,10 +171,12 @@ kind: StatefulSet
 metadata:
   name: test-oss-multizone-values-mimir-alertmanager-zone-b
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-multizone-values
     app.kubernetes.io/component: alertmanager
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     name: "alertmanager-zone-b"
     rollout-group: alertmanager
@@ -202,6 +212,7 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-multizone-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
@@ -209,6 +220,8 @@ spec:
         rollout-group: alertmanager
         zone: zone-b
       annotations:
+        checksum/config: edc5c967357c4075cae88d356bc68978d45b9ab1bde3fa1571e03c00b93f1508
+        checksum/alertmanager-fallback-config: 2e160f97810151e397fc2578b303616141955b2d5e65e1a9b88d4eb3c80cab4d
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-multizone-values-mimir
@@ -262,6 +275,7 @@ spec:
             name: test-oss-multizone-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"
@@ -314,6 +328,8 @@ spec:
             readOnlyRootFilesystem: true
           env:
             []
+
+
 ---
 # Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
 apiVersion: apps/v1
@@ -321,10 +337,12 @@ kind: StatefulSet
 metadata:
   name: test-oss-multizone-values-mimir-alertmanager-zone-c
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-multizone-values
     app.kubernetes.io/component: alertmanager
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     name: "alertmanager-zone-c"
     rollout-group: alertmanager
@@ -360,6 +378,7 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-multizone-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
@@ -367,6 +386,8 @@ spec:
         rollout-group: alertmanager
         zone: zone-c
       annotations:
+        checksum/config: edc5c967357c4075cae88d356bc68978d45b9ab1bde3fa1571e03c00b93f1508
+        checksum/alertmanager-fallback-config: 2e160f97810151e397fc2578b303616141955b2d5e65e1a9b88d4eb3c80cab4d
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-multizone-values-mimir
@@ -420,6 +441,7 @@ spec:
             name: test-oss-multizone-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"
@@ -472,3 +494,5 @@ spec:
             readOnlyRootFilesystem: true
           env:
             []
+
+

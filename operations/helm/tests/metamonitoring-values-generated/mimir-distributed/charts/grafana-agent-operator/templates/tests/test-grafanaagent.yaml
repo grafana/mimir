@@ -7,6 +7,8 @@ metadata:
   annotations:
     "helm.sh/hook": test
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
+
+
 ---
 # Source: mimir-distributed/charts/grafana-agent-operator/templates/tests/test-grafanaagent.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -43,6 +45,8 @@ rules:
   - /metrics/cadvisor
   verbs:
   - get
+
+
 ---
 # Source: mimir-distributed/charts/grafana-agent-operator/templates/tests/test-grafanaagent.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -60,6 +64,8 @@ subjects:
 - kind: ServiceAccount
   name: grafana-agent-test-sa
   namespace: citestns
+
+
 ---
 # Source: mimir-distributed/charts/grafana-agent-operator/templates/tests/test-grafanaagent.yaml
 apiVersion: v1
@@ -102,6 +108,8 @@ spec:
     instanceSelector:
       matchLabels:
         agent: grafana-agent-test
+
+
 ---
 # Source: mimir-distributed/charts/grafana-agent-operator/templates/tests/test-grafanaagent.yaml
 apiVersion: monitoring.grafana.com/v1alpha1
@@ -114,3 +122,5 @@ metadata:
   labels:
     agent: grafana-agent-test
 spec: {}
+
+

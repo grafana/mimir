@@ -5,10 +5,12 @@ kind: Deployment
 metadata:
   name: test-ruler-dedicated-query-path-values-mimir-distributor
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
     app.kubernetes.io/component: distributor
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -31,10 +33,12 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: distributor
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: c9dd81844cc53d3f4441e048d02f95bab65ad19cb0ccf133cb5e2d97f69ff18f
       namespace: "citestns"
     spec:
       serviceAccountName: test-ruler-dedicated-query-path-values-mimir
@@ -47,6 +51,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: distributor
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=distributor"

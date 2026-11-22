@@ -15,8 +15,8 @@ spec:
   replicas: {{ .Values.querier.replicas }}
   {{- end }}
   {{- end }}
-  {{- with .Values.querier.revisionHistoryLimit }}
-  revisionHistoryLimit: {{ . }}
+  {{- if not (kindIs "invalid" .Values.querier.revisionHistoryLimit) }}
+  revisionHistoryLimit: {{ .Values.querier.revisionHistoryLimit }}
   {{- end }}
   selector:
     matchLabels:

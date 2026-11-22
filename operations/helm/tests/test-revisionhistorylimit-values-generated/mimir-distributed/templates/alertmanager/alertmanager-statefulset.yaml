@@ -5,10 +5,12 @@ kind: StatefulSet
 metadata:
   name: test-revisionhistorylimit-values-mimir-alertmanager
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-revisionhistorylimit-values
     app.kubernetes.io/component: alertmanager
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -40,10 +42,13 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-revisionhistorylimit-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: c88835eb97ea42e0f9633845df38594ea831a84d5757e240971a2f942f626a2c
+        checksum/alertmanager-fallback-config: 2e160f97810151e397fc2578b303616141955b2d5e65e1a9b88d4eb3c80cab4d
       namespace: "citestns"
     spec:
       serviceAccountName: test-revisionhistorylimit-values-mimir
@@ -83,6 +88,7 @@ spec:
             name: test-revisionhistorylimit-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"
@@ -134,3 +140,5 @@ spec:
             readOnlyRootFilesystem: true
           env:
             []
+
+

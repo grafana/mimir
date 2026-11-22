@@ -6,9 +6,11 @@ metadata:
   name: openshift-values-mimir-meta-monitoring
   namespace: "citestns-monitoring"
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: openshift-values
     app.kubernetes.io/component: meta-monitoring
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
 spec:
   serviceAccountName: openshift-values-mimir-grafana-agent

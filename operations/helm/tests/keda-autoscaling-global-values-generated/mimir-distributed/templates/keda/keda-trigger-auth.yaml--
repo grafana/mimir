@@ -1,0 +1,15 @@
+---
+# Source: mimir-distributed/templates/keda/keda-trigger-auth.yaml
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: keda-triggger-auth
+  namespace: "citestns"
+spec:
+  secretTargetRef:
+  - key: username
+    name: my-secret-name
+    parameter: username
+  - key: password
+    name: my-secret-name
+    parameter: password

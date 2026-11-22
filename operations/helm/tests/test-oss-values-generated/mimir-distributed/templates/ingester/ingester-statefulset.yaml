@@ -5,10 +5,12 @@ kind: StatefulSet
 metadata:
   name: test-oss-values-mimir-ingester
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -29,10 +31,12 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: ingester
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: 4fe8a04c9593a5914963d45df664ff141b58abf18529b0b97a5f82475512eff0
         minio-secret-version: "42"
       namespace: "citestns"
     spec:
@@ -70,6 +74,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
@@ -117,3 +122,4 @@ spec:
           envFrom:
             - secretRef:
                 name: mimir-minio-secret
+

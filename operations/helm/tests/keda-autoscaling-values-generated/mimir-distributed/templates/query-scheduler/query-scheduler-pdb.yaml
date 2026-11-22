@@ -5,9 +5,11 @@ kind: PodDisruptionBudget
 metadata:
   name: keda-autoscaling-values-mimir-query-scheduler
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: keda-autoscaling-values
     app.kubernetes.io/component: query-scheduler
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   namespace: "citestns"
 spec:

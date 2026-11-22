@@ -5,10 +5,12 @@ kind: StatefulSet
 metadata:
   name: test-oss-values-mimir-alertmanager
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: alertmanager
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -28,11 +30,14 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: 4fe8a04c9593a5914963d45df664ff141b58abf18529b0b97a5f82475512eff0
         minio-secret-version: "42"
+        checksum/alertmanager-fallback-config: 2e160f97810151e397fc2578b303616141955b2d5e65e1a9b88d4eb3c80cab4d
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-values-mimir
@@ -74,6 +79,7 @@ spec:
             name: test-oss-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"
@@ -128,3 +134,5 @@ spec:
           envFrom:
             - secretRef:
                 name: mimir-minio-secret
+
+

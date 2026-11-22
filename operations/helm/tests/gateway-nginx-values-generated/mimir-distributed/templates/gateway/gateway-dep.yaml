@@ -6,9 +6,11 @@ metadata:
   annotations:
     {}
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: gateway-nginx-values
     app.kubernetes.io/component: gateway
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   name: gateway-nginx-values-mimir-gateway
   namespace: "citestns"
@@ -28,9 +30,11 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: gateway-nginx-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: gateway
       annotations:
+        checksum/config: b14563f08607c5f1aeff539cc444a8cf23eeb326234c9e1a202c4a6e0ab9f80d
       namespace: "citestns"
     spec:
       serviceAccountName: gateway-nginx-values-mimir

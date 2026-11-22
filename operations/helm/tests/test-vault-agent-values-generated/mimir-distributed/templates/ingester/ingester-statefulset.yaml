@@ -5,10 +5,12 @@ kind: StatefulSet
 metadata:
   name: test-vault-agent-values-mimir-ingester-zone-a
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-vault-agent-values
     app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     name: "ingester-zone-a"
     rollout-group: ingester
@@ -49,6 +51,7 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-vault-agent-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: ingester
         app.kubernetes.io/part-of: memberlist
@@ -56,6 +59,7 @@ spec:
         rollout-group: ingester
         zone: zone-a
       annotations:
+        checksum/config: d6cf9c71dd5fcce05984d367a1e716863b4086fdb0dee75dbb6ab9d2e4c49186
         vault.hashicorp.com/agent-inject: 'true'
         vault.hashicorp.com/role: 'test-role-name'
         vault.hashicorp.com/agent-inject-secret-client.crt: 'client-cert-path'
@@ -97,6 +101,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
@@ -144,6 +149,7 @@ spec:
           env:
             - name: GOMAXPROCS
               value: "4"
+
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
 apiVersion: apps/v1
@@ -151,10 +157,12 @@ kind: StatefulSet
 metadata:
   name: test-vault-agent-values-mimir-ingester-zone-b
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-vault-agent-values
     app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     name: "ingester-zone-b"
     rollout-group: ingester
@@ -196,6 +204,7 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-vault-agent-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: ingester
         app.kubernetes.io/part-of: memberlist
@@ -203,6 +212,7 @@ spec:
         rollout-group: ingester
         zone: zone-b
       annotations:
+        checksum/config: d6cf9c71dd5fcce05984d367a1e716863b4086fdb0dee75dbb6ab9d2e4c49186
         vault.hashicorp.com/agent-inject: 'true'
         vault.hashicorp.com/role: 'test-role-name'
         vault.hashicorp.com/agent-inject-secret-client.crt: 'client-cert-path'
@@ -244,6 +254,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
@@ -291,6 +302,7 @@ spec:
           env:
             - name: GOMAXPROCS
               value: "4"
+
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
 apiVersion: apps/v1
@@ -298,10 +310,12 @@ kind: StatefulSet
 metadata:
   name: test-vault-agent-values-mimir-ingester-zone-c
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-vault-agent-values
     app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     name: "ingester-zone-c"
     rollout-group: ingester
@@ -343,6 +357,7 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-vault-agent-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: ingester
         app.kubernetes.io/part-of: memberlist
@@ -350,6 +365,7 @@ spec:
         rollout-group: ingester
         zone: zone-c
       annotations:
+        checksum/config: d6cf9c71dd5fcce05984d367a1e716863b4086fdb0dee75dbb6ab9d2e4c49186
         vault.hashicorp.com/agent-inject: 'true'
         vault.hashicorp.com/role: 'test-role-name'
         vault.hashicorp.com/agent-inject-secret-client.crt: 'client-cert-path'
@@ -391,6 +407,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
@@ -438,3 +455,4 @@ spec:
           env:
             - name: GOMAXPROCS
               value: "4"
+

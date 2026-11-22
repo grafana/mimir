@@ -1,0 +1,106 @@
+---
+# Source: mimir-distributed/templates/gateway/gateway-dep.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    {}
+  labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-revisionhistorylimit-zero-values
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/version: "r421-c066c71e"
+    app.kubernetes.io/managed-by: Helm
+  name: test-revisionhistorylimit-zero-values-mimir-gateway
+  namespace: "citestns"
+spec:
+  replicas: 1
+  revisionHistoryLimit: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-revisionhistorylimit-zero-values
+      app.kubernetes.io/component: gateway
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: test-revisionhistorylimit-zero-values
+        app.kubernetes.io/version: "r421-c066c71e"
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: gateway
+      annotations:
+        checksum/config: 5f3b7d27fd1d80e162756326eb841171dc4bc95d9183dc8642e194ba268b5a4c
+      namespace: "citestns"
+    spec:
+      serviceAccountName: test-revisionhistorylimit-zero-values-mimir
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: docker.io/nginx/nginx-unprivileged:1.31.9-alpine
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+            - name: tmp
+              mountPath: /tmp
+            - name: docker-entrypoint-d-override
+              mountPath: /docker-entrypoint.d
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 15
+            timeoutSeconds: 1
+          resources:
+            {}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-revisionhistorylimit-zero-values
+            app.kubernetes.io/component: gateway
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: config
+          configMap:
+            name: test-revisionhistorylimit-zero-values-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
+        - name: runtime-config
+          configMap:
+            name: test-revisionhistorylimit-zero-values-mimir-runtime
+        - name: nginx-config
+          configMap:
+            name: test-revisionhistorylimit-zero-values-mimir-gateway-nginx
+        - name: docker-entrypoint-d-override
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

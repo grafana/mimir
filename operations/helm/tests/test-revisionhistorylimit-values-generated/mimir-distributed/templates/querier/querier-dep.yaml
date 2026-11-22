@@ -5,10 +5,12 @@ kind: Deployment
 metadata:
   name: test-revisionhistorylimit-values-mimir-querier
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-revisionhistorylimit-values
     app.kubernetes.io/component: querier
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -32,10 +34,12 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-revisionhistorylimit-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: querier
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: c88835eb97ea42e0f9633845df38594ea831a84d5757e240971a2f942f626a2c
     spec:
       serviceAccountName: test-revisionhistorylimit-values-mimir
       securityContext:
@@ -47,6 +51,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: querier
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=querier"

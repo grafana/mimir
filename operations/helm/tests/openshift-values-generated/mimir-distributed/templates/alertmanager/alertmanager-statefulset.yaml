@@ -5,10 +5,12 @@ kind: StatefulSet
 metadata:
   name: openshift-values-mimir-alertmanager
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: openshift-values
     app.kubernetes.io/component: alertmanager
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -39,10 +41,13 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: openshift-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: 13cfdc611571bf0bb1abff719349500f031f5798c38565d0eb85ec1748753e5a
+        checksum/alertmanager-fallback-config: 2e160f97810151e397fc2578b303616141955b2d5e65e1a9b88d4eb3c80cab4d
       namespace: "citestns"
     spec:
       serviceAccountName: openshift-values-mimir
@@ -79,6 +84,7 @@ spec:
             name: openshift-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"
@@ -130,3 +136,5 @@ spec:
             readOnlyRootFilesystem: true
           env:
             []
+
+

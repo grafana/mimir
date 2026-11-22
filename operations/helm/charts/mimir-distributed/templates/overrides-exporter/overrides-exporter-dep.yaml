@@ -10,8 +10,8 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.overrides_exporter.replicas }}
-  {{- with .Values.overrides_exporter.revisionHistoryLimit }}
-  revisionHistoryLimit: {{ . }}
+  {{- if not (kindIs "invalid" .Values.overrides_exporter.revisionHistoryLimit) }}
+  revisionHistoryLimit: {{ .Values.overrides_exporter.revisionHistoryLimit }}
   {{- end }}
   selector:
     matchLabels:

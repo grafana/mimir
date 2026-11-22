@@ -5,10 +5,12 @@ kind: Service
 metadata:
   name: openshift-values-mimir-ingester-zone-a
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: openshift-values
     app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     name: "ingester-zone-a"
     rollout-group: ingester
@@ -34,6 +36,8 @@ spec:
     app.kubernetes.io/component: ingester
     rollout-group: ingester
     zone: zone-a
+
+
 ---
 # Source: mimir-distributed/templates/ingester/ingester-svc.yaml
 apiVersion: v1
@@ -41,10 +45,12 @@ kind: Service
 metadata:
   name: openshift-values-mimir-ingester-zone-b
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: openshift-values
     app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     name: "ingester-zone-b"
     rollout-group: ingester
@@ -70,6 +76,8 @@ spec:
     app.kubernetes.io/component: ingester
     rollout-group: ingester
     zone: zone-b
+
+
 ---
 # Source: mimir-distributed/templates/ingester/ingester-svc.yaml
 apiVersion: v1
@@ -77,10 +85,12 @@ kind: Service
 metadata:
   name: openshift-values-mimir-ingester-zone-c
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: openshift-values
     app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     name: "ingester-zone-c"
     rollout-group: ingester
@@ -106,3 +116,5 @@ spec:
     app.kubernetes.io/component: ingester
     rollout-group: ingester
     zone: zone-c
+
+

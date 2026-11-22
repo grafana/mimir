@@ -1,0 +1,47 @@
+---
+# Source: mimir-distributed/templates/securitycontextconstraints.yaml
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: openshift-values-mimir
+  labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: openshift-values
+    app.kubernetes.io/version: "r421-c066c71e"
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+allowHostDirVolumePlugin: true
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegeEscalation: true
+allowPrivilegedContainer: false
+allowedCapabilities: null
+defaultAddCapabilities: null
+fsGroup:
+  type: RunAsAny
+groups: []
+priority: 10
+readOnlyRootFilesystem: false
+requiredDropCapabilities:
+  - MKNOD
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: MustRunAs
+supplementalGroups:
+  type: RunAsAny
+users:
+  - system:serviceaccount:openshift-infra:pv-recycler-controller
+volumes:
+  - configMap
+  - downwardAPI
+  - emptyDir
+  - hostPath
+  - nfs
+  - persistentVolumeClaim
+  - projected
+  - secret
+

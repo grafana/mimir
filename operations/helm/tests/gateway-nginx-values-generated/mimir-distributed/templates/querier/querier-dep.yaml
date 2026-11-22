@@ -5,10 +5,12 @@ kind: Deployment
 metadata:
   name: gateway-nginx-values-mimir-querier
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: gateway-nginx-values
     app.kubernetes.io/component: querier
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -31,10 +33,12 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: gateway-nginx-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: querier
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: b798db64193dab61b77b4b5964745b33427aa0cad671d9bd950a09b0301613ff
     spec:
       serviceAccountName: gateway-nginx-values-mimir
       securityContext:
@@ -46,6 +50,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: querier
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=querier"

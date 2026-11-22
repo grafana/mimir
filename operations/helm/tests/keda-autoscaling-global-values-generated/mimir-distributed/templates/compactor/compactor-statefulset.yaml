@@ -5,10 +5,12 @@ kind: StatefulSet
 metadata:
   name: keda-autoscaling-global-values-mimir-compactor
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: keda-autoscaling-global-values
     app.kubernetes.io/component: compactor
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -40,10 +42,12 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: keda-autoscaling-global-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: compactor
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: 71ffbf645c83ac7b38d0eab9d20a401722be0049219d0ae2cc0c332b57ea0fac
       namespace: "citestns"
     spec:
       serviceAccountName: keda-autoscaling-global-values-mimir
@@ -78,6 +82,7 @@ spec:
           emptyDir: {}
       containers:
         - name: compactor
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=compactor"

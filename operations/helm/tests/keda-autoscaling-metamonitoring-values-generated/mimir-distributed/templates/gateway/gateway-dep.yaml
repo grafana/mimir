@@ -6,9 +6,11 @@ metadata:
   annotations:
     {}
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: keda-autoscaling-metamonitoring-values
     app.kubernetes.io/component: gateway
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   name: keda-autoscaling-metamonitoring-values-mimir-gateway
   namespace: "citestns"
@@ -29,9 +31,11 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: keda-autoscaling-metamonitoring-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: gateway
       annotations:
+        checksum/config: 6385071833796878e6ebf400c74363c9d54a01d787651e7921296d1f929ddd89
       namespace: "citestns"
     spec:
       serviceAccountName: keda-autoscaling-metamonitoring-values-mimir

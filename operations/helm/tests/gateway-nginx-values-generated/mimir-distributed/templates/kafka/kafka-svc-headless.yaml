@@ -5,9 +5,11 @@ kind: Service
 metadata:
   name: gateway-nginx-values-mimir-kafka-headless
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: gateway-nginx-values
     app.kubernetes.io/component: kafka
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     prometheus.io/service-monitor: "false"
   annotations:

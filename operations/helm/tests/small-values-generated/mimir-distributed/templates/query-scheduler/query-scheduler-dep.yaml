@@ -6,9 +6,11 @@ metadata:
   name: small-values-mimir-query-scheduler
   namespace: "citestns"
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: small-values
     app.kubernetes.io/component: query-scheduler
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -29,9 +31,11 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: small-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: query-scheduler
       annotations:
+        checksum/config: e996425c3f4776542a4c8feec1772aa8eebb84f761f6daf1cdd89689325d9ed4
     spec:
       serviceAccountName: small-values-mimir
       securityContext:
@@ -43,6 +47,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: query-scheduler
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=query-scheduler"

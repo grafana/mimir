@@ -1,0 +1,18 @@
+---
+# Source: mimir-distributed/templates/runtime-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keda-autoscaling-metamonitoring-values-mimir-runtime
+  labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: keda-autoscaling-metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+data:
+  runtime.yaml: |
+    
+    {}
+

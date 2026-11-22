@@ -13,8 +13,8 @@ spec:
 {{- if not .autoscaling.enabled }}
   replicas: {{ .replicas }}
 {{- end }}
-  {{- with .revisionHistoryLimit }}
-  revisionHistoryLimit: {{ . }}
+  {{- if not (kindIs "invalid" .revisionHistoryLimit) }}
+  revisionHistoryLimit: {{ .revisionHistoryLimit }}
   {{- end }}
   selector:
     matchLabels:

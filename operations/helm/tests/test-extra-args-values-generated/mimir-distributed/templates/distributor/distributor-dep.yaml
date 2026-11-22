@@ -5,10 +5,12 @@ kind: Deployment
 metadata:
   name: test-extra-args-values-mimir-distributor
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-extra-args-values
     app.kubernetes.io/component: distributor
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -31,10 +33,12 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-extra-args-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: distributor
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: aa5d24340b3b45e4eab05e6cdb178258157870c69f72751f61396970a660e15e
       namespace: "citestns"
     spec:
       serviceAccountName: test-extra-args-values-mimir
@@ -47,6 +51,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: distributor
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=distributor"

@@ -6,9 +6,11 @@ metadata:
   name: test-ruler-dedicated-query-path-values-mimir-query-scheduler
   namespace: "citestns"
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
     app.kubernetes.io/component: query-scheduler
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}

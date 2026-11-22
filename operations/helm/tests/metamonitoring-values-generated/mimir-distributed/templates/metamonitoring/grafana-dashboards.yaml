@@ -6,8 +6,10 @@ metadata:
   name: mimir-alertmanager-resources-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -744,6 +746,7 @@ data:
           "uid": "a6883fb22799ac74479c7db872451092",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -752,8 +755,10 @@ metadata:
   name: mimir-alertmanager-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -3407,6 +3412,7 @@ data:
           "uid": "b0d38d318bbddd80476246d4930f9e55",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -3415,8 +3421,10 @@ metadata:
   name: mimir-compactor-resources-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -4252,6 +4260,7 @@ data:
           "uid": "09a5c49e9cdb2f2b24c6d184574a07fd",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -4260,8 +4269,10 @@ metadata:
   name: mimir-compactor-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -6843,6 +6854,7 @@ data:
           "uid": "1b3443aea86db629e6efdb7d05c53823",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -6851,8 +6863,10 @@ metadata:
   name: mimir-config-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -7117,6 +7131,7 @@ data:
           "uid": "5d9d0b4724c0f80d68467088ec61e003",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -7125,8 +7140,10 @@ metadata:
   name: mimir-object-store-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -8092,6 +8109,7 @@ data:
           "uid": "e1324ee2a434f4158c00a9ee279d3292",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -8100,8 +8118,10 @@ metadata:
   name: mimir-overrides-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -8374,6 +8394,7 @@ data:
           "uid": "1e2c358600ac53f09faea133f811b5bb",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -8382,8 +8403,10 @@ metadata:
   name: mimir-overview-networking-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -9213,6 +9236,7 @@ data:
           "uid": "e15c71d372cc541367a088f10d9fcd92",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -9221,8 +9245,10 @@ metadata:
   name: mimir-overview-resources-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -10151,6 +10177,7 @@ data:
           "uid": "a9b92d3c4d1af325d872a9e9a7083d71",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -10159,8 +10186,10 @@ metadata:
   name: mimir-overview-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -11955,6 +11984,7 @@ data:
           "uid": "ffcd83628d7d4b5a03d1cafd159e6c9c",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -11963,8 +11993,10 @@ metadata:
   name: mimir-queries-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -16550,6 +16582,7 @@ data:
           "uid": "b3abe8d5c040395cc36615cb4334c92d",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -16558,8 +16591,10 @@ metadata:
   name: mimir-reads-networking-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -18076,6 +18111,7 @@ data:
           "uid": "54b2a0a4748b3bd1aefa92ce5559a1c2",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -18084,8 +18120,10 @@ metadata:
   name: mimir-reads-resources-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -21258,6 +21296,7 @@ data:
           "uid": "cc86fd5aa9301c6528986572ad974db9",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -21266,8 +21305,10 @@ metadata:
   name: mimir-reads-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -27422,6 +27463,7 @@ data:
           "uid": "e327503188913dc38ad571c647eef643",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -27430,8 +27472,10 @@ metadata:
   name: mimir-remote-ruler-reads-networking-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -28490,6 +28534,7 @@ data:
           "uid": "9e8cfff65f91632f8a25981c6fe44bc9",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -28498,8 +28543,10 @@ metadata:
   name: mimir-remote-ruler-reads-resources-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -29920,6 +29967,7 @@ data:
           "uid": "1940f6ef765a506a171faa2056c956c3",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -29928,8 +29976,10 @@ metadata:
   name: mimir-remote-ruler-reads-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -33176,6 +33226,7 @@ data:
           "uid": "f103238f7f5ab2f1345ce650cbfbfe2f",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -33184,8 +33235,10 @@ metadata:
   name: mimir-rollout-progress-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -34717,6 +34770,7 @@ data:
           "uid": "7f0b5567d543a1698e695b530eb7f5de",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -34725,8 +34779,10 @@ metadata:
   name: mimir-ruler-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -38717,6 +38773,7 @@ data:
           "uid": "631e15d5d85afb2ca8e35d62984eeaa0",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -38725,8 +38782,10 @@ metadata:
   name: mimir-scaling-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -39125,6 +39184,7 @@ data:
           "uid": "64bbad83507b7289b514725658e10352",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -39133,8 +39193,10 @@ metadata:
   name: mimir-slow-queries-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -40660,6 +40722,7 @@ data:
           "uid": "6089e1ce1e678788f46312a0a1e647e6",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -40668,8 +40731,10 @@ metadata:
   name: mimir-tenants-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -43643,6 +43708,7 @@ data:
           "uid": "35fa247ce651ba189debf33d7ae41611",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -43651,8 +43717,10 @@ metadata:
   name: mimir-top-tenants-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -46699,6 +46767,7 @@ data:
           "uid": "bc6e12d4fe540e4a1785b9d3ca0ffdd9",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -46707,8 +46776,10 @@ metadata:
   name: mimir-writes-networking-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -47538,6 +47609,7 @@ data:
           "uid": "978c1cb452585c96697a238eaac7fe2d",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -47546,8 +47618,10 @@ metadata:
   name: mimir-writes-resources-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -49048,6 +49122,7 @@ data:
           "uid": "bc9160e50b52e89e0e49c840fea3d379",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -49056,8 +49131,10 @@ metadata:
   name: mimir-writes-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -53826,6 +53903,7 @@ data:
           "uid": "8280707b8f16e7b87b840fc1cc92d4c5",
           "version": 0
        }
+
 ---
 # Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
 apiVersion: v1
@@ -53834,8 +53912,10 @@ metadata:
   name: rollout-operator-dashboard
   namespace: citestns
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
@@ -55808,3 +55888,4 @@ data:
           "uid": "f40e8042a6be71a98444a29b2c4e9421",
           "version": 0
        }
+

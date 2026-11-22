@@ -15,8 +15,8 @@ spec:
   replicas: {{ .Values.distributor.replicas }}
   {{- end }}
   {{- end }}
-  {{- with .Values.distributor.revisionHistoryLimit }}
-  revisionHistoryLimit: {{ . }}
+  {{- if not (kindIs "invalid" .Values.distributor.revisionHistoryLimit) }}
+  revisionHistoryLimit: {{ .Values.distributor.revisionHistoryLimit }}
   {{- end }}
   selector:
     matchLabels:

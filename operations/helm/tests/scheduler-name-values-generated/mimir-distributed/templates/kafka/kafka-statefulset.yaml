@@ -5,9 +5,11 @@ kind: StatefulSet
 metadata:
   name: scheduler-name-values-mimir-kafka
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: scheduler-name-values
     app.kubernetes.io/component: kafka
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -26,9 +28,11 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: scheduler-name-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: kafka
       annotations:
+        checksum/config: c6f48f79524133bd089bc518f1a30ec85c35e4197232eb78e918f074f721ea6f
       namespace: "citestns"
     spec:
       serviceAccountName: scheduler-name-values-mimir

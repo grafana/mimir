@@ -5,9 +5,11 @@ kind: StatefulSet
 metadata:
   name: test-extra-objects-values-mimir-kafka
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-extra-objects-values
     app.kubernetes.io/component: kafka
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -26,9 +28,11 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-extra-objects-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: kafka
       annotations:
+        checksum/config: 1701f750da4b0bac81730f08827b0e670ad647ba85c4f43613b85cb77fd99486
       namespace: "citestns"
     spec:
       serviceAccountName: test-extra-objects-values-mimir

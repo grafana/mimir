@@ -5,10 +5,12 @@ kind: StatefulSet
 metadata:
   name: openshift-values-mimir-store-gateway-zone-a
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: openshift-values
     app.kubernetes.io/component: store-gateway
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     name: "store-gateway-zone-a"
     rollout-group: store-gateway
@@ -49,6 +51,7 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: openshift-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: store-gateway
         app.kubernetes.io/part-of: memberlist
@@ -56,6 +59,7 @@ spec:
         rollout-group: store-gateway
         zone: zone-a
       annotations:
+        checksum/config: 13cfdc611571bf0bb1abff719349500f031f5798c38565d0eb85ec1748753e5a
       namespace: "citestns"
     spec:
       serviceAccountName: openshift-values-mimir
@@ -87,6 +91,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -135,6 +140,8 @@ spec:
               value: "5"
             - name: GOMEMLIMIT
               value: "536870912"
+
+
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
 apiVersion: apps/v1
@@ -142,10 +149,12 @@ kind: StatefulSet
 metadata:
   name: openshift-values-mimir-store-gateway-zone-b
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: openshift-values
     app.kubernetes.io/component: store-gateway
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     name: "store-gateway-zone-b"
     rollout-group: store-gateway
@@ -187,6 +196,7 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: openshift-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: store-gateway
         app.kubernetes.io/part-of: memberlist
@@ -194,6 +204,7 @@ spec:
         rollout-group: store-gateway
         zone: zone-b
       annotations:
+        checksum/config: 13cfdc611571bf0bb1abff719349500f031f5798c38565d0eb85ec1748753e5a
       namespace: "citestns"
     spec:
       serviceAccountName: openshift-values-mimir
@@ -225,6 +236,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -273,6 +285,8 @@ spec:
               value: "5"
             - name: GOMEMLIMIT
               value: "536870912"
+
+
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
 apiVersion: apps/v1
@@ -280,10 +294,12 @@ kind: StatefulSet
 metadata:
   name: openshift-values-mimir-store-gateway-zone-c
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: openshift-values
     app.kubernetes.io/component: store-gateway
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
     name: "store-gateway-zone-c"
     rollout-group: store-gateway
@@ -325,6 +341,7 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: openshift-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: store-gateway
         app.kubernetes.io/part-of: memberlist
@@ -332,6 +349,7 @@ spec:
         rollout-group: store-gateway
         zone: zone-c
       annotations:
+        checksum/config: 13cfdc611571bf0bb1abff719349500f031f5798c38565d0eb85ec1748753e5a
       namespace: "citestns"
     spec:
       serviceAccountName: openshift-values-mimir
@@ -363,6 +381,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -411,3 +430,5 @@ spec:
               value: "5"
             - name: GOMEMLIMIT
               value: "536870912"
+
+

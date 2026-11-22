@@ -5,10 +5,12 @@ kind: Deployment
 metadata:
   name: large-values-mimir-querier
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: large-values
     app.kubernetes.io/component: querier
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -31,10 +33,12 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: large-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: querier
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: 1d0d628043a62e90bb10c54c54f9c58967a59aea6033afe8efc0cd59c3a2b937
     spec:
       serviceAccountName: large-values-mimir
       securityContext:
@@ -46,6 +50,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: querier
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=querier"

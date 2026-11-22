@@ -6,9 +6,11 @@ metadata:
   name: openshift-values-mimir-query-scheduler
   namespace: "citestns"
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: openshift-values
     app.kubernetes.io/component: query-scheduler
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -29,9 +31,11 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: openshift-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: query-scheduler
       annotations:
+        checksum/config: 13cfdc611571bf0bb1abff719349500f031f5798c38565d0eb85ec1748753e5a
     spec:
       serviceAccountName: openshift-values-mimir
       securityContext:
@@ -40,6 +44,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: query-scheduler
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=query-scheduler"

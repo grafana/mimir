@@ -5,9 +5,11 @@ kind: Service
 metadata:
   name: scheduler-name-values-mimir-query-frontend
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: scheduler-name-values
     app.kubernetes.io/component: query-frontend
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}

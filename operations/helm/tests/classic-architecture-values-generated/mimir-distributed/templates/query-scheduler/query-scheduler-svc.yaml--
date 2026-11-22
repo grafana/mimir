@@ -1,0 +1,33 @@
+---
+# Source: mimir-distributed/templates/query-scheduler/query-scheduler-svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: classic-architecture-values-mimir-query-scheduler
+  namespace: "citestns"
+  labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: classic-architecture-values
+    app.kubernetes.io/component: query-scheduler
+    app.kubernetes.io/version: "r421-c066c71e"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+spec:
+  type: ClusterIP
+  internalTrafficPolicy: Cluster
+  ports:
+    - port: 8080
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+    - port: 9095
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+  selector:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: classic-architecture-values
+    app.kubernetes.io/component: query-scheduler
+

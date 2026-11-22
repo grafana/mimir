@@ -31,8 +31,8 @@ spec:
     whenDeleted: {{ .Values.alertmanager.persistentVolume.whenDeleted }}
     whenScaled: {{ .Values.alertmanager.persistentVolume.whenScaled }}
   {{- end }}
-  {{- with .Values.alertmanager.revisionHistoryLimit }}
-  revisionHistoryLimit: {{ . }}
+  {{- if not (kindIs "invalid" .Values.alertmanager.revisionHistoryLimit) }}
+  revisionHistoryLimit: {{ .Values.alertmanager.revisionHistoryLimit }}
   {{- end }}
   selector:
     matchLabels:

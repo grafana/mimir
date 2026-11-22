@@ -5,9 +5,11 @@ kind: StatefulSet
 metadata:
   name: small-values-mimir-kafka
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: small-values
     app.kubernetes.io/component: kafka
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -26,9 +28,11 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: small-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: kafka
       annotations:
+        checksum/config: e996425c3f4776542a4c8feec1772aa8eebb84f761f6daf1cdd89689325d9ed4
       namespace: "citestns"
     spec:
       serviceAccountName: small-values-mimir

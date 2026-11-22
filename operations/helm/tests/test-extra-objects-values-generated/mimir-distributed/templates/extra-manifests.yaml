@@ -7,6 +7,8 @@ kind: ConfigMap
 metadata:
   name: extra-cm-test-extra-objects-values-object
   namespace: 'citestns'
+
+
 ---
 # Source: mimir-distributed/templates/extra-manifests.yaml
 kind: ConfigMap

@@ -6,10 +6,12 @@ metadata:
   name: metamonitoring-values-mimir-store-gateway
   namespace: "citestns"
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
     app.kubernetes.io/component: store-gateway
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
 spec:
   namespaceSelector:

@@ -5,9 +5,11 @@ kind: StatefulSet
 metadata:
   name: test-oss-logical-multizone-values-mimir-kafka
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-logical-multizone-values
     app.kubernetes.io/component: kafka
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -26,9 +28,11 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-logical-multizone-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: kafka
       annotations:
+        checksum/config: d6f9869a7be5baeb4b8c4be68ed0342b55b1b2fa77ad4f4918a36c2ecea36b44
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-logical-multizone-values-mimir

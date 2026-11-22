@@ -5,10 +5,12 @@ kind: StatefulSet
 metadata:
   name: test-alertmanager-dep-values-mimir-compactor
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-alertmanager-dep-values
     app.kubernetes.io/component: compactor
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -40,10 +42,12 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-alertmanager-dep-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: compactor
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: f5ff5f9babb8966cdd898215148308174043949f34016263d0065eb0f62ae43b
       namespace: "citestns"
     spec:
       serviceAccountName: test-alertmanager-dep-values-mimir
@@ -78,6 +82,7 @@ spec:
           emptyDir: {}
       containers:
         - name: compactor
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=compactor"

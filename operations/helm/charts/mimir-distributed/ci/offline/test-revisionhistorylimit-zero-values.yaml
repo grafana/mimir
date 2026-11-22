@@ -1,0 +1,15 @@
+distributor:
+  revisionHistoryLimit: 0
+
+alertmanager:
+  revisionHistoryLimit: 0
+
+ingester:
+  revisionHistoryLimit: 0
+
+gateway:
+  revisionHistoryLimit: 0
+
+chunks-cache:
+  enabled: true
+  revisionHistoryLimit: 0

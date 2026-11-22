@@ -6,9 +6,11 @@ metadata:
   annotations:
     {}
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-emptydir-values
     app.kubernetes.io/component: overrides-exporter
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   name: test-oss-emptydir-values-mimir-overrides-exporter
   namespace: "citestns"
@@ -29,9 +31,11 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-emptydir-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: overrides-exporter
       annotations:
+        checksum/config: d2343a86bf33730538d065467a6ea944d150dc340bd9f8f628c88f02c8070aa1
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-emptydir-values-mimir
@@ -44,6 +48,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: overrides-exporter
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=overrides-exporter"

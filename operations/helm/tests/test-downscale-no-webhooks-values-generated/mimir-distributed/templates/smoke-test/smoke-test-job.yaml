@@ -5,9 +5,11 @@ kind: Job
 metadata:
   name: test-downscale-no-webhooks-values-mimir-smoke-test
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-downscale-no-webhooks-values
     app.kubernetes.io/component: smoke-test
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     "helm.sh/hook": test
@@ -21,6 +23,7 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-downscale-no-webhooks-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: smoke-test
     spec:
@@ -36,6 +39,7 @@ spec:
         []
       containers:
         - name: smoke-test
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=continuous-test"

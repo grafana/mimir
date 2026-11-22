@@ -5,10 +5,12 @@ kind: Deployment
 metadata:
   name: test-priority-class-name-values-mimir-ruler
   labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-priority-class-name-values
     app.kubernetes.io/component: ruler
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r421-c066c71e"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -30,10 +32,12 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-priority-class-name-values
+        app.kubernetes.io/version: "r421-c066c71e"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: ruler
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: 37b3a0b76654aae6225cf361c53128674976515c0bd0f3f9d2380ab1af80acaa
       namespace: "citestns"
     spec:
       serviceAccountName: test-priority-class-name-values-mimir
@@ -47,6 +51,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ruler
+          image: docker.io/grafana/mimir:r421-c066c71e
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ruler"

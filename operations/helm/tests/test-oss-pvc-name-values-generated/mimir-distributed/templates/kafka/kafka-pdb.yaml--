@@ -1,0 +1,22 @@
+---
+# Source: mimir-distributed/templates/kafka/kafka-pdb.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: test-oss-pvc-name-values-mimir-kafka
+  labels:
+    helm.sh/chart: mimir-distributed-6.3.0-weekly.421
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-oss-pvc-name-values
+    app.kubernetes.io/component: kafka
+    app.kubernetes.io/version: "r421-c066c71e"
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-oss-pvc-name-values
+      app.kubernetes.io/component: kafka
+  maxUnavailable: 1
+
