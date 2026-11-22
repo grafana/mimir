@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
 
 	mimirnotifier "github.com/grafana/mimir/pkg/ruler/notifier"
@@ -101,7 +102,7 @@ func (rn *rulerNotifier) stop() {
 
 // Builds a Prometheus config.Config from a ruler.Config with just the required
 // options to configure notifications to Alertmanager.
-func buildNotifierConfig(amURL string, notifierCfg mimirnotifier.Config, resolver AddressProvider, notificationTimeout, refreshInterval time.Duration, rmi discovery.RefreshMetricsManager) (*config.Config, error) {
+func buildNotifierConfig(amURL string, notifierCfg mimirnotifier.Config, resolver AddressProvider, notificationTimeout, refreshInterval time.Duration, rmi discovery.RefreshMetricsManager, externalLabels labels.Labels) (*config.Config, error) {
 	if amURL == "" {
 		// no AM URLs were provided, so we can just return a default config without errors
 		return &config.Config{}, nil
@@ -131,6 +132,11 @@ func buildNotifierConfig(amURL string, notifierCfg mimirnotifier.Config, resolve
 	}
 
 	promConfig := &config.Config{
+		GlobalConfig: config.GlobalConfig{
+			// The notifier adds these labels to every alert before sending it
+			// to the Alertmanager.
+			ExternalLabels: externalLabels,
+		},
 		AlertingConfig: config.AlertingConfig{
 			AlertmanagerConfigs: amConfigs,
 		},

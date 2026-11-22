@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -504,7 +505,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ncfg, err := buildNotifierConfig(tt.alertmanagerURL, tt.notifier, nil, tt.notificationTimeout, tt.alertmanagerRefreshInterval, nil)
+			ncfg, err := buildNotifierConfig(tt.alertmanagerURL, tt.notifier, nil, tt.notificationTimeout, tt.alertmanagerRefreshInterval, nil, labels.EmptyLabels())
 			if tt.err == nil {
 				require.NoError(t, err)
 				require.Equal(t, tt.ncfg, ncfg)
@@ -556,4 +557,16 @@ func urlMustParse(t *testing.T, raw string) *url.URL {
 	u, err := url.Parse(raw)
 	require.NoError(t, err)
 	return u
+}
+
+func TestBuildNotifierConfig_ExternalLabels(t *testing.T) {
+	ext := labels.FromStrings("env", "prod", "cluster", "eu")
+	ncfg, err := buildNotifierConfig("http://alertmanager:9093", notifier.Config{}, nil, 10*time.Second, time.Minute, nil, ext)
+	require.NoError(t, err)
+	require.Equal(t, ext, ncfg.GlobalConfig.ExternalLabels)
+
+	// no alertmanager URL: default empty config (no alerts are sent anywhere)
+	ncfg, err = buildNotifierConfig("", notifier.Config{}, nil, 10*time.Second, time.Minute, nil, ext)
+	require.NoError(t, err)
+	require.Equal(t, config.Config{}, *ncfg)
 }

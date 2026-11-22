@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	promnotifier "github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
@@ -107,6 +108,9 @@ var (
 type Config struct {
 	// This is used for template expansion in alerts; must be a valid URL.
 	ExternalURL flagext.URLValue `yaml:"external_url"`
+	// ExternalLabels are added to all alerts sent to the Alertmanager, and are
+	// available in alerting rule templates via the $externalLabels variable.
+	ExternalLabels labels.Labels `yaml:"external_labels,omitempty" category:"advanced" doc:"description=Labels to add to all alerts sent to the Alertmanager by the ruler."`
 	// GRPC Client configuration.
 	ClientTLSConfig ClientConfig `yaml:"ruler_client" doc:"description=Configures the gRPC client used to communicate between ruler instances."`
 	// How frequently to evaluate rules by default.
@@ -219,6 +223,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	cfg.ExternalURL.URL, _ = url.Parse("") // Must be non-nil
 	f.Var(&cfg.ExternalURL, "ruler.external.url", "URL of alerts return path.")
+	f.Var((*labelsFlag)(&cfg.ExternalLabels), "ruler.external-labels", "Comma-separated list of name=value labels to add to all alerts sent to the Alertmanager by the ruler.")
 	f.DurationVar(&cfg.EvaluationInterval, "ruler.evaluation-interval", 1*time.Minute, "How frequently to evaluate rules")
 	f.DurationVar(&cfg.PollInterval, "ruler.poll-interval", 10*time.Minute, "How frequently the configured rule groups are re-synced from the object storage.")
 
@@ -1734,4 +1739,32 @@ func (r *Ruler) forEachRulerInTheRing(ctx context.Context, ring ring.ReadRing, o
 
 		return f(ctx, &rulerInst, rulerClient, nil)
 	})
+}
+
+// labelsFlag adapts labels.Labels to a flag.Value, parsing comma-separated
+// name=value pairs (e.g. -ruler.external-labels=env=prod,cluster=eu). It is a
+// distinct named type (not a wrapper struct) so that (*labelsFlag)(&cfg.Field)
+// keeps the field's address, which the doc generator relies on to associate
+// the CLI flag with the YAML field.
+type labelsFlag labels.Labels
+
+func (f *labelsFlag) String() string {
+	return labels.Labels(*f).String()
+}
+
+func (f *labelsFlag) Set(value string) error {
+	if value == "" {
+		*f = labelsFlag(labels.EmptyLabels())
+		return nil
+	}
+	m := make(map[string]string)
+	for _, pair := range strings.Split(value, ",") {
+		kv := strings.SplitN(pair, "=", 2)
+		if len(kv) != 2 || !model.UTF8Validation.IsValidLabelName(kv[0]) {
+			return fmt.Errorf("invalid label %q, expected a comma-separated list of name=value pairs with valid label names", pair)
+		}
+		m[kv[0]] = kv[1]
+	}
+	*f = labelsFlag(labels.FromMap(m))
+	return nil
 }
