@@ -128,14 +128,18 @@ func (r *remoteReadRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 // without consuming the body. It does not check the req.Body size, so it is
 // the caller's responsibility to ensure that the body is not too large.
 func ParseRemoteReadRequestValuesWithoutConsumingBody(req *http.Request) (url.Values, error) {
-	remoteReadRequest, err := parseRemoteReadRequestWithoutConsumingBody(req)
+	remoteReadRequest, err := ParseRemoteReadRequestWithoutConsumingBody(req)
 	if err != nil {
 		return nil, err
 	}
 	return parseRemoteReadRequestValues(remoteReadRequest)
 }
 
-func parseRemoteReadRequestWithoutConsumingBody(req *http.Request) (*prompb.ReadRequest, error) {
+// ParseRemoteReadRequestWithoutConsumingBody decodes a remote read request without consuming the body.
+// It returns nil if req.Body is nil.
+// It does not check the size of req.Body.
+// The caller must make sure that the body is not too large.
+func ParseRemoteReadRequestWithoutConsumingBody(req *http.Request) (*prompb.ReadRequest, error) {
 	if req.Body == nil {
 		return nil, nil
 	}
