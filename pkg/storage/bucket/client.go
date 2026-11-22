@@ -178,23 +178,53 @@ func (cfg *Config) BucketName() string {
 	return ""
 }
 
-// ReadCompartmentConfig returns a copy of cfg with the read-compartment-id placeholder resolved to the
-// given read compartment ID in the active backend's bucket name. It is a no-op when the placeholder is
-// absent. It must enumerate the same backends as BucketName so the two stay consistent.
-func (cfg Config) ReadCompartmentConfig(readCompartmentID int) Config {
+// WithBucketName returns a copy of cfg with the active backend's bucket (S3/GCS), container (Azure/Swift)
+// or directory (filesystem) name set to name. It must enumerate the same backends as BucketName so the
+// two stay consistent.
+func (cfg Config) WithBucketName(name string) Config {
 	switch cfg.Backend {
 	case S3:
-		cfg.S3.BucketName = compartments.ReplaceReadCompartment(cfg.S3.BucketName, readCompartmentID)
+		cfg.S3.BucketName = name
 	case GCS:
-		cfg.GCS.BucketName = compartments.ReplaceReadCompartment(cfg.GCS.BucketName, readCompartmentID)
+		cfg.GCS.BucketName = name
 	case Azure:
-		cfg.Azure.ContainerName = compartments.ReplaceReadCompartment(cfg.Azure.ContainerName, readCompartmentID)
+		cfg.Azure.ContainerName = name
 	case Swift:
-		cfg.Swift.ContainerName = compartments.ReplaceReadCompartment(cfg.Swift.ContainerName, readCompartmentID)
+		cfg.Swift.ContainerName = name
 	case Filesystem:
-		cfg.Filesystem.Directory = compartments.ReplaceReadCompartment(cfg.Filesystem.Directory, readCompartmentID)
+		cfg.Filesystem.Directory = name
 	}
 	return cfg
+}
+
+// ReadCompartmentConfig returns a copy of cfg with the read-compartment-id placeholder resolved to the
+// given read compartment ID in the active backend's bucket name. It is a no-op when the placeholder is
+// absent.
+func (cfg Config) ReadCompartmentConfig(readCompartmentID int) Config {
+	return cfg.WithBucketName(compartments.ReplaceReadCompartment(cfg.BucketName(), readCompartmentID))
+}
+
+// NewClientWithReadBuckets creates a bucket client for the blocks storage. Without additional read buckets
+// it is the same as NewClient. Otherwise it returns a *BlockLocationBucket whose write bucket is the bucket
+// configured in cfg, followed by a read bucket for each name in additionalReadBucketNames.
+func NewClientWithReadBuckets(ctx context.Context, cfg Config, additionalReadBucketNames []string, component string, logger log.Logger, reg prometheus.Registerer) (objstore.InstrumentedBucket, error) {
+	writeBucket, err := NewClient(ctx, cfg, component, logger, reg)
+	if err != nil || len(additionalReadBucketNames) == 0 {
+		return writeBucket, err
+	}
+
+	names := []string{cfg.BucketName()}
+	buckets := []objstore.Bucket{writeBucket}
+	for _, name := range additionalReadBucketNames {
+		readBucket, err := NewClient(ctx, cfg.WithBucketName(name), component, logger, reg)
+		if err != nil {
+			return nil, fmt.Errorf("create client for read bucket %q: %w", name, err)
+		}
+		names = append(names, name)
+		buckets = append(buckets, readBucket)
+	}
+
+	return NewBlockLocationBucket(names, buckets), nil
 }
 
 // NewClient creates a new bucket client based on the configured backend

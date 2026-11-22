@@ -327,6 +327,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		// With compartments each compartment reads a different bucket but the cache could be shared, so its
 		// keys must be scoped by a compartment-specific ID to avoid collisions and subtle bugs.
 		cacheBucketID := ""
+		additionalReadBucketNames := storageCfg.AdditionalReadBucketNames
 
 		if compartmentsCfg.Enabled {
 			// Each read compartment has its own bucket and store-gateway ring within this single process.
@@ -334,11 +335,15 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 			// name/key have no such scope and are suffixed instead.
 			bucketCfg = storageCfg.Bucket.ReadCompartmentConfig(idx)
 			cacheBucketID = compartments.WithReadCompartmentSuffix("blocks", idx)
+			additionalReadBucketNames = make([]string, 0, len(storageCfg.AdditionalReadBucketNames))
+			for _, name := range storageCfg.AdditionalReadBucketNames {
+				additionalReadBucketNames = append(additionalReadBucketNames, compartments.ReplaceReadCompartment(name, idx))
+			}
 			ringName = compartments.WithReadCompartmentSuffix(ringName, idx)
 			ringKey = compartments.WithReadCompartmentSuffix(ringKey, idx)
 		}
 
-		finder, err := newBlocksStoreQueryableFinder(cacheBucketID, metadataCache, bucketCfg, storageCfg, limits, logger, reg)
+		finder, err := newBlocksStoreQueryableFinder(cacheBucketID, metadataCache, bucketCfg, additionalReadBucketNames, storageCfg, limits, logger, reg)
 		if err != nil {
 			return nil, err
 		}
@@ -381,8 +386,8 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 
 // newBlocksStoreQueryableFinder creates a BucketIndexBlocksFinder over the given bucket config. Its
 // metrics are scoped by bucket, so one finder per read compartment can share a registry.
-func newBlocksStoreQueryableFinder(cacheBucketID string, metadataCache cache.Cache, bucketCfg bucket.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (BlocksFinder, error) {
-	bucketClient, err := bucket.NewClient(context.Background(), bucketCfg, "querier", logger, reg)
+func newBlocksStoreQueryableFinder(cacheBucketID string, metadataCache cache.Cache, bucketCfg bucket.Config, additionalReadBucketNames []string, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (BlocksFinder, error) {
+	bucketClient, err := bucket.NewClientWithReadBuckets(context.Background(), bucketCfg, additionalReadBucketNames, "querier", logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create bucket client")
 	}

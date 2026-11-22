@@ -120,7 +120,7 @@ func (c *MultitenantCompactor) PlannedJobsHandler(w http.ResponseWriter, req *ht
 		}
 	}
 
-	idx, err := bucketindex.ReadIndex(req.Context(), c.bucketClient, tenantID, nil, c.logger)
+	idx, _, err := bucketindex.ReadMergedIndex(req.Context(), c.bucketClient, tenantID, nil, c.logger)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to read bucket index for tenant while listing compaction jobs", "user", tenantID, "err", err)
 		util.WriteTextResponse(w, "Failed to read bucket index for tenant")
