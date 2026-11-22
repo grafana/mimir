@@ -28,3 +28,4 @@ If public suitability is uncertain, omit the information and ask the maintainer 
 Do not put the questionable information into a public draft to request review.
 
 @docs/internal/contributing/README.md
+- Security issues should be reported via [Grafana's security issue reporting page](https://grafana.com/legal/report-a-security-issue/) and not directly in this repository.
