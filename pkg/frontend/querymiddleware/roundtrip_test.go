@@ -710,6 +710,49 @@ func TestTripperware_ShouldRetryFailedRequestsUpToMaxRetries(t *testing.T) {
 	}
 }
 
+func TestTripperware_RetriesKeepPostParameters(t *testing.T) {
+	const maxRetries = 3
+
+	for testName, path := range map[string]string{
+		"label names":  labelNamesPathSuffix,
+		"label values": "/api/v1/label/job/values",
+		"series":       seriesPathSuffix,
+	} {
+		t.Run(testName, func(t *testing.T) {
+			downstreamErr := errors.New("downstream failed")
+			downstreamCalls := 0
+			downstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+				downstreamCalls++
+				// Forwarding the request to the querier reads its body, so do the same.
+				body, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+				values, err := url.ParseQuery(string(body))
+				require.NoError(t, err)
+				require.Equal(t, []string{"up"}, values["match[]"], "try %d", downstreamCalls)
+				return nil, downstreamErr
+			})
+
+			engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
+			reg := prometheus.NewPedanticRegistry()
+			limits := mockLimits{}
+			tw, err := NewTripperware(Config{MaxRetries: maxRetries}, log.NewNopLogger(), limits,
+				newMockQueryLimitsProvider(&limits), newTestCodec(), nil, nil, engine, engineOpts, nil,
+				false, false, nil, reg, limiter.NewInflightMemoryConsumptionTracker(reg, nil))
+			require.NoError(t, err)
+
+			ctx := user.InjectOrgID(t.Context(), "user-1")
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader("match[]=up")).WithContext(ctx)
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			require.NoError(t, user.InjectOrgIDIntoHTTPRequest(ctx, req))
+
+			resp, err := tw(downstream).RoundTrip(req)
+			require.ErrorIs(t, err, downstreamErr)
+			require.Nil(t, resp)
+			require.Equal(t, maxRetries, downstreamCalls)
+		})
+	}
+}
+
 // TestMiddlewaresConsistency ensures that we don't forget to add a middleware to a given type of request
 // (e.g. range query, remote read, ...) when a new middleware is added. By default, it expects that a middleware
 // is added to each type of request, and then it allows to define exceptions when we intentionally don't
