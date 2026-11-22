@@ -12,8 +12,8 @@ spec:
   {{- if or (not .Values.ruler.kedaAutoscaling.enabled) (.Values.ruler.kedaAutoscaling.preserveReplicas) }}
   replicas: {{ .Values.ruler.replicas }}
   {{- end }}
-  {{- with .Values.ruler.revisionHistoryLimit }}
-  revisionHistoryLimit: {{ . }}
+  {{- if not (kindIs "invalid" .Values.ruler.revisionHistoryLimit) }}
+  revisionHistoryLimit: {{ .Values.ruler.revisionHistoryLimit }}
   {{- end }}
   selector:
     matchLabels:

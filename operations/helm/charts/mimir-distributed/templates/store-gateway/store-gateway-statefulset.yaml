@@ -38,8 +38,8 @@ spec:
     whenDeleted: {{ .Values.store_gateway.persistentVolume.whenDeleted }}
     whenScaled: {{ .Values.store_gateway.persistentVolume.whenScaled }}
   {{- end }}
-  {{- with .Values.store_gateway.revisionHistoryLimit }}
-  revisionHistoryLimit: {{ . }}
+  {{- if not (kindIs "invalid" .Values.store_gateway.revisionHistoryLimit) }}
+  revisionHistoryLimit: {{ .Values.store_gateway.revisionHistoryLimit }}
   {{- end }}
   selector:
     matchLabels:

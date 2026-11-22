@@ -11,8 +11,8 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.alertmanager.replicas }}
-  {{- with .Values.alertmanager.revisionHistoryLimit }}
-  revisionHistoryLimit: {{ . }}
+  {{- if not (kindIs "invalid" .Values.alertmanager.revisionHistoryLimit) }}
+  revisionHistoryLimit: {{ .Values.alertmanager.revisionHistoryLimit }}
   {{- end }}
   selector:
     matchLabels:

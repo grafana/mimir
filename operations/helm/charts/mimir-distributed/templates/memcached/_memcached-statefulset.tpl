@@ -17,8 +17,8 @@ spec:
   podManagementPolicy: {{ .podManagementPolicy }}
   minReadySeconds: {{ .minReadySeconds }}
   replicas: {{ .replicas }}
-  {{- with .revisionHistoryLimit }}
-  revisionHistoryLimit: {{ . }}
+  {{- if not (kindIs "invalid" .revisionHistoryLimit) }}
+  revisionHistoryLimit: {{ .revisionHistoryLimit }}
   {{- end }}
   selector:
     matchLabels:
