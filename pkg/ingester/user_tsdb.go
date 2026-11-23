@@ -96,6 +96,7 @@ type ownedSeriesState struct {
 type userTSDB struct {
 	cfg            *Config
 	db             *tsdb.DB
+	dir            string
 	userID         string
 	activeSeries   *activeseries.ActiveSeries
 	seriesInMetric *metricCounter
@@ -475,7 +476,7 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 
 // updateCachedShippedBlocks reads the shipper meta file and updates the cached shipped blocks.
 func (u *userTSDB) updateCachedShippedBlocks() error {
-	shippedBlocks, err := readShippedBlocks(u.db.Dir())
+	shippedBlocks, err := readShippedBlocks(u.dir)
 	if err != nil {
 		return err
 	}
