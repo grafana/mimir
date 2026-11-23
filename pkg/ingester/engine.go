@@ -6,6 +6,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 
@@ -17,6 +18,11 @@ import (
 
 type tenantEngine interface {
 	Head() engineHead
+
+	Querier(mint, maxt int64) (storage.Querier, error)
+	// ChunkQuerier may return overlapping chunks in any order when unordered is true.
+	ChunkQuerier(mint, maxt int64, unordered bool) (storage.ChunkQuerier, error)
+	ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error)
 
 	// Ingest commits valid samples and exemplars, reporting soft errors through ctx.
 	// A hard append error rolls back the batch.
