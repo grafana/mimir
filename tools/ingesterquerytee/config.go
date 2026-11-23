@@ -7,12 +7,13 @@ import (
 	"fmt"
 	"math"
 	"time"
+
+	"github.com/grafana/dskit/flagext"
 )
 
 type Config struct {
 	PrimaryAddress       string
-	ShadowAddress        string
-	Shadow2Address       string
+	ShadowAddresses      flagext.StringSlice
 	ShadowTimeout        time.Duration
 	SampleRate           float64
 	MaxConcurrent        int
@@ -37,8 +38,7 @@ type Config struct {
 
 func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&c.PrimaryAddress, "primary-address", "", "gRPC address of the primary ingester for this partition.")
-	f.StringVar(&c.ShadowAddress, "shadow-address", "", "gRPC address of the shadow ingester owning the same partition.")
-	f.StringVar(&c.Shadow2Address, "shadow2-address", "", "Optional gRPC address of a second shadow ingester owning the same partition.")
+	f.Var(&c.ShadowAddresses, "shadow-address", "gRPC address of a shadow ingester owning the same partition. Repeat for each shadow.")
 	f.DurationVar(&c.ShadowTimeout, "shadow-timeout", 30*time.Second, "Maximum duration of a shadow request.")
 	f.Float64Var(&c.SampleRate, "sample-rate", 1, "Fraction of mirrored read requests selected for comparison (0 to 1); all reads are mirrored.")
 	f.IntVar(&c.MaxConcurrent, "max-concurrent-comparisons", 8, "Maximum concurrent comparisons; excess requests still mirror and discard shadow responses.")
@@ -59,11 +59,15 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (c Config) Validate() error {
-	if c.PrimaryAddress == "" || c.ShadowAddress == "" || c.PrimaryAddress == c.ShadowAddress {
-		return fmt.Errorf("primary-address and shadow-address must be nonempty and different")
+	if c.PrimaryAddress == "" || len(c.ShadowAddresses) == 0 {
+		return fmt.Errorf("primary-address and at least one shadow-address are required")
 	}
-	if c.Shadow2Address != "" && (c.Shadow2Address == c.PrimaryAddress || c.Shadow2Address == c.ShadowAddress) {
-		return fmt.Errorf("shadow2-address must differ from primary-address and shadow-address")
+	addresses := map[string]struct{}{c.PrimaryAddress: {}}
+	for _, address := range c.ShadowAddresses {
+		if _, exists := addresses[address]; address == "" || exists {
+			return fmt.Errorf("primary-address and shadow-address values must be nonempty and distinct")
+		}
+		addresses[address] = struct{}{}
 	}
 	if c.ShadowTimeout <= 0 || c.MaxConcurrent <= 0 || c.MaxResponseBytes <= 0 || c.MaxSamples <= 0 {
 		return fmt.Errorf("shadow-timeout and comparison limits must be positive")
@@ -93,13 +97,6 @@ func (c Config) Validate() error {
 		return fmt.Errorf("amplification-delay must be nonnegative")
 	}
 	return nil
-}
-
-func (c Config) ShadowAddresses() []string {
-	if c.Shadow2Address == "" {
-		return []string{c.ShadowAddress}
-	}
-	return []string{c.ShadowAddress, c.Shadow2Address}
 }
 
 // shadowed reports whether the tee's pod mirrors to the shadow, by -shadow-pod-count.

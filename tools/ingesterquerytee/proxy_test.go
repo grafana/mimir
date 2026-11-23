@@ -740,7 +740,7 @@ func TestProxyTwoShadows(t *testing.T) {
 
 	var primaryCalls, shadowCalls, shadow2Calls atomic.Int32
 	cfg := testConfig()
-	cfg.Shadow2Address = "shadow2"
+	cfg.ShadowAddresses = append(cfg.ShadowAddresses, "shadow2")
 	cfg.MaxConcurrent = 1
 	cfg.Amplification = 2
 	cfg.MismatchRetries = 1
@@ -767,14 +767,6 @@ func TestProxyTwoShadows(t *testing.T) {
 	require.Equal(t, int32(3), primaryCalls.Load())
 	require.Equal(t, int32(2), shadowCalls.Load())
 	require.Equal(t, int32(3), shadow2Calls.Load())
-}
-
-func TestConfigRejectsDuplicateSecondShadow(t *testing.T) {
-	cfg := testConfig()
-	for _, address := range []string{cfg.PrimaryAddress, cfg.ShadowAddress} {
-		cfg.Shadow2Address = address
-		require.EqualError(t, cfg.Validate(), "shadow2-address must differ from primary-address and shadow-address")
-	}
 }
 
 func TestProxyAmplification(t *testing.T) {

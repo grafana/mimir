@@ -32,15 +32,13 @@ func main() {
 func run() error {
 	var cfg ingesterquerytee.Config
 	var serverCfg server.Config
-	var primaryCfg, shadowCfg, shadow2Cfg grpcclient.Config
+	var primaryCfg, shadowCfg grpcclient.Config
 	cfg.RegisterFlags(flag.CommandLine)
 	serverCfg.RegisterFlags(flag.CommandLine)
 	primaryCfg.CustomCompressors = []string{s2.Name}
 	shadowCfg.CustomCompressors = []string{s2.Name}
-	shadow2Cfg.CustomCompressors = []string{s2.Name}
 	primaryCfg.RegisterFlagsWithPrefix("primary", flag.CommandLine)
 	shadowCfg.RegisterFlagsWithPrefix("shadow", flag.CommandLine)
-	shadow2Cfg.RegisterFlagsWithPrefix("shadow2", flag.CommandLine)
 	if err := flag.CommandLine.Set("server.http-listen-port", "9900"); err != nil {
 		return err
 	}
@@ -62,18 +60,16 @@ func run() error {
 		return err
 	}
 	defer primary.Close()
-	shadowCfgs := []grpcclient.Config{shadowCfg, shadow2Cfg}
-	addresses := cfg.ShadowAddresses()
-	shadows := make([]grpc.ClientConnInterface, 0, len(addresses))
-	for i, address := range addresses {
-		if err := shadowCfgs[i].Validate(); err != nil {
-			return err
-		}
-		opts, err := shadowCfgs[i].DialOption(nil, nil, nil)
+	if err := shadowCfg.Validate(); err != nil {
+		return err
+	}
+	shadows := make([]grpc.ClientConnInterface, 0, len(cfg.ShadowAddresses))
+	for _, address := range cfg.ShadowAddresses {
+		shadowOpts, err := shadowCfg.DialOption(nil, nil, nil)
 		if err != nil {
 			return err
 		}
-		shadow, err := grpc.NewClient(address, opts...)
+		shadow, err := grpc.NewClient(address, shadowOpts...)
 		if err != nil {
 			return err
 		}

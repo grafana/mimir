@@ -13,7 +13,12 @@ Pair each tee with a shadow ingester that owns the same Kafka partition and inge
 Each tee forwards requests to its primary ingester and mirrors all supported read requests to the corresponding shadow ingester.
 Callers receive the primary response, including its streaming messages, headers, trailers, and errors.
 Comparisons run asynchronously; callers do not wait for the shadows.
-Set `-shadow2-address` to mirror the same requests to a second shadow ingester that owns the partition. The tee compares each shadow independently against the primary.
+Repeat `-shadow-address` to mirror the same requests to multiple shadow ingesters that own the partition. The tee compares each shadow independently against the primary.
+
+```text
+-shadow-address=ingester-shadow-a-0.ingester-shadow-a:9095
+-shadow-address=ingester-shadow-b-0.ingester-shadow-b:9095
+```
 The tee always returns only primary responses. It never falls back to the shadow, even when the primary is unavailable and the shadow succeeds.
 
 ## Build and run
@@ -196,12 +201,12 @@ The tees of pods whose index is at or above the count pass reads to the primary 
 ## TLS
 
 Use the server's `-server.grpc-tls-cert-path` and `-server.grpc-tls-key-path` flags for incoming TLS.
-Backend TLS is configured separately using `-primary.tls-enabled`, `-shadow.tls-enabled`, and `-shadow2.tls-enabled` and the respective `tls-ca-path`, `tls-cert-path`, `tls-key-path`, and `tls-server-name` flags.
+Configure backend TLS with `-primary.tls-enabled` for the primary and `-shadow.tls-enabled` for all shadows. Each prefix also has `tls-ca-path`, `tls-cert-path`, `tls-key-path`, and `tls-server-name` flags.
 Run the binary with `-help` for the complete client and server options.
 
 ## Metrics
 
-`ingester_query_tee_comparisons_total{method,backend,result}` counts comparisons and skipped requests for each shadow (`backend="shadow"` or `backend="shadow2"`).
+`ingester_query_tee_comparisons_total{method,backend,result}` counts comparisons and skipped requests for each shadow. Shadows are labeled `shadow`, `shadow2`, and so on in flag order.
 The `result` label is one of `match`, `mismatch`, `match_after_retry`, `beyond_retention`, `skipped`, `limit`, `unavailable`, `primary_error`, `shadow_error`, or `comparison_error`.
 If either backend returns gRPC `Unavailable` or `DeadlineExceeded`, the result is `unavailable`. This includes the shadow request timeout. These outcomes increment the metric without emitting comparison or RPC error logs. Other errors retain the `primary_error` or `shadow_error` classification.
 Backend errors are counted separately from data mismatches; malformed responses are comparison errors.
@@ -210,9 +215,9 @@ No comparison is reported as a match when either backend fails or a comparison l
 `ingester_query_tee_mirrored_requests_total{method,backend,result}` counts completed shadow attempts, including requests not compared.
 The result is `success` when the full response has been consumed, `unavailable` for availability errors or timeouts, and `shadow_error` for other failures.
 
-`ingester_query_tee_copies_total{method,backend,result}` counts the copies of `-amplification`, for each backend (`primary`, `shadow`, or `shadow2`). The result is `success`, `unavailable`, or `error`.
+`ingester_query_tee_copies_total{method,backend,result}` counts the copies of `-amplification`, for each backend. The result is `success`, `unavailable`, or `error`.
 
-`ingester_query_tee_backend_duration_seconds{method,backend}` measures the time to consume each backend response. The `backend` label is `primary`, `shadow`, or `shadow2`, with a `_copy` suffix for amplified requests.
+`ingester_query_tee_backend_duration_seconds{method,backend}` measures the time to consume each backend response. The `backend` label identifies the primary or a shadow, with a `_copy` suffix for amplified requests.
 QueryStream mismatch logs include primary/shadow series, label-pair and sample counts, missing/extra series and samples, and the number of differing sample values. Counts reflect normalized samples after the requested time range and recent-sample exclusion. Other RPCs report response item counts.
 Comparison errors log the failing backend (`primary`, `shadow`, `request`, or `comparison`), the decoder/validation error, and captured frame/byte counts. A successful empty QueryStream is compared as an empty result.
 Set `-log-mismatched-queries=true` to include the QueryStream request and a `replay` object in mismatch and comparison-error logs. Replay details contain the tenant ID, allowed gRPC metadata (tenant, read-consistency level/offsets/maximum delay, only-replica marker, and cluster label), primary/shadow addresses, tee hostname, request arrival time, effective comparison end time, recent-sample exclusion, and shadow timeout. Authorization and unrelated headers are never logged.

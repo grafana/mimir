@@ -27,7 +27,7 @@ Configure the tee sidecar for that pod's matching shadow partition:
 Queriers reach the primary pod at its advertised port `9096`; the tee forwards to the primary over localhost.
 Repeat the pairing for every pod in the zone, using the correct shadow pod for each partition.
 Use a specific shadow pod address, because a zone-wide load-balanced Service can select the wrong partition owner.
-Set `-shadow2-address` to also mirror to a second shadow pod for the same partition.
+Repeat `-shadow-address` once per shadow pod for the same partition.
 Keep the shadow zones isolated from normal query selection during validation.
 
 Expose `9096` in the relevant Services and NetworkPolicies and `9900` for metrics and readiness.

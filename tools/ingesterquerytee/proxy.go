@@ -112,15 +112,15 @@ func New(ctx context.Context, cfg Config, primary grpc.ClientConnInterface, shad
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	addresses := cfg.ShadowAddresses()
+	addresses := cfg.ShadowAddresses
 	if len(shadows) != len(addresses) {
 		return nil, fmt.Errorf("expected %d shadow connections, got %d", len(addresses), len(shadows))
 	}
 	p := &Proxy{cfg: cfg, primary: primary, ctx: ctx, logger: logger, slots: make(chan struct{}, cfg.MaxConcurrent), retrySlots: make(chan struct{}, cfg.MaxConcurrent), diagnosticLogs: rate.NewLimiter(rate.Every(time.Second), 1), slowLogs: rate.NewLimiter(rate.Every(100*time.Millisecond), 10)}
 	for i, shadow := range shadows {
 		name := "shadow"
-		if i == 1 {
-			name = "shadow2"
+		if i > 0 {
+			name = fmt.Sprintf("shadow%d", i+1)
 		}
 		p.shadows = append(p.shadows, shadowBackend{name: name, address: addresses[i], conn: shadow})
 	}

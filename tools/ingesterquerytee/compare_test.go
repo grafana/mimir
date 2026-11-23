@@ -3,6 +3,7 @@
 package ingesterquerytee
 
 import (
+	"flag"
 	"math"
 	"testing"
 	"time"
@@ -43,7 +44,7 @@ func streamFrames(t *testing.T, chunks ...client.Chunk) []frame {
 }
 
 func testConfig() Config {
-	return Config{PrimaryAddress: "primary", ShadowAddress: "shadow", ShadowTimeout: time.Second, SampleRate: 1, MaxConcurrent: 2, MaxResponseBytes: 1 << 20, MaxSamples: 1000, Amplification: 1}
+	return Config{PrimaryAddress: "primary", ShadowAddresses: []string{"shadow"}, ShadowTimeout: time.Second, SampleRate: 1, MaxConcurrent: 2, MaxResponseBytes: 1 << 20, MaxSamples: 1000, Amplification: 1}
 }
 
 func TestQueryComparison(t *testing.T) {
@@ -265,9 +266,6 @@ func TestConfigValidation(t *testing.T) {
 		require.EqualError(t, cfg.Validate(), "sample-rate must be between 0 and 1")
 	}
 	cfg := testConfig()
-	cfg.ShadowAddress = cfg.PrimaryAddress
-	require.EqualError(t, cfg.Validate(), "primary-address and shadow-address must be nonempty and different")
-	cfg = testConfig()
 	cfg.ShadowTimeout = 0
 	require.EqualError(t, cfg.Validate(), "shadow-timeout and comparison limits must be positive")
 	cfg = testConfig()
@@ -276,6 +274,26 @@ func TestConfigValidation(t *testing.T) {
 	cfg = testConfig()
 	cfg.RetentionPeriod = -time.Second
 	require.EqualError(t, cfg.Validate(), "retention-period and retention-edge must be nonnegative")
+}
+
+func TestConfigShadowAddresses(t *testing.T) {
+	var cfg Config
+	flags := flag.NewFlagSet("tee", flag.ContinueOnError)
+	cfg.RegisterFlags(flags)
+	require.NoError(t, flags.Parse([]string{
+		"-primary-address=primary:9095",
+		"-shadow-address=other:9095",
+		"-shadow-address=third:9095",
+	}))
+	require.Equal(t, []string{"other:9095", "third:9095"}, []string(cfg.ShadowAddresses))
+	require.NoError(t, cfg.Validate())
+
+	for _, addresses := range [][]string{{""}, {"primary:9095"}, {"other:9095", "other:9095"}} {
+		cfg.ShadowAddresses = addresses
+		require.EqualError(t, cfg.Validate(), "primary-address and shadow-address values must be nonempty and distinct")
+	}
+	cfg.ShadowAddresses = nil
+	require.EqualError(t, cfg.Validate(), "primary-address and at least one shadow-address are required")
 }
 
 func TestSampleMismatchCounts(t *testing.T) {
