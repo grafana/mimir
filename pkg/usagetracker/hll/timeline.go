@@ -92,6 +92,18 @@ func (t *Timeline) Sketches(now int64) iter.Seq2[int64, Sketch] {
 	}
 }
 
+// Empty returns whether no sketch is in the window ending at now or after it.
+func (t *Timeline) Empty(now int64) bool {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+	for _, slot := range t.slots {
+		if slot.sketch != nil && slot.minute > now-int64(len(t.slots)) {
+			return false
+		}
+	}
+	return true
+}
+
 // +checklocks:t.mtx
 func (t *Timeline) inWindow(minute, now int64) bool {
 	return minute <= now && minute > now-int64(len(t.slots))
