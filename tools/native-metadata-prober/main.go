@@ -30,30 +30,32 @@ func main() {
 	var (
 		cfg           nativemetadataprober.Config
 		address       string
+		clusterLabel  string
 		timeout       time.Duration
 		listenAddress string
 	)
-	flag.StringVar(&address, "address", "", "The cell's Prometheus API, with its prefix, through a gateway that takes the tenant from the X-Scope-OrgID header, such as http://gateway/prometheus.")
+	flag.StringVar(&address, "address", "", "The cell's Prometheus API, with its prefix, on a server that takes the tenant from the X-Scope-OrgID header, such as http://query-frontend/prometheus.")
+	flag.StringVar(&clusterLabel, "client-cluster-validation.label", "", "The cell's cluster validation label, sent with every request, for a server that validates it, such as the query-frontend. The cell's gateway adds it itself. Empty sends none.")
 	flag.DurationVar(&timeout, "timeout", 30*time.Second, "Timeout of each query and lookup.")
 	flag.StringVar(&listenAddress, "listen-address", ":8080", "Address to serve /metrics on.")
 	cfg.RegisterFlags(flag.CommandLine)
 	logger := level.NewFilter(log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)), level.AllowInfo())
 	logger = log.With(logger, "ts", log.DefaultTimestampUTC)
 
-	if err := run(cfg, address, timeout, listenAddress, logger); err != nil {
+	if err := run(cfg, address, clusterLabel, timeout, listenAddress, logger); err != nil {
 		level.Error(logger).Log("msg", "native-metadata-prober failed", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(cfg nativemetadataprober.Config, address string, timeout time.Duration, listenAddress string, logger log.Logger) error {
+func run(cfg nativemetadataprober.Config, address, clusterLabel string, timeout time.Duration, listenAddress string, logger log.Logger) error {
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		return err
 	}
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
-	client, err := nativemetadataprober.NewHTTPClient(address, timeout)
+	client, err := nativemetadataprober.NewHTTPClient(address, clusterLabel, timeout)
 	if err != nil {
 		return err
 	}
