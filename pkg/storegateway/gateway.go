@@ -237,7 +237,7 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 
 	var shardSizeTransitions *ShardSizeTransitions
 	if gatewayCfg.ShardSizeTransitionEnabled {
-		shardSizeTransitions = NewShardSizeTransitions(mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval, "store-gateway", reg)
+		shardSizeTransitions = NewShardSizeTransitions(mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval, "store-gateway", reg, logger)
 	}
 
 	shardingStrategy = NewShuffleShardingStrategy(g.ring, lifecyclerCfg.ID, lifecyclerCfg.Addr, dynamicReplication, limits, shardSizeTransitions, logger)

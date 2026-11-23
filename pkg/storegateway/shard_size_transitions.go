@@ -3,9 +3,12 @@
 package storegateway
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -19,6 +22,7 @@ import (
 type ShardSizeTransitions struct {
 	period time.Duration
 	now    func() time.Time
+	logger log.Logger
 
 	transitionsStarted prometheus.Counter
 	transitionsEnded   prometheus.Counter
@@ -35,6 +39,13 @@ type TenantShardSize struct {
 
 	// Total of 0 means shuffle sharding is disabled.
 	Total int
+}
+
+func (s TenantShardSize) String() string {
+	if s.PerZone > 0 {
+		return fmt.Sprintf("%d per zone", s.PerZone)
+	}
+	return fmt.Sprintf("%d total", s.Total)
 }
 
 // normalized sets only the field in use, so that equivalent sizes are equal.
@@ -71,16 +82,17 @@ func (s *tenantShardSize) inTransition(now time.Time, period time.Duration) bool
 // NewShardSizeTransitions returns a ShardSizeTransitions where a shard size change is a transition for the input
 // period. The component labels the metrics, so that a querier and a store-gateway can share a registry in monolithic
 // mode. The registerer can be nil.
-func NewShardSizeTransitions(period time.Duration, component string, reg prometheus.Registerer) *ShardSizeTransitions {
+func NewShardSizeTransitions(period time.Duration, component string, reg prometheus.Registerer, logger log.Logger) *ShardSizeTransitions {
 	transitions := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name:        "cortex_shard_size_transitions_total",
-		Help:        "Total number of tenant store-gateway shard size transitions started and ended, as observed by this component. A transition starts when a change of the tenant shard size is observed, and ends when the transition period elapsed or the shard size changed back. The end of a transition is only recorded when the tenant is observed again after the period, which for queriers requires a query of the tenant.",
+		Help:        "Total number of tenant store-gateway shard size transitions started and ended, as observed by this component. A transition starts when a change of the tenant shard size is observed, and ends when the transition period elapsed. The end of a transition is only recorded when the tenant is observed again after the period, which for queriers requires a query of the tenant.",
 		ConstLabels: prometheus.Labels{"component": component},
 	}, []string{"event"})
 
 	return &ShardSizeTransitions{
 		period:             period,
 		now:                time.Now,
+		logger:             logger,
 		transitionsStarted: transitions.WithLabelValues("started"),
 		transitionsEnded:   transitions.WithLabelValues("ended"),
 		tenants:            map[string]*tenantShardSize{},
@@ -114,16 +126,29 @@ func (t *ShardSizeTransitions) Observe(userID string, shardSize TenantShardSize)
 	}
 	t.mtx.RUnlock()
 
+	previous, inTransition, started, ended := t.update(userID, shardSize)
+
+	// Logged without holding the lock, because transitions are observed on the read path.
+	if ended {
+		level.Info(t.logger).Log("msg", "tenant shard size transition ended", "user", userID)
+	}
+	if started {
+		level.Info(t.logger).Log("msg", "tenant shard size transition started", "user", userID, "previous_shard_size", previous, "shard_size", shardSize)
+	}
+	return previous, inTransition
+}
+
+func (t *ShardSizeTransitions) update(userID string, shardSize TenantShardSize) (previous TenantShardSize, inTransition, started, ended bool) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
 
 	now := t.now()
 
-	s, ok = t.tenants[userID]
+	s, ok := t.tenants[userID]
 	if !ok {
 		// Without history we can't know whether the shard size changed recently.
 		t.tenants[userID] = &tenantShardSize{current: shardSize}
-		return TenantShardSize{}, false
+		return TenantShardSize{}, false, false, false
 	}
 
 	// A transition stays recorded until the first observation after its period elapsed.
@@ -131,28 +156,23 @@ func (t *ShardSizeTransitions) Observe(userID string, shardSize TenantShardSize)
 	if inTransition && !s.inTransition(now, t.period) {
 		s.since = time.Time{}
 		inTransition = false
+		ended = true
 		t.transitionsEnded.Inc()
 	}
 
 	if s.current != shardSize {
 		if !inTransition {
 			s.previous = s.current
+			started = true
 			t.transitionsStarted.Inc()
 		}
 		s.current = shardSize
 		s.since = now
 		inTransition = true
-
-		// Changing back to the last settled shard size leaves nothing to transition from.
-		if s.previous == s.current {
-			s.since = time.Time{}
-			inTransition = false
-			t.transitionsEnded.Inc()
-		}
 	}
 
 	if !inTransition {
-		return TenantShardSize{}, false
+		return TenantShardSize{}, false, started, ended
 	}
-	return s.previous, true
+	return s.previous, true, started, ended
 }

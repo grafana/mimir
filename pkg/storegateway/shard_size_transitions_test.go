@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -49,7 +50,7 @@ func (c *fakeClock) Advance(d time.Duration) {
 
 func newTestShardSizeTransitions(period time.Duration) (*ShardSizeTransitions, *fakeClock) {
 	clock := newFakeClock()
-	tr := NewShardSizeTransitions(period, "store-gateway", nil)
+	tr := NewShardSizeTransitions(period, "store-gateway", nil, log.NewNopLogger())
 	tr.now = clock.Now
 	return tr, clock
 }
@@ -95,11 +96,11 @@ func TestShardSizeTransitions_Observe(t *testing.T) {
 			{advance: 40 * time.Minute, shardSize: 9, expectTransition: true, expectPrevious: 3},
 			{advance: 20 * time.Minute, shardSize: 9},
 		},
-		"changing back to the last settled size ends the transition": {
+		"changing back to the last settled size is still a transition until the period elapses": {
 			{shardSize: 3},
 			{shardSize: 6, expectTransition: true, expectPrevious: 3},
-			{advance: time.Minute, shardSize: 3},
-			{advance: time.Minute, shardSize: 3},
+			{advance: time.Minute, shardSize: 3, expectTransition: true, expectPrevious: 3},
+			{advance: period, shardSize: 3},
 		},
 		"a change after settling uses the settled size as previous": {
 			{shardSize: 3},
@@ -153,7 +154,7 @@ func TestShardSizeTransitions_NilShouldNeverTransition(t *testing.T) {
 }
 
 func TestShardSizeTransitions_ConcurrentObserve(t *testing.T) {
-	tr := NewShardSizeTransitions(time.Hour, "store-gateway", nil)
+	tr := NewShardSizeTransitions(time.Hour, "store-gateway", nil, log.NewNopLogger())
 
 	var wg sync.WaitGroup
 	for g := 0; g < 8; g++ {
@@ -171,7 +172,7 @@ func TestShardSizeTransitions_ConcurrentObserve(t *testing.T) {
 func BenchmarkShardSizeTransitions_Observe(b *testing.B) {
 	for name, tr := range map[string]*ShardSizeTransitions{
 		"disabled": nil,
-		"enabled":  NewShardSizeTransitions(time.Hour, "store-gateway", nil),
+		"enabled":  NewShardSizeTransitions(time.Hour, "store-gateway", nil, log.NewNopLogger()),
 	} {
 		b.Run(name, func(b *testing.B) {
 			tr.Observe("user-1", TenantShardSize{Total: 3})
@@ -329,8 +330,8 @@ func BenchmarkGetShuffleShardingSubrings(b *testing.B) {
 		inTransition bool
 	}{
 		"disabled":                  {},
-		"enabled and settled":       {transitions: NewShardSizeTransitions(time.Hour, "store-gateway", nil)},
-		"enabled and in transition": {transitions: NewShardSizeTransitions(time.Hour, "store-gateway", nil), inTransition: true},
+		"enabled and settled":       {transitions: NewShardSizeTransitions(time.Hour, "store-gateway", nil, log.NewNopLogger())},
+		"enabled and in transition": {transitions: NewShardSizeTransitions(time.Hour, "store-gateway", nil, log.NewNopLogger()), inTransition: true},
 	}
 
 	for name, testData := range tests {
@@ -397,8 +398,8 @@ func BenchmarkShuffleShardingStrategy_FilterBlocks_ShardSizeTransition(b *testin
 		observed    int
 	}{
 		"disabled":      {},
-		"settled":       {transitions: NewShardSizeTransitions(time.Hour, "store-gateway", nil), observed: 60},
-		"in transition": {transitions: NewShardSizeTransitions(time.Hour, "store-gateway", nil), observed: 90},
+		"settled":       {transitions: NewShardSizeTransitions(time.Hour, "store-gateway", nil, log.NewNopLogger()), observed: 60},
+		"in transition": {transitions: NewShardSizeTransitions(time.Hour, "store-gateway", nil, log.NewNopLogger()), observed: 90},
 	}
 
 	for name, testData := range tests {
@@ -451,7 +452,7 @@ func TestGetShuffleShardingSubrings_ShouldNotTreatZonesCountChangeAsShardSizeCha
 	require.Eventually(t, func() bool { return r.ZonesCount() == 3 }, 5*time.Second, 10*time.Millisecond)
 
 	limits := &shardingLimitsMock{storeGatewayTenantShardSizePerZone: shardSizePerZone}
-	transitions := NewShardSizeTransitions(time.Hour, "store-gateway", nil)
+	transitions := NewShardSizeTransitions(time.Hour, "store-gateway", nil, log.NewNopLogger())
 
 	_, previous := GetShuffleShardingSubrings(r, userID, limits, transitions)
 	require.Nil(t, previous)
@@ -500,7 +501,7 @@ func noShardSizeTransitions() *ShardSizeTransitions {
 // newShardSizeTransitionsForTest returns an enabled ShardSizeTransitions. A tracker observing a tenant shard size
 // that never changes is settled, so tests which don't change the shard size expect the same results as when disabled.
 func newShardSizeTransitionsForTest() *ShardSizeTransitions {
-	return NewShardSizeTransitions(time.Hour, "store-gateway", nil)
+	return NewShardSizeTransitions(time.Hour, "store-gateway", nil, log.NewNopLogger())
 }
 
 func TestShardSizeTransitions_Metrics(t *testing.T) {
@@ -508,7 +509,7 @@ func TestShardSizeTransitions_Metrics(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 	clock := newFakeClock()
-	tr := NewShardSizeTransitions(period, "store-gateway", reg)
+	tr := NewShardSizeTransitions(period, "store-gateway", reg, log.NewNopLogger())
 	tr.now = clock.Now
 
 	assertMetrics := func(t *testing.T, started, ended int) {
@@ -536,7 +537,8 @@ func TestShardSizeTransitions_Metrics(t *testing.T) {
 		{name: "observing within the period doesn't end it", advance: 30 * time.Minute, shardSize: 9, started: 1},
 		{name: "observing after the period ends it", advance: period, shardSize: 9, started: 1, ended: 1},
 		{name: "a change after settling starts a new one", shardSize: 12, started: 2, ended: 1},
-		{name: "changing back to the settled size ends it", advance: time.Minute, shardSize: 9, started: 2, ended: 2},
+		{name: "changing back to the settled size doesn't end it", advance: time.Minute, shardSize: 9, started: 2, ended: 1},
+		{name: "observing after the period ends it", advance: 10 * period, shardSize: 9, started: 2, ended: 2},
 		{name: "a settled tenant doesn't change the metrics", advance: 10 * period, shardSize: 9, started: 2, ended: 2},
 		{name: "another change starts a transition", shardSize: 6, started: 3, ended: 2},
 		{name: "the end is recorded at the first observation after the period", advance: 5 * period, shardSize: 6, started: 3, ended: 3},
@@ -552,11 +554,32 @@ func TestShardSizeTransitions_Metrics(t *testing.T) {
 	}
 }
 
+func TestShardSizeTransitions_ShouldLogTheTenantOfStartedAndEndedTransitions(t *testing.T) {
+	const period = time.Hour
+
+	out := &concurrency.SyncBuffer{}
+	clock := newFakeClock()
+	tr := NewShardSizeTransitions(period, "store-gateway", nil, log.NewLogfmtLogger(out))
+	tr.now = clock.Now
+
+	tr.Observe("user-1", TenantShardSize{Total: 3})
+	tr.Observe("user-2", TenantShardSize{PerZone: 1})
+	assert.Empty(t, out.String())
+
+	tr.Observe("user-1", TenantShardSize{Total: 6})
+	assert.Equal(t, `level=info msg="tenant shard size transition started" user=user-1 previous_shard_size="3 total" shard_size="6 total"`+"\n", out.String())
+
+	out.Reset()
+	clock.Advance(period)
+	tr.Observe("user-1", TenantShardSize{Total: 6})
+	assert.Equal(t, `level=info msg="tenant shard size transition ended" user=user-1`+"\n", out.String())
+}
+
 func TestShardSizeTransitions_MetricsOfQuerierAndStoreGatewayShouldRegisterInTheSameRegistry(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 
-	querier := NewShardSizeTransitions(time.Hour, "querier", reg)
-	storeGateway := NewShardSizeTransitions(time.Hour, "store-gateway", reg)
+	querier := NewShardSizeTransitions(time.Hour, "querier", reg, log.NewNopLogger())
+	storeGateway := NewShardSizeTransitions(time.Hour, "store-gateway", reg, log.NewNopLogger())
 
 	querier.Observe("user-1", TenantShardSize{Total: 3})
 	querier.Observe("user-1", TenantShardSize{Total: 6})

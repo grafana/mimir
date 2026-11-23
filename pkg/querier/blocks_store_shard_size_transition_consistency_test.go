@@ -226,14 +226,14 @@ func newShardSizeTransitionQueryEnv(t *testing.T, shardSize int, transitionPerio
 	for _, g := range env.storeGateways {
 		var transitions *storegateway.ShardSizeTransitions
 		if transitionPeriod > 0 {
-			transitions = storegateway.NewShardSizeTransitions(transitionPeriod, "store-gateway", g.reg)
+			transitions = storegateway.NewShardSizeTransitions(transitionPeriod, "store-gateway", g.reg, log.NewNopLogger())
 		}
 		g.strategy = storegateway.NewShuffleShardingStrategy(env.ring, g.id, g.addr, dynamicReplication, env.limits, transitions, logger)
 	}
 
 	var transitions *storegateway.ShardSizeTransitions
 	if transitionPeriod > 0 {
-		transitions = storegateway.NewShardSizeTransitions(transitionPeriod, "querier", env.querierReg)
+		transitions = storegateway.NewShardSizeTransitions(transitionPeriod, "querier", env.querierReg, log.NewNopLogger())
 	}
 
 	pool := newStoreGatewayClientPool(client.NewRingServiceDiscovery(env.ring), StoreGatewayClientConfig{}, logger, env.querierReg)

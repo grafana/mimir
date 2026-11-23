@@ -372,7 +372,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	// The tenant shard size is the same in all compartments, so they share the transitions.
 	var shardSizeTransitions *storegateway.ShardSizeTransitions
 	if gatewayCfg.ShardSizeTransitionEnabled {
-		shardSizeTransitions = storegateway.NewShardSizeTransitions(mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval, "querier", reg)
+		shardSizeTransitions = storegateway.NewShardSizeTransitions(mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval, "querier", reg, logger)
 	}
 
 	stores := make([]blocksStoreCompartment, numCompartments)

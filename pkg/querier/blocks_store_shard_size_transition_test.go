@@ -159,7 +159,7 @@ func TestBlocksStoreReplicationSet_ShardSizeTransition(t *testing.T) {
 		newShardSize = 8
 	)
 
-	env := newShardSizeTransitionTestEnv(t, oldShardSize, storegateway.NewShardSizeTransitions(time.Hour, "querier", nil))
+	env := newShardSizeTransitionTestEnv(t, oldShardSize, storegateway.NewShardSizeTransitions(time.Hour, "querier", nil, log.NewNopLogger()))
 	oldAddrs := env.addrsInShard(userID, oldShardSize)
 	newAddrs := env.addrsInShard(userID, newShardSize)
 
@@ -188,7 +188,7 @@ func TestBlocksStoreReplicationSet_ShardSizeTransition(t *testing.T) {
 func TestBlocksStoreReplicationSet_ShardSizeTransitionShouldEnd(t *testing.T) {
 	const userID = "user-1"
 
-	env := newShardSizeTransitionTestEnv(t, 3, storegateway.NewShardSizeTransitions(100*time.Millisecond, "querier", nil))
+	env := newShardSizeTransitionTestEnv(t, 3, storegateway.NewShardSizeTransitions(100*time.Millisecond, "querier", nil, log.NewNopLogger()))
 	newAddrs := env.addrsInShard(userID, 6)
 
 	env.getClients(t, userID, nil)
@@ -238,7 +238,7 @@ func BenchmarkBlocksStoreReplicationSet_GetClientsFor_ShardSizeTransitions(b *te
 		b.Run(name, func(b *testing.B) {
 			var transitions *storegateway.ShardSizeTransitions
 			if testData.enabled {
-				transitions = storegateway.NewShardSizeTransitions(time.Hour, "querier", nil)
+				transitions = storegateway.NewShardSizeTransitions(time.Hour, "querier", nil, log.NewNopLogger())
 			}
 			env := newShardSizeTransitionTestEnv(b, 6, transitions)
 			env.getClients(b, userID, nil)
@@ -379,5 +379,5 @@ func noShardSizeTransitions() *storegateway.ShardSizeTransitions {
 // newShardSizeTransitionsForTest returns an enabled ShardSizeTransitions. A tracker observing a tenant shard size
 // that never changes is settled, so tests which don't change the shard size expect the same results as when disabled.
 func newShardSizeTransitionsForTest() *storegateway.ShardSizeTransitions {
-	return storegateway.NewShardSizeTransitions(time.Hour, "querier", nil)
+	return storegateway.NewShardSizeTransitions(time.Hour, "querier", nil, log.NewNopLogger())
 }
