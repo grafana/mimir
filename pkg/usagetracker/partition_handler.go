@@ -946,7 +946,18 @@ func (p *partitionHandler) publishSnapshot(ctx context.Context) error {
 		}
 	}
 	// The received series go in the last file, so that loading them finds the tenants of all the shards.
-	file.ReceivedSeries = p.store.snapshotReceivedSeries(time.Now())
+	receivedSeriesSnapshot := p.store.snapshotReceivedSeries(time.Now())
+	// If tail of the snapshot + received series is larger than the target file size,
+	// then write the file and put the received series into a separate file.
+	// TODO: This might mean that received series snapshot is much larger than the TargetSnapshotFileSizeBytes,
+	// TODO: but TargetSnapshotFileSizeBytes was never meant to be a limit, just a hint.
+	// TODO: The default TargetSnapshotFileSizeBytes is 100MB, which is enough to hold more than 10K tenant timelines at p=8.
+	if fileDataLen+len(receivedSeriesSnapshot) > p.cfg.TargetSnapshotFileSizeBytes {
+		if err := writeFileAndPublishEvent(); err != nil {
+			return err
+		}
+	}
+	file.ReceivedSeries = receivedSeriesSnapshot
 	fileDataLen += len(file.ReceivedSeries)
 	if err := writeFileAndPublishEvent(); err != nil {
 		return err

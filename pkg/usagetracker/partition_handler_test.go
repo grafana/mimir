@@ -165,8 +165,9 @@ func TestPartitionHandler(t *testing.T) {
 	})
 
 	t.Run("received series are snapshotted and loaded", func(t *testing.T) {
-		// The small target size splits the snapshot into many files, and the received series go in the last one.
-		for _, maxFileSize := range []int{10e3, 100} {
+		// The small target size splits the snapshot into many files, and the received series go in the last one,
+		// alone when they don't fit in the target size with the data of the last shards.
+		for maxFileSize, receivedSeriesWithData := range map[int]bool{10e3: true, 100: false} {
 			t.Run("maxFileSize="+strconv.Itoa(maxFileSize), func(t *testing.T) {
 				t.Parallel()
 
@@ -195,6 +196,27 @@ func TestPartitionHandler(t *testing.T) {
 				require.NoError(t, ph1.publishSnapshot(ctx))
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, ph1))
 				require.InEpsilon(t, 10*shards, estimate(ph1), 0.1)
+
+				// The filenames start with the timestamp, so the bucket lists the last file last.
+				var files []usagetrackerpb.SnapshotFile
+				require.NoError(t, h.snapshotsBucket.Iter(ctx, "", func(name string) error {
+					r, err := h.snapshotsBucket.Get(ctx, name)
+					require.NoError(t, err)
+					defer r.Close()
+					data, err := io.ReadAll(r)
+					require.NoError(t, err)
+					var file usagetrackerpb.SnapshotFile
+					require.NoError(t, file.Unmarshal(data))
+					files = append(files, file)
+					return nil
+				}))
+				require.NotEmpty(t, files)
+				last := files[len(files)-1]
+				for _, file := range files[:len(files)-1] {
+					require.Empty(t, file.ReceivedSeries)
+				}
+				require.NotEmpty(t, last.ReceivedSeries)
+				require.Equal(t, receivedSeriesWithData, len(last.Data) > 0)
 
 				ph2 := h.newHandler(t, configure)
 				require.NoError(t, services.StartAndAwaitRunning(ctx, ph2))
