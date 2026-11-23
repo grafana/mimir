@@ -1532,6 +1532,18 @@ rules:
 `,
 		},
 		{
+			name:   "with an expression that starts with a single space",
+			cfg:    defaultCfg,
+			status: 202,
+			input: `
+name: test
+interval: 15s
+rules:
+- record: up_rule
+  expr: " up\n"
+`,
+		},
+		{
 			name: "with valid rules but evaluation delay and query offset set to different values",
 			cfg:  defaultCfg,
 			input: `
