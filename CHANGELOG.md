@@ -194,6 +194,7 @@
 * [BUGFIX] Alertmanager: Fix tenants without a configuration getting no Alertmanager when the fallback configuration (`-alertmanager.configs.fallback`) fails validation. For example, the fallback loads files or has an SNS receiver without explicit credentials. The load-time validation added in #17315 now checks tenant configuration only. #17399
 * [BUGFIX] Admin: Use relative links for the config, runtime config and ingester links in the administration web UI, so that they work when the UI is served behind a reverse proxy that adds a path prefix. #17271
 * [BUGFIX] MQE: Fix `quantile`, `quantile_over_time` and `mad_over_time` returning a value with a rounding error, or `0` for very small values, when the quantile falls between two identical values. MQE now returns that value exactly, the same as the Prometheus engine. #17444
+* [BUGFIX] Query-frontend: Fix retried POST requests to the label names, label values, series, cardinality and active series endpoints being sent without their body. Retries dropped the parameters sent in the body, such as `match[]`, so a retried label names or label values request could return results for all series. #17445
 
 ### Mixin
 
@@ -202,6 +203,7 @@
 * [CHANGE] Mixin: Default `_config.scrape_interval` is now `1m` (was `15s`) so precompiled recording rules and alerts work with common Alloy/ServiceMonitor scrape defaults. Rebuild the mixin if your scrape interval differs. #16178
 * [CHANGE] Dashboards: Make `cluster` and `namespace` single-select on the `Mimir / Compactor resources` dashboard. #16476
 * [CHANGE] Alerts: Split `MimirAlertmanagerPersistStateFailing` into a `critical` and a `warning` alert. The `critical` alert now fires only when the last 3 or 4 persist attempts of every tenant on a pod failed, and resolves on the first successful persist. Previously it never fired for a pod with a single tenant failing every attempt, and on pods with many tenants it fired on any failure in every 15m window for 1h. The new `warning` alert fires when more than 5% of persist attempts failed over 6h, with failures in at least 4 of those hours. #16905
+* [CHANGE] Alerts: Don't count context cancellation towards the error rate of requests to Memcached. #17452
 * [CHANGE] Dashboards: Remove the query-frontend queue panels from the `Mimir / Queries` dashboard. They show no data since Mimir 3.0.0 made the query-scheduler a required component (#12200). Also remove the text that calls the query-scheduler optional from the query-scheduler panels on the `Mimir / Queries`, `Mimir / Reads`, `Mimir / Remote ruler reads` and `Mimir / Tenants` dashboards. #16983
 * [CHANGE] Recording rules: Remove the `cluster_job:cortex_query_frontend_queue_duration_seconds*` recording rules. They record no series since Mimir 3.0.0 (#12200), so queries and alerts that use them already return no data. #16983
 * [CHANGE] Use cAdvisor container counters for Kubernetes disk read and write panels, so namespace filters apply directly and rates reflect workload I/O. (#17030)

@@ -169,7 +169,7 @@ groups:
           expr: |
             (
               sum by(cluster, namespace, name, operation) (
-                rate(thanos_cache_operation_failures_total{operation!~"add|delete"}[4m])
+                rate(thanos_cache_operation_failures_total{operation!~"add|delete", reason!="canceled"}[4m])
               )
               /
               (
