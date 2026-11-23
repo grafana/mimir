@@ -57,6 +57,9 @@ type TSDBBuilder struct {
 
 	// Number of series in memory across all tenants.
 	seriesCount atomic.Int64
+
+	// Time of the last early head compaction check
+	lastEarlyCompactionCheck time.Time
 }
 
 // We use this only to identify the soft errors.
@@ -387,6 +390,12 @@ func (b *TSDBBuilder) CompactToReduceInMemorySeries(ctx context.Context) error {
 		return nil
 	}
 
+	now := time.Now()
+	if now.Sub(b.lastEarlyCompactionCheck) < b.cfg.EarlyHeadCompactionCheckInterval {
+		return nil
+	}
+	b.lastEarlyCompactionCheck = now
+
 	b.tsdbsMu.Lock()
 	defer b.tsdbsMu.Unlock()
 
@@ -397,15 +406,12 @@ func (b *TSDBBuilder) CompactToReduceInMemorySeries(ctx context.Context) error {
 		"early_compaction_threshold", earlyCompactionThreshold,
 	)
 
-	if len(b.tsdbs) == 0 {
-		return nil
-	}
-
-	// Sort tenants by series count descending to compact the largest ones first.
+	// Early compaction empties a tenant's head, so its whole head is the estimated reduction.
+	// Tenants compacted within the min interval are skipped, since compacting them too frequently causes index bloat.
 	ests := make([]seriesReductionEstimation, 0, len(b.tsdbs))
 	for tenant, db := range b.tsdbs {
 		numSeries := db.Head().NumSeries()
-		if numSeries == 0 {
+		if numSeries == 0 || now.Sub(db.lastEarlyCompaction) < b.cfg.EarlyHeadCompactionMinInterval {
 			continue
 		}
 		ests = append(ests, seriesReductionEstimation{
@@ -413,6 +419,11 @@ func (b *TSDBBuilder) CompactToReduceInMemorySeries(ctx context.Context) error {
 			estimation: numSeries,
 		})
 	}
+	if len(ests) == 0 {
+		return nil
+	}
+
+	// Sort tenants by series count descending to compact the largest ones first.
 	slices.SortFunc(ests, func(a, b seriesReductionEstimation) int {
 		return cmp.Compare(b.estimation, a.estimation)
 	})
@@ -441,6 +452,7 @@ func (b *TSDBBuilder) CompactToReduceInMemorySeries(ctx context.Context) error {
 		if err := db.compactBlocks(ctx, blockRange, maxTime, true); err != nil {
 			return fmt.Errorf("early head compaction: partition %d, user %s: %w", est.tenant.partitionID, est.tenant.tenantID, err)
 		}
+		db.lastEarlyCompaction = time.Now()
 
 		level.Info(b.logger).Log(
 			"msg", "early head compaction completed",
@@ -609,6 +621,9 @@ type userTSDB struct {
 	// The value is inclusive.
 	// Note, we may remove it after usage-tracker (pre-kafka limiting) goes stable.
 	maxGlobalSeriesLimit int
+
+	// Time of the last early head compaction
+	lastEarlyCompaction time.Time
 }
 
 var (

@@ -458,6 +458,62 @@ func TestTSDBBuilder_CompactToReduceInMemorySeries(t *testing.T) {
 	require.Equal(t, 2, compacted)
 }
 
+func TestTSDBBuilder_CompactToReduceInMemorySeries_Intervals(t *testing.T) {
+	const (
+		bigUser     = "user1"
+		smallUser   = "user2"
+		partitionID = int32(0)
+	)
+
+	config, overrides := blockBuilderConfig(t, "kafka:9092", nil)
+	config.BlocksStorage.TSDB.EarlyHeadCompactionMinInMemorySeries = 4
+	config.EarlyHeadCompactionCheckInterval = time.Hour
+	config.EarlyHeadCompactionMinInterval = time.Hour
+
+	logger := log.NewNopLogger()
+	tsdbBuilderMetrics := newTSDBBuilderMetrics(prometheus.NewPedanticRegistry())
+	tsdbMetrics := mimir_tsdb.NewTSDBMetrics(prometheus.NewPedanticRegistry(), logger)
+	builder := NewTSDBBuilder(partitionID, config, overrides, logger, tsdbBuilderMetrics, tsdbMetrics)
+	t.Cleanup(func() { require.NoError(t, builder.Close()) })
+
+	bigDB, err := builder.getOrCreateTSDB(tsdbTenant{partitionID: partitionID, tenantID: bigUser})
+	require.NoError(t, err)
+	smallDB, err := builder.getOrCreateTSDB(tsdbTenant{partitionID: partitionID, tenantID: smallUser})
+	require.NoError(t, err)
+
+	ts := time.Hour.Milliseconds()
+	pushSeries := func(userID string, numSeries int) {
+		ctx := user.InjectOrgID(t.Context(), userID)
+		for seriesID := range numSeries {
+			req := createWriteRequest(strconv.Itoa(seriesID), floatSample(ts, float64(seriesID)), nil)
+			require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
+		}
+	}
+
+	pushSeries(bigUser, 10)
+	require.NoError(t, builder.CompactToReduceInMemorySeries(t.Context()))
+	require.Zero(t, bigDB.Head().NumSeries())
+	require.Len(t, bigDB.Blocks(), 1)
+
+	// Both tenants are above the threshold again, but the next check isn't due yet.
+	ts += 15 * time.Second.Milliseconds()
+	pushSeries(bigUser, 10)
+	pushSeries(smallUser, 1)
+	require.NoError(t, builder.CompactToReduceInMemorySeries(t.Context()))
+	require.Equal(t, uint64(10), bigDB.Head().NumSeries())
+	require.Len(t, bigDB.Blocks(), 1)
+	require.Equal(t, uint64(1), smallDB.Head().NumSeries())
+	require.Empty(t, smallDB.Blocks())
+
+	// Once the check is due, the big tenant is still within its min interval, so only the small tenant is compacted.
+	builder.lastEarlyCompactionCheck = time.Time{}
+	require.NoError(t, builder.CompactToReduceInMemorySeries(t.Context()))
+	require.Equal(t, uint64(10), bigDB.Head().NumSeries())
+	require.Len(t, bigDB.Blocks(), 1)
+	require.Zero(t, smallDB.Head().NumSeries())
+	require.Len(t, smallDB.Blocks(), 1)
+}
+
 func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
 	partitionID := int32(0)
 	userID := "user1"

@@ -28,6 +28,9 @@ type Config struct {
 	GenerateSparseIndexHeaders bool `yaml:"generate_sparse_index_headers" category:"experimental"`
 	VerifyBlocksBeforeUpload   bool `yaml:"verify_blocks_before_upload" category:"experimental"`
 
+	EarlyHeadCompactionCheckInterval time.Duration `yaml:"early_head_compaction_check_interval" category:"experimental"`
+	EarlyHeadCompactionMinInterval   time.Duration `yaml:"early_head_compaction_min_interval" category:"experimental"`
+
 	// Config parameters defined outside the block-builder config and are injected dynamically.
 	Kafka         ingest.KafkaConfig       `yaml:"-"`
 	BlocksStorage tsdb.BlocksStorageConfig `yaml:"-"`
@@ -66,6 +69,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.GenerateSparseIndexHeaders, "block-builder.generate-sparse-index-headers", false, "Construct and upload sparse index headers to object storage as part of block creation. This makes the sparse headers available to store-gateways when loading uncompacted blocks.")
 	f.BoolVar(&cfg.VerifyBlocksBeforeUpload, "block-builder.verify-blocks-before-upload", false, "Verify the integrity of each block before uploading it to object storage. If verification fails, the block is not uploaded and the job fails.")
 
+	f.DurationVar(&cfg.EarlyHeadCompactionCheckInterval, "block-builder.early-head-compaction-check-interval", 0, "Minimum wall-clock time between checks for whether an early head compaction is required, once the number of in-memory series reaches -blocks-storage.tsdb.early-head-compaction-min-in-memory-series. 0 means no minimum time between checks.")
+	f.DurationVar(&cfg.EarlyHeadCompactionMinInterval, "block-builder.early-head-compaction-min-interval", 0, "Minimum wall-clock time between early head compactions of the same tenant within a job. Early head compaction is enabled with -blocks-storage.tsdb.early-head-compaction-min-in-memory-series. 0 means no minimum interval.")
+
 	cfg.SchedulerConfig.RegisterFlags(f)
 }
 
@@ -90,6 +96,12 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.DataDir == "" {
 		return fmt.Errorf("data-dir is required")
+	}
+	if cfg.EarlyHeadCompactionCheckInterval < 0 {
+		return fmt.Errorf("early head compaction check interval must not be negative")
+	}
+	if cfg.EarlyHeadCompactionMinInterval < 0 {
+		return fmt.Errorf("early head compaction min interval must not be negative")
 	}
 
 	return nil
