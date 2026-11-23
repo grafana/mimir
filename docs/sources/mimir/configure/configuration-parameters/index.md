@@ -7380,7 +7380,7 @@ dynamic_replication:
 
 # (experimental) If true, when the store-gateway shard size of a tenant changes,
 # store-gateways keep the blocks they loaded for the previous tenant shard, and
-# queriers also query the previous tenant shard, for 3 times
+# queriers also query the previous tenant shard when blocks are missing, for 3 times
 # -blocks-storage.bucket-store.sync-interval after the change. This gives the
 # store-gateways in the new tenant shard time to load the blocks. The state is
 # kept in memory, so a restarted component doesn't know about changes made
