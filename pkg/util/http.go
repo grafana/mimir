@@ -244,11 +244,13 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 	case Lz4:
 		reader = lz4.NewReader(reader)
 	case Zstd:
-		var err error
-		reader, err = zstd.NewReader(reader)
+		zstdReader, err := zstd.NewReader(reader)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create zstd reader: %w", err)
 		}
+		// The decoder owns background goroutines, which are only released by Close.
+		defer zstdReader.Close()
+		reader = zstdReader
 	default:
 		return nil, fmt.Errorf("unrecognized compression type %v", compression)
 	}
