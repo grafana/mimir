@@ -391,7 +391,13 @@ func (t *trackerStore) cleanup(now time.Time) {
 	// Check all tenants and see if any of them are now empty.
 	// We don't need to take the mutex for this check, and in most situations we won't find any candidates.
 	for tenantID, tenant := range tenantsClone {
-		if tenant.series.Load() == 0 {
+	// We don't need to take the mutex for this check, and in most situations we won't find any candidates.
+	empty := func(tenant *trackedTenant) bool {
+		timeline := tenant.receivedSeries.Load()
+		return tenant.series.Load() == 0 && (timeline == nil || timeline.Empty(unixMinute(now)))
+	}
+	for tenantID, tenant := range tenantsClone {
+		if empty(tenant) {
 			deletionCandidates = append(deletionCandidates, tenantID)
 		}
 	}
@@ -409,7 +415,7 @@ func (t *trackerStore) cleanup(now time.Time) {
 		// Make sure nobody is appending.
 		// Since we have the t.mtx, we know that nobody can also get this tenant.
 		tenant.Lock()
-		if tenant.series.Load() == 0 {
+		if empty(tenant) {
 			delete(t.tenants, tenantID)
 			index, found := slices.BinarySearch(t.sortedTenants, tenantID)
 			if !found {
