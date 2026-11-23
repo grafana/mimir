@@ -139,14 +139,26 @@ func TestMergeSeriesMetadata_SingleSourceFastPath(t *testing.T) {
 func TestMergeSeriesMetadata_DifferentDropNameValuesForSameSeries(t *testing.T) {
 	testCases := map[string]struct {
 		series        labels.Labels
+		dropName      []bool
 		expectedError string
 	}{
-		"series with metric name": {
+		"series with metric name, first source drops name": {
 			series:        labels.FromStrings(model.MetricNameLabel, "foo", "idx", "0"),
+			dropName:      []bool{true, false},
 			expectedError: `series with labels {__name__="foo", idx="0"} has conflicting drop name values in different ranges / extents`,
 		},
-		"series without metric name": {
-			series: labelsForIdx(0),
+		"series with metric name, second source drops name": {
+			series:        labels.FromStrings(model.MetricNameLabel, "foo", "idx", "0"),
+			dropName:      []bool{false, true},
+			expectedError: `series with labels {__name__="foo", idx="0"} has conflicting drop name values in different ranges / extents`,
+		},
+		"series without metric name, first source drops name": {
+			series:   labelsForIdx(0),
+			dropName: []bool{true, false},
+		},
+		"series without metric name, second source drops name": {
+			series:   labelsForIdx(0),
+			dropName: []bool{false, true},
 		},
 	}
 
@@ -157,13 +169,13 @@ func TestMergeSeriesMetadata_DifferentDropNameValuesForSameSeries(t *testing.T) 
 
 			source1 := &operators.TestOperator{
 				Series:                   []labels.Labels{testCase.series},
-				DropName:                 []bool{true},
+				DropName:                 []bool{testCase.dropName[0]},
 				MemoryConsumptionTracker: memoryConsumptionTracker,
 			}
 
 			source2 := &operators.TestOperator{
 				Series:                   []labels.Labels{testCase.series},
-				DropName:                 []bool{false},
+				DropName:                 []bool{testCase.dropName[1]},
 				MemoryConsumptionTracker: memoryConsumptionTracker,
 			}
 
@@ -181,7 +193,7 @@ func TestMergeSeriesMetadata_DifferentDropNameValuesForSameSeries(t *testing.T) 
 			require.NoError(t, err)
 			// The merged series keeps the DropName value of the first source. The value has no effect on a series without
 			// __name__, so either value is correct.
-			require.Equal(t, []types.SeriesMetadata{{Labels: testCase.series, DropName: true}}, series, "expected sources to be merged into one series")
+			require.Equal(t, []types.SeriesMetadata{{Labels: testCase.series, DropName: testCase.dropName[0]}}, series, "expected sources to be merged into one series")
 			require.Equal(t, []splitOrCacheOutputSeries{{sourceSeriesIndices: []int{0, 0}}}, outputSeries)
 
 			releaseMergeSeriesMetadata(&series, outputSeries, memoryConsumptionTracker)

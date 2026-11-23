@@ -174,26 +174,33 @@ func TestSubquerySpinOff_SeriesFromNameDroppingExpressionInSomeSplits(t *testing
 	storage := promqltest.LoadedStorage(t, data)
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
-	evalTime := time.Unix(0, 0).Add(47 * time.Hour)
-	expr := `changes((max by (pod) (role_info{role="leader"}) or (0 * max by (pod) (role_info{role="follower"})))[2d:1h])`
-	expected := `{pod="p"} => 1 @[169200000]`
+	testCases := map[string]string{
+		"name-dropping expression on right side": `changes((max by (pod) (role_info{role="leader"}) or (0 * max by (pod) (role_info{role="follower"})))[2d:1h])`,
+		"name-dropping expression on left side":  `changes(((0 * max by (pod) (role_info{role="follower"})) or max by (pod) (role_info{role="leader"}))[2d:1h])`,
+	}
 
+	evalTime := time.Unix(0, 0).Add(47 * time.Hour)
+	expected := `{pod="p"} => 1 @[169200000]`
 	ctx := user.InjectOrgID(context.Background(), "tenant-1")
 
-	for _, enableDelayedNameRemoval := range []bool{false, true} {
-		t.Run(fmt.Sprintf("delayed name removal=%v", enableDelayedNameRemoval), func(t *testing.T) {
-			baselineEngine, _ := newSubquerySpinOffTestEngine(t, false, enableDelayedNameRemoval)
-			spinOffEngine, reg := newSubquerySpinOffTestEngine(t, true, enableDelayedNameRemoval)
+	for name, expr := range testCases {
+		t.Run(name, func(t *testing.T) {
+			for _, enableDelayedNameRemoval := range []bool{false, true} {
+				t.Run(fmt.Sprintf("delayed name removal=%v", enableDelayedNameRemoval), func(t *testing.T) {
+					baselineEngine, _ := newSubquerySpinOffTestEngine(t, false, enableDelayedNameRemoval)
+					spinOffEngine, reg := newSubquerySpinOffTestEngine(t, true, enableDelayedNameRemoval)
 
-			require.Equal(t, expected, execInstantQuery(t, ctx, baselineEngine, storage, expr, evalTime))
-			require.Equal(t, expected, execInstantQuery(t, ctx, spinOffEngine, storage, expr, evalTime))
+					require.Equal(t, expected, execInstantQuery(t, ctx, baselineEngine, storage, expr, evalTime))
+					require.Equal(t, expected, execInstantQuery(t, ctx, spinOffEngine, storage, expr, evalTime))
 
-			// The splits are merged only if the subquery is spun off, so the test is not valid without it.
-			require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(`
-				# HELP cortex_frontend_subquery_spinoff_successes_total Total number of queries the query-frontend successfully spun off subqueries from.
-				# TYPE cortex_frontend_subquery_spinoff_successes_total counter
-				cortex_frontend_subquery_spinoff_successes_total 1
-			`), "cortex_frontend_subquery_spinoff_successes_total"))
+					// The splits are merged only if the subquery is spun off, so the test is not valid without it.
+					require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(`
+						# HELP cortex_frontend_subquery_spinoff_successes_total Total number of queries the query-frontend successfully spun off subqueries from.
+						# TYPE cortex_frontend_subquery_spinoff_successes_total counter
+						cortex_frontend_subquery_spinoff_successes_total 1
+					`), "cortex_frontend_subquery_spinoff_successes_total"))
+				})
+			}
 		})
 	}
 }
