@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
+	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 
@@ -111,4 +112,18 @@ func (e prometheusEngine) Flush(ctx context.Context, upTo int64) error {
 	}
 
 	return e.db.CompactOOOHead(ctx)
+}
+
+func (e prometheusEngine) Configure(settings engineSettings) error {
+	// DB.ApplyConfig only uses the storage settings.
+	return e.db.ApplyConfig(&promcfg.Config{
+		StorageConfig: promcfg.StorageConfig{
+			ExemplarsConfig: &promcfg.ExemplarsConfig{MaxExemplars: settings.MaxExemplars},
+			TSDBConfig: &promcfg.TSDBConfig{
+				OutOfOrderTimeWindow: settings.OutOfOrderTimeWindow,
+				// The caller resolves the default so ApplyConfig can reset the encoding when the tenant clears its limit.
+				ChunkEncoding: promcfg.ChunkEncodingConfig{Floats: settings.FloatChunkEncoding},
+			},
+		},
+	})
 }
