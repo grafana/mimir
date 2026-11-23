@@ -88,7 +88,7 @@ func (t *trackerStore) Collect(metrics chan<- prometheus.Metric) {
 	}
 	t.mtx.RUnlock()
 
-	// Estimate after the store is unlocked: each estimate only locks its timeline, for a merge of two sketches.
+	// Estimate after the store is unlocked: each estimate only locks its timeline, while it merges the sketches of the window.
 	if len(timelines) == 0 {
 		return
 	}

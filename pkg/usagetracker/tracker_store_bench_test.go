@@ -234,9 +234,7 @@ func BenchmarkTrackerStoreTrackSeriesDuringSnapshot(b *testing.B) {
 }
 
 // BenchmarkTrackerStoreCollect collects the metrics of a store whose tenants have a sketch in every minute of the
-// idle timeout. With estimates=warm, each estimate merges two sketches. With estimates=cold, each Collect is in
-// another minute than the previous one, so each estimate merges all the minutes of the window, like the first
-// Collect of each minute.
+// idle timeout, so each estimate merges all the minutes of the window.
 func BenchmarkTrackerStoreCollect(b *testing.B) {
 	start := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	minutes := int(testIdleTimeout.Minutes())
@@ -252,14 +250,13 @@ func BenchmarkTrackerStoreCollect(b *testing.B) {
 	}
 
 	for _, tenantsCount := range []int{100, 1_000, 10_000} {
-		for _, estimates := range []string{"disabled", "warm", "cold"} {
-			b.Run(fmt.Sprintf("tenants=%d/estimates=%s", tenantsCount, estimates), func(b *testing.B) {
+		for _, estimates := range []bool{false, true} {
+			b.Run(fmt.Sprintf("tenants=%d/estimates=%t", tenantsCount, estimates), func(b *testing.B) {
 				store := newTrackerStore(testIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, newTestShardFactory())
-				last := start.Add(time.Duration(minutes-1) * time.Minute)
-				scrapeTime := last
-				if estimates != "disabled" {
+				if estimates {
 					store.receivedSeries = newReceivedSeriesEstimation(defaultReceivedSeriesEstimationHLLPrecision, 1, testIdleTimeout)
-					store.receivedSeries.now = func() time.Time { return scrapeTime }
+					last := start.Add(time.Duration(minutes-1) * time.Minute)
+					store.receivedSeries.now = func() time.Time { return last }
 				}
 				for tenant := range tenantsCount {
 					_, err := store.trackSeries(context.Background(), strconv.Itoa(tenant), nil, start)
@@ -277,13 +274,6 @@ func BenchmarkTrackerStoreCollect(b *testing.B) {
 				// Two metrics per tenant: the active series and the estimate.
 				metrics := make(chan prometheus.Metric, 2*tenantsCount+10)
 				for b.Loop() {
-					if estimates == "cold" {
-						if scrapeTime.Equal(last) {
-							scrapeTime = last.Add(time.Minute)
-						} else {
-							scrapeTime = last
-						}
-					}
 					store.Collect(metrics)
 					for len(metrics) > 0 {
 						<-metrics

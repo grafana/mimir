@@ -49,22 +49,21 @@ func TestTimeline(t *testing.T) {
 		require.Equal(t, sketchOf(100, 200).Estimate(), estimate(tl, start+minutes))
 		require.Zero(t, estimate(tl, start+minutes+1))
 
-		// Cleanup drops the sketches, and the union of the minutes before now is empty.
+		// Cleanup drops the sketches.
 		tl.Merge(start+minutes+1, start+minutes+1, sketchOf(0, 100))
 		tl.Cleanup(start + 2*minutes + 1)
 		for _, slot := range tl.slots {
 			require.Nil(t, slot.sketch)
 		}
-		require.Equal(t, NewSketch(p), tl.past)
 	})
 
-	t.Run("merges keep the union of the minutes before now up to date", func(t *testing.T) {
+	t.Run("merges between estimates are counted, including the late ones", func(t *testing.T) {
 		tl := NewTimeline(minutes)
 		tl.Merge(start, start, sketchOf(0, 100))
 		tl.Merge(start+1, start+1, sketchOf(100, 200))
 		require.Equal(t, sketchOf(0, 200).Estimate(), estimate(tl, start+1))
 
-		// The current minute, which is not in the union.
+		// The current minute.
 		tl.Merge(start+1, start+1, sketchOf(200, 300))
 		require.Equal(t, sketchOf(0, 300).Estimate(), estimate(tl, start+1))
 
@@ -77,7 +76,7 @@ func TestTimeline(t *testing.T) {
 		require.Equal(t, sketchOf(0, 400).Estimate(), estimate(tl, start+1))
 		require.Equal(t, sketchOf(0, 500).Estimate(), estimate(tl, start+2))
 
-		// When the window moves, the union is merged again without the minutes out of the window.
+		// When the window moves, the minutes out of the window are not counted.
 		expected := sketchOf(100, 300)
 		expected.Merge(sketchOf(400, 500))
 		require.Equal(t, expected.Estimate(), estimate(tl, start+minutes))
