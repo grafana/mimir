@@ -92,7 +92,7 @@
     // Ephemeral storage requested by Mimir component containers, reserving node-local scratch
     // space (logs, tmp) so pods aren't evicted first under node disk pressure. Set to null to
     // disable the request.
-    ephemeral_storage_request_size: '50Mi',
+    ephemeral_storage_request_size: '128Mi',
 
     // Enable the experimental compactor-scheduler. When enabled, compactors pull jobs from
     // the scheduler instead of planning them locally.

@@ -105,6 +105,11 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-protos
       - name: Check Generated Node Methods
         run: make BUILD_IN_CONTAINER=false check-node-methods
+      - name: Set up Node.js for prettier
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
       - name: Check Generated Documentation
         run: make BUILD_IN_CONTAINER=false check-doc
       - name: Check Reference Help Documentation

@@ -4,6 +4,7 @@ package functions
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -40,6 +41,18 @@ func TestMaxOf(t *testing.T) {
 			a:        []promql.FPoint{{T: 0, F: 3}, {T: 10, F: 3}},
 			b:        []promql.FPoint{{T: 0, F: 3}, {T: 10, F: 3}},
 			expected: []promql.FPoint{{T: 0, F: 3}, {T: 10, F: 3}},
+		},
+		{
+			name:     "NaN in one argument",
+			a:        []promql.FPoint{{T: 0, F: math.NaN()}, {T: 10, F: 3}},
+			b:        []promql.FPoint{{T: 0, F: 3}, {T: 10, F: math.NaN()}},
+			expected: []promql.FPoint{{T: 0, F: 3}, {T: 10, F: 3}},
+		},
+		{
+			name:     "NaN and infinities",
+			a:        []promql.FPoint{{T: 0, F: math.NaN()}, {T: 10, F: math.Inf(-1)}},
+			b:        []promql.FPoint{{T: 0, F: math.Inf(-1)}, {T: 10, F: math.NaN()}},
+			expected: []promql.FPoint{{T: 0, F: math.Inf(-1)}, {T: 10, F: math.Inf(-1)}},
 		},
 	}
 

@@ -212,7 +212,7 @@
     else (
       (
         if !$._config.ingest_storage_migration_classic_ingesters_no_scale_down_delay && !$._config.ingest_storage_migration_classic_ingesters_scale_down then {} else
-          statefulSet.mixin.metadata.withLabelsMixin({
+          statefulSet.mixin.metadata.withAnnotationsMixin({
             'grafana.com/min-time-between-zones-downscale': '0',
           })
       ) + (
@@ -227,7 +227,7 @@
     if $._config.ingest_storage_migration_classic_ingesters_zone_b_decommission then
       null
     else if $._config.ingest_storage_migration_classic_ingesters_no_scale_down_delay || $._config.ingest_storage_migration_classic_ingesters_scale_down then
-      statefulSet.mixin.metadata.withLabelsMixin({
+      statefulSet.mixin.metadata.withAnnotationsMixin({
         'grafana.com/min-time-between-zones-downscale': '0',
       })
     else
@@ -239,7 +239,7 @@
     if $._config.ingest_storage_migration_classic_ingesters_zone_c_decommission then
       null
     else if $._config.ingest_storage_migration_classic_ingesters_no_scale_down_delay || $._config.ingest_storage_migration_classic_ingesters_scale_down then
-      statefulSet.mixin.metadata.withLabelsMixin({
+      statefulSet.mixin.metadata.withAnnotationsMixin({
         'grafana.com/min-time-between-zones-downscale': '0',
       })
     else

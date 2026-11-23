@@ -109,10 +109,10 @@
     $.removeReplicasFromSpec +
     statefulSet.mixin.metadata.withLabelsMixin({
       'grafana.com/prepare-downscale': 'true',
-      'grafana.com/min-time-between-zones-downscale': '0',  // Follower zones should adjust their number of instances based on leader zone immediately.
     }) +
     statefulSet.mixin.metadata.withAnnotationsMixin(
       {
+        'grafana.com/min-time-between-zones-downscale': '0',  // Follower zones should adjust their number of instances based on leader zone immediately.
         'grafana.com/prepare-downscale-http-path': 'ingester/prepare-shutdown',  // We want to tell ingesters that they are shutting down.
         'grafana.com/prepare-downscale-http-port': '%(server_http_port)s' % $._config,
       } + (

@@ -95,6 +95,8 @@ The following features are currently experimental:
     - `-ruler.ring-change-debounce`
     - `-ruler.ring-change-max-debounce`
   - `-ruler.min-rule-evaluation-interval`
+  - Attach headers identifying the rule being evaluated to the queries sent to the query-frontend.
+    - `-ruler.query-frontend.enable-rule-detail-headers`
   - Configure metric and label name validation scheme
     - `-validation.name-validation-scheme`
   - Health check grace period for connections to other replicas (`-ruler.client.health-check-grace-period`)
@@ -147,6 +149,7 @@ The following features are currently experimental:
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
   - Early TSDB Head compaction to reduce in-memory series:
     - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
+    - `ingester_limits.early_head_compaction_min_in_memory_series` (runtime configuration)
     - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
   - Per-tenant early TSDB Head compaction based on owned series count:
     - `-ingester.early-head-compaction-owned-series-threshold`
@@ -290,6 +293,7 @@ The following features are currently experimental:
   - Per-zone shard size, useful for computing automatic shard sizes based on the number of zone `-store-gateway.tenant-shard-size-per-zone`
   - Specify the partitioner gap size for chunks (excluding posting & series) `-blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks`
   - Load only symbols table onto disk index-header `-blocks-storage.bucket-store.index-header.version=2`
+  - Logarithmic in-memory postings offsets sampling for high-cardinality labels `-blocks-storage.bucket-store.posting-offsets-in-mem-sampling-cardinality-threshold`
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`
@@ -344,8 +348,8 @@ The following features are currently experimental:
 - Derived partition tokens in the ingester partition ring
   - `-ingester.partition-ring.create-partitions-with-derived-tokens`
   - `-ingester.partition-ring.max-derived-token-partitions`
-- Jsonnet
-  - `$._config.autoscaling_oom_protection_enabled` controls whether to add extra KEDA ScaledObject trigger to prevent from down-scaling during OOM kills, if memory trigger is disabled
+- Template of the ingester links on the ingester ring status page
+  - `-ingester.ring.status-page-ingester-link-template`
 - Configuring the gzip compression level used for compressed HTTP responses with `-http.response-compression-level`.
 
 ## Deprecated features

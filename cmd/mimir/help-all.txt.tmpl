@@ -289,6 +289,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of network CIDRs to block in Alertmanager receiver integrations.
   -alertmanager.receivers-firewall-block-private-addresses
     	True to block private and local addresses in Alertmanager receiver integrations. It blocks private addresses defined by  RFC 1918 (IPv4 addresses) and RFC 4193 (IPv6 addresses), as well as loopback, local unicast and local multicast addresses.
+  -alertmanager.require-explicit-sns-credentials
+    	If true, SNS receivers must have explicit credentials configured, rather than inheriting any AWS credentials available in the environment. Note that setting this value to false could allow anyone with access to configure SNS receivers to send credentials to an arbitrary endpoint. (default true)
   -alertmanager.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -alertmanager.sharding-ring.consul.cas-retry-delay duration
@@ -371,6 +373,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Skip initializing Alertmanagers for tenants without a non-default, non-empty configuration. For Grafana Alertmanager tenants, configurations not marked as 'promoted' will also be skipped.
   -alertmanager.strict-initialization-idle-grace-period duration
     	[experimental] Duration to wait before shutting down an idle Alertmanager using a default/empty configuration when strict initialization is enabled. (default 5m0s)
+  -alertmanager.tenants-exempt-from-config-validation-for-existing-config value
+    	[experimental] List of tenants that are exempt from config validation for existing config. Newly uploaded config will be required to pass validation.
   -alertmanager.utf8-migration-logging-enabled
     	[experimental] Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.
   -alertmanager.utf8-strict-mode-enabled
@@ -457,6 +461,8 @@ Usage of ./cmd/mimir/mimir:
     	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -blocks-storage.bucket-store.chunks-cache.memcached.free-list-shards int
+    	[experimental] The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory. (default 1)
   -blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency int
@@ -509,6 +515,8 @@ Usage of ./cmd/mimir/mimir:
     	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.index-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -blocks-storage.bucket-store.index-cache.memcached.free-list-shards int
+    	[experimental] The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory. (default 1)
   -blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency int
@@ -557,6 +565,8 @@ Usage of ./cmd/mimir/mimir:
     	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.index-header-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -blocks-storage.bucket-store.index-header-cache.memcached.free-list-shards int
+    	[experimental] The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory. (default 1)
   -blocks-storage.bucket-store.index-header-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.index-header-cache.memcached.max-async-concurrency int
@@ -631,6 +641,8 @@ Usage of ./cmd/mimir/mimir:
     	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -blocks-storage.bucket-store.metadata-cache.memcached.free-list-shards int
+    	[experimental] The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory. (default 1)
   -blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency int
@@ -683,6 +695,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. Overrides the 'bucket-store.partitioner-max-gap-bytes' when requesting chunks
   -blocks-storage.bucket-store.posting-offsets-in-mem-sampling int
     	Controls what is the ratio of postings offsets that the store will hold in memory. (default 32)
+  -blocks-storage.bucket-store.posting-offsets-in-mem-sampling-cardinality-threshold int
+    	[experimental] Label cardinality above which the store holds progressively fewer postings offsets in memory for that label. Above the threshold, the number of postings offsets in memory grows logarithmically with the label cardinality, instead of linearly. The label cardinality is estimated as the number of sampled postings offsets times the sampling ratio. 0 to disable.
   -blocks-storage.bucket-store.series-fetch-preference float
     	This parameter controls the trade-off in fetching series versus fetching postings to fulfill a series request. Increasing the series preference results in fetching more series and reducing the volume of postings fetched. Reducing the series preference results in the opposite. Increase this parameter to reduce the rate of fetched series bytes (see "Mimir / Queries" dashboard) or API calls to the object store. Must be a positive floating point number. (default 0.75)
   -blocks-storage.bucket-store.series-hash-cache-max-size-bytes uint
@@ -1154,7 +1168,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.block-ranges comma-separated-list-of-durations
     	List of compaction time ranges. (default 2h0m0s,12h0m0s,24h0m0s)
   -compactor.block-symbol-table-size-threshold uint
-    	[experimental] Maximum symbol table size in bytes for a compacted block. When the symbol table of a just-compacted block exceeds this threshold, the block is proactively marked as no-compact. 0 = disabled.
+    	[experimental] Maximum symbol table size in bytes for a compacted block. When the symbol table of a just-compacted block exceeds this threshold, the block is proactively marked as no-compact. 0 = disabled. (default 3800000000)
   -compactor.block-sync-concurrency int
     	Number of goroutines to use when downloading blocks for compaction and uploading resulting blocks. (default 8)
   -compactor.block-upload-enabled
@@ -1361,6 +1375,8 @@ Usage of ./cmd/mimir/mimir:
     	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -compactor.scheduler-client.metadata-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -compactor.scheduler-client.metadata-cache.memcached.free-list-shards int
+    	[experimental] The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory. (default 1)
   -compactor.scheduler-client.metadata-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -compactor.scheduler-client.metadata-cache.memcached.max-async-concurrency int
@@ -1704,7 +1720,7 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.client-id string
     	The Kafka client ID.
   -ingest-storage.kafka.client-rack string
-    	The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when ingest-storage.kafka.backend=kafka.
+    	The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when ingest-storage.kafka.backend=kafka. Consumers that fetch concurrently ignore it while ingest-storage.kafka.fetch-concurrency-max is greater than 0, because concurrent fetching always reads from the partition leader.
   -ingest-storage.kafka.consume-from-position-at-startup string
     	From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp. (default "last-offset")
   -ingest-storage.kafka.consume-from-timestamp-at-startup int
@@ -1925,6 +1941,8 @@ Usage of ./cmd/mimir/mimir:
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
+  -ingester.label-churn-enabled
+    	[experimental] Enable label churn detection. The ingester records the newest series reference of each tenant every minute, and returns a score for each label name that shows how many new series the new values of the label create.
   -ingester.label-value-bytes-metric-threshold int
     	[experimental] The total size, in bytes, of the distinct values of a single label name held in memory per tenant, across the cluster before replication, at which ingesters start reporting the label name through the cortex_ingester_label_value_bytes_over_threshold metric. Mimir doesn't reject series for label names over the threshold: to block a label name, add it to -validation.blocked-label-names-for-label-value-bytes. Only values longer than 128 bytes are counted, and each distinct value is counted once. 0 to disable.
   -ingester.label-values-count-chunk-size int
@@ -2189,6 +2207,8 @@ Usage of ./cmd/mimir/mimir:
     	True to allow this ingester registering tokens in the ring only after all previous ingesters (with ID lower than the current one) have already been registered. This configuration option is supported only when the token generation strategy is set to "spread-minimizing".
   -ingester.ring.spread-minimizing-zones comma-separated-list-of-strings
     	Comma-separated list of zones in which spread minimizing strategy is used for token generation. This value must include all zones in which ingesters are deployed, and must not change over time. This configuration is used only when "token-generation-strategy" is set to "spread-minimizing".
+  -ingester.ring.status-page-ingester-link-template string
+    	[experimental] Template of the link from each ingester on the ingester ring status page. {host} is replaced with the host of the ingester address in the ring, in brackets for IPv6 addresses, and {ingester} with the ingester ID. The default expects that the ingesters serve HTTP on port 8080. An empty value removes the links. (default "http://{host}:8080/ingester/tenants")
   -ingester.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ingester.ring.token-generation-strategy string
@@ -2573,6 +2593,8 @@ Usage of ./cmd/mimir/mimir:
     	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -querier.mimir-query-engine.range-vector-splitting.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.free-list-shards int
+    	[experimental] The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory. (default 1)
   -querier.mimir-query-engine.range-vector-splitting.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -querier.mimir-query-engine.range-vector-splitting.memcached.max-async-concurrency int
@@ -2825,6 +2847,8 @@ Usage of ./cmd/mimir/mimir:
     	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -query-frontend.cardinality-estimation-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -query-frontend.cardinality-estimation-cache.memcached.free-list-shards int
+    	[experimental] The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory. (default 1)
   -query-frontend.cardinality-estimation-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -query-frontend.cardinality-estimation-cache.memcached.max-async-concurrency int
@@ -2999,6 +3023,8 @@ Usage of ./cmd/mimir/mimir:
     	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -query-frontend.results-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -query-frontend.results-cache.memcached.free-list-shards int
+    	[experimental] The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory. (default 1)
   -query-frontend.results-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -query-frontend.results-cache.memcached.max-async-concurrency int
@@ -3239,6 +3265,8 @@ Usage of ./cmd/mimir/mimir:
     	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -ruler-storage.cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -ruler-storage.cache.memcached.free-list-shards int
+    	[experimental] The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory. (default 1)
   -ruler-storage.cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -ruler-storage.cache.memcached.max-async-concurrency int
@@ -3615,6 +3643,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] List of namespaces that are protected from modification unless a special HTTP header is used. If a namespace is protected, it can only be read, not modified via the ruler's configuration API. The value is a list of strings, where each string is a namespace name. On the command line, this list is given as a comma-separated list.
   -ruler.query-frontend.address string
     	Can be either the GRPC listen address of the query-frontend(s) or the HTTP/HTTPS address of a Prometheus-compatible server. Must be a DNS address (prefixed with dns:///) to enable GRPC client side load balancing.
+  -ruler.query-frontend.enable-rule-detail-headers
+    	[experimental] Set to true to attach headers identifying the rule being evaluated to the queries sent to the query-frontend: X-Rule-Name, X-Rule-Type, X-Rule-Source, X-Rule-Namespace, and X-Rule-Group. Use it together with -query-frontend.log-query-request-headers to attribute rule queries in the query-frontend logs.
   -ruler.query-frontend.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -ruler.query-frontend.grpc-client-config.backoff-min-period duration

@@ -16,6 +16,7 @@ func TestDecodeOptions(t *testing.T) {
 		input             *http.Request
 		propagatedHeaders []string
 		expected          Options
+		expectedErr       string
 	}{
 		{
 			name: "default",
@@ -93,20 +94,42 @@ func TestDecodeOptions(t *testing.T) {
 			},
 		},
 		{
-			name: "multiple sharding-control values, invalid entries skipped",
+			name: "invalid sharding-control value",
+			input: &http.Request{
+				Header: http.Header{
+					TotalShardsControlHeader: []string{"not-a-number"},
+				},
+			},
+			expectedErr: `invalid Sharding-Control header: strconv.ParseInt: parsing "not-a-number": invalid syntax`,
+		},
+		{
+			name: "multiple sharding-control values, invalid entry among them",
 			input: &http.Request{
 				Header: http.Header{
 					TotalShardsControlHeader: []string{"16", "not-a-number"},
 				},
 			},
-			expected: Options{
-				TotalShards: 16,
+			expectedErr: `invalid Sharding-Control header: strconv.ParseInt: parsing "not-a-number": invalid syntax`,
+		},
+		{
+			name: "sharding-control value out of range",
+			input: &http.Request{
+				Header: http.Header{
+					TotalShardsControlHeader: []string{"4294967296"},
+				},
 			},
+			expectedErr: `invalid Sharding-Control header: strconv.ParseInt: parsing "4294967296": value out of range`,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tt.expected, OptionDecoder{PropagatedHeaders: tt.propagatedHeaders}.DecodeOptions(tt.input))
+			actual, err := OptionDecoder{PropagatedHeaders: tt.propagatedHeaders}.DecodeOptions(tt.input)
+			if tt.expectedErr != "" {
+				require.EqualError(t, err, tt.expectedErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, actual)
 		})
 	}
 }
@@ -132,7 +155,9 @@ func TestEncodeDecodeOptionsRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 			EncodeOptions(req, tt.in)
 
-			require.Equal(t, tt.in, OptionDecoder{}.DecodeOptions(req))
+			actual, err := OptionDecoder{}.DecodeOptions(req)
+			require.NoError(t, err)
+			require.Equal(t, tt.in, actual)
 		})
 	}
 }

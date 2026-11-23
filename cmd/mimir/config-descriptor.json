@@ -2902,6 +2902,17 @@
                         },
                         {
                           "kind": "field",
+                          "name": "free_list_shards",
+                          "required": false,
+                          "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": 1,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.free-list-shards",
+                          "fieldType": "int",
+                          "fieldCategory": "experimental"
+                        },
+                        {
+                          "kind": "field",
                           "name": "tls_enabled",
                           "required": false,
                           "desc": "Enable connecting to Memcached with TLS.",
@@ -4397,6 +4408,17 @@
               "fieldFlag": "ingester.ring.spread-minimizing-zones",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "status_page_ingester_link_template",
+              "required": false,
+              "desc": "Template of the link from each ingester on the ingester ring status page. {host} is replaced with the host of the ingester address in the ring, in brackets for IPv6 addresses, and {ingester} with the ingester ID. The default expects that the ingesters serve HTTP on port 8080. An empty value removes the links.",
+              "fieldValue": null,
+              "fieldDefaultValue": "http://{host}:8080/ingester/tenants",
+              "fieldFlag": "ingester.ring.status-page-ingester-link-template",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -4911,6 +4933,16 @@
               "fieldFlag": "ingester.instance-limits.max-inflight-push-requests-bytes",
               "fieldType": "int",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "early_head_compaction_min_in_memory_series",
+              "required": false,
+              "desc": "When greater than 0, overrides -blocks-storage.tsdb.early-head-compaction-min-in-memory-series. Set it in the runtime configuration to change the early compaction threshold without restarting the ingester. 0 = use the value of -blocks-storage.tsdb.early-head-compaction-min-in-memory-series.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldType": "int",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -5602,6 +5634,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "label_churn_enabled",
+          "required": false,
+          "desc": "Enable label churn detection. The ingester records the newest series reference of each tenant every minute, and returns a score for each label name that shows how many new series the new values of the label create.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.label-churn-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -9132,6 +9175,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "free_list_shards",
+                  "required": false,
+                  "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1,
+                  "fieldFlag": "query-frontend.results-cache.memcached.free-list-shards",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "tls_enabled",
                   "required": false,
                   "desc": "Enable connecting to Memcached with TLS.",
@@ -9386,6 +9440,17 @@
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.max-item-size",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "free_list_shards",
+                  "required": false,
+                  "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1,
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.free-list-shards",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -9791,7 +9856,7 @@
               "kind": "field",
               "name": "client_rack",
               "required": false,
-              "desc": "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when ingest-storage.kafka.backend=kafka.",
+              "desc": "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when ingest-storage.kafka.backend=kafka. Consumers that fetch concurrently ignore it while ingest-storage.kafka.fetch-concurrency-max is greater than 0, because concurrent fetching always reads from the partition leader.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingest-storage.kafka.client-rack",
@@ -11853,6 +11918,17 @@
                     },
                     {
                       "kind": "field",
+                      "name": "free_list_shards",
+                      "required": false,
+                      "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.free-list-shards",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
                       "name": "tls_enabled",
                       "required": false,
                       "desc": "Enable connecting to Memcached with TLS.",
@@ -12117,6 +12193,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.max-item-size",
                       "fieldType": "int",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "free_list_shards",
+                      "required": false,
+                      "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.free-list-shards",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -12422,6 +12509,17 @@
                     },
                     {
                       "kind": "field",
+                      "name": "free_list_shards",
+                      "required": false,
+                      "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.free-list-shards",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
                       "name": "tls_enabled",
                       "required": false,
                       "desc": "Enable connecting to Memcached with TLS.",
@@ -12710,6 +12808,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.max-item-size",
                       "fieldType": "int",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "free_list_shards",
+                      "required": false,
+                      "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.free-list-shards",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -13047,6 +13156,17 @@
               "fieldFlag": "blocks-storage.bucket-store.posting-offsets-in-mem-sampling",
               "fieldType": "int",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "postings_offsets_in_mem_sampling_cardinality_threshold",
+              "required": false,
+              "desc": "Label cardinality above which the store holds progressively fewer postings offsets in memory for that label. Above the threshold, the number of postings offsets in memory grows logarithmically with the label cardinality, instead of linearly. The label cardinality is estimated as the number of sampled postings offsets times the sampling ratio. 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.bucket-store.posting-offsets-in-mem-sampling-cardinality-threshold",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "block",
@@ -13916,7 +14036,7 @@
           "required": false,
           "desc": "Maximum symbol table size in bytes for a compacted block. When the symbol table of a just-compacted block exceeds this threshold, the block is proactively marked as no-compact. 0 = disabled.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 3800000000,
           "fieldFlag": "compactor.block-symbol-table-size-threshold",
           "fieldType": "int",
           "fieldCategory": "experimental"
@@ -14965,6 +15085,17 @@
                       "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.max-item-size",
                       "fieldType": "int",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "free_list_shards",
+                      "required": false,
+                      "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.free-list-shards",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -17695,6 +17826,17 @@
               "fieldDefaultValue": 170,
               "fieldFlag": "ruler.query-frontend.max-retries-rate",
               "fieldType": "float"
+            },
+            {
+              "kind": "field",
+              "name": "enable_rule_detail_headers",
+              "required": false,
+              "desc": "Set to true to attach headers identifying the rule being evaluated to the queries sent to the query-frontend: X-Rule-Name, X-Rule-Type, X-Rule-Source, X-Rule-Namespace, and X-Rule-Group. Use it together with -query-frontend.log-query-request-headers to attribute rule queries in the query-frontend logs.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler.query-frontend.enable-rule-detail-headers",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -19413,6 +19555,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "free_list_shards",
+                  "required": false,
+                  "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1,
+                  "fieldFlag": "ruler-storage.cache.memcached.free-list-shards",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "tls_enabled",
                   "required": false,
                   "desc": "Enable connecting to Memcached with TLS.",
@@ -20478,6 +20631,28 @@
           "fieldDefaultValue": false,
           "fieldFlag": "alertmanager.utf8-migration-logging-enabled",
           "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "require_explicit_sns_credentials",
+          "required": false,
+          "desc": "If true, SNS receivers must have explicit credentials configured, rather than inheriting any AWS credentials available in the environment. Note that setting this value to false could allow anyone with access to configure SNS receivers to send credentials to an arbitrary endpoint.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "alertmanager.require-explicit-sns-credentials",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "tenants_exempt_from_config_validation_for_existing_config",
+          "required": false,
+          "desc": "List of tenants that are exempt from config validation for existing config. Newly uploaded config will be required to pass validation.",
+          "fieldValue": null,
+          "fieldDefaultValue": [],
+          "fieldFlag": "alertmanager.tenants-exempt-from-config-validation-for-existing-config",
+          "fieldType": "list of strings",
           "fieldCategory": "experimental"
         }
       ],

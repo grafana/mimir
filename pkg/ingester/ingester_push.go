@@ -52,6 +52,8 @@ type pushStats struct {
 	perMetricSeriesLimitCount   int
 	invalidNativeHistogramCount int
 	labelsNotSortedCount        int
+
+	seriesWithFloatsAndHistogramsCount int
 }
 
 type ctxKey int
@@ -389,57 +391,24 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		)
 	)
 
-	// Walk the samples, appending them to the users database
-	app := db.Appender(ctx).(extendedAppender)
-	spanlog.DebugLog("event", "got appender for timeseries", "series", len(req.Timeseries))
-
 	var activeSeries *activeseries.ActiveSeries
 	if i.cfg.ActiveSeriesMetrics.Enabled {
 		activeSeries = db.activeSeries
 	}
 
-	minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
-
-	if pushSamplesToAppenderErr := i.pushSamplesToAppender(
-		userID,
-		req.Timeseries,
-		app,
-		startAppend,
-		&stats,
-		&errProcessor,
-		updateFirstPartial,
-		activeSeries,
-		i.limits.OutOfOrderTimeWindow(userID),
-		minAppendTimeAvailable,
-		minAppendTime,
-		req.Source == mimirpb.OTLP,
-	); pushSamplesToAppenderErr != nil {
-		if err := app.Rollback(); err != nil {
-			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
-		}
-
-		return wrapOrAnnotateWithUser(pushSamplesToAppenderErr, userID)
-	}
-
-	// At this point all samples have been added to the appender, so we can track the time it took.
-	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
-
-	spanlog.DebugLog(
-		"event", "start commit",
-		"succeededSamplesCount", stats.succeededSamplesCount,
-		"failedSamplesCount", stats.failedSamplesCount,
-		"succeededExemplarsCount", stats.succeededExemplarsCount,
-		"failedExemplarsCount", stats.failedExemplarsCount,
-	)
-
-	startCommit := time.Now()
-	if err := app.Commit(); err != nil {
+	if err := db.engine().Ingest(&ingestContext{
+		Context:            ctx,
+		i:                  i,
+		userID:             userID,
+		startAppend:        startAppend,
+		stats:              &stats,
+		errProcessor:       &errProcessor,
+		updateFirstPartial: updateFirstPartial,
+		activeSeries:       activeSeries,
+		isOTLP:             req.Source == mimirpb.OTLP,
+	}, req.Timeseries); err != nil {
 		return wrapOrAnnotateWithUser(err, userID)
 	}
-
-	commitDuration := time.Since(startCommit)
-	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
-	spanlog.DebugLog("event", "complete commit", "commitDuration", commitDuration.String())
 
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
 	if stats.succeededSamplesCount > 0 {
@@ -499,6 +468,9 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	if stats.labelsNotSortedCount > 0 {
 		discarded.labelsNotSorted.WithLabelValues(userID, group).Add(float64(stats.labelsNotSortedCount))
 	}
+	if stats.seriesWithFloatsAndHistogramsCount > 0 {
+		i.metrics.seriesWithFloatsAndHistograms.WithLabelValues(userID).Add(float64(stats.seriesWithFloatsAndHistogramsCount))
+	}
 	if stats.succeededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(stats.succeededSamplesCount))
 
@@ -541,7 +513,7 @@ func (i *Ingester) pushSamplesToAppender(
 	var nonCopiedLabels labels.Labels
 
 	// idx is used to decrease active series count in case of error for cost attribution.
-	idx := i.getTSDB(userID).Head().MustIndex()
+	idx := mustIndex(i.getTSDB(userID).Head())
 	defer idx.Close()
 
 	appOptions := storage.AppendV2Options{}
@@ -551,6 +523,10 @@ func (i *Ingester) pushSamplesToAppender(
 	var exemplarBuf []exemplar.Exemplar
 
 	for _, ts := range timeseries {
+		if len(ts.Samples) > 0 && len(ts.Histograms) > 0 {
+			stats.seriesWithFloatsAndHistogramsCount++
+		}
+
 		// Fast path in case we only have samples and they are all out of bound
 		// and out-of-order support is not enabled.
 		// TODO(jesus.vazquez) If we had too many old samples we might want to

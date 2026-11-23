@@ -1163,6 +1163,17 @@ func TestSchedulerMaxQueueLengthMetricDisabled(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), "cortex_query_scheduler_max_queue_length"))
 }
 
+func TestSchedulerMaxOutstandingRequestsPerTenantMetric(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	setupScheduler(t, reg)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+		# HELP cortex_query_scheduler_max_outstanding_requests_per_tenant Maximum number of outstanding requests per tenant on this query-scheduler, set by -query-scheduler.max-outstanding-requests-per-tenant.
+		# TYPE cortex_query_scheduler_max_outstanding_requests_per_tenant gauge
+		cortex_query_scheduler_max_outstanding_requests_per_tenant %d
+	`, testMaxOutstandingPerTenant)), "cortex_query_scheduler_max_outstanding_requests_per_tenant"))
+}
+
 func TestSchedulerQuerierMetrics(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	scheduler, frontendClient, querierClient := setupScheduler(t, reg)

@@ -1120,8 +1120,9 @@ ingester:
     topologyKey: null
     # -- When true and zone-aware replication is enabled, automatically set the
     # -ingest-storage.kafka.client-rack flag on each ingester zone to its zone name.
-    # This enables Kafka rack-aware consumption so that ingesters prefer reading
-    # from Kafka replicas in the same availability zone, reducing cross-AZ traffic.
+    # The rack is ignored while -ingest-storage.kafka.fetch-concurrency-max is greater than 0,
+    # because concurrent fetching always reads from the partition leader. With the default
+    # fetch concurrency this does not reduce cross-AZ read traffic on its own.
     # Set to false if you want to manage client-rack manually via extraArgs.
     autoIngestStorageClientRack: true
     # -- Auxiliary values for migration, see https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-single-zone-with-helm/
@@ -2677,6 +2678,9 @@ chunks-cache:
   # -- Amount of memory allocated to chunks-cache for object storage (in MB).
   allocatedMemory: 8192
 
+  # -- Amount of cpu allocated to chunks-cache for object storage (in integer or millicores).
+  allocatedCPU: 500m
+
   # -- Maximum item memory for chunks-cache (in MB).
   maxItemMemory: 1
 
@@ -2763,6 +2767,7 @@ chunks-cache:
   # (round (* 1.5 allocatedMemory)), giving memcached headroom before the container is OOM killed.
   # Overriding resources here does not change the -m flag, so the container's memory limit can end up
   # inconsistent with the amount of memory memcached is configured to use.
+  # When resources is not set, the CPU request is taken from allocatedCPU.
   resources: null
 
   # -- Service annotations and labels
@@ -2789,6 +2794,9 @@ index-cache:
 
   # -- Amount of memory allocated to index-cache for object storage (in MB).
   allocatedMemory: 2048
+
+  # -- Amount of cpu allocated to index-cache for object storage (in integer or millicores).
+  allocatedCPU: 500m
 
   # -- Maximum item index-cache for memcached (in MB).
   maxItemMemory: 5
@@ -2876,6 +2884,7 @@ index-cache:
   # (round (* 1.5 allocatedMemory)), giving memcached headroom before the container is OOM killed.
   # Overriding resources here does not change the -m flag, so the container's memory limit can end up
   # inconsistent with the amount of memory memcached is configured to use.
+  # When resources is not set, the CPU request is taken from allocatedCPU.
   resources: null
 
   # -- Service annotations and labels
@@ -2902,6 +2911,9 @@ metadata-cache:
 
   # -- Amount of memory allocated to metadata-cache for object storage (in MB).
   allocatedMemory: 512
+
+  # -- Amount of cpu allocated to metadata-cache for object storage (in integer or millicores).
+  allocatedCPU: 500m
 
   # -- Maximum item metadata-cache for memcached (in MB).
   maxItemMemory: 1
@@ -2989,6 +3001,7 @@ metadata-cache:
   # (round (* 1.5 allocatedMemory)), giving memcached headroom before the container is OOM killed.
   # Overriding resources here does not change the -m flag, so the container's memory limit can end up
   # inconsistent with the amount of memory memcached is configured to use.
+  # When resources is not set, the CPU request is taken from allocatedCPU.
   resources: null
 
   # -- Service annotations and labels
@@ -3015,6 +3028,9 @@ results-cache:
 
   # -- Amount of memory allocated to results-cache for object storage (in MB).
   allocatedMemory: 512
+
+  # -- Amount of cpu allocated to results-cache for object storage (in integer or millicores).
+  allocatedCPU: 500m
 
   # -- Maximum item results-cache for memcached (in MB).
   maxItemMemory: 25
@@ -3102,6 +3118,7 @@ results-cache:
   # (round (* 1.5 allocatedMemory)), giving memcached headroom before the container is OOM killed.
   # Overriding resources here does not change the -m flag, so the container's memory limit can end up
   # inconsistent with the amount of memory memcached is configured to use.
+  # When resources is not set, the CPU request is taken from allocatedCPU.
   resources: null
 
   # -- Service annotations and labels
@@ -3479,9 +3496,9 @@ gateway:
       # -- The Docker registry for nginx image
       registry: docker.io
       # -- The nginx image repository
-      repository: nginxinc/nginx-unprivileged
+      repository: nginx/nginx-unprivileged
       # -- The nginx image tag
-      tag: 1.29-alpine
+      tag: 1.31.9-alpine
 
     # -- Basic auth configuration
     basicAuth:

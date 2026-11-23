@@ -21,6 +21,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
+
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 )
 
 // ReaderPoolMetrics holds metrics tracked by ReaderPool.
@@ -98,7 +100,7 @@ func (p *ReaderPool) NewBinaryReader(
 	bkt objstore.InstrumentedBucketReader,
 	dir string,
 	id ulid.ULID,
-	postingOffsetsInMemSampling int,
+	sampling streamindex.SamplingConfig,
 	cfg Config,
 ) (Reader, error) {
 	var readerFactory func(ctx context.Context) (Reader, error)
@@ -106,7 +108,7 @@ func (p *ReaderPool) NewBinaryReader(
 	var err error
 
 	readerFactory = func(ctx context.Context) (Reader, error) {
-		return NewStreamBinaryReader(ctx, id, bkt, dir, cfg, postingOffsetsInMemSampling, logger, p.metrics.streamReader)
+		return NewStreamBinaryReader(ctx, id, bkt, dir, cfg, sampling, logger, p.metrics.streamReader)
 	}
 
 	if p.lazyReaderEnabled {

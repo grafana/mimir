@@ -829,7 +829,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 						Count:         &mimirpb.Histogram_CountInt{CountInt: 1},
 						Sum:           5,
 						Schema:        0,
-						ZeroThreshold: 1e-128,
+						ZeroThreshold: 0,
 						ZeroCount:     &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
 						Timestamp:     ts.UnixMilli(),
 						ResetHint:     mimirpb.Histogram_GAUGE,

@@ -247,6 +247,10 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 	if cfg.QueueReservationEnabled {
 		queueReservationEnabled.Set(1)
 	}
+	promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
+		Name: "cortex_query_scheduler_max_outstanding_requests_per_tenant",
+		Help: "Maximum number of outstanding requests per tenant on this query-scheduler, set by -query-scheduler.max-outstanding-requests-per-tenant.",
+	}).Set(float64(cfg.MaxOutstandingPerTenant))
 
 	reservationSlots := promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
 		Name:                            "cortex_query_scheduler_reservation_slots",

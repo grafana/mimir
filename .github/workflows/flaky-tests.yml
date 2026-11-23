@@ -28,7 +28,7 @@ jobs:
 
       - name: Retrieve Secrets from Vault
         id: get-secrets
-        uses: grafana/shared-workflows/actions/get-vault-secrets@2e3743a1f8abfd3e921e53a7726ec0744c11bb01 # get-vault-secrets/v2.0.1
+        uses: grafana/shared-workflows/actions/get-vault-secrets@2f1ddaf3ce1aa677356243d0dd584be33cfa35e3 # get-vault-secrets/v2.1.0
         with:
           repo_secrets: |
             LOKI_URL=flaky-tests-bot:loki-url

@@ -136,9 +136,12 @@ type UsageTrackerClient struct {
 	// syncBatcher manages synchronous batched per-partition series tracking.
 	syncBatcher *syncBatcher
 
+	usersCloseToLimitsMtx sync.RWMutex
+
 	// Cache for users close to their limits.
-	usersCloseToLimitsMtx   sync.RWMutex
-	usersCloseToLimit       []string
+	// +checklocks:usersCloseToLimitsMtx
+	usersCloseToLimit []string
+	// +checklocks:usersCloseToLimitsMtx
 	usersCloseToLimitLoaded bool
 
 	// Observer for usage tracker series rejections.
@@ -728,7 +731,9 @@ type batcher struct {
 	batchDelay        time.Duration
 
 	batchersMtx sync.RWMutex
-	batchers    []*partitionBatcher
+
+	// +checklocks:batchersMtx
+	batchers []*partitionBatcher
 
 	trackerClient *UsageTrackerClient
 	stoppingChan  chan struct{}
@@ -796,7 +801,7 @@ func (c *batcher) trackSeries(partition int32, userID string, series []uint64) {
 }
 
 // getBatcher returns the batcher for the given partition, along with whether it needs to be grown.
-// assumes a suitable lock is held.
+// +checklocksread:c.batchersMtx
 func (c *batcher) getBatcher(partition int32) (*partitionBatcher, bool) {
 	if int(partition) < len(c.batchers) {
 		return c.batchers[partition], false
@@ -804,7 +809,8 @@ func (c *batcher) getBatcher(partition int32) (*partitionBatcher, bool) {
 	return nil, true
 }
 
-// growBatchers grows the batchers slice to accommodate the given partition. The exclusive lock must be held.
+// growBatchers grows the batchers slice to accommodate the given partition.
+// +checklocks:c.batchersMtx
 func (c *batcher) growBatchers(partition int32) {
 	// round to next pow 2 and reallocate/copy if necessary.
 	lenRequired := int(partition) + 1 // translate between zero-based partition ID and required slice length.
@@ -862,8 +868,11 @@ func (c *batcher) testFlush() {
 type partitionBatcher struct {
 	partition int32
 
-	usersMtx    sync.Mutex
-	userSeries  []*usagetrackerpb.TrackSeriesBatchUser
+	usersMtx sync.Mutex
+
+	// +checklocks:usersMtx
+	userSeries []*usagetrackerpb.TrackSeriesBatchUser
+	// +checklocks:usersMtx
 	seriesCount int
 
 	flushChan    chan struct{}
@@ -1023,7 +1032,9 @@ type syncBatcher struct {
 	independentPartitionTimeouts bool
 
 	batchersMtx sync.RWMutex
-	batchers    []*syncPartitionBatcher
+
+	// +checklocks:batchersMtx
+	batchers []*syncPartitionBatcher
 
 	trackerClient *UsageTrackerClient
 	stoppingChan  chan struct{}
@@ -1104,7 +1115,7 @@ func (c *syncBatcher) trackSeries(partition int32, userID string, series []uint6
 }
 
 // getBatcher returns the batcher for the given partition, along with whether it needs to be grown.
-// assumes a suitable lock is held.
+// +checklocksread:c.batchersMtx
 func (c *syncBatcher) getBatcher(partition int32) (*syncPartitionBatcher, bool) {
 	if int(partition) < len(c.batchers) {
 		return c.batchers[partition], false
@@ -1112,7 +1123,8 @@ func (c *syncBatcher) getBatcher(partition int32) (*syncPartitionBatcher, bool) 
 	return nil, true
 }
 
-// growBatchers grows the batchers slice to accommodate the given partition. The exclusive lock must be held.
+// growBatchers grows the batchers slice to accommodate the given partition.
+// +checklocks:c.batchersMtx
 func (c *syncBatcher) growBatchers(partition int32) {
 	// round to next pow 2 and reallocate/copy if necessary.
 	lenRequired := int(partition) + 1 // translate between zero-based partition ID and required slice length.
@@ -1172,10 +1184,15 @@ func (c *syncBatcher) pendingCount(partition int32) int {
 type syncPartitionBatcher struct {
 	partition int32
 
-	requestsMtx          sync.Mutex
-	requests             []*syncTrackRequest
-	seriesCount          int
-	stopped              bool
+	requestsMtx sync.Mutex
+
+	// +checklocks:requestsMtx
+	requests []*syncTrackRequest
+	// +checklocks:requestsMtx
+	seriesCount int
+	// +checklocks:requestsMtx
+	stopped bool
+	// +checklocks:requestsMtx
 	sizeThresholdPending bool
 
 	flushChan    chan struct{}

@@ -167,6 +167,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		instanceErrors:          i.metrics.rejected,
 		blockMinRetention:       i.cfg.BlocksStorageConfig.TSDB.Retention,
 		useOwnedSeriesForLimits: i.cfg.UseIngesterOwnedSeriesForLimits,
+		seriesRefHistory:        newSeriesRefHistory(labelChurnRecords),
 
 		ownedState: ownedSeriesState{
 			shardSize:        ownedSeriedStateShardSize, // initialize series shard size so that it's correct even before we update ownedSeries for the first time
@@ -245,10 +246,13 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	level.Info(userLogger).Log("msg", "Running compaction after WAL replay")
 	// Note that we want to let TSDB creation finish without being interrupted by eventual context cancellation,
 	// so passing an independent context here
-	err = db.Compact(context.Background())
+	err = (prometheusEngine{db: db}).Compact(context.Background())
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to compact TSDB: %s", udir)
 	}
+	// The WAL replay and the compaction can remove series. No label churn record exists before them,
+	// so they do not make a record invalid.
+	userDB.pendingSeriesRemovals.Store(0)
 
 	userDB.db = db
 	// We set the limiter here because we don't want to limit
@@ -361,7 +365,7 @@ func blockGenerationCalculator(db *userTSDB, blockRange int64) func(b tsdb.Block
 		if _, ok := b.(*tsdb.RangeHead); ok {
 			return "0" // Special case: querying head block
 		}
-		headMinTime := db.Head().MinTime()
+		headMinTime := db.Head().TimeBounds().MinTime
 		if headMinTime == math.MaxInt64 {
 			return "unknown" // Edge case: head is empty, and the query touches block generation >=1
 		}
@@ -583,7 +587,7 @@ func (i *Ingester) minTsdbHeadTimestamp() float64 {
 
 	minTime := int64(math.MaxInt64)
 	for _, db := range i.tsdbs {
-		minTime = min(minTime, db.db.Head().MinTime())
+		minTime = min(minTime, db.Head().TimeBounds().MinTime)
 	}
 
 	if minTime == math.MaxInt64 {
@@ -599,7 +603,7 @@ func (i *Ingester) maxTsdbHeadTimestamp() float64 {
 
 	maxTime := int64(math.MinInt64)
 	for _, db := range i.tsdbs {
-		maxTime = max(maxTime, db.db.Head().MaxTime())
+		maxTime = max(maxTime, db.Head().TimeBounds().MaxTime)
 	}
 
 	if maxTime == math.MinInt64 {
@@ -721,6 +725,6 @@ func (i *Ingester) NotifyPreCommit(ctx context.Context) error {
 		if db == nil {
 			return nil
 		}
-		return db.Head().FsyncWLSegments()
+		return db.Head().Sync()
 	})
 }
