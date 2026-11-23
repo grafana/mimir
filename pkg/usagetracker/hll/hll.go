@@ -105,6 +105,9 @@ func (s Sketch) Valid() bool {
 // linear counting nor empirical bias corrections for small cardinalities, and it has no bias where the original
 // one switches to linear counting.
 func (s Sketch) Estimate() float64 {
+	if len(s) == 0 {
+		return 0 // With m = 0, sigma and tau get a NaN, and their loops never end on NaN.
+	}
 	q := 64 - int(s.precision())
 	var histogram [64 + 2]int // Ranks go from 0 to q+1.
 	for _, r := range s {

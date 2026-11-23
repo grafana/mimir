@@ -29,6 +29,10 @@ func TestTimeline(t *testing.T) {
 		return got
 	}
 
+	t.Run("an estimate with an empty scratch doesn't hang", func(t *testing.T) {
+		require.Zero(t, NewTimeline(minutes).Estimate(start, nil))
+	})
+
 	t.Run("values are counted once over the window", func(t *testing.T) {
 		tl := NewTimeline(minutes)
 		for m := start; m < start+minutes; m++ {
