@@ -51,6 +51,7 @@ func NewFileDecbufFactory(path string) *FileDecbufFactory {
 
 	df.file = f
 	df.size = int(stat.Size())
+	// Bind once - passing df.release to each FileReader would allocate a new func value per Decbuf.
 	df.releaseFn = df.release
 	return df
 }
@@ -81,15 +82,6 @@ func (df *FileDecbufFactory) closeFile() {
 	})
 }
 
-func (df *FileDecbufFactory) newFileReader(base, length int) (*FileReader, error) {
-	r, err := newFileReader(df.file, base, length, df.releaseFn)
-	if err != nil {
-		df.release()
-		return nil, errors.Wrap(err, "create file reader")
-	}
-	return r, nil
-}
-
 func (df *FileDecbufFactory) NewDecbufAtChecked(_ context.Context, offset int, table *crc32.Table) Decbuf {
 	if err := df.acquire(); err != nil {
 		return Decbuf{E: err}
@@ -109,10 +101,12 @@ func (df *FileDecbufFactory) NewDecbufAtChecked(_ context.Context, offset int, t
 	}
 	contentLength := int(binary.BigEndian.Uint32(lenBuf[:]))
 
-	r, err := df.newFileReader(offset, numLenBytes+contentLength+crc32.Size)
+	r, err := newFileReader(df.file, offset, numLenBytes+contentLength+crc32.Size, df.releaseFn)
 	if err != nil {
-		return Decbuf{E: err}
+		df.release()
+		return Decbuf{E: errors.Wrap(err, "create file reader")}
 	}
+
 	d := Decbuf{r: r}
 
 	if d.ResetAt(numLenBytes); d.Err() != nil {
@@ -143,9 +137,10 @@ func (df *FileDecbufFactory) NewRawDecbuf(_ context.Context) Decbuf {
 	if err := df.acquire(); err != nil {
 		return Decbuf{E: err}
 	}
-	r, err := df.newFileReader(0, df.size)
+	r, err := newFileReader(df.file, 0, df.size, df.releaseFn)
 	if err != nil {
-		return Decbuf{E: err}
+		df.release()
+		return Decbuf{E: errors.Wrap(err, "create file reader")}
 	}
 	return Decbuf{r: r}
 }
