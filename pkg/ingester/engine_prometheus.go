@@ -68,6 +68,10 @@ func (e prometheusEngine) Ingest(ctx *ingestContext, timeseries []mimirpb.Preall
 	return nil
 }
 
+func (e prometheusEngine) Close() error {
+	return e.db.Close()
+}
+
 func (e prometheusEngine) Compact(ctx context.Context) error {
 	return e.db.Compact(ctx)
 }

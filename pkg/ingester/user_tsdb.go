@@ -240,7 +240,7 @@ func (u *userTSDB) Blocks() []*tsdb.Block {
 }
 
 func (u *userTSDB) Close() error {
-	return u.db.Close()
+	return u.engine().Close()
 }
 
 func (u *userTSDB) Compact() error {
