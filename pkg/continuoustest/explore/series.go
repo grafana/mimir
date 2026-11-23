@@ -46,7 +46,7 @@ const (
 var otlpUnits = map[Unit]string{UnitSeconds: "s", UnitBytes: "By"}
 
 // Series is one combination of dimension values, written to its own series. Every write that
-// picks the series appends a sample to it, with the protocol of the write.
+// picks the series appends samples to it, with the protocol of the write.
 type Series struct {
 	// Seed determines the bucket layout of the series and the values of its samples.
 	Seed uint64
@@ -214,23 +214,23 @@ func (s Series) TimeSeries(ts time.Time, commonLabels []prompb.Label) prompb.Tim
 	return series
 }
 
-// Float returns the value of a float series at the given time, which only depends on the second it
-// falls in. Values are multiples of a quarter, which are exactly representable, so they survive
-// the round trip unchanged.
+// Float returns the value of a float series at the given time, which only depends on the time in
+// milliseconds. Values are multiples of a quarter, which are exactly representable, so they
+// survive the round trip unchanged.
 func (s Series) Float(ts time.Time) float64 {
-	sec := ts.Unix()
+	ms := ts.UnixMilli()
 	switch s.Type {
 	case MetricTypeCounter:
-		// Like native histogram counters, counters grow at a constant rate per second since the Unix
-		// epoch, so any write can append a sample.
+		// Like native histogram counters, counters grow at a constant rate per millisecond since the
+		// Unix epoch, so any write can append a sample.
 		rate := int64(1 + s.Seed%100)
-		return float64(rate*sec) / 4
+		return float64(rate*ms) / 4
 	case MetricTypeInfo:
 		return 1
 	case MetricTypeStateset:
-		return float64(mix(s.Seed, uint64(sec)) % 2)
+		return float64(mix(s.Seed, uint64(ms)) % 2)
 	default:
-		return float64(int64(mix(s.Seed, uint64(sec))%40001)-20000) / 4
+		return float64(int64(mix(s.Seed, uint64(ms))%40001)-20000) / 4
 	}
 }
 
@@ -258,21 +258,21 @@ func (s Series) Sample(ts time.Time) prompb.Histogram {
 }
 
 // Histogram returns the value of a native histogram series at the given time, which only depends on
-// the second it falls in. Exactly one of the returned histograms is non-nil, depending on the
+// the time in milliseconds. Exactly one of the returned histograms is non-nil, depending on the
 // sample type.
 func (s Series) Histogram(ts time.Time) (*histogram.Histogram, *histogram.FloatHistogram) {
-	sec := ts.Unix()
+	ms := ts.UnixMilli()
 	l := newLayout(s.Seed, s.Layout, histogram.IsCustomBucketsSchema(s.Schema))
 
-	// Counters grow at a constant rate per bucket and per second since the Unix epoch, so any write
-	// can append a sample, while gauges take a random value per bucket every second. Bucket b of
-	// the positive side, then of the negative side, and then the zero bucket are drawn in turn.
-	// Counts stay far below 2^53, so float histograms hold them exactly.
+	// Counters grow at a constant rate per bucket and per millisecond since the Unix epoch, so any
+	// write can append a sample, while gauges take a random value per bucket every millisecond.
+	// Bucket b of the positive side, then of the negative side, and then the zero bucket are drawn
+	// in turn. Counts stay far below 2^53, so float histograms hold them exactly.
 	value := func(b int, rate int64) int64 {
 		if s.Kind == KindGauge {
-			return 1 + int64(mix(s.Seed, uint64(sec), uint64(b))%100)
+			return 1 + int64(mix(s.Seed, uint64(ms), uint64(b))%100)
 		}
-		return rate * sec
+		return rate * ms
 	}
 	positive := make([]int64, len(l.positiveRates))
 	for b, rate := range l.positiveRates {
@@ -286,9 +286,9 @@ func (s Series) Histogram(ts time.Time) (*histogram.Histogram, *histogram.FloatH
 	if l.zeroRate > 0 {
 		zeroCount = value(len(positive)+len(negative), l.zeroRate)
 	}
-	sum := l.sumRate * sec
+	sum := l.sumRate * ms
 	if s.Kind == KindGauge {
-		sum = int64(mix(s.Seed, uint64(sec)) % 10000)
+		sum = int64(mix(s.Seed, uint64(ms)) % 10000)
 	}
 	total := zeroCount
 	for _, c := range slices.Concat(positive, negative) {

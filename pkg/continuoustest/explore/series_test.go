@@ -30,8 +30,8 @@ func TestSeries_Histogram(t *testing.T) {
 						t.Run(s.String(), func(t *testing.T) {
 							var prev *histogram.FloatHistogram
 							for i := range 20 {
-								// Writes pick series at random, so samples can be any number of seconds apart.
-								ts := start.Add(time.Duration(i*i) * time.Second)
+								// Writes pick series at random, so samples can be any number of half seconds apart.
+								ts := start.Add(time.Duration(i*i) * 500 * time.Millisecond)
 								h, fh := s.Histogram(ts)
 								if sampleType == SampleTypeInt {
 									require.Nil(t, fh)
@@ -45,7 +45,6 @@ func TestSeries_Histogram(t *testing.T) {
 								require.Equal(t, schema, expected.Schema)
 								require.Equal(t, custom, expected.UsesCustomBuckets())
 								require.Equal(t, kind == KindGauge, expected.CounterResetHint == histogram.GaugeType)
-								require.Equal(t, expected, s.ExpectedHistogram(ts.Add(999*time.Millisecond)), "the value must only depend on the second")
 								if kind == KindCounter && prev != nil {
 									require.False(t, expected.DetectReset(prev), "counters must never reset")
 									require.Greater(t, expected.Count, prev.Count, "counters must grow")
@@ -126,7 +125,7 @@ func TestSeries_Layouts(t *testing.T) {
 func TestSeries_GaugeValuesChange(t *testing.T) {
 	ts := time.Unix(1_800_000_000, 0)
 	s := testSeries(t, testSeriesValues{sampleType: SampleTypeInt, kind: KindGauge, schema: 3, layout: LayoutNegative})
-	require.NotEqual(t, s.ExpectedHistogram(ts), s.ExpectedHistogram(ts.Add(time.Second)))
+	require.NotEqual(t, s.ExpectedHistogram(ts), s.ExpectedHistogram(ts.Add(500*time.Millisecond)))
 }
 
 func TestSeries_Float(t *testing.T) {
@@ -138,11 +137,10 @@ func TestSeries_Float(t *testing.T) {
 				values := map[float64]bool{}
 				prev := 0.0
 				for i := range 20 {
-					// Writes pick series at random, so samples can be any number of seconds apart.
-					ts := start.Add(time.Duration(i*i) * time.Second)
+					// Writes pick series at random, so samples can be any number of half seconds apart.
+					ts := start.Add(time.Duration(i*i) * 500 * time.Millisecond)
 					v := s.Float(ts)
 					values[v] = true
-					require.Equal(t, v, s.Float(ts.Add(999*time.Millisecond)), "the value must only depend on the second")
 					require.Equal(t, v, float64(int64(v*4))/4, "values must be multiples of a quarter")
 					switch metricType {
 					case MetricTypeCounter:

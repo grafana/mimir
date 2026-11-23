@@ -66,19 +66,20 @@ func TestTest_Run(t *testing.T) {
 	require.Empty(t, client.writes, "the first run only determines when writes start")
 	runFor(t, test, testStart.Add(30*time.Second), 10*time.Minute)
 
-	// Every write interval after the first run has its write, up to the last run 10 minutes after
+	// Every write interval after the first run has its writes, up to the last run 10 minutes after
 	// the first one.
-	require.Len(t, client.writes, 60)
+	writes := followUps(t, client.writes, testWriteInterval)
+	require.Len(t, writes, 60)
 	samples := 0
-	for i, w := range client.writes {
+	for i, w := range writes {
 		require.Equal(t, testStart.Add(time.Duration(i+1)*10*time.Second).UnixMilli(), w.ts, "write %d", i)
 		for _, s := range w.series {
 			require.Equal(t, "10s", s.Get(labelWriteInterval), "write %d", i)
 			require.Equal(t, "1", s.Get(labelSeed), "write %d", i)
 		}
-		samples += len(w.series)
+		samples += 2 * len(w.series)
 	}
-	require.Equal(t, float64(60), sumCounters(test.metrics.writesTotal))
+	require.Equal(t, float64(120), sumCounters(test.metrics.writesTotal))
 	require.Equal(t, float64(samples), testutil.ToFloat64(test.metrics.queryResultChecksTotal))
 	require.Zero(t, testutil.ToFloat64(test.metrics.queryResultChecksFailedTotal))
 	require.Zero(t, sumCounters(test.metrics.writesFailedTotal))
@@ -90,8 +91,9 @@ func TestTest_WriteInterval(t *testing.T) {
 	require.NoError(t, test.Run(context.Background(), testStart))
 	runFor(t, test, testStart.Add(30*time.Second), 10*time.Minute)
 
-	require.Len(t, client.writes, 10)
-	for i, w := range client.writes {
+	writes := followUps(t, client.writes, time.Minute)
+	require.Len(t, writes, 10)
+	for i, w := range writes {
 		require.Equal(t, testStart.Add(time.Duration(i+1)*time.Minute).UnixMilli(), w.ts, "write %d", i)
 		for _, s := range w.series {
 			require.Equal(t, "1m", s.Get(labelWriteInterval), "write %d", i)
@@ -154,7 +156,7 @@ func TestTest_SeriesAreLongLived(t *testing.T) {
 	require.Len(t, client.series, 41, "every series has been picked")
 	mixedProtocols := 0
 	for _, s := range client.series {
-		require.Greater(t, len(s.samples), 1, "series %s should have been picked more than once", s.labels)
+		require.Greater(t, len(s.samples), 2, "series %s should have been picked more than once", s.labels)
 		protocols := map[continuoustest.WriteProtocol]bool{}
 		for _, sample := range s.samples {
 			protocols[sample.protocol] = true
@@ -242,6 +244,31 @@ func TestTest_DetectsWrongResults(t *testing.T) {
 	require.Positive(t, testutil.ToFloat64(test.metrics.queryResultChecksFailedTotal))
 }
 
+// The query of a follow-up sample doesn't select the initial sample, nor the other way around, so
+// a missing sample isn't hidden by the other one.
+func TestTest_DetectsMissingSamples(t *testing.T) {
+	for sample, other := range map[string]string{"initial": "follow-up", "follow-up": "initial"} {
+		t.Run(sample, func(t *testing.T) {
+			client := newFakeClient()
+			test := newTestTest(t, client, false, prometheus.NewPedanticRegistry())
+			require.NoError(t, test.Run(context.Background(), testStart))
+
+			// Follow-up samples are at the start of write intervals, and initial samples halfway.
+			client.dropSample = func(ts int64) bool {
+				return (ts%testWriteInterval.Milliseconds() == 0) == (sample == "follow-up")
+			}
+			err := test.Run(context.Background(), testStart.Add(30*time.Second))
+			require.ErrorContains(t, err, sample+" write at")
+			require.NotContains(t, err.Error(), other+" write at")
+			require.ErrorContains(t, err, "but got none")
+			require.NotContains(t, err.Error(), "expected float")
+			require.NotContains(t, err.Error(), "expected histogram")
+			checks := testutil.ToFloat64(test.metrics.queryResultChecksTotal)
+			require.Equal(t, checks/2, testutil.ToFloat64(test.metrics.queryResultChecksFailedTotal))
+		})
+	}
+}
+
 func TestTest_DetectsWrongFloats(t *testing.T) {
 	client := newFakeClient()
 	client.corruptFloat = func(v float64) float64 { return v + 0.25 }
@@ -303,8 +330,9 @@ func TestTest_SkipsAheadAfterAPause(t *testing.T) {
 	resumed := testStart.Add(3 * time.Hour)
 	before := len(client.writes)
 	require.NoError(t, run(resumed))
-	require.Len(t, client.writes, before+7, "the writes of the last two run intervals, including the current one")
-	require.Equal(t, resumed.Add(-time.Minute).UnixMilli(), client.writes[before].ts)
+	writes := followUps(t, client.writes[before:], testWriteInterval)
+	require.Len(t, writes, 7, "the writes of the last two run intervals, including the current one")
+	require.Equal(t, resumed.Add(-time.Minute).UnixMilli(), writes[0].ts)
 }
 
 func TestTest_ResumesAfterRestart(t *testing.T) {
@@ -316,14 +344,14 @@ func TestTest_ResumesAfterRestart(t *testing.T) {
 			require.NoError(t, first.Run(context.Background(), testStart))
 			require.NoError(t, first.Run(context.Background(), testStart.Add(30*time.Second)))
 
-			// The restarted test doesn't redo the write of the latest step, which could pick a series
+			// The restarted test doesn't redo the writes of the latest step, which could pick a series
 			// already written at that time with another protocol.
 			restarted := newTestTestWithConfig(t, client, false, prometheus.NewPedanticRegistry(), withSource)
 			before := len(client.writes)
 			require.NoError(t, restarted.Run(context.Background(), testStart.Add(30*time.Second)))
 			require.Len(t, client.writes, before)
 			require.NoError(t, restarted.Run(context.Background(), testStart.Add(time.Minute)))
-			require.Len(t, client.writes, before+3)
+			require.Len(t, followUps(t, client.writes[before:], testWriteInterval), 3)
 
 			timestamps := map[int64]bool{}
 			for _, w := range client.writes {
@@ -341,7 +369,7 @@ func TestTest_WriteRejected(t *testing.T) {
 	require.NoError(t, test.Run(context.Background(), testStart))
 
 	require.ErrorContains(t, test.Run(context.Background(), testStart.Add(30*time.Second)), "rejected with status code 400")
-	require.Equal(t, float64(3), sumCounters(test.metrics.writesFailedTotal))
+	require.Equal(t, float64(6), sumCounters(test.metrics.writesFailedTotal), "the follow-up write comes even if the initial one failed")
 	require.Zero(t, testutil.ToFloat64(test.metrics.queriesTotal), "rejected writes aren't read back")
 }
 
@@ -355,8 +383,9 @@ func TestTest_WriteFailed(t *testing.T) {
 	// Failed writes aren't retried: the next run carries on with the next writes.
 	client.writeStatus = 200
 	require.NoError(t, test.Run(context.Background(), testStart.Add(time.Minute)))
-	require.Len(t, client.writes, 3)
-	require.Equal(t, testStart.Add(40*time.Second).UnixMilli(), client.writes[0].ts)
+	writes := followUps(t, client.writes, testWriteInterval)
+	require.Len(t, writes, 3)
+	require.Equal(t, testStart.Add(40*time.Second).UnixMilli(), writes[0].ts)
 }
 
 func TestTest_SmokeTest(t *testing.T) {
@@ -369,9 +398,10 @@ func TestTest_SmokeTest(t *testing.T) {
 
 			// Writes of 1, 2, 5, 10, 1, 2, 5 and 7 series write the 33 series of v1 and of v2, and
 			// writes of 1, 2, 5 and 8 series write the 16 series of OTLP.
-			require.Len(t, client.writes, 20)
+			writes := followUps(t, client.writes, time.Second)
+			require.Len(t, writes, 20)
 			samples := map[continuoustest.WriteProtocol]int{}
-			for i, w := range client.writes {
+			for i, w := range writes {
 				require.Equal(t, now.Truncate(time.Second).Add(time.Duration(i-19)*time.Second).UnixMilli(), w.ts, "write %d", i)
 				samples[w.protocol] += len(w.series)
 			}
@@ -398,8 +428,9 @@ native_histograms: {sample_types: [int], kinds: [counter], schemas: [0], layouts
 	})
 	require.NoError(t, test.Run(context.Background(), testStart))
 
-	// v1 and v2 write the 27 series with legacy names, and OTLP the 54 series of both charsets.
-	require.Equal(t, float64(27+27+54), testutil.ToFloat64(test.metrics.queryResultChecksTotal))
+	// v1 and v2 write the 27 series with legacy names, and OTLP the 54 series of both charsets, each
+	// with an initial and a follow-up sample.
+	require.Equal(t, float64(2*(27+27+54)), testutil.ToFloat64(test.metrics.queryResultChecksTotal))
 	require.Zero(t, testutil.ToFloat64(test.metrics.queryResultChecksFailedTotal))
 	units, helps := map[string]bool{}, map[string]bool{}
 	for _, metadata := range client.metadata {
@@ -427,7 +458,7 @@ floats: {types: [unknown]}
 	})
 	require.NoError(t, test.Run(context.Background(), testStart))
 	require.Empty(t, client.metadata)
-	require.Equal(t, float64(2), testutil.ToFloat64(test.metrics.queryResultChecksTotal))
+	require.Equal(t, float64(2*2), testutil.ToFloat64(test.metrics.queryResultChecksTotal))
 	require.Zero(t, testutil.ToFloat64(test.metrics.queryResultChecksFailedTotal))
 }
 
@@ -467,9 +498,10 @@ func TestTest_AntithesisSource_Run(t *testing.T) {
 	})
 	runFor(t, test, testStart, 10*time.Minute)
 
-	require.Len(t, client.writes, 57)
+	writes := followUps(t, client.writes, testWriteInterval)
+	require.Len(t, writes, 57)
 	protocols := map[continuoustest.WriteProtocol]bool{}
-	for _, w := range client.writes {
+	for _, w := range writes {
 		protocols[w.protocol] = true
 		for _, s := range w.series {
 			if w.protocol == "otlp-http" {
@@ -480,6 +512,22 @@ func TestTest_AntithesisSource_Run(t *testing.T) {
 		}
 	}
 	require.Greater(t, len(protocols), 1)
+}
+
+// followUps checks that the writes come in pairs of an initial write and a follow-up write of the
+// same series with the same protocol, half the write interval later, and returns the follow-ups.
+func followUps(t *testing.T, writes []fakeWrite, interval time.Duration) []fakeWrite {
+	t.Helper()
+	require.Zero(t, len(writes)%2, "writes come in pairs")
+	var out []fakeWrite
+	for i := 0; i < len(writes); i += 2 {
+		initial, followUp := writes[i], writes[i+1]
+		require.Equal(t, initial.protocol, followUp.protocol, "write %d", i)
+		require.Equal(t, initial.series, followUp.series, "write %d", i)
+		require.Equal(t, followUp.ts-(interval/2).Milliseconds(), initial.ts, "write %d", i)
+		out = append(out, followUp)
+	}
+	return out
 }
 
 // runFor runs the test every 30 seconds for the given duration, starting at start.
@@ -508,7 +556,7 @@ func writeDefinition(t *testing.T, definition string) string {
 }
 
 // fakeClient stores written histograms and metadata in memory, and answers metadata queries and
-// instant queries of the form last_over_time(<selector>[1s]), or unions of them with or.
+// instant queries of the form last_over_time(<selector>[<range>]), or unions of them with or.
 type fakeClient struct {
 	protocol            continuoustest.WriteProtocol
 	unsupportedProtocol continuoustest.WriteProtocol
@@ -541,6 +589,9 @@ type fakeClient struct {
 	// Samples older than oldestStored are accepted but not stored, like Mimir with ingest storage
 	// does with samples that are too old.
 	oldestStored time.Time
+	// dropSample, if set, returns whether a sample with the given timestamp is accepted but not
+	// stored.
+	dropSample func(timestamp int64) bool
 }
 
 type fakeSeries struct {
@@ -644,7 +695,7 @@ func (c *fakeClient) write(series []prompb.TimeSeries, metadata []prompb.MetricM
 		}
 		for timestamp, sample := range samples {
 			w.ts = timestamp
-			if timestamp < c.oldestStored.UnixMilli() {
+			if timestamp < c.oldestStored.UnixMilli() || (c.dropSample != nil && c.dropSample(timestamp)) {
 				continue
 			}
 			// Like Mimir, a sample with the timestamp of an existing one is rejected unless they are
@@ -744,14 +795,22 @@ func (c *fakeClient) eval(expr parser.Expr, ts time.Time) (model.Vector, error) 
 	if !ok || call.Func.Name != "last_over_time" {
 		return nil, errors.New("unsupported expression")
 	}
-	selector := call.Args[0].(*parser.MatrixSelector).VectorSelector.(*parser.VectorSelector)
+	matrix := call.Args[0].(*parser.MatrixSelector)
+	selector := matrix.VectorSelector.(*parser.VectorSelector)
 
 	var out model.Vector
 	for _, s := range c.seriesMatching(selector) {
-		sample, ok := s.samples[ts.UnixMilli()]
+		// Like in PromQL, the range excludes its start.
+		latest, ok := int64(0), false
+		for timestamp := range s.samples {
+			if timestamp > ts.Add(-matrix.Range).UnixMilli() && timestamp <= ts.UnixMilli() && (!ok || timestamp > latest) {
+				latest, ok = timestamp, true
+			}
+		}
 		if !ok {
 			continue
 		}
+		sample := s.samples[latest]
 		metric := model.Metric{}
 		s.labels.Range(func(l labels.Label) { metric[model.LabelName(l.Name)] = model.LabelValue(l.Value) })
 		if c.corruptMetric != nil {

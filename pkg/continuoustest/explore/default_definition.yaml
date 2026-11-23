@@ -2,15 +2,16 @@
 # -tests.explore.definition-file.
 
 # Every write interval (-tests.explore.write-interval), the test picks a protocol and a write
-# size N, picks N distinct series that the protocol can write, writes a sample of each of them in
-# a single request, and reads them back. Each series is picked by drawing a family, with the same
-# chance for every family, and then a value of each list of the family in turn.
+# size N, picks N distinct series that the protocol can write, writes an initial sample of each of
+# them in a single request, and reads them back. Then it does the same with a follow-up sample of
+# each of them, half a write interval later. Each series is picked by drawing a family, with the
+# same chance for every family, and then a value of each list of the family in turn.
 protocols: [v1, v2, otlp]
 write_sizes: [1, 2, 5, 10]
 
 # Series belong to a family: float series, or native histogram series. Each combination of a
 # charset, a unit, a help text and one value from each list of a family is its own series, which
-# lives as long as the test: every write that picks it appends a sample. Combinations that can't
+# lives as long as the test: every write that picks it appends samples. Combinations that can't
 # be written are skipped:
 # - OTLP only writes float counters and gauges, and native histogram int counters with
 #   exponential buckets.

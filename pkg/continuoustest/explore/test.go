@@ -68,7 +68,8 @@ type Client interface {
 }
 
 // Test explores a behavior space. Every write interval, it picks a protocol and a few series,
-// writes a sample of each series with a single request, and reads the samples back.
+// writes an initial sample of each series with a single request, and reads the samples back. Then
+// it does the same with a follow-up sample of each series, half a write interval later.
 type Test struct {
 	cfg             Config
 	client          Client
@@ -96,15 +97,24 @@ type runStats struct {
 }
 
 // write is a single write request: a sample of each of its series at the same time, with one
-// protocol.
+// protocol. Every write interval has an initial write, and then a follow-up write of the same
+// series with later samples.
 type write struct {
 	ts       time.Time
+	followUp bool
 	protocol Protocol
 	series   []Series
 }
 
 func (w write) String() string {
-	return fmt.Sprintf("write at %s with protocol %s", w.ts.Format(time.RFC3339), w.protocol)
+	return fmt.Sprintf("%s write at %s with protocol %s", w.sample(), w.ts.Format(time.RFC3339Nano), w.protocol)
+}
+
+func (w write) sample() string {
+	if w.followUp {
+		return "follow-up"
+	}
+	return "initial"
 }
 
 func (w write) seriesString() string {
@@ -190,11 +200,11 @@ func (t *Test) Run(ctx context.Context, now time.Time) error {
 	return err
 }
 
-// runWrites does the write of every write interval since the previous run.
+// runWrites does the writes of every write interval since the previous run.
 func (t *Test) runWrites(ctx context.Context, now time.Time) error {
 	latest := now.UnixNano() / int64(t.cfg.WriteInterval)
 	if !t.started {
-		// A previous process may have done the write of the latest step, with other choices if they
+		// A previous process may have done the writes of the latest step, with other choices if they
 		// were drawn from Antithesis. Mimir rejects a sample with the same timestamp as an existing
 		// one unless they are identical, so writes start at the next step.
 		t.started, t.lastStep = true, latest
@@ -209,15 +219,14 @@ func (t *Test) runWrites(ctx context.Context, now time.Time) error {
 	}
 	errs := multierror.New()
 	for step := first; step <= latest; step++ {
-		errs.Add(t.writeAndVerify(ctx, t.newWrite(step)))
+		errs.Add(t.writeAndVerify(ctx, t.newWrite(step), t.cfg.WriteInterval))
 	}
 	t.lastStep = max(t.lastStep, latest)
 	return errs.Err()
 }
 
-// runSmokeTest writes and reads back a sample of every series with every protocol that can write
-// it, in writes of each size in turn. The writes are a second apart, so that the query of each
-// write only selects its own samples.
+// runSmokeTest writes and reads back samples of every series with every protocol that can write
+// it, in writes of each size in turn, a second apart.
 func (t *Test) runSmokeTest(ctx context.Context, now time.Time) error {
 	var writes []write
 	for _, p := range t.explorer.protocols {
@@ -232,7 +241,7 @@ func (t *Test) runSmokeTest(ctx context.Context, now time.Time) error {
 	last := now.Truncate(time.Second)
 	for i, w := range writes {
 		w.ts = last.Add(time.Duration(i+1-len(writes)) * time.Second)
-		errs.Add(t.writeAndVerify(ctx, w))
+		errs.Add(t.writeAndVerify(ctx, w, time.Second))
 	}
 	return errs.Err()
 }
@@ -268,11 +277,24 @@ func antithesisChoose(n int) int {
 	return antithesisrandom.RandomChoice(choices)
 }
 
-func (t *Test) writeAndVerify(ctx context.Context, w write) error {
-	if err := t.writeSamples(ctx, w); err != nil {
-		return err
+// writeAndVerify writes an initial sample of each series of the write half an interval before the
+// time of the write, and reads it back. Then it writes a follow-up sample of each series at the
+// time of the write, and reads it back too. Writes are at least an interval apart, so the samples
+// of a series are at least half an interval apart.
+func (t *Test) writeAndVerify(ctx context.Context, w write, interval time.Duration) error {
+	spacing := interval / 2
+	initial := w
+	initial.ts = w.ts.Add(-spacing)
+	w.followUp = true
+	errs := multierror.New()
+	for _, w := range []write{initial, w} {
+		if err := t.writeSamples(ctx, w); err != nil {
+			errs.Add(err)
+			continue
+		}
+		errs.Add(t.verify(ctx, w, spacing))
 	}
-	return t.verify(ctx, w)
+	return errs.Err()
 }
 
 func (t *Test) writeSamples(ctx context.Context, w write) error {
@@ -299,7 +321,7 @@ func (t *Test) writeSamples(ctx context.Context, w write) error {
 	}
 	t.run.writesFailed++
 	t.metrics.writesFailedTotal.WithLabelValues(protocol, strconv.Itoa(statusCode)).Inc()
-	logger := log.With(t.logger, "timestamp", w.ts.UnixMilli(), "protocol", w.protocol, "series", w.seriesString(), "status_code", statusCode, "err", err)
+	logger := log.With(t.logger, "sample", w.sample(), "timestamp", w.ts.UnixMilli(), "protocol", w.protocol, "series", w.seriesString(), "status_code", statusCode, "err", err)
 	if statusCode/100 == 4 {
 		// Every generated sample is valid, so a rejection is a failure.
 		level.Warn(logger).Log("msg", "Write rejected")
@@ -310,10 +332,11 @@ func (t *Test) writeSamples(ctx context.Context, w write) error {
 }
 
 // verify reads back the samples of the write and the metadata of their metrics. It also detects
-// series that the query returns but the write didn't write, like series with extra labels.
-func (t *Test) verify(ctx context.Context, w write) error {
-	query := t.writeQuery(w)
-	logger := log.With(t.logger, "timestamp", w.ts.UnixMilli(), "protocol", w.protocol, "query", query)
+// series that the query returns but the write didn't write, like series with extra labels. No
+// series of the write has another sample in the given range before the write.
+func (t *Test) verify(ctx context.Context, w write, queryRange time.Duration) error {
+	query := t.writeQuery(w, queryRange)
+	logger := log.With(t.logger, "sample", w.sample(), "timestamp", w.ts.UnixMilli(), "protocol", w.protocol, "query", query)
 
 	t.metrics.queriesTotal.Inc()
 	vector, err := t.client.Query(ctx, query, w.ts, continuoustest.WithResultsCacheEnabled(false))
@@ -462,9 +485,9 @@ func (t *Test) expectedMetric(protocol Protocol, s Series) model.Metric {
 // write. Each series is selected by all of its labels: ingesters can answer a selector with the
 // series that matched it up to a TTL earlier, so a selector that matched the series of earlier
 // writes could miss a new series. The series of a write differ in their dimension labels, so or,
-// which ignores metric names, keeps them all. The [1s] range keeps the lookback period from
-// returning the samples of earlier writes, which are at least a second older.
-func (t *Test) writeQuery(w write) string {
+// which ignores metric names, keeps them all. The range keeps the lookback period from returning
+// earlier samples of the series, which are at least the range older: ranges exclude their start.
+func (t *Test) writeQuery(w write, queryRange time.Duration) string {
 	selectors := make([]string, 0, len(w.series))
 	for _, s := range w.series {
 		metric := t.expectedMetric(w.protocol, s)
@@ -472,7 +495,7 @@ func (t *Test) writeQuery(w write) string {
 		for _, name := range slices.Sorted(maps.Keys(metric)) {
 			matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, string(name), string(metric[name])).String())
 		}
-		selectors = append(selectors, fmt.Sprintf("last_over_time({%s}[1s])", strings.Join(matchers, ", ")))
+		selectors = append(selectors, fmt.Sprintf("last_over_time({%s}[%s])", strings.Join(matchers, ", "), model.Duration(queryRange)))
 	}
 	return strings.Join(selectors, " or ")
 }
