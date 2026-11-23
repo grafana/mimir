@@ -42,6 +42,11 @@ func main() {
 	logger := level.NewFilter(log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)), level.AllowInfo())
 	logger = log.With(logger, "ts", log.DefaultTimestampUTC)
 
+	// Parsed before run, which takes the flags' values: parsed in it, they'd reach it as their defaults.
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		level.Error(logger).Log("msg", "native-metadata-prober failed", "err", err)
+		os.Exit(1)
+	}
 	if err := run(cfg, address, clusterLabel, timeout, listenAddress, logger); err != nil {
 		level.Error(logger).Log("msg", "native-metadata-prober failed", "err", err)
 		os.Exit(1)
@@ -49,9 +54,6 @@ func main() {
 }
 
 func run(cfg nativemetadataprober.Config, address, clusterLabel string, timeout time.Duration, listenAddress string, logger log.Logger) error {
-	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
-		return err
-	}
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
