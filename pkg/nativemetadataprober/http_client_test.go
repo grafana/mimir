@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,9 +26,55 @@ func serve(t *testing.T, status int, body, serverTiming string) (*HTTPClient, *h
 		_, _ = w.Write([]byte(body))
 	}))
 	t.Cleanup(server.Close)
-	client, err := NewHTTPClient(server.URL+"/prometheus/", time.Second)
+	client, err := NewHTTPClient(server.URL+"/prometheus/", "", time.Second)
 	require.NoError(t, err)
 	return client, &got
+}
+
+// A server that validates the cell's cluster label, such as the query-frontend, rejects a request without it. The
+// cell's gateway adds it for the servers behind it, so a client that goes through the gateway has none to send.
+func TestHTTPClient_ClusterValidationLabel(t *testing.T) {
+	var (
+		mtx     sync.Mutex
+		headers []http.Header
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mtx.Lock()
+		headers = append(headers, r.Header.Clone())
+		mtx.Unlock()
+		// An answer to both: a query reads its data, and a lookup its results.
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]},"results":[]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	// The X-Cluster values of a query's request and a lookup's, which build their requests apart.
+	clusterHeaders := func(clusterLabel string) [][]string {
+		mtx.Lock()
+		headers = nil
+		mtx.Unlock()
+		client, err := NewHTTPClient(server.URL+"/prometheus", clusterLabel, time.Second)
+		require.NoError(t, err)
+		_, err = client.Query(t.Context(), "tenant", "info(up)", time.Unix(1_700_000_000, 0), ModeNative)
+		require.NoError(t, err)
+		_, err = client.Lookup(t.Context(), "tenant", LookupResources, []string{`{__name__="up"}`}, time.Unix(1_700_000_000, 0), time.Unix(1_700_003_600, 0))
+		require.NoError(t, err)
+
+		mtx.Lock()
+		defer mtx.Unlock()
+		values := make([][]string, 0, len(headers))
+		for _, h := range headers {
+			values = append(values, h.Values("X-Cluster"))
+		}
+		return values
+	}
+
+	t.Run("with a label, every request carries it", func(t *testing.T) {
+		require.Equal(t, [][]string{{"cell-1"}, {"cell-1"}}, clusterHeaders("cell-1"))
+	})
+
+	t.Run("without a label, no request has the header", func(t *testing.T) {
+		require.Equal(t, [][]string{nil, nil}, clusterHeaders(""))
+	})
 }
 
 func TestHTTPClient_Query(t *testing.T) {

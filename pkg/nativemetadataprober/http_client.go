@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -29,15 +30,18 @@ const (
 	maxErrorBody = 512
 )
 
-// HTTPClient queries a cell's Prometheus API as a tenant, through a gateway that takes the tenant from the request's
-// header, as the cell's internal one does.
+// HTTPClient queries a cell's Prometheus API as a tenant, on a server that takes the tenant from the request's header,
+// such as the cell's internal gateway or its query-frontend.
 type HTTPClient struct {
-	// The API's address, with its prefix, such as http://gateway/prometheus.
+	// The API's address, with its prefix, such as http://query-frontend/prometheus.
 	address string
-	client  *http.Client
+	// The cell's cluster validation label, which a server that validates it requires. The cell's gateway adds it for
+	// the servers behind it, so it's needed only to reach them directly. Empty sends none.
+	clusterLabel string
+	client       *http.Client
 }
 
-func NewHTTPClient(address string, timeout time.Duration) (*HTTPClient, error) {
+func NewHTTPClient(address, clusterLabel string, timeout time.Duration) (*HTTPClient, error) {
 	u, err := url.Parse(address)
 	if err != nil {
 		return nil, fmt.Errorf("parsing the address: %w", err)
@@ -45,7 +49,7 @@ func NewHTTPClient(address string, timeout time.Duration) (*HTTPClient, error) {
 	if u.Scheme == "" || u.Host == "" {
 		return nil, fmt.Errorf("the address %q has no scheme or host", address)
 	}
-	return &HTTPClient{address: strings.TrimSuffix(address, "/"), client: &http.Client{Timeout: timeout}}, nil
+	return &HTTPClient{address: strings.TrimSuffix(address, "/"), clusterLabel: clusterLabel, client: &http.Client{Timeout: timeout}}, nil
 }
 
 func (c *HTTPClient) Query(ctx context.Context, tenant, query string, ts time.Time, mode Mode) (QueryResult, error) {
@@ -130,6 +134,7 @@ func (c *HTTPClient) request(ctx context.Context, tenant, path string, params ur
 		return nil, err
 	}
 	req.Header.Set(user.OrgIDHeaderName, tenant)
+	clusterutil.PutClusterIntoHeader(req, c.clusterLabel)
 	return req, nil
 }
 
