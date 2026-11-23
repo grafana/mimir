@@ -28,6 +28,9 @@ type tenantEngine interface {
 	// A hard append error rolls back the batch.
 	Ingest(ctx *ingestContext, timeseries []mimirpb.PreallocTimeseries) error
 
+	// Configure applies tenant settings while the ingester is running.
+	Configure(engineSettings) error
+
 	// Compact lets the engine apply its normal compaction criteria.
 	Compact(ctx context.Context) error
 
@@ -51,6 +54,13 @@ type ingestContext struct {
 	updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction)
 	activeSeries       *activeseries.ActiveSeries
 	isOTLP             bool
+}
+
+type engineSettings struct {
+	// OutOfOrderTimeWindow is in milliseconds.
+	OutOfOrderTimeWindow int64
+	MaxExemplars         int64
+	FloatChunkEncoding   string
 }
 
 type prometheusEngine struct {
