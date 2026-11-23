@@ -419,3 +419,17 @@ func (i *ProfilingWrapper) LabelChurnHandler(w http.ResponseWriter, r *http.Requ
 
 	i.ing.LabelChurnHandler(w, r)
 }
+
+func (i *ProfilingWrapper) LabelChurnPageHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if isTraceSampled(ctx) {
+		userID, _ := tenant.TenantID(ctx)
+		labels := pprof.Labels("userID", userID)
+		defer pprof.SetGoroutineLabels(ctx)
+		ctx = pprof.WithLabels(ctx, labels)
+		pprof.SetGoroutineLabels(ctx)
+		r = r.WithContext(ctx)
+	}
+
+	i.ing.LabelChurnPageHandler(w, r)
+}

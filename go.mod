@@ -32,11 +32,11 @@ require (
 	github.com/google/gopacket v1.1.19
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20261113142543-e640b7cda9b5
+	github.com/grafana/dskit v0.0.0-20261123050442-8ef50684f551
 	github.com/grafana/e2e v0.1.2-0.20261026011823-81b51f5a0481
 	github.com/grafana/gomemcache v0.0.0-20261112174412-3f2aa5dee9f7
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
-	github.com/grafana/warpstream-go v0.1.6
+	github.com/grafana/warpstream-go v1.0.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/vault/api v1.23.0
 	github.com/hashicorp/vault/api/auth/approle v0.12.0
@@ -68,7 +68,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
 	github.com/thanos-io/objstore v0.0.0-20260817070452-e42d91c337ee
-	github.com/tjhop/slog-gokit v0.2.0
+	github.com/tjhop/slog-gokit v0.2.2
 	github.com/twmb/franz-go v1.21.7
 	github.com/twmb/franz-go/pkg/kadm v1.18.1-0.20260529212035-11b03a277c72
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260820024614-9b174ed31afe
@@ -347,7 +347,7 @@ replace github.com/prometheus/alertmanager => github.com/prometheus/alertmanager
 // WarpStream agents close the connection and do not try v4 again.
 replace github.com/twmb/franz-go => github.com/twmb/franz-go v1.21.7
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261116173000-acc619d1422f
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261120070609-6a42cfadc54e
 
 // Replace memberlist with our fork which includes some changes that haven't been
 // merged upstream yet for years and we don't expect to change anytime soon.

@@ -3,10 +3,14 @@
 package ingester
 
 import (
+	"bytes"
 	"cmp"
 	"context"
+	_ "embed"
 	"errors"
+	"html/template"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"sync"
@@ -41,6 +45,8 @@ const (
 
 var (
 	errLabelChurnDisabled             = errors.New("label churn detection is disabled, enable it with -ingester.label-churn-enabled")
+	errLabelChurnInvalidLookback      = errors.New("the lookback parameter must be a positive duration")
+	errLabelChurnInvalidLimit         = errors.New("the limit parameter must be a non-negative integer")
 	errLabelChurnCompactedTooRecently = errors.New("a compaction removed series after the start of the lookback window, retry later or use a shorter lookback")
 	errLabelChurnNoRecord             = errors.New("the ingester has no record in the lookback window, the ingester records once per minute after it starts")
 )
@@ -122,21 +128,87 @@ func (i *Ingester) recordLabelChurnSeriesRefs(now time.Time) {
 	}
 }
 
-// LabelChurnHandler returns the label churn scores of the tenant in the path.
+// LabelChurnHandler returns the label churn scores of the tenant in the path as JSON.
 // The optional "lookback" parameter sets the start of the time range. The default is 30m.
 // The optional "limit" parameter sets the maximum number of scores. The default is 30. 0 returns all scores.
 func (i *Ingester) LabelChurnHandler(w http.ResponseWriter, r *http.Request) {
-	if !i.cfg.LabelChurnEnabled {
-		http.Error(w, errLabelChurnDisabled.Error(), http.StatusNotFound)
+	response, statusCode, err := i.labelChurnForRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), statusCode)
 		return
+	}
+	util.WriteJSONResponse(w, response)
+}
+
+//go:embed label_churn.gohtml
+var labelChurnPageHTML string
+var labelChurnPageTemplate = template.Must(template.New("webpage").Funcs(template.FuncMap{
+	"rank": func(index int) int { return index + 1 },
+}).Parse(labelChurnPageHTML))
+
+type labelChurnPageContent struct {
+	Now    time.Time
+	Tenant string
+
+	// Lookback and Limit are the parameter values of the request, or the defaults.
+	Lookback string
+	Limit    string
+	// JSONLink is the relative link to the same scores from LabelChurnHandler.
+	JSONLink string
+
+	SampledSeriesPerValue int
+
+	Since  time.Time
+	Scores []labelChurnScore
+	Error  string
+}
+
+// LabelChurnPageHandler shows the label churn scores of the tenant in the path as an HTML page.
+// It has the same parameters as LabelChurnHandler.
+func (i *Ingester) LabelChurnPageHandler(w http.ResponseWriter, r *http.Request) {
+	lookback := cmp.Or(r.FormValue("lookback"), model.Duration(defaultLabelChurnLookback).String())
+	limit := cmp.Or(r.FormValue("limit"), strconv.Itoa(defaultLabelChurnLimit))
+
+	content := labelChurnPageContent{
+		Now:                   time.Now(),
+		Tenant:                mux.Vars(r)["tenant"],
+		Lookback:              lookback,
+		Limit:                 limit,
+		JSONLink:              "label_churn.json?" + url.Values{"lookback": {lookback}, "limit": {limit}}.Encode(),
+		SampledSeriesPerValue: labelChurnSampledSeriesPerValue,
+	}
+
+	response, statusCode, err := i.labelChurnForRequest(r)
+	if err != nil {
+		content.Error = err.Error()
+	} else {
+		content.Since = response.Since
+		content.Scores = response.Scores
+	}
+
+	// Render the page to a buffer, so that a template error can still set the status code.
+	var page bytes.Buffer
+	if err := labelChurnPageTemplate.Execute(&page, content); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(statusCode)
+	_, _ = w.Write(page.Bytes())
+}
+
+// labelChurnForRequest returns the label churn scores for the tenant and the parameters of the request.
+// When it fails, it also returns the HTTP status code that matches the error.
+func (i *Ingester) labelChurnForRequest(r *http.Request) (*labelChurnResponse, int, error) {
+	if !i.cfg.LabelChurnEnabled {
+		return nil, http.StatusNotFound, errLabelChurnDisabled
 	}
 
 	lookback := defaultLabelChurnLookback
 	if lookbackParameter := r.FormValue("lookback"); lookbackParameter != "" {
 		parsedLookback, err := model.ParseDuration(lookbackParameter)
 		if err != nil || parsedLookback <= 0 {
-			http.Error(w, "the lookback parameter must be a positive duration", http.StatusBadRequest)
-			return
+			return nil, http.StatusBadRequest, errLabelChurnInvalidLookback
 		}
 		lookback = time.Duration(parsedLookback)
 	}
@@ -145,8 +217,7 @@ func (i *Ingester) LabelChurnHandler(w http.ResponseWriter, r *http.Request) {
 	if limitParameter := r.FormValue("limit"); limitParameter != "" {
 		parsedLimit, err := strconv.Atoi(limitParameter)
 		if err != nil || parsedLimit < 0 {
-			http.Error(w, "the limit parameter must be a non-negative integer", http.StatusBadRequest)
-			return
+			return nil, http.StatusBadRequest, errLabelChurnInvalidLimit
 		}
 		limit = parsedLimit
 	}
@@ -154,19 +225,17 @@ func (i *Ingester) LabelChurnHandler(w http.ResponseWriter, r *http.Request) {
 	tenantID := mux.Vars(r)["tenant"]
 	db := i.getTSDB(tenantID)
 	if db == nil {
-		http.Error(w, "the ingester has no TSDB for tenant "+tenantID, http.StatusNotFound)
-		return
+		return nil, http.StatusNotFound, errors.New("the ingester has no TSDB for tenant " + tenantID)
 	}
 
 	response, err := db.labelChurn(r.Context(), time.Now().Add(-lookback).UnixMilli(), limit)
 	switch {
 	case errors.Is(err, errLabelChurnCompactedTooRecently) || errors.Is(err, errLabelChurnNoRecord):
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return nil, http.StatusServiceUnavailable, err
 	case err != nil:
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	default:
-		util.WriteJSONResponse(w, response)
+		return nil, http.StatusInternalServerError, err
 	}
+	return response, http.StatusOK, nil
 }
 
 // labelChurn returns the limit highest scores of the label names of the head, in descending order.

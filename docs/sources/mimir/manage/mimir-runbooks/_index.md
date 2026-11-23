@@ -749,6 +749,17 @@ How to **investigate**:
 
 Same as [`MimirCompactorNotCleaningUpBlocks`](#MimirCompactorNotCleaningUpBlocks).
 
+### MimirCompactorNotDiscoveringTenants
+
+This alert fires when a Mimir compactor has not successfully listed the tenants in the bucket for blocks cleanup in the last 6 hours.
+The compactor continues to update the bucket index of the tenants that it already knows, but it doesn't create a bucket index for new tenants.
+
+How to **investigate**:
+
+- Look for errors about listing users in the compactor logs
+- Check the errors and the latency of the `iter` operation in `thanos_objstore_bucket_operation_failures_total` and `thanos_objstore_bucket_operation_duration_seconds`
+- Check if the object storage is slow or rate-limits list requests at the root of the bucket
+
 ### MimirCompactorHasNotUploadedBlocks
 
 This alert fires when a Mimir compactor is not uploading any compacted blocks to the storage since a long time.
@@ -1044,6 +1055,14 @@ How to **investigate**:
 - Check for object storage failures for the compactor
   ```
   sum(rate(thanos_objstore_bucket_operation_failures_total{namespace="<namespace>", component="compactor"}[$__rate_interval]))
+  ```
+- Check for slow `iter` operations on the bucket. Compactors list the bucket root to discover tenants before they update any bucket index.
+  ```
+  histogram_quantile(1, sum(rate(thanos_objstore_bucket_operation_duration_seconds{namespace="<namespace>", component="compactor", operation="iter"}[$__rate_interval])))
+  ```
+  For more precision, check the compactor cleanup logs. The gap between a run start and its first per-tenant message is the discovery time:
+  ```
+  {namespace="<namespace>", container="compactor", pod="<pod>"} |= "started blocks cleanup and maintenance"
   ```
 
 How to **fix** it:
