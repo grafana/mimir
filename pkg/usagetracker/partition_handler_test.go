@@ -167,6 +167,7 @@ func TestPartitionHandler(t *testing.T) {
 	t.Run("received series are snapshotted and loaded", func(t *testing.T) {
 		// The small target size splits the snapshot into many files, and the received series go in the last one,
 		// alone when they don't fit in the target size with the data of the last shards.
+		const otherTenantID = "other"
 		for maxFileSize, receivedSeriesWithData := range map[int]bool{10e3: true, 100: false} {
 			t.Run("maxFileSize="+strconv.Itoa(maxFileSize), func(t *testing.T) {
 				t.Parallel()

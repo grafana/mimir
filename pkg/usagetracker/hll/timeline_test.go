@@ -115,6 +115,7 @@ func TestTimeline(t *testing.T) {
 		// The clock went back a whole window: now-minutes is in the window again, and its slot holds now.
 		tl.Merge(now-minutes, now-1, sketchOf(100, 200))
 		require.Equal(t, sketchOf(0, 100).Estimate(), estimate(tl, now))
+	})
 
 	t.Run("a cleanup for an earlier minute keeps the next minute", func(t *testing.T) {
 		tl := NewTimeline(minutes)
