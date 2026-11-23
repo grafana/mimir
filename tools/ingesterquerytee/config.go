@@ -12,6 +12,7 @@ import (
 type Config struct {
 	PrimaryAddress       string
 	ShadowAddress        string
+	Shadow2Address       string
 	ShadowTimeout        time.Duration
 	SampleRate           float64
 	MaxConcurrent        int
@@ -37,6 +38,7 @@ type Config struct {
 func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&c.PrimaryAddress, "primary-address", "", "gRPC address of the primary ingester for this partition.")
 	f.StringVar(&c.ShadowAddress, "shadow-address", "", "gRPC address of the shadow ingester owning the same partition.")
+	f.StringVar(&c.Shadow2Address, "shadow2-address", "", "Optional gRPC address of a second shadow ingester owning the same partition.")
 	f.DurationVar(&c.ShadowTimeout, "shadow-timeout", 30*time.Second, "Maximum duration of a shadow request.")
 	f.Float64Var(&c.SampleRate, "sample-rate", 1, "Fraction of mirrored read requests selected for comparison (0 to 1); all reads are mirrored.")
 	f.IntVar(&c.MaxConcurrent, "max-concurrent-comparisons", 8, "Maximum concurrent comparisons; excess requests still mirror and discard shadow responses.")
@@ -46,7 +48,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.LogMismatchedSamples, "log-mismatched-samples", false, "Include one bounded differing sample in mismatch logs, with labels and values; may contain sensitive data.")
 	f.IntVar(&c.MismatchRetries, "mismatch-retries", 0, "How many times to ask both backends again, after -mismatch-retry-delay each, when a comparison's items or samples differ; it's a mismatch only if some of the same still differ every time, as ingesters that agree can differ for a while, such as on active series between their updates, or on samples written late that one consumed before the other.")
 	f.DurationVar(&c.MismatchRetryDelay, "mismatch-retry-delay", 70*time.Second, "How long to wait before each of -mismatch-retries.")
-	f.Float64Var(&c.Amplification, "amplification", 1, "How many times each read is sent to both ingesters, on average, to load them above the read traffic: 1 sends it once, and 2.5 adds one or two copies. Each copy goes to the primary and the shadow at the same time, so both see the same load. Copies are timed but never compared, and the caller's response doesn't wait for them. A copy of a read hits what the ingesters cached from it, so copies load them less than as many other reads would.")
+	f.Float64Var(&c.Amplification, "amplification", 1, "How many times each read is sent to all ingesters, on average, to load them above the read traffic: 1 sends it once, and 2.5 adds one or two copies. Each copy goes to the primary and every shadow at the same time, so they all see the same load. Copies are timed but never compared, and the caller's response doesn't wait for them. A copy of a read hits what the ingesters cached from it, so copies load them less than as many other reads would.")
 	f.DurationVar(&c.AmplificationDelay, "amplification-delay", 0, "Copies of a read are sent after a random delay between 0 and this, so they spread over time instead of arriving with the read.")
 	f.DurationVar(&c.LogSlowResponseThreshold, "log-slow-response-threshold", 0, "The minimum difference in response time between the slower and the faster backend over which to log a mirrored read, compared or not, at most 10 a second. With -log-mismatched-queries, logs include the tenant and the request. 0 to disable.")
 	f.IntVar(&c.PodIndex, "pod-index", -1, "Index of the pod the tee runs in, such as a statefulset's pod index, for -shadow-pod-count.")
@@ -59,6 +61,9 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 func (c Config) Validate() error {
 	if c.PrimaryAddress == "" || c.ShadowAddress == "" || c.PrimaryAddress == c.ShadowAddress {
 		return fmt.Errorf("primary-address and shadow-address must be nonempty and different")
+	}
+	if c.Shadow2Address != "" && (c.Shadow2Address == c.PrimaryAddress || c.Shadow2Address == c.ShadowAddress) {
+		return fmt.Errorf("shadow2-address must differ from primary-address and shadow-address")
 	}
 	if c.ShadowTimeout <= 0 || c.MaxConcurrent <= 0 || c.MaxResponseBytes <= 0 || c.MaxSamples <= 0 {
 		return fmt.Errorf("shadow-timeout and comparison limits must be positive")
@@ -88,6 +93,13 @@ func (c Config) Validate() error {
 		return fmt.Errorf("amplification-delay must be nonnegative")
 	}
 	return nil
+}
+
+func (c Config) ShadowAddresses() []string {
+	if c.Shadow2Address == "" {
+		return []string{c.ShadowAddress}
+	}
+	return []string{c.ShadowAddress, c.Shadow2Address}
 }
 
 // shadowed reports whether the tee's pod mirrors to the shadow, by -shadow-pod-count.

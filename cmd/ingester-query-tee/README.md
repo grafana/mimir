@@ -1,7 +1,7 @@
 # Ingester query-tee
 
 Experimental gRPC proxy for comparing primary and shadow ingesters that own the same Kafka partition.
-Callers always receive the primary response; the shadow is queried only for asynchronous comparison.
+Callers always receive the primary response; shadow ingesters are queried for asynchronous comparison.
 
 ## Recommended deployment: sidecar on the primary
 
@@ -27,7 +27,8 @@ Configure the tee sidecar for that pod's matching shadow partition:
 Queriers reach the primary pod at its advertised port `9096`; the tee forwards to the primary over localhost.
 Repeat the pairing for every pod in the zone, using the correct shadow pod for each partition.
 Use a specific shadow pod address, because a zone-wide load-balanced Service can select the wrong partition owner.
-Keep the shadow zone isolated from normal query selection during validation.
+Set `-shadow2-address` to also mirror to a second shadow pod for the same partition.
+Keep the shadow zones isolated from normal query selection during validation.
 
 Expose `9096` in the relevant Services and NetworkPolicies and `9900` for metrics and readiness.
 Retain the primary ingester's existing readiness probe; the tee's `/ready` checks startup only.

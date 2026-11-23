@@ -94,11 +94,15 @@ func testProxy(t *testing.T, primary, shadow *testIngester, cfg Config) (*Proxy,
 	return testProxyWithLogger(t, primary, shadow, cfg, log.NewNopLogger())
 }
 
-func testProxyWithLogger(t *testing.T, primary, shadow *testIngester, cfg Config, logger log.Logger) (*Proxy, client.IngesterClient) {
+func testProxyWithLogger(t *testing.T, primary, shadow *testIngester, cfg Config, logger log.Logger, otherShadows ...*testIngester) (*Proxy, client.IngesterClient) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	p, err := New(ctx, cfg, testBackend(t, primary), testBackend(t, shadow), prometheus.NewRegistry(), logger)
+	shadows := []grpc.ClientConnInterface{testBackend(t, shadow)}
+	for _, backend := range otherShadows {
+		shadows = append(shadows, testBackend(t, backend))
+	}
+	p, err := New(ctx, cfg, testBackend(t, primary), shadows, prometheus.NewRegistry(), logger)
 	require.NoError(t, err)
 	rpcLog := middleware.GRPCServerLog{Log: log.NewNopLogger(), DisableRequestSuccessLog: true}
 	srv := grpc.NewServer(grpc.ForceServerCodec(WireCodec{}), grpc.UnknownServiceHandler(p.Handler), grpc.StreamInterceptor(rpcLog.StreamServerInterceptor))
@@ -107,7 +111,7 @@ func testProxyWithLogger(t *testing.T, primary, shadow *testIngester, cfg Config
 
 func awaitOutcome(t *testing.T, p *Proxy, method, result string) {
 	t.Helper()
-	require.Eventually(t, func() bool { return testutil.ToFloat64(p.comparisons.WithLabelValues(method, result)) == 1 }, 5*time.Second, time.Millisecond)
+	require.Eventually(t, func() bool { return testutil.ToFloat64(p.comparisons.WithLabelValues(method, "shadow", result)) == 1 }, 5*time.Second, time.Millisecond)
 }
 
 func testMetadata(ctx context.Context) metadata.MD {
@@ -493,7 +497,9 @@ func TestProxyDrainsShadowBeyondComparisonBudget(t *testing.T) {
 				result = "limit"
 			}
 			awaitOutcome(t, p, "QueryStream", result)
-			require.Eventually(t, func() bool { return testutil.ToFloat64(p.mirrored.WithLabelValues("QueryStream", "success")) == 1 }, time.Second, time.Millisecond)
+			require.Eventually(t, func() bool {
+				return testutil.ToFloat64(p.mirrored.WithLabelValues("QueryStream", "shadow", "success")) == 1
+			}, time.Second, time.Millisecond)
 		})
 	}
 }
@@ -638,7 +644,7 @@ func TestProxyDetailedDiagnosticRateLimit(t *testing.T) {
 	}
 	require.Eventually(t, func() bool { return strings.Contains(logs.String(), "diagnostics_suppressed=true") }, time.Second, time.Millisecond)
 	require.Equal(t, 1, strings.Count(logs.String(), "difference="))
-	require.Equal(t, float64(2), testutil.ToFloat64(p.comparisons.WithLabelValues("QueryStream", "mismatch")))
+	require.Equal(t, float64(2), testutil.ToFloat64(p.comparisons.WithLabelValues("QueryStream", "shadow", "mismatch")))
 }
 
 func TestProxyMismatchRetries(t *testing.T) {
@@ -667,7 +673,7 @@ func TestProxyMismatchRetries(t *testing.T) {
 			_, err := cli.LabelNames(t.Context(), &client.LabelNamesRequest{})
 			require.NoError(t, err)
 			awaitOutcome(t, p, "LabelNames", tc.result)
-			require.Zero(t, testutil.ToFloat64(p.comparisons.WithLabelValues("LabelNames", map[string]string{"mismatch": "match_after_retry", "match_after_retry": "mismatch"}[tc.result])))
+			require.Zero(t, testutil.ToFloat64(p.comparisons.WithLabelValues("LabelNames", "shadow", map[string]string{"mismatch": "match_after_retry", "match_after_retry": "mismatch"}[tc.result])))
 			if tc.result == "mismatch" {
 				require.Contains(t, logs.String(), "retries=2 persistent_missing_from_shadow=0 persistent_extra_in_shadow=1")
 			}
@@ -724,6 +730,53 @@ func TestProxyQueryStreamMismatchRetries(t *testing.T) {
 	}
 }
 
+func TestProxyTwoShadows(t *testing.T) {
+	backend := func(calls *atomic.Int32, names []string) *testIngester {
+		return &testIngester{labelNames: func(ctx context.Context, _ *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
+			calls.Inc()
+			return &client.LabelNamesResponse{LabelNames: names}, nil
+		}}
+	}
+
+	var primaryCalls, shadowCalls, shadow2Calls atomic.Int32
+	cfg := testConfig()
+	cfg.Shadow2Address = "shadow2"
+	cfg.MaxConcurrent = 1
+	cfg.Amplification = 2
+	cfg.MismatchRetries = 1
+	cfg.MismatchRetryDelay = time.Millisecond
+	p, cli := testProxyWithLogger(t, backend(&primaryCalls, []string{"primary"}),
+		backend(&shadowCalls, []string{"primary"}), cfg, log.NewNopLogger(),
+		backend(&shadow2Calls, []string{"other"}))
+
+	resp, err := cli.LabelNames(t.Context(), &client.LabelNamesRequest{})
+	require.NoError(t, err)
+	require.Equal(t, []string{"primary"}, resp.LabelNames)
+	awaitOutcome(t, p, "LabelNames", "match")
+	require.Eventually(t, func() bool {
+		return testutil.ToFloat64(p.comparisons.WithLabelValues("LabelNames", "shadow2", "mismatch")) == 1
+	}, 5*time.Second, time.Millisecond)
+	for _, name := range []string{"shadow", "shadow2"} {
+		require.Equal(t, float64(1), testutil.ToFloat64(p.mirrored.WithLabelValues("LabelNames", name, "success")))
+	}
+	for _, name := range []string{"primary", "shadow", "shadow2"} {
+		require.Eventually(t, func() bool {
+			return testutil.ToFloat64(p.copies.WithLabelValues("LabelNames", name, "success")) == 1
+		}, 5*time.Second, time.Millisecond)
+	}
+	require.Equal(t, int32(3), primaryCalls.Load())
+	require.Equal(t, int32(2), shadowCalls.Load())
+	require.Equal(t, int32(3), shadow2Calls.Load())
+}
+
+func TestConfigRejectsDuplicateSecondShadow(t *testing.T) {
+	cfg := testConfig()
+	for _, address := range []string{cfg.PrimaryAddress, cfg.ShadowAddress} {
+		cfg.Shadow2Address = address
+		require.EqualError(t, cfg.Validate(), "shadow2-address must differ from primary-address and shadow-address")
+	}
+}
+
 func TestProxyAmplification(t *testing.T) {
 	counting := func(calls *atomic.Int32, release <-chan struct{}) *testIngester {
 		return &testIngester{labelNames: func(ctx context.Context, _ *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
@@ -754,7 +807,7 @@ func TestProxyAmplification(t *testing.T) {
 
 		require.Eventually(t, func() bool { return copies(p, "primary", "success") == 2 && copies(p, "shadow", "success") == 2 }, 5*time.Second, time.Millisecond)
 		require.Eventually(t, func() bool { return primaryCalls.Load() == 3 && shadowCalls.Load() == 3 }, 5*time.Second, time.Millisecond, "the read and its two copies, on each")
-		require.Equal(t, float64(1), testutil.ToFloat64(p.mirrored.WithLabelValues("LabelNames", "success")), "copies aren't counted as mirrored reads")
+		require.Equal(t, float64(1), testutil.ToFloat64(p.mirrored.WithLabelValues("LabelNames", "shadow", "success")), "copies aren't counted as mirrored reads")
 	})
 
 	t.Run("a fraction adds a copy as often", func(t *testing.T) {
@@ -769,7 +822,9 @@ func TestProxyAmplification(t *testing.T) {
 			_, err := cli.LabelNames(t.Context(), &client.LabelNamesRequest{})
 			require.NoError(t, err)
 		}
-		require.Eventually(t, func() bool { return testutil.ToFloat64(p.mirrored.WithLabelValues("LabelNames", "success")) == reads }, 5*time.Second, time.Millisecond)
+		require.Eventually(t, func() bool {
+			return testutil.ToFloat64(p.mirrored.WithLabelValues("LabelNames", "shadow", "success")) == reads
+		}, 5*time.Second, time.Millisecond)
 		require.Eventually(t, func() bool {
 			return float64(shadowCalls.Load()) == reads+copies(p, "shadow", "success") && float64(primaryCalls.Load()) == reads+copies(p, "primary", "success")
 		}, 5*time.Second, time.Millisecond)
@@ -820,7 +875,7 @@ func TestProxyOnlyShadowsThePodsBelowTheCount(t *testing.T) {
 			}
 			// Nothing is sent after the primary's answer: no mirror, copy or comparison.
 			require.Never(t, func() bool { return shadowCalls.Load() > 0 || primaryCalls.Load() > 1 }, 200*time.Millisecond, 10*time.Millisecond)
-			require.Equal(t, float64(0), testutil.ToFloat64(p.comparisons.WithLabelValues("LabelNames", "skipped")))
+			require.Equal(t, float64(0), testutil.ToFloat64(p.comparisons.WithLabelValues("LabelNames", "shadow", "skipped")))
 		})
 	}
 }

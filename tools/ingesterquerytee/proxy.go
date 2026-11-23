@@ -7,10 +7,12 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -77,10 +79,22 @@ func (r *response) add(f frame, limit int) {
 	r.frames = append(r.frames, f)
 }
 
+type shadowBackend struct {
+	name    string
+	address string
+	conn    grpc.ClientConnInterface
+}
+
+type capturedResponse struct {
+	response
+	done    chan struct{}
+	pending atomic.Int32
+}
+
 type Proxy struct {
 	cfg            Config
 	primary        grpc.ClientConnInterface
-	shadow         grpc.ClientConnInterface
+	shadows        []shadowBackend
 	ctx            context.Context
 	logger         log.Logger
 	slots          chan struct{}
@@ -94,25 +108,36 @@ type Proxy struct {
 	hostname       string
 }
 
-func New(ctx context.Context, cfg Config, primary, shadow grpc.ClientConnInterface, reg prometheus.Registerer, logger log.Logger) (*Proxy, error) {
+func New(ctx context.Context, cfg Config, primary grpc.ClientConnInterface, shadows []grpc.ClientConnInterface, reg prometheus.Registerer, logger log.Logger) (*Proxy, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	p := &Proxy{cfg: cfg, primary: primary, shadow: shadow, ctx: ctx, logger: logger, slots: make(chan struct{}, cfg.MaxConcurrent), retrySlots: make(chan struct{}, cfg.MaxConcurrent), diagnosticLogs: rate.NewLimiter(rate.Every(time.Second), 1), slowLogs: rate.NewLimiter(rate.Every(100*time.Millisecond), 10)}
+	addresses := cfg.ShadowAddresses()
+	if len(shadows) != len(addresses) {
+		return nil, fmt.Errorf("expected %d shadow connections, got %d", len(addresses), len(shadows))
+	}
+	p := &Proxy{cfg: cfg, primary: primary, ctx: ctx, logger: logger, slots: make(chan struct{}, cfg.MaxConcurrent), retrySlots: make(chan struct{}, cfg.MaxConcurrent), diagnosticLogs: rate.NewLimiter(rate.Every(time.Second), 1), slowLogs: rate.NewLimiter(rate.Every(100*time.Millisecond), 10)}
+	for i, shadow := range shadows {
+		name := "shadow"
+		if i == 1 {
+			name = "shadow2"
+		}
+		p.shadows = append(p.shadows, shadowBackend{name: name, address: addresses[i], conn: shadow})
+	}
 	if hostname, err := os.Hostname(); err == nil {
 		p.hostname = hostname
 	}
 	p.comparisons = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "ingester_query_tee_comparisons_total", Help: "Read comparisons by RPC and outcome: match, match_after_retry, mismatch, skipped, unavailable, primary_error, shadow_error, comparison_error, or limit.",
-	}, []string{"method", "result"})
+		Name: "ingester_query_tee_comparisons_total", Help: "Read comparisons by RPC, shadow backend, and outcome: match, match_after_retry, mismatch, skipped, unavailable, primary_error, shadow_error, comparison_error, or limit.",
+	}, []string{"method", "backend", "result"})
 	p.mirrored = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "ingester_query_tee_mirrored_requests_total", Help: "Shadow requests consumed by RPC and outcome: success, unavailable, or shadow_error.",
-	}, []string{"method", "result"})
+		Name: "ingester_query_tee_mirrored_requests_total", Help: "Shadow requests consumed by RPC, shadow backend, and outcome: success, unavailable, or shadow_error.",
+	}, []string{"method", "backend", "result"})
 	p.copies = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "ingester_query_tee_copies_total", Help: "Copies of reads sent by -amplification, by RPC, backend (primary or shadow) and outcome: success, unavailable, or error.",
+		Name: "ingester_query_tee_copies_total", Help: "Copies of reads sent by -amplification, by RPC, backend and outcome: success, unavailable, or error.",
 	}, []string{"method", "backend", "result"})
 	p.duration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name: "ingester_query_tee_backend_duration_seconds", Help: "Time to consume each backend response: primary, shadow, or primary_copy and shadow_copy for -amplification's copies.", Buckets: prometheus.DefBuckets,
+		Name: "ingester_query_tee_backend_duration_seconds", Help: "Time to consume each backend response: primary or shadow, with a _copy suffix for -amplification's copies.", Buckets: prometheus.DefBuckets,
 	}, []string{"method", "backend"})
 	var registered []prometheus.Collector
 	for _, c := range []prometheus.Collector{p.comparisons, p.mirrored, p.copies, p.duration} {
@@ -153,20 +178,17 @@ func openStream(ctx context.Context, conn grpc.ClientConnInterface, method strin
 }
 
 func (p *Proxy) selectComparison(method string) bool {
-	if !comparable(method) {
-		return false
+	if sampleRequest(p.cfg.SampleRate) {
+		select {
+		case p.slots <- struct{}{}:
+			return true
+		default:
+		}
 	}
-	if !sampleRequest(p.cfg.SampleRate) {
-		p.comparisons.WithLabelValues(method, "skipped").Inc()
-		return false
+	for _, shadow := range p.shadows {
+		p.comparisons.WithLabelValues(method, shadow.name, "skipped").Inc()
 	}
-	select {
-	case p.slots <- struct{}{}:
-		return true
-	default:
-		p.comparisons.WithLabelValues(method, "skipped").Inc()
-		return false
-	}
+	return false
 }
 
 func sampleRequest(rate float64) bool {
@@ -201,21 +223,25 @@ func (p *Proxy) Handler(_ any, downstream grpc.ServerStream) (retErr error) {
 		return err
 	}
 	start := time.Now()
-	var captured *response
+	var captured *capturedResponse
 	var timing *readTiming
 	var md metadata.MD
 	if strings.HasPrefix(fullMethod, "/cortex.Ingester/") && comparable(method) && p.cfg.shadowed() {
-		var primaryDone chan response
 		if p.selectComparison(method) {
-			captured = &response{}
-			primaryDone = make(chan response, 1)
-			defer func() { captured.err = retErr; primaryDone <- *captured }()
+			captured = &capturedResponse{done: make(chan struct{})}
+			captured.pending.Store(int32(len(p.shadows)))
+			defer func() {
+				captured.err = retErr
+				close(captured.done)
+			}()
 		}
 		md = incomingMetadata(downstream.Context())
 		if p.cfg.LogSlowResponseThreshold > 0 {
-			timing = &readTiming{}
+			timing = &readTiming{durations: make([]time.Duration, 1+len(p.shadows))}
 		}
-		go p.mirror(fullMethod, method, req, md, primaryDone, start, timing)
+		for i, shadow := range p.shadows {
+			go p.mirror(shadow, i+1, fullMethod, method, req, md, captured, start, timing)
+		}
 		p.amplify(fullMethod, method, req, md)
 	}
 	ctx, cancel := context.WithCancelCause(outgoingContext(downstream.Context()))
@@ -258,15 +284,19 @@ func (p *Proxy) Handler(_ any, downstream grpc.ServerStream) (retErr error) {
 	}
 }
 
-func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, primaryDone <-chan response, start time.Time, timing *readTiming) {
-	if primaryDone != nil {
-		defer func() { <-p.slots }()
+func (p *Proxy) mirror(backend shadowBackend, backendIndex int, fullMethod, method string, req frame, md metadata.MD, captured *capturedResponse, start time.Time, timing *readTiming) {
+	if captured != nil {
+		defer func() {
+			if captured.pending.Add(-1) == 0 {
+				<-p.slots
+			}
+		}()
 	}
 	ctx, cancel := context.WithTimeout(p.ctx, p.cfg.ShadowTimeout)
 	defer cancel()
 	ctx = metadata.NewOutgoingContext(ctx, md)
 	shadow := response{}
-	upstream, err := openStream(ctx, p.shadow, fullMethod, &req)
+	upstream, err := openStream(ctx, backend.conn, fullMethod, &req)
 	if err == nil {
 		// Uncompared responses reuse one buffer instead of retaining the whole stream.
 		var f frame
@@ -275,7 +305,7 @@ func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, pri
 			if err != nil {
 				break
 			}
-			if primaryDone != nil {
+			if captured != nil {
 				shadow.add(f, p.cfg.MaxResponseBytes)
 				if !shadow.limited {
 					// Captured frames must not share the next receive buffer.
@@ -288,9 +318,9 @@ func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, pri
 		shadow.err = err
 	}
 	took := time.Since(start)
-	p.duration.WithLabelValues(method, "shadow").Observe(took.Seconds())
+	p.duration.WithLabelValues(method, backend.name).Observe(took.Seconds())
 	if timing != nil {
-		p.finishTiming(timing, 1, took, method, req, md)
+		p.finishTiming(timing, backendIndex, took, method, req, md)
 	}
 	mirrorResult := "success"
 	if isUnavailable(shadow.err) {
@@ -298,16 +328,16 @@ func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, pri
 	} else if shadow.err != nil {
 		mirrorResult = "shadow_error"
 	}
-	p.mirrored.WithLabelValues(method, mirrorResult).Inc()
-	if primaryDone == nil {
+	p.mirrored.WithLabelValues(method, backend.name, mirrorResult).Inc()
+	if captured == nil {
 		return
 	}
-	var primary response
 	select {
-	case primary = <-primaryDone:
+	case <-captured.done:
 	case <-p.ctx.Done():
 		return
 	}
+	primary := captured.response
 	result := "match"
 	var comparisonErr error
 	switch {
@@ -337,14 +367,14 @@ func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, pri
 		select {
 		case p.retrySlots <- struct{}{}:
 			// Retries wait for minutes, so they don't hold the comparison slot.
-			go p.retryMismatch(fullMethod, method, req, md, mismatch, start, primary.frames, shadow.frames)
+			go p.retryMismatch(backend, fullMethod, method, req, md, mismatch, start, primary.frames, shadow.frames)
 			return
 		default:
 		}
 	}
-	p.comparisons.WithLabelValues(method, result).Inc()
+	p.comparisons.WithLabelValues(method, backend.name, result).Inc()
 	if result == "mismatch" || result == "comparison_error" || result == "shadow_error" {
-		fields := []any{"msg", "ingester query comparison failed", "method", method, "result", result}
+		fields := []any{"msg", "ingester query comparison failed", "method", method, "result", result, "shadow_backend", backend.name}
 		if p.cfg.LogMismatchedQueries && method == "QueryStream" {
 			tenantID := strings.Join(md.Get("x-scope-orgid"), "|")
 			if len(tenantID) > 256 {
@@ -384,7 +414,7 @@ func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, pri
 					}
 					fields = appendDiagnosticJSON(fields, "replay", map[string]any{
 						"metadata": replayMetadata, "tenant_id": strings.Join(md.Get("x-scope-orgid"), "|"),
-						"primary_address": p.cfg.PrimaryAddress, "shadow_address": p.cfg.ShadowAddress, "tee_host": p.hostname,
+						"primary_address": p.cfg.PrimaryAddress, "shadow_address": backend.address, "tee_host": p.hostname,
 						"request_start_ms": start.UnixMilli(), "comparison_end_ms": comparisonEnd,
 						"skip_recent_samples": p.cfg.SkipRecentSamples.String(), "shadow_timeout": p.cfg.ShadowTimeout.String(),
 					}, &budget)
@@ -403,7 +433,7 @@ func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, pri
 // retryMismatch asks both backends again, up to -mismatch-retries times, for the items or samples that differed, and
 // counts a mismatch only if some of the same differ in the same way every time. Samples are compared as of the first
 // request, so the retries don't see the ones written since.
-func (p *Proxy) retryMismatch(fullMethod, method string, req frame, md metadata.MD, mismatch *mismatchError, start time.Time, primaryFrames, shadowFrames []frame) {
+func (p *Proxy) retryMismatch(backend shadowBackend, fullMethod, method string, req frame, md metadata.MD, mismatch *mismatchError, start time.Time, primaryFrames, shadowFrames []frame) {
 	defer func() { <-p.retrySlots }()
 	differing := mismatch.items
 	retries := 0
@@ -418,7 +448,7 @@ func (p *Proxy) retryMismatch(fullMethod, method string, req frame, md metadata.
 		var wg sync.WaitGroup
 		wg.Add(2)
 		go func() { defer wg.Done(); primary = p.fetch(p.primary, fullMethod, req, md) }()
-		go func() { defer wg.Done(); shadow = p.fetch(p.shadow, fullMethod, req, md) }()
+		go func() { defer wg.Done(); shadow = p.fetch(backend.conn, fullMethod, req, md) }()
 		wg.Wait()
 		if primary.err != nil || shadow.err != nil || primary.limited || shadow.limited {
 			// What the items are now isn't known, so the first comparison stands.
@@ -436,10 +466,10 @@ func (p *Proxy) retryMismatch(fullMethod, method string, req frame, md metadata.
 		}
 	}
 	if len(differing) == 0 {
-		p.comparisons.WithLabelValues(method, "match_after_retry").Inc()
+		p.comparisons.WithLabelValues(method, backend.name, "match_after_retry").Inc()
 		return
 	}
-	p.comparisons.WithLabelValues(method, "mismatch").Inc()
+	p.comparisons.WithLabelValues(method, backend.name, "mismatch").Inc()
 	var missing, extra, different int
 	for _, count := range differing {
 		switch {
@@ -451,7 +481,7 @@ func (p *Proxy) retryMismatch(fullMethod, method string, req frame, md metadata.
 			extra++
 		}
 	}
-	fields := []any{"msg", "ingester query comparison failed", "method", method, "result", "mismatch"}
+	fields := []any{"msg", "ingester query comparison failed", "method", method, "result", "mismatch", "shadow_backend", backend.name}
 	if p.cfg.LogMismatchedQueries && method == "QueryStream" {
 		fields = append(fields, "tenant_id", strings.Join(md.Get("x-scope-orgid"), "|"))
 	}
@@ -511,7 +541,7 @@ func (p *Proxy) amplify(fullMethod, method string, req frame, md metadata.MD) {
 	}
 }
 
-// sendCopy sends a copy of the read to both backends at once, after a random delay up to -amplification-delay, and
+// sendCopy sends a copy of the read to all backends at once, after a random delay up to -amplification-delay, and
 // drains their responses. The delay and the shadow timeout bound how many copies a tee holds, at its read rate.
 func (p *Proxy) sendCopy(fullMethod, method string, req frame, md metadata.MD) {
 	if p.cfg.AmplificationDelay > 0 {
@@ -523,15 +553,9 @@ func (p *Proxy) sendCopy(fullMethod, method string, req frame, md metadata.MD) {
 		}
 	}
 	var wg sync.WaitGroup
-	for _, backend := range []struct {
-		name string
-		conn grpc.ClientConnInterface
-	}{{"primary", p.primary}, {"shadow", p.shadow}} {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			p.drainCopy(backend.conn, backend.name, fullMethod, method, req, md)
-		}()
+	wg.Go(func() { p.drainCopy(p.primary, "primary", fullMethod, method, req, md) })
+	for _, backend := range p.shadows {
+		wg.Go(func() { p.drainCopy(backend.conn, backend.name, fullMethod, method, req, md) })
 	}
 	wg.Wait()
 }
@@ -563,29 +587,32 @@ func (p *Proxy) drainCopy(conn grpc.ClientConnInterface, backend, fullMethod, me
 	p.copies.WithLabelValues(method, backend, result).Inc()
 }
 
-// readTiming is how long each backend took to answer a mirrored read, for -log-slow-response-threshold: the backend
-// that finishes second logs the read when their difference is over the threshold.
 type readTiming struct {
 	mu        sync.Mutex
-	durations [2]time.Duration
+	durations []time.Duration
 	finished  int
 }
 
-// finishTiming records how long backend (0 the primary, 1 the shadow) took to answer the read, and logs it once both
-// did if one took over -log-slow-response-threshold longer than the other.
+// The last backend to finish can compare durations without holding the lock.
 func (p *Proxy) finishTiming(timing *readTiming, backend int, took time.Duration, method string, req frame, md metadata.MD) {
 	timing.mu.Lock()
 	timing.durations[backend] = took
 	timing.finished++
-	last := timing.finished == 2
-	primary, shadow := timing.durations[0], timing.durations[1]
+	last := timing.finished == len(timing.durations)
 	timing.mu.Unlock()
 	if !last {
 		return
 	}
-	slowestBackend, slowest, fastestBackend, fastest := "shadow", shadow, "primary", primary
-	if primary > shadow {
-		slowestBackend, slowest, fastestBackend, fastest = "primary", primary, "shadow", shadow
+	slowestBackend, fastestBackend := "primary", "primary"
+	slowest, fastest := timing.durations[0], timing.durations[0]
+	for i, shadow := range p.shadows {
+		duration := timing.durations[i+1]
+		if duration > slowest {
+			slowestBackend, slowest = shadow.name, duration
+		}
+		if duration < fastest {
+			fastestBackend, fastest = shadow.name, duration
+		}
 	}
 	if slowest-fastest < p.cfg.LogSlowResponseThreshold || !p.slowLogs.Allow() {
 		return

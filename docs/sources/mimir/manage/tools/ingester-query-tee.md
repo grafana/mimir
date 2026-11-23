@@ -12,7 +12,8 @@ Deploy one tee per partition being validated, in front of the primary ingester t
 Pair each tee with a shadow ingester that owns the same Kafka partition and ingests the same data.
 Each tee forwards requests to its primary ingester and mirrors all supported read requests to the corresponding shadow ingester.
 Callers receive the primary response, including its streaming messages, headers, trailers, and errors.
-Comparisons run asynchronously; callers do not wait for the shadow.
+Comparisons run asynchronously; callers do not wait for the shadows.
+Set `-shadow2-address` to mirror the same requests to a second shadow ingester that owns the partition. The tee compares each shadow independently against the primary.
 The tee always returns only primary responses. It never falls back to the shadow, even when the primary is unavailable and the shadow succeeds.
 
 ## Build and run
@@ -142,7 +143,7 @@ A `LabelNames` or `LabelValues` request with a limit whose response from either 
 Search comparisons preserve result ordering and scores, while ignoring batch boundaries.
 
 Ingesters that agree can still differ for a while on time-dependent results, such as active series between their periodic updates, or samples written late that one ingester consumed before the other.
-Set `-mismatch-retries` to ask both backends again, after `-mismatch-retry-delay` (default `70s`) each time, when a comparison's items or samples differ.
+Set `-mismatch-retries` to ask the primary and the shadow that differed again, after `-mismatch-retry-delay` (default `70s`) each time, when a comparison's items or samples differ.
 The comparison is a mismatch only if some of the same items or samples are missing from the same backend, or still have different values, on every retry; otherwise it counts as `match_after_retry`.
 `QueryStream` retries compare samples up to the original request's recent-sample cutoff, so samples written since don't count.
 Retries run outside `-max-concurrent-comparisons`, with as many concurrent retries; mismatches arriving when all retry slots are busy are counted without retrying.
@@ -150,9 +151,9 @@ The default `0` disables retries.
 Push, user statistics, health, and other RPCs are forwarded only to the primary.
 The proxy supports unary and server-streaming requests, matching the ingester API; client-streaming and bidirectional RPCs are unsupported.
 
-Incoming gRPC metadata is forwarded to both backends, including tenant identity, read consistency, partition offsets, and the only-replica marker.
+Incoming gRPC metadata is forwarded to all backends, including tenant identity, read consistency, partition offsets, and the only-replica marker.
 The primary request follows the caller's cancellation and deadline.
-The shadow has an independent `-shadow-timeout`, defaulting to `30s`, so it can finish after the primary response completes.
+Each shadow has an independent `-shadow-timeout`, defaulting to `30s`, so it can finish after the primary response completes.
 
 ## Bound shadow load
 
@@ -167,22 +168,22 @@ The shadow response is always drained to completion or its timeout, including wh
 Uncompared responses use a reusable frame buffer without capturing or decoding the full response.
 Mirroring has no concurrency cap: size the shadow and tee for the full read load. The timeout bounds shadow request lifetimes; comparison limits do not bound total mirroring concurrency or network traffic.
 The response budget bounds captured wire data; decoding and comparison require additional memory.
-Concurrency slots remain occupied until the primary completes and the shadow is complete or times out.
+A sampled request uses one slot to compare the primary with each shadow. The slot is released after the primary and all shadows finish and their comparisons complete.
 
 ## Log slow reads
 
-Set `-log-slow-response-threshold` to log the mirrored reads, compared or not, where one backend took at least that much longer than the other; defaults to `0`, disabled.
-Each log has the method and both backends' durations, and with `-log-mismatched-queries=true`, the tenant and the request.
+Set `-log-slow-response-threshold` to log the mirrored reads, compared or not, where the slowest backend took at least that much longer than the fastest; defaults to `0`, disabled.
+Each log has the method and the fastest and slowest backends' durations, and with `-log-mismatched-queries=true`, the tenant and the request.
 At most 10 such logs are written a second.
 
 ## Amplify the read load
 
-To compare the ingesters above the read traffic's load, send both of them copies of the reads:
+To compare the ingesters above the read traffic's load, send each backend copies of the reads:
 
 - `-amplification`: how many times each read is sent to each ingester, on average; defaults to `1`, the read alone. `3` adds two copies of each read, and `2.5` one or two.
 - `-amplification-delay`: copies are sent after a random delay between 0 and this, so they spread over time instead of arriving with the read; defaults to `0`.
 
-Each copy goes to the primary and the shadow at the same time, so both ingesters see the same load.
+Each copy goes to the primary and every shadow at the same time, so all ingesters see the same load.
 The delay and `-shadow-timeout` bound how many copies a tee holds at its read rate.
 Copies are never compared, and the caller's response doesn't wait for them.
 A copy of a read hits what the ingesters cached when answering the read, so copies load them less than as many different reads would.
@@ -195,23 +196,23 @@ The tees of pods whose index is at or above the count pass reads to the primary 
 ## TLS
 
 Use the server's `-server.grpc-tls-cert-path` and `-server.grpc-tls-key-path` flags for incoming TLS.
-Backend TLS is configured separately using `-primary.tls-enabled` / `-shadow.tls-enabled` and the respective `tls-ca-path`, `tls-cert-path`, `tls-key-path`, and `tls-server-name` flags.
+Backend TLS is configured separately using `-primary.tls-enabled`, `-shadow.tls-enabled`, and `-shadow2.tls-enabled` and the respective `tls-ca-path`, `tls-cert-path`, `tls-key-path`, and `tls-server-name` flags.
 Run the binary with `-help` for the complete client and server options.
 
 ## Metrics
 
-`ingester_query_tee_comparisons_total{method,result}` counts comparisons and skipped requests.
+`ingester_query_tee_comparisons_total{method,backend,result}` counts comparisons and skipped requests for each shadow (`backend="shadow"` or `backend="shadow2"`).
 The `result` label is one of `match`, `mismatch`, `match_after_retry`, `beyond_retention`, `skipped`, `limit`, `unavailable`, `primary_error`, `shadow_error`, or `comparison_error`.
 If either backend returns gRPC `Unavailable` or `DeadlineExceeded`, the result is `unavailable`. This includes the shadow request timeout. These outcomes increment the metric without emitting comparison or RPC error logs. Other errors retain the `primary_error` or `shadow_error` classification.
 Backend errors are counted separately from data mismatches; malformed responses are comparison errors.
 No comparison is reported as a match when either backend fails or a comparison limit is exceeded.
 
-`ingester_query_tee_mirrored_requests_total{method,result}` counts completed shadow attempts, including requests not compared.
+`ingester_query_tee_mirrored_requests_total{method,backend,result}` counts completed shadow attempts, including requests not compared.
 The result is `success` when the full response has been consumed, `unavailable` for availability errors or timeouts, and `shadow_error` for other failures.
 
-`ingester_query_tee_copies_total{method,backend,result}` counts the copies of `-amplification`, for each backend (`primary` or `shadow`). The result is `success`, `unavailable`, or `error`.
+`ingester_query_tee_copies_total{method,backend,result}` counts the copies of `-amplification`, for each backend (`primary`, `shadow`, or `shadow2`). The result is `success`, `unavailable`, or `error`.
 
-`ingester_query_tee_backend_duration_seconds{method,backend}` measures the time to consume each backend response. The `backend` label is `primary`, `shadow`, or `primary_copy` and `shadow_copy` for the copies.
+`ingester_query_tee_backend_duration_seconds{method,backend}` measures the time to consume each backend response. The `backend` label is `primary`, `shadow`, or `shadow2`, with a `_copy` suffix for amplified requests.
 QueryStream mismatch logs include primary/shadow series, label-pair and sample counts, missing/extra series and samples, and the number of differing sample values. Counts reflect normalized samples after the requested time range and recent-sample exclusion. Other RPCs report response item counts.
 Comparison errors log the failing backend (`primary`, `shadow`, `request`, or `comparison`), the decoder/validation error, and captured frame/byte counts. A successful empty QueryStream is compared as an empty result.
 Set `-log-mismatched-queries=true` to include the QueryStream request and a `replay` object in mismatch and comparison-error logs. Replay details contain the tenant ID, allowed gRPC metadata (tenant, read-consistency level/offsets/maximum delay, only-replica marker, and cluster label), primary/shadow addresses, tee hostname, request arrival time, effective comparison end time, recent-sample exclusion, and shadow timeout. Authorization and unrelated headers are never logged.
