@@ -988,10 +988,11 @@ func partitionIDsForReadConsistencyOffsets(partitionRing *ring.PartitionRing, no
 
 	oldestInactiveSince := now.Add(-maxInactiveAge)
 
-	partitions := partitionRing.Partitions()
-	ids := make([]int32, 0, len(partitions))
-	for _, p := range partitions {
-		if p.IsInactive() && p.GetStateTimestamp() < oldestInactiveSince.Unix() {
+	ids := partitionRing.ActivePartitionIDs()
+	ids = append(ids, partitionRing.PendingPartitionIDs()...)
+
+	for _, p := range partitionRing.InactivePartitions() {
+		if p.GetStateTimestamp() < oldestInactiveSince.Unix() {
 			continue
 		}
 		ids = append(ids, p.Id)
