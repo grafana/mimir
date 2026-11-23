@@ -241,19 +241,9 @@ func (d *Distributor) checkStrongReadConsistencyPartitionsKnown(ctx context.Cont
 	// as pending or active before becoming inactive.
 	partitionRing := d.partitionInstanceRings.Get(readCompartment).PartitionRing()
 
-	// This runs for every strongly consistent query, so avoid building the ring's sorted partition IDs
-	// unless a partition has no owners (and so can't be confirmed to exist without listing all partitions).
-	var knownPartitionIDs []int32
+	knownPartitionIDs := partitionRing.PartitionIDs()
 
 	for id := range encoded.PartitionIDs(readCompartment) {
-		if len(partitionRing.PartitionOwnerIDs(id)) > 0 {
-			continue
-		}
-
-		if knownPartitionIDs == nil {
-			knownPartitionIDs = partitionRing.PartitionIDs()
-		}
-
 		if _, found := slices.BinarySearch(knownPartitionIDs, id); found {
 			continue
 		}
