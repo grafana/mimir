@@ -326,11 +326,11 @@ func (t *trackerStore) snapshotReceivedSeries(now time.Time) []byte {
 		sketchesAt := len(snapshot.B)
 		snapshot.B = append(snapshot.B, make([]byte, binary.MaxVarintLen64)...)
 		sketches := 0
-		timeline.Sketches(minute, func(minute int64, s hll.Sketch) {
-			snapshot.PutUvarint64(uint64(minute))
+		for sketchMinute, s := range timeline.Sketches(minute) {
+			snapshot.PutUvarint64(uint64(sketchMinute))
 			snapshot.B = append(snapshot.B, s...)
 			sketches++
-		})
+		}
 		if sketches == 0 {
 			snapshot.B = snapshot.B[:tenantAt]
 			continue

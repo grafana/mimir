@@ -25,7 +25,9 @@ func TestTimeline(t *testing.T) {
 		return tl.Estimate(now, NewSketch(p))
 	}
 	minutesWithSketches := func(tl *Timeline, now int64) (got []int64) {
-		tl.Sketches(now, func(minute int64, _ Sketch) { got = append(got, minute) })
+		for minute := range tl.Sketches(now) {
+			got = append(got, minute)
+		}
 		return got
 	}
 

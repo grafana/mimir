@@ -3,6 +3,7 @@
 package hll
 
 import (
+	"iter"
 	"slices"
 	"sync"
 )
@@ -71,18 +72,22 @@ func (t *Timeline) Cleanup(now int64) {
 // scratch is overwritten, and it must have the same precision as the merged sketches.
 func (t *Timeline) Estimate(now int64, scratch Sketch) float64 {
 	clear(scratch)
-	t.Sketches(now, func(_ int64, s Sketch) { scratch.Merge(s) })
+	for _, s := range t.Sketches(now) {
+		scratch.Merge(s)
+	}
 	return scratch.Estimate()
 }
 
-// Sketches calls f with each sketch in the window ending at now, and its minute.
-// The timeline is locked while f runs, and f must not keep s after it returns.
-func (t *Timeline) Sketches(now int64, f func(minute int64, s Sketch)) {
-	t.mtx.Lock()
-	defer t.mtx.Unlock()
-	for _, slot := range t.slots {
-		if slot.sketch != nil && t.inWindow(slot.minute, now) {
-			f(slot.minute, slot.sketch)
+// Sketches iterates over the minutes in the window ending at now that have a sketch, and their sketches.
+// The timeline is locked during the loop, and the loop must not keep a sketch after its iteration.
+func (t *Timeline) Sketches(now int64) iter.Seq2[int64, Sketch] {
+	return func(yield func(int64, Sketch) bool) {
+		t.mtx.Lock()
+		defer t.mtx.Unlock()
+		for _, slot := range t.slots {
+			if slot.sketch != nil && t.inWindow(slot.minute, now) && !yield(slot.minute, slot.sketch) {
+				return
+			}
 		}
 	}
 }
