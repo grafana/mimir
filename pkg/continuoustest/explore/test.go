@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	antithesisrandom "github.com/antithesishq/antithesis-sdk-go/random"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -380,6 +381,7 @@ func (t *Test) verify(ctx context.Context, w write, queryRange time.Duration) er
 	}
 
 	metadata := map[string][]v1.Metadata{}
+	missingMetadata := make([]error, len(w.series))
 	for i, s := range w.series {
 		want, ok := expectedMetadata(s, w.protocol)
 		if !ok {
@@ -395,7 +397,13 @@ func (t *Test) verify(ctx context.Context, w write, queryRange time.Duration) er
 			metadata[name] = got
 		}
 		if checkErrs[i] == nil && !slices.Contains(got, want) {
-			checkErrs[i] = fmt.Errorf("expected metadata %+v but got %+v", want, got)
+			err := fmt.Errorf("expected metadata %+v but got %+v", want, got)
+			if len(got) == 0 {
+				// Metadata reads aren't strongly consistent, so missing metadata may only be late.
+				missingMetadata[i] = err
+			} else {
+				checkErrs[i] = err
+			}
 		}
 	}
 
@@ -403,7 +411,16 @@ func (t *Test) verify(ctx context.Context, w write, queryRange time.Duration) er
 	for i, s := range w.series {
 		t.metrics.queryResultChecksTotal.Inc()
 		t.run.checks++
-		if err := errors.Join(checkErrs[i], unexpected); err != nil {
+		wrong := errors.Join(checkErrs[i], unexpected)
+		assert.AlwaysOrUnreachable(wrong == nil, "explore test reads back what it wrote", map[string]any{
+			"sample":    w.sample(),
+			"timestamp": w.ts.UnixMilli(),
+			"protocol":  w.protocol,
+			"series":    s.String(),
+			"query":     query,
+			"error":     fmt.Sprint(wrong),
+		})
+		if err := errors.Join(wrong, missingMetadata[i]); err != nil {
 			t.metrics.queryResultChecksFailedTotal.Inc()
 			t.run.checksFailed++
 			level.Warn(logger).Log("msg", "Query result check failed", "series", s, "err", err)
