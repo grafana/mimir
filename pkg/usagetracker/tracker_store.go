@@ -390,8 +390,6 @@ func (t *trackerStore) cleanup(now time.Time) {
 
 	// Check all tenants and see if any of them are now empty.
 	// We don't need to take the mutex for this check, and in most situations we won't find any candidates.
-	for tenantID, tenant := range tenantsClone {
-	// We don't need to take the mutex for this check, and in most situations we won't find any candidates.
 	empty := func(tenant *trackedTenant) bool {
 		timeline := tenant.receivedSeries.Load()
 		return tenant.series.Load() == 0 && (timeline == nil || timeline.Empty(unixMinute(now)))
