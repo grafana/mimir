@@ -18,6 +18,8 @@ import (
 type tenantEngine interface {
 	Head() engineHead
 
+	engineQuerier
+
 	// Ingest commits valid samples and exemplars, reporting soft errors through ctx.
 	// A hard append error rolls back the batch.
 	Ingest(ctx *ingestContext, timeseries []mimirpb.PreallocTimeseries) error

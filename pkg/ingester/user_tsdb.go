@@ -216,19 +216,19 @@ func (u *userTSDB) engine() tenantEngine {
 
 // Querier returns a new querier over the data partition for the given time range.
 func (u *userTSDB) Querier(mint, maxt int64) (storage.Querier, error) {
-	return u.db.Querier(mint, maxt)
+	return u.engine().Querier(mint, maxt)
 }
 
 func (u *userTSDB) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
-	return u.db.ChunkQuerier(mint, maxt)
+	return u.engine().ChunkQuerier(mint, maxt, false)
 }
 
 func (u *userTSDB) UnorderedChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
-	return u.db.UnorderedChunkQuerier(mint, maxt)
+	return u.engine().ChunkQuerier(mint, maxt, true)
 }
 
 func (u *userTSDB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
-	return u.db.ExemplarQuerier(ctx)
+	return u.engine().ExemplarQuerier(ctx)
 }
 
 func (u *userTSDB) Head() engineHead {
