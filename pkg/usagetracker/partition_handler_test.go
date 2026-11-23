@@ -181,7 +181,7 @@ func TestPartitionHandler(t *testing.T) {
 					cfg.ReceivedSeriesEstimationEnabled = true
 					require.NoError(t, cfg.ReceivedSeriesEstimationHashSalt.Set("salt"))
 				}
-				estimate := func(p *partitionHandler) float64 {
+				estimate := func(p *partitionHandler, tenantID string) float64 {
 					p.store.mtx.RLock()
 					defer p.store.mtx.RUnlock()
 					return p.store.tenants[tenantID].receivedSeries.Load().Estimate(unixMinute(time.Now()), hll.NewSketch(p.store.receivedSeries.precision))
@@ -193,9 +193,12 @@ func TestPartitionHandler(t *testing.T) {
 				rejected, err := ph1.store.trackSeries(ctx, tenantID, seriesRange(0, 10*shards), time.Now())
 				require.NoError(t, err)
 				require.NotEmpty(t, rejected)
+				// Fewer series than the first tenant, so that loading them into the wrong tenant fails.
+				_, err = ph1.store.trackSeries(ctx, otherTenantID, seriesRange(0, 5*shards), time.Now())
+				require.NoError(t, err)
 				require.NoError(t, ph1.publishSnapshot(ctx))
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, ph1))
-				require.InEpsilon(t, 10*shards, estimate(ph1), 0.1)
+				require.InEpsilon(t, 10*shards, estimate(ph1, tenantID), 0.1)
 
 				// The filenames start with the timestamp, so the bucket lists the last file last.
 				var files []usagetrackerpb.SnapshotFile
@@ -220,7 +223,8 @@ func TestPartitionHandler(t *testing.T) {
 
 				ph2 := h.newHandler(t, configure)
 				require.NoError(t, services.StartAndAwaitRunning(ctx, ph2))
-				require.Equal(t, estimate(ph1), estimate(ph2))
+				require.Equal(t, estimate(ph1, tenantID), estimate(ph2, tenantID))
+				require.Equal(t, estimate(ph1, otherTenantID), estimate(ph2, otherTenantID))
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, ph2))
 			})
 		}
