@@ -65,7 +65,7 @@ echo "Checking ${RULER_DASHBOARD}"
 # The per-zone panels are specific to the Writes dashboard: the Ruler dashboard, which shares the
 # Kafka produced records panels, must not show any per-zone panel and must not exclude the
 # per-zone jobs from its series.
-MATCHES=$(jq -r '.rows[].panels[] | select(.title | test("per zone")) | .title' "${RULER_DASHBOARD}")
+MATCHES=$(jq -r '.rows[].panels[] | select(.title | test("per zone|^By zone ")) | .title' "${RULER_DASHBOARD}")
 if [ -n "$MATCHES" ]; then
   assert_failed "The dashboard at ${RULER_DASHBOARD} unexpectedly contains per-zone panels:\n$MATCHES"
 fi
