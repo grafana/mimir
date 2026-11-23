@@ -109,7 +109,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         }
         for alert in [
           // It's not really an issue if one ingester has a transient issue, queriers should retry on a different zone, so we just warn in that case.
-          { 'for': '5m', severity: 'warning' },
+          // Read errors are common while Kafka brokers roll out and the ingester retries them, so we wait longer before warning.
+          { 'for': '15m', severity: 'warning' },
           // If issues persist in time, we send a critical alert to bring the oncall engineer's attention to investigate.
           { 'for': '30m', severity: 'critical' },
         ]

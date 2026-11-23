@@ -1473,7 +1473,7 @@ spec:
             expr: |
               sum by(cluster, namespace, pod, node_id) (rate(cortex_ingest_storage_reader_read_errors_total[4m]))
               > 0
-            for: 5m
+            for: 15m
             labels:
               severity: warning
           - alert: MimirIngesterKafkaReadFailed
