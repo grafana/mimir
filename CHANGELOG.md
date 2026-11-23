@@ -195,7 +195,6 @@
 * [BUGFIX] Admin: Use relative links for the config, runtime config and ingester links in the administration web UI, so that they work when the UI is served behind a reverse proxy that adds a path prefix. #17271
 * [BUGFIX] Query-frontend: Fix retried POST requests to the label names, label values, series, cardinality and active series endpoints being sent without their body. Retries dropped the parameters sent in the body, such as `match[]`, so a retried label names or label values request could return results for all series. #17445
 * [BUGFIX] Querier: Mitigate strongly-consistent requests possibly omitting data from newly started partitions. #17456
-* [BUGFIX] Querier: Mitigate strongly-consistent requests possibly omitting data from newly started partitions. Strongly-consistent requests that contain an offset for a partition unknown to the handling querier are rejected. #17456
 
 ### Mixin
 
