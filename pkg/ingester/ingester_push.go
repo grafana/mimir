@@ -443,11 +443,13 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		db.setLastUpdate(time.Now())
 	}
 
-	assert.AlwaysOrUnreachable(stats.succeededSamplesCount >= droppedNewValue+droppedSameValue, "commit-time drops do not exceed samples accepted at Append", map[string]any{
-		"succeeded":          stats.succeededSamplesCount,
-		"dropped_new_value":  droppedNewValue,
-		"dropped_same_value": droppedSameValue,
-	})
+	if stats.succeededSamplesCount < droppedNewValue+droppedSameValue {
+		assert.Unreachable("commit-time drops exceed samples accepted at Append", map[string]any{
+			"succeeded":          stats.succeededSamplesCount,
+			"dropped_new_value":  droppedNewValue,
+			"dropped_same_value": droppedSameValue,
+		})
+	}
 
 	// Increment metrics only if the samples have been successfully committed.
 	// If the code didn't reach this point, it means that we returned an error

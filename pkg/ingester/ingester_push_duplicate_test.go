@@ -4,10 +4,12 @@ package ingester
 
 import (
 	"math"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -25,9 +27,26 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// writeRequestManySeries builds one WriteRequest with one timeseries per sample, all sharing lbls.
-func writeRequestManySeries(lbls labels.Labels, samples []mimirpb.Sample) *mimirpb.WriteRequest {
+// requestLayout is how a test request spreads the samples of one series over TimeSeries entries.
+type requestLayout string
+
+const (
+	// entryPerSample puts each sample in its own TimeSeries entry, all with the same labels.
+	entryPerSample requestLayout = "entry per sample"
+	// singleEntry puts all samples of the series in one TimeSeries entry.
+	singleEntry requestLayout = "single entry"
+)
+
+// writeRequestForSeries builds a WriteRequest with the samples of the series lbls, laid out as layout.
+func writeRequestForSeries(layout requestLayout, lbls labels.Labels, samples []mimirpb.Sample) *mimirpb.WriteRequest {
 	req := &mimirpb.WriteRequest{Source: mimirpb.API}
+	if layout == singleEntry {
+		req.Timeseries = []mimirpb.PreallocTimeseries{{TimeSeries: &mimirpb.TimeSeries{
+			Labels:  mimirpb.FromLabelsToLabelAdapters(lbls),
+			Samples: slices.Clone(samples),
+		}}}
+		return req
+	}
 	for _, s := range samples {
 		ts := &mimirpb.TimeSeries{
 			Labels:  mimirpb.FromLabelsToLabelAdapters(lbls),
@@ -89,7 +108,8 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 	}
 
 	type testCase struct {
-		reqs []*mimirpb.WriteRequest
+		// reqSamples are the samples of each request, all for the same series.
+		reqSamples [][]mimirpb.Sample
 		// expectedLastReqErr is the soft error expected from the last request, nil for none.
 		expectedLastReqErr error
 		expectedIngested   model.Matrix
@@ -102,12 +122,12 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 	tests := map[string]testCase{
 		// Exact duplicate within one request.
 		"exact duplicate within a single request is discarded as same-value-for-timestamp": {
-			reqs: []*mimirpb.WriteRequest{
-				writeRequestManySeries(metricLabels, []mimirpb.Sample{
+			reqSamples: [][]mimirpb.Sample{
+				{
 					{TimestampMs: 100, Value: 1},
 					{TimestampMs: 100, Value: 1},
 					{TimestampMs: 101, Value: 2},
-				}),
+				},
 			},
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 100}, {Value: 2, Timestamp: 101}}},
@@ -129,12 +149,12 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 
 		// Conflicting value within one request: only detectable at commit time.
 		"conflicting value within a single request is discarded as new-value-for-timestamp": {
-			reqs: []*mimirpb.WriteRequest{
-				writeRequestManySeries(metricLabels, []mimirpb.Sample{
+			reqSamples: [][]mimirpb.Sample{
+				{
 					{TimestampMs: 100, Value: 1},
 					{TimestampMs: 100, Value: 2},
 					{TimestampMs: 101, Value: 3},
-				}),
+				},
 			},
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 100}, {Value: 3, Timestamp: 101}}},
@@ -157,9 +177,9 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 
 		// Exact duplicate across two requests.
 		"exact duplicate across two requests is discarded as same-value-for-timestamp": {
-			reqs: []*mimirpb.WriteRequest{
-				writeRequestManySeries(metricLabels, []mimirpb.Sample{{TimestampMs: 100, Value: 1}}),
-				writeRequestManySeries(metricLabels, []mimirpb.Sample{{TimestampMs: 100, Value: 1}}),
+			reqSamples: [][]mimirpb.Sample{
+				{{TimestampMs: 100, Value: 1}},
+				{{TimestampMs: 100, Value: 1}},
 			},
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 100}}},
@@ -181,9 +201,9 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 
 		// Conflicting value across two requests: rejected at Append time with a soft error.
 		"conflicting value across two requests is surfaced as a soft error": {
-			reqs: []*mimirpb.WriteRequest{
-				writeRequestManySeries(metricLabels, []mimirpb.Sample{{TimestampMs: 100, Value: 1}}),
-				writeRequestManySeries(metricLabels, []mimirpb.Sample{{TimestampMs: 100, Value: 2}}),
+			reqSamples: [][]mimirpb.Sample{
+				{{TimestampMs: 100, Value: 1}},
+				{{TimestampMs: 100, Value: 2}},
 			},
 			expectedLastReqErr: newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError("duplicate sample for timestamp 100; overrides not allowed: existing 1, new value 2", model.Time(100), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID), codes.InvalidArgument),
 			expectedIngested: model.Matrix{
@@ -205,56 +225,60 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 		},
 	}
 
-	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			registry := prometheus.NewRegistry()
+	for _, layout := range []requestLayout{entryPerSample, singleEntry} {
+		t.Run(string(layout), func(t *testing.T) {
+			for testName, testData := range tests {
+				t.Run(testName, func(t *testing.T) {
+					registry := prometheus.NewRegistry()
 
-			cfg := defaultIngesterTestConfig(t)
-			cfg.IngesterRing.ReplicationFactor = 1
-			limits := defaultLimitsTestConfig()
+					cfg := defaultIngesterTestConfig(t)
+					cfg.IngesterRing.ReplicationFactor = 1
+					limits := defaultLimitsTestConfig()
 
-			i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, "", registry)
-			require.NoError(t, err)
-			startAndWaitHealthy(t, i, r)
-
-			ctx := user.InjectOrgID(t.Context(), userID)
-
-			// Push all requests. Only the last request may return an error.
-			for idx, req := range testData.reqs {
-				_, err := i.Push(ctx, req)
-				if idx == len(testData.reqs)-1 && testData.expectedLastReqErr != nil {
-					require.Error(t, err)
-					errWithStatus, ok := mapPushErrorToErrorWithStatus(err).(globalerror.ErrorWithStatus)
-					require.True(t, ok)
-					require.Truef(t, errWithStatus.Equals(testData.expectedLastReqErr), "errors don't match \nactual:   '%v'\nexpected: '%v'", errWithStatus, testData.expectedLastReqErr)
-				} else {
+					i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, "", registry)
 					require.NoError(t, err)
-				}
+					startAndWaitHealthy(t, i, r)
+
+					ctx := user.InjectOrgID(t.Context(), userID)
+
+					// Push all requests. Only the last request may return an error.
+					for idx, samples := range testData.reqSamples {
+						_, err := i.Push(ctx, writeRequestForSeries(layout, metricLabels, samples))
+						if idx == len(testData.reqSamples)-1 && testData.expectedLastReqErr != nil {
+							require.Error(t, err)
+							errWithStatus, ok := mapPushErrorToErrorWithStatus(err).(globalerror.ErrorWithStatus)
+							require.True(t, ok)
+							require.Truef(t, errWithStatus.Equals(testData.expectedLastReqErr), "errors don't match \nactual:   '%v'\nexpected: '%v'", errWithStatus, testData.expectedLastReqErr)
+						} else {
+							require.NoError(t, err)
+						}
+					}
+
+					// Read back the samples that were actually stored.
+					s := &stream{ctx: ctx}
+					err = i.QueryStream(&client.QueryRequest{
+						StartTimestampMs: math.MinInt64,
+						EndTimestampMs:   math.MaxInt64,
+						Matchers:         []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".*"}},
+					}, s)
+					require.NoError(t, err)
+
+					res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
+					require.NoError(t, err)
+					if len(res) == 0 {
+						res = nil
+					}
+					require.Equal(t, testData.expectedIngested, res)
+
+					// Check the samples-related metrics tracked by the ingester.
+					require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), sampleMetricNames...))
+
+					tsdbReg := i.tsdbMetrics.RegistryForTenant(userID)
+					require.NotNil(t, tsdbReg)
+					require.Equal(t, testData.expectedTSDBSamplesAppended, tsdbSampleCounter(t, tsdbReg, "prometheus_tsdb_head_samples_appended_total", "float"), "TSDB in-order float samples appended")
+					require.Equal(t, testData.expectedTSDBOutOfOrder, tsdbSampleCounter(t, tsdbReg, "prometheus_tsdb_out_of_order_samples_total", "float"), "TSDB out-of-order float samples rejected")
+				})
 			}
-
-			// Read back the samples that were actually stored.
-			s := &stream{ctx: ctx}
-			err = i.QueryStream(&client.QueryRequest{
-				StartTimestampMs: math.MinInt64,
-				EndTimestampMs:   math.MaxInt64,
-				Matchers:         []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".*"}},
-			}, s)
-			require.NoError(t, err)
-
-			res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
-			require.NoError(t, err)
-			if len(res) == 0 {
-				res = nil
-			}
-			require.Equal(t, testData.expectedIngested, res)
-
-			// Check the samples-related metrics tracked by the ingester.
-			require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), sampleMetricNames...))
-
-			tsdbReg := i.tsdbMetrics.RegistryForTenant(userID)
-			require.NotNil(t, tsdbReg)
-			require.Equal(t, testData.expectedTSDBSamplesAppended, tsdbSampleCounter(t, tsdbReg, "prometheus_tsdb_head_samples_appended_total", "float"), "TSDB in-order float samples appended")
-			require.Equal(t, testData.expectedTSDBOutOfOrder, tsdbSampleCounter(t, tsdbReg, "prometheus_tsdb_out_of_order_samples_total", "float"), "TSDB out-of-order float samples rejected")
 		})
 	}
 }
@@ -265,13 +289,25 @@ type histogramPoint struct {
 	idx int
 }
 
-// writeRequestManyHistogramSeries is the native-histogram analog of writeRequestManySeries.
-func writeRequestManyHistogramSeries(lbls labels.Labels, points []histogramPoint) *mimirpb.WriteRequest {
-	req := &mimirpb.WriteRequest{Source: mimirpb.API}
+// histogramWriteRequestForSeries is the native-histogram analog of writeRequestForSeries.
+func histogramWriteRequestForSeries(layout requestLayout, lbls labels.Labels, points []histogramPoint) *mimirpb.WriteRequest {
+	histograms := make([]mimirpb.Histogram, 0, len(points))
 	for _, p := range points {
+		histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(p.ts, util_test.GenerateTestHistogram(p.idx)))
+	}
+
+	req := &mimirpb.WriteRequest{Source: mimirpb.API}
+	if layout == singleEntry {
+		req.Timeseries = []mimirpb.PreallocTimeseries{{TimeSeries: &mimirpb.TimeSeries{
+			Labels:     mimirpb.FromLabelsToLabelAdapters(lbls),
+			Histograms: histograms,
+		}}}
+		return req
+	}
+	for _, h := range histograms {
 		ts := &mimirpb.TimeSeries{
 			Labels:     mimirpb.FromLabelsToLabelAdapters(lbls),
-			Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(p.ts, util_test.GenerateTestHistogram(p.idx))},
+			Histograms: []mimirpb.Histogram{h},
 		}
 		req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: ts})
 	}
@@ -332,86 +368,106 @@ func TestIngester_Push_DuplicateTimestampHistograms(t *testing.T) {
 		},
 	}
 
-	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			registry := prometheus.NewRegistry()
+	for _, layout := range []requestLayout{entryPerSample, singleEntry} {
+		t.Run(string(layout), func(t *testing.T) {
+			for testName, testData := range tests {
+				t.Run(testName, func(t *testing.T) {
+					registry := prometheus.NewRegistry()
 
-			cfg := defaultIngesterTestConfig(t)
-			cfg.IngesterRing.ReplicationFactor = 1
-			limits := defaultLimitsTestConfig()
-			limits.NativeHistogramsIngestionEnabled = true
+					cfg := defaultIngesterTestConfig(t)
+					cfg.IngesterRing.ReplicationFactor = 1
+					limits := defaultLimitsTestConfig()
+					limits.NativeHistogramsIngestionEnabled = true
 
-			i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, "", registry)
-			require.NoError(t, err)
-			startAndWaitHealthy(t, i, r)
+					i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, "", registry)
+					require.NoError(t, err)
+					startAndWaitHealthy(t, i, r)
 
-			ctx := user.InjectOrgID(t.Context(), userID)
+					ctx := user.InjectOrgID(t.Context(), userID)
 
-			_, err = i.Push(ctx, writeRequestManyHistogramSeries(metricLabels, testData.points))
-			require.NoError(t, err)
+					_, err = i.Push(ctx, histogramWriteRequestForSeries(layout, metricLabels, testData.points))
+					require.NoError(t, err)
 
-			require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), sampleMetricNames...))
+					require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), sampleMetricNames...))
 
-			tsdbReg := i.tsdbMetrics.RegistryForTenant(userID)
-			require.NotNil(t, tsdbReg)
-			require.Equal(t, testData.expectedTSDBHistogramsAppend, tsdbSampleCounter(t, tsdbReg, "prometheus_tsdb_head_samples_appended_total", "histogram"), "TSDB in-order histogram samples appended")
+					tsdbReg := i.tsdbMetrics.RegistryForTenant(userID)
+					require.NotNil(t, tsdbReg)
+					require.Equal(t, testData.expectedTSDBHistogramsAppend, tsdbSampleCounter(t, tsdbReg, "prometheus_tsdb_head_samples_appended_total", "histogram"), "TSDB in-order histogram samples appended")
+				})
+			}
 		})
 	}
 }
 
 // TestIngester_Push_DuplicateTimestampCostAttribution verifies commit-time drops are
-// attributed per series in cortex_discarded_attributed_samples_total and reconciled
-// against the received-samples accounting.
+// attributed to the series they were dropped from, with each series' own drop count,
+// in cortex_discarded_attributed_samples_total.
 func TestIngester_Push_DuplicateTimestampCostAttribution(t *testing.T) {
 	const userID = "test"
-	metricLabels := labels.FromStrings(model.MetricNameLabel, "test", "team", "foo")
+	fooLabels := labels.FromStrings(model.MetricNameLabel, "test", "team", "foo")
+	barLabels := labels.FromStrings(model.MetricNameLabel, "test", "team", "bar")
 
-	limits := defaultLimitsTestConfig()
-	limits.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
-		costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "team"}}},
+	for _, layout := range []requestLayout{entryPerSample, singleEntry} {
+		t.Run(string(layout), func(t *testing.T) {
+			limits := defaultLimitsTestConfig()
+			limits.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+				costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "team"}}},
+			}
+			limits.MaxCostAttributionCardinality = 100
+			overrides := validation.NewOverrides(limits, nil)
+
+			registry := prometheus.NewRegistry()
+			caRegistry := prometheus.NewRegistry()
+			cam, err := costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides, registry, caRegistry)
+			require.NoError(t, err)
+
+			cfg := defaultIngesterTestConfig(t)
+			cfg.IngesterRing.ReplicationFactor = 1
+			i, r, err := prepareIngesterWithBlockStorageOverridesAndCostAttribution(t, cfg, overrides, nil, "", "", registry, cam)
+			require.NoError(t, err)
+			startAndWaitHealthy(t, i, r)
+
+			ctx := user.InjectOrgID(t.Context(), userID)
+
+			// The two series drop different numbers of samples for each reason.
+			req := writeRequestForSeries(layout, fooLabels, []mimirpb.Sample{
+				{TimestampMs: 100, Value: 1},
+				{TimestampMs: 100, Value: 1}, // exact duplicate -> same-value-for-timestamp
+				{TimestampMs: 100, Value: 1}, // exact duplicate -> same-value-for-timestamp
+				{TimestampMs: 200, Value: 5},
+				{TimestampMs: 200, Value: 6}, // conflict -> new-value-for-timestamp
+			})
+			req.Timeseries = append(req.Timeseries, writeRequestForSeries(layout, barLabels, []mimirpb.Sample{
+				{TimestampMs: 100, Value: 1},
+				{TimestampMs: 100, Value: 1}, // exact duplicate -> same-value-for-timestamp
+				{TimestampMs: 200, Value: 5},
+				{TimestampMs: 200, Value: 6}, // conflict -> new-value-for-timestamp
+				{TimestampMs: 200, Value: 7}, // conflict -> new-value-for-timestamp
+				{TimestampMs: 200, Value: 8}, // conflict -> new-value-for-timestamp
+			}).Timeseries...)
+
+			// Received-samples accounting lives in the distributor; simulate it here.
+			cam.SampleTracker(userID).IncrementReceivedSamples(req, time.Now())
+
+			_, err = i.Push(ctx, req)
+			require.NoError(t, err)
+
+			expected := `
+				# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
+				# TYPE cortex_distributor_received_attributed_samples_total counter
+				cortex_distributor_received_attributed_samples_total{team="bar",tenant="test",tracker="cost-attribution"} 6
+				cortex_distributor_received_attributed_samples_total{team="foo",tenant="test",tracker="cost-attribution"} 5
+				# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
+				# TYPE cortex_discarded_attributed_samples_total counter
+				cortex_discarded_attributed_samples_total{reason="new-value-for-timestamp",team="bar",tenant="test",tracker="cost-attribution"} 3
+				cortex_discarded_attributed_samples_total{reason="new-value-for-timestamp",team="foo",tenant="test",tracker="cost-attribution"} 1
+				cortex_discarded_attributed_samples_total{reason="same-value-for-timestamp",team="bar",tenant="test",tracker="cost-attribution"} 1
+				cortex_discarded_attributed_samples_total{reason="same-value-for-timestamp",team="foo",tenant="test",tracker="cost-attribution"} 2
+			`
+			require.NoError(t, testutil.GatherAndCompare(caRegistry, strings.NewReader(expected),
+				"cortex_distributor_received_attributed_samples_total", "cortex_discarded_attributed_samples_total"))
+		})
 	}
-	limits.MaxCostAttributionCardinality = 100
-	overrides := validation.NewOverrides(limits, nil)
-
-	registry := prometheus.NewRegistry()
-	caRegistry := prometheus.NewRegistry()
-	cam, err := costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides, registry, caRegistry)
-	require.NoError(t, err)
-
-	cfg := defaultIngesterTestConfig(t)
-	cfg.IngesterRing.ReplicationFactor = 1
-	i, r, err := prepareIngesterWithBlockStorageOverridesAndCostAttribution(t, cfg, overrides, nil, "", "", registry, cam)
-	require.NoError(t, err)
-	startAndWaitHealthy(t, i, r)
-
-	ctx := user.InjectOrgID(t.Context(), userID)
-
-	req := writeRequestManySeries(metricLabels, []mimirpb.Sample{
-		{TimestampMs: 100, Value: 1},
-		{TimestampMs: 100, Value: 1}, // exact duplicate -> same-value-for-timestamp
-		{TimestampMs: 101, Value: 2},
-		{TimestampMs: 200, Value: 5},
-		{TimestampMs: 200, Value: 6}, // conflict -> new-value-for-timestamp
-		{TimestampMs: 201, Value: 7},
-	})
-
-	// Received-samples accounting lives in the distributor; simulate it here.
-	cam.SampleTracker(userID).IncrementReceivedSamples(req, time.Now())
-
-	_, err = i.Push(ctx, req)
-	require.NoError(t, err)
-
-	expected := `
-		# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
-		# TYPE cortex_distributor_received_attributed_samples_total counter
-		cortex_distributor_received_attributed_samples_total{team="foo",tenant="test",tracker="cost-attribution"} 6
-		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
-		# TYPE cortex_discarded_attributed_samples_total counter
-		cortex_discarded_attributed_samples_total{reason="new-value-for-timestamp",team="foo",tenant="test",tracker="cost-attribution"} 1
-		cortex_discarded_attributed_samples_total{reason="same-value-for-timestamp",team="foo",tenant="test",tracker="cost-attribution"} 1
-	`
-	require.NoError(t, testutil.GatherAndCompare(caRegistry, strings.NewReader(expected),
-		"cortex_distributor_received_attributed_samples_total", "cortex_discarded_attributed_samples_total"))
 }
 
 // TestIngester_Push_DuplicateTimestampOutOfOrder verifies OOO duplicates are classified
@@ -427,59 +483,195 @@ func TestIngester_Push_DuplicateTimestampOutOfOrder(t *testing.T) {
 		"cortex_discarded_samples_total",
 	}
 
+	for _, layout := range []requestLayout{entryPerSample, singleEntry} {
+		t.Run(string(layout), func(t *testing.T) {
+			registry := prometheus.NewRegistry()
+			cfg := defaultIngesterTestConfig(t)
+			cfg.IngesterRing.ReplicationFactor = 1
+			limits := defaultLimitsTestConfig()
+			limits.OutOfOrderTimeWindow = model.Duration(time.Hour)
+
+			i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, "", registry)
+			require.NoError(t, err)
+			startAndWaitHealthy(t, i, r)
+
+			ctx := user.InjectOrgID(t.Context(), userID)
+
+			// Advance the head's max time with an in-order sample so the later samples are OOO.
+			_, err = i.Push(ctx, writeRequestForSeries(layout, metricLabels, []mimirpb.Sample{{TimestampMs: 1000, Value: 100}}))
+			require.NoError(t, err)
+
+			_, err = i.Push(ctx, writeRequestForSeries(layout, metricLabels, []mimirpb.Sample{
+				{TimestampMs: 500, Value: 1},
+				{TimestampMs: 500, Value: 2}, // OOO conflict -> new-value-for-timestamp
+				{TimestampMs: 600, Value: 3},
+				{TimestampMs: 600, Value: 3}, // OOO exact duplicate -> same-value-for-timestamp
+			}))
+			require.NoError(t, err)
+
+			// Read back stored samples: the first value at each timestamp wins.
+			s := &stream{ctx: ctx}
+			err = i.QueryStream(&client.QueryRequest{
+				StartTimestampMs: math.MinInt64,
+				EndTimestampMs:   math.MaxInt64,
+				Matchers:         []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".*"}},
+			}, s)
+			require.NoError(t, err)
+			res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
+			require.NoError(t, err)
+			require.Equal(t, model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{
+					{Value: 1, Timestamp: 500},
+					{Value: 3, Timestamp: 600},
+					{Value: 100, Timestamp: 1000},
+				}},
+			}, res)
+
+			expectedMetrics := `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 3
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
+				cortex_discarded_samples_total{group="",reason="same-value-for-timestamp",user="test"} 1
+			`
+			require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), sampleMetricNames...))
+		})
+	}
+}
+
+// TestIngester_Push_DuplicateTimestampStillCountsTowardIngestionRate verifies that samples
+// dropped at commit time leave cortex_ingester_ingested_samples_total but still count toward
+// the ingestion rate and user stats, because they cost the full write path.
+func TestIngester_Push_DuplicateTimestampStillCountsTowardIngestionRate(t *testing.T) {
+	metricLabels := labels.FromStrings(model.MetricNameLabel, "test")
+	const (
+		duplicatesUserID = "duplicates"
+		controlUserID    = "control"
+	)
+
 	registry := prometheus.NewRegistry()
 	cfg := defaultIngesterTestConfig(t)
 	cfg.IngesterRing.ReplicationFactor = 1
-	limits := defaultLimitsTestConfig()
-	limits.OutOfOrderTimeWindow = model.Duration(time.Hour)
+	// The test ticks the per-tenant ingestion rates itself.
+	cfg.RateUpdatePeriod = time.Hour
 
-	i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, "", registry)
+	i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), nil, "", registry)
 	require.NoError(t, err)
 	startAndWaitHealthy(t, i, r)
 
-	ctx := user.InjectOrgID(t.Context(), userID)
+	appendedSamplesBefore := appendedSamplesStats.Total()
 
-	// Advance the head's max time with an in-order sample so the later samples are OOO.
-	_, err = i.Push(ctx, writeRequestManySeries(metricLabels, []mimirpb.Sample{{TimestampMs: 1000, Value: 100}}))
-	require.NoError(t, err)
-
-	_, err = i.Push(ctx, writeRequestManySeries(metricLabels, []mimirpb.Sample{
-		{TimestampMs: 500, Value: 1},
-		{TimestampMs: 500, Value: 2}, // OOO conflict -> new-value-for-timestamp
-		{TimestampMs: 600, Value: 3},
-		{TimestampMs: 600, Value: 3}, // OOO exact duplicate -> same-value-for-timestamp
+	// Both tenants send three samples. One of the duplicates tenant's samples is an exact duplicate.
+	duplicatesCtx := user.InjectOrgID(t.Context(), duplicatesUserID)
+	_, err = i.Push(duplicatesCtx, writeRequestForSeries(entryPerSample, metricLabels, []mimirpb.Sample{
+		{TimestampMs: 100, Value: 1},
+		{TimestampMs: 100, Value: 1},
+		{TimestampMs: 101, Value: 2},
 	}))
 	require.NoError(t, err)
 
-	// Read back stored samples: the first value at each timestamp wins.
-	s := &stream{ctx: ctx}
-	err = i.QueryStream(&client.QueryRequest{
-		StartTimestampMs: math.MinInt64,
-		EndTimestampMs:   math.MaxInt64,
-		Matchers:         []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".*"}},
-	}, s)
+	controlCtx := user.InjectOrgID(t.Context(), controlUserID)
+	_, err = i.Push(controlCtx, writeRequestForSeries(entryPerSample, metricLabels, []mimirpb.Sample{
+		{TimestampMs: 100, Value: 1},
+		{TimestampMs: 101, Value: 2},
+		{TimestampMs: 102, Value: 3},
+	}))
 	require.NoError(t, err)
-	res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
-	require.NoError(t, err)
-	require.Equal(t, model.Matrix{
-		&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{
-			{Value: 1, Timestamp: 500},
-			{Value: 3, Timestamp: 600},
-			{Value: 100, Timestamp: 1000},
-		}},
-	}, res)
 
 	expectedMetrics := `
 		# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 		# TYPE cortex_ingester_ingested_samples_total counter
-		cortex_ingester_ingested_samples_total{user="test"} 3
-		# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
-		# TYPE cortex_ingester_ingested_samples_failures_total counter
-		cortex_ingester_ingested_samples_failures_total{user="test"} 0
+		cortex_ingester_ingested_samples_total{user="control"} 3
+		cortex_ingester_ingested_samples_total{user="duplicates"} 2
 		# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 		# TYPE cortex_discarded_samples_total counter
-		cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
-		cortex_discarded_samples_total{group="",reason="same-value-for-timestamp",user="test"} 1
+		cortex_discarded_samples_total{group="",reason="same-value-for-timestamp",user="duplicates"} 1
 	`
-	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), sampleMetricNames...))
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics),
+		"cortex_ingester_ingested_samples_total", "cortex_discarded_samples_total"))
+
+	// The usage stats count every sample accepted at append time, including the duplicate.
+	require.Equal(t, int64(6), appendedSamplesStats.Total()-appendedSamplesBefore)
+
+	for _, db := range i.tsdbs {
+		db.ingestedAPISamples.Tick()
+	}
+
+	duplicatesStats, err := i.UserStats(duplicatesCtx, &client.UserStatsRequest{})
+	require.NoError(t, err)
+	controlStats, err := i.UserStats(controlCtx, &client.UserStatsRequest{})
+	require.NoError(t, err)
+	require.Positive(t, controlStats.ApiIngestionRate)
+	require.Equal(t, controlStats.ApiIngestionRate, duplicatesStats.ApiIngestionRate)
+}
+
+// TestIngester_Push_DuplicateTimestampStillCountsTowardInstanceAndRuleIngestionRate verifies that
+// a request made only of exact duplicates still counts toward the instance ingestion rate, which
+// -ingester.instance-limits.max-ingestion-rate is checked against, and toward the tenant's rule
+// ingestion rate.
+func TestIngester_Push_DuplicateTimestampStillCountsTowardInstanceAndRuleIngestionRate(t *testing.T) {
+	const userID = "test"
+	metricLabels := labels.FromStrings(model.MetricNameLabel, "test")
+	stored := []mimirpb.Sample{{TimestampMs: 100, Value: 1}}
+	ctx := user.InjectOrgID(t.Context(), userID)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.IngesterRing.ReplicationFactor = 1
+	// The test ticks the per-tenant ingestion rates itself.
+	cfg.RateUpdatePeriod = time.Hour
+	dataDir := t.TempDir()
+
+	// Store the sample, then restart the ingester so that it replays the sample from the WAL
+	// and its instance ingestion rate starts again from zero.
+	i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), nil, dataDir, nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+	_, err = i.Push(ctx, writeRequestForSeries(singleEntry, metricLabels, stored))
+	require.NoError(t, err)
+	require.NoError(t, services.StopAndAwaitTerminated(t.Context(), i))
+
+	registry := prometheus.NewRegistry()
+	i, r, err = prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), nil, dataDir, registry)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	req := writeRequestForSeries(entryPerSample, metricLabels, []mimirpb.Sample{stored[0], stored[0], stored[0]})
+	req.Source = mimirpb.RULE
+	_, err = i.Push(ctx, req)
+	require.NoError(t, err)
+
+	// Nothing new is stored: every sample is discarded as an exact duplicate.
+	expectedMetrics := `
+		# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+		# TYPE cortex_ingester_ingested_samples_total counter
+		cortex_ingester_ingested_samples_total{user="test"} 0
+		# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+		# TYPE cortex_discarded_samples_total counter
+		cortex_discarded_samples_total{group="",reason="same-value-for-timestamp",user="test"} 3
+	`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics),
+		"cortex_ingester_ingested_samples_total", "cortex_discarded_samples_total"))
+
+	// The ingester also ticks the instance rate in the background. The duplicates are the only
+	// samples pushed since the restart, so the rate is positive only if they were counted,
+	// whichever tick picked them up.
+	i.ingestionRate.Tick()
+	require.Positive(t, i.ingestionRate.Rate())
+
+	i.tsdbsMtx.RLock()
+	for _, db := range i.tsdbs {
+		db.ingestedRuleSamples.Tick()
+		db.ingestedAPISamples.Tick()
+	}
+	i.tsdbsMtx.RUnlock()
+
+	stats, err := i.UserStats(ctx, &client.UserStatsRequest{})
+	require.NoError(t, err)
+	require.Equal(t, 3/cfg.RateUpdatePeriod.Seconds(), stats.RuleIngestionRate)
+	require.Zero(t, stats.ApiIngestionRate)
 }
