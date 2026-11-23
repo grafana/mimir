@@ -1135,7 +1135,8 @@ func (o *Overrides) MaxActiveOrGlobalSeriesPerUser(limitsKey string) int {
 }
 
 // UsageTrackerReceivedSeriesEstimationEnabled returns whether the usage-tracker estimates the number of distinct
-// series received from the tenant, including the rejected ones. The value of the tenant applies to its read compartments.
+// series received from the tenant, including the rejected ones. The value of the tenant applies to its tenant
+// metadata, but not to its read compartments, which use their own overrides.
 func (o *Overrides) UsageTrackerReceivedSeriesEstimationEnabled(limitsKey string) bool {
 	return o.getOverridesForLimitsKey(limitsKey).UsageTrackerReceivedSeriesEstimationEnabled
 }
