@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -21,6 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -42,7 +44,26 @@ func newLabelsQueryCacheRoundTripper(
 		limits: limits,
 	}
 
-	return newGenericQueryCacheRoundTripper(cache, generator.LabelValues, ttl, next, logger, splitandcache.NewResultsCacheMetrics(queryTypeLabels, reg))
+	cacheKey := func(r *http.Request) (*GenericQueryCacheKey, error) {
+		key, err := generator.LabelValues(r)
+		if err != nil {
+			return nil, err
+		}
+		tenantIDs, err := tenant.TenantIDs(r.Context())
+		if err != nil {
+			return nil, err
+		}
+		// The querier uses the metadata default time range for a request that omits start or end. Thus a response
+		// that is cached with one value of the limit is not valid after a change to the limit. The key has the
+		// value also for requests with start and end, because the cache cannot tell them apart without parsing the
+		// request again.
+		if d := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, limits.MetadataDefaultTimeRange); d > 0 {
+			key.CacheKey += string(stringParamSeparator) + d.String()
+		}
+		return key, nil
+	}
+
+	return newGenericQueryCacheRoundTripper(cache, cacheKey, ttl, next, logger, splitandcache.NewResultsCacheMetrics(queryTypeLabels, reg))
 }
 
 type labelsQueryTTL struct {

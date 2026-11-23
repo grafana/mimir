@@ -211,7 +211,7 @@ func drainNDJSON(t *testing.T, body string) []map[string]any {
 
 func TestSearchLabelNamesHandler_FlagOff_Returns404(t *testing.T) {
 	mq := &searchMockQuerier{}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), Config{ExperimentalSearchAPIEnabled: false}, nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), Config{ExperimentalSearchAPIEnabled: false}, validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
@@ -230,7 +230,7 @@ func TestSearchLabelNamesHandler_HappyPath(t *testing.T) {
 			return storage.NewSearchResultSetFromSlice(results, nil)
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
@@ -255,7 +255,7 @@ func TestSearchLabelNamesHandler_IncludeScoreEmitsScore(t *testing.T) {
 			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("foo", 0.75)}, nil)
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?include_score=true"))
@@ -279,7 +279,7 @@ func TestSearchLabelNamesHandler_BatchBoundaries(t *testing.T) {
 			return storage.NewSearchResultSetFromSlice(results, nil)
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?batch_size=2"))
@@ -305,7 +305,7 @@ func TestSearchLabelNamesHandler_HasMoreWhenLimitHit(t *testing.T) {
 			return storage.NewSearchResultSetFromSlice(results, nil)
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=2"))
@@ -338,7 +338,7 @@ func TestSearchLabelNamesHandler_HasMoreFalseWhenDataExactlyFillsLimit(t *testin
 			return storage.NewSearchResultSetFromSlice(results, nil)
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=2"))
@@ -358,7 +358,7 @@ func TestSearchLabelNamesHandler_HasMoreFalseWhenUnderLimit(t *testing.T) {
 			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("a", 1.0)}, nil)
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=10"))
@@ -377,7 +377,7 @@ func TestSearchLabelNamesHandler_ReturnedCountsEveryBatch(t *testing.T) {
 			return storage.NewSearchResultSetFromSlice(results, nil)
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=10&batch_size=2"))
@@ -395,7 +395,7 @@ func TestSearchLabelNamesHandler_ReturnedIsZeroForNoResults(t *testing.T) {
 			return storage.NewSearchResultSetFromSlice(nil, nil)
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=10"))
@@ -413,7 +413,7 @@ func TestSearchLabelNamesHandler_HintsLimitIsLimitPlusOne(t *testing.T) {
 			return storage.EmptySearchResultSet()
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=50"))
@@ -434,7 +434,7 @@ func TestSearchLabelNamesHandler_HintsLimitAtMaxIntDoesNotOverflow(t *testing.T)
 			return storage.EmptySearchResultSet()
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, fmt.Sprintf("/api/v1/search/label_names?limit=%d", math.MaxInt)))
@@ -450,7 +450,7 @@ func TestSearchLabelNamesHandler_WarningsRideOnTrailer(t *testing.T) {
 			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("a", 1.0)}, warns)
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
@@ -478,7 +478,7 @@ func TestSearchLabelNamesHandler_HasMoreWhenClampFires(t *testing.T) {
 			return storage.NewSearchResultSetFromSlice(results, warns)
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=10000"))
@@ -505,7 +505,7 @@ func TestSearchLabelValuesHandler_HasMoreWhenClampFires(t *testing.T) {
 			return storage.NewSearchResultSetFromSlice(results, warns)
 		},
 	}
-	h := SearchLabelValuesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelValuesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_values?label=instance&limit=10000"))
@@ -532,7 +532,7 @@ func TestSearchLabelNamesHandler_UnrelatedLimitErrorDoesNotFlipHasMore(t *testin
 			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("a", 1.0)}, warns)
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=100"))
@@ -561,7 +561,7 @@ func TestSearchHandlers_ResultJSONKey(t *testing.T) {
 		{
 			name: "label_names emits name",
 			newHandler: func(q storage.Queryable) http.Handler {
-				return SearchLabelNamesHandler(q, enabledSearchConfig(), nil)
+				return SearchLabelNamesHandler(q, enabledSearchConfig(), validation.MockDefaultOverrides())
 			},
 			url:       "/api/v1/search/label_names?include_score=true",
 			wantKey:   "name",
@@ -570,7 +570,7 @@ func TestSearchHandlers_ResultJSONKey(t *testing.T) {
 		{
 			name: "label_values emits value",
 			newHandler: func(q storage.Queryable) http.Handler {
-				return SearchLabelValuesHandler(q, enabledSearchConfig(), nil)
+				return SearchLabelValuesHandler(q, enabledSearchConfig(), validation.MockDefaultOverrides())
 			},
 			url:       "/api/v1/search/label_values?label=env&include_score=true",
 			wantKey:   "value",
@@ -579,7 +579,7 @@ func TestSearchHandlers_ResultJSONKey(t *testing.T) {
 		{
 			name: "metric_names emits name",
 			newHandler: func(q storage.Queryable) http.Handler {
-				return SearchMetricNamesHandler(q, enabledSearchConfig(), nil, log.NewNopLogger())
+				return SearchMetricNamesHandler(q, enabledSearchConfig(), validation.MockDefaultOverrides(), log.NewNopLogger())
 			},
 			url:       "/api/v1/search/metric_names?include_score=true",
 			wantKey:   "name",
@@ -679,7 +679,7 @@ func TestSearchLabelValuesHandler_HasMoreVsClampWarning(t *testing.T) {
 					return storage.NewSearchResultSetFromSlice(results, warns)
 				},
 			}
-			h := SearchLabelValuesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+			h := SearchLabelValuesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_values?label=instance&limit="+tc.urlLimit))
@@ -729,7 +729,7 @@ func TestSearchLabelNamesHandler_MidStreamErrorRendersErrorTrailer(t *testing.T)
 			}
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
@@ -760,7 +760,7 @@ func TestSearchLabelNamesHandler_PreFlushErrorReturnsJSONEnvelope(t *testing.T) 
 			return &errSearchResultSet{err: wantErr}
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
@@ -787,7 +787,7 @@ func TestSearchLabelNamesHandler_PreFlushContextCanceledReturns499(t *testing.T)
 			return &errSearchResultSet{err: context.Canceled}
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
@@ -807,7 +807,7 @@ func TestSearchLabelNamesHandler_PreFlushContextDeadlineReturns503(t *testing.T)
 			return &errSearchResultSet{err: context.DeadlineExceeded}
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
@@ -820,7 +820,7 @@ func TestSearchLabelNamesHandler_PreFlushContextDeadlineReturns503(t *testing.T)
 
 func TestSearchLabelNamesHandler_BadParams_Return400(t *testing.T) {
 	mq := &searchMockQuerier{}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	tests := []struct {
 		name  string
@@ -855,7 +855,7 @@ func TestSearchLabelNamesHandler_BadParams_Return400(t *testing.T) {
 
 func TestSearchLabelValuesHandler_RequiresLabel(t *testing.T) {
 	mq := &searchMockQuerier{}
-	h := SearchLabelValuesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelValuesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_values"))
@@ -871,7 +871,7 @@ func TestSearchLabelValuesHandler_ForwardsLabel(t *testing.T) {
 			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("prod", 1.0)}, nil)
 		},
 	}
-	h := SearchLabelValuesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelValuesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_values?label=env"))
@@ -885,7 +885,7 @@ func TestSearchMetricNamesHandler_ForwardsMetricNameLabel(t *testing.T) {
 			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("metric_a", 1.0)}, nil)
 		},
 	}
-	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, log.NewNopLogger())
+	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides(), log.NewNopLogger())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names"))
@@ -928,7 +928,7 @@ func TestParseSortOrder_Cases(t *testing.T) {
 func TestParseSearchRequest_DefaultTimeRange(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo")
 	before := time.Now().UnixMilli()
-	req, err := parseSearchRequest(r, false)
+	req, err := parseSearchRequest(r, false, 0)
 	after := time.Now().UnixMilli()
 	require.NoError(t, err)
 
@@ -946,21 +946,122 @@ func TestParseSearchRequest_DefaultTimeRange(t *testing.T) {
 func TestParseSearchRequest_RejectsInvertedTimeRange(t *testing.T) {
 	t.Run("end before start is rejected", func(t *testing.T) {
 		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?start=7200&end=3600")
-		_, err := parseSearchRequest(r, false)
+		_, err := parseSearchRequest(r, false, 0)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "end timestamp must not be before start timestamp")
 	})
 	t.Run("end equal to start is permitted", func(t *testing.T) {
 		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?start=3600&end=3600")
-		req, err := parseSearchRequest(r, false)
+		req, err := parseSearchRequest(r, false, 0)
 		require.NoError(t, err)
 		assert.Equal(t, req.startMs, req.endMs)
 	})
 }
 
+func TestParseSearchRequest_MetadataDefaultTimeRange(t *testing.T) {
+	const defaultTimeRange = 2 * time.Hour
+
+	t.Run("no start and no end ends the range now", func(t *testing.T) {
+		r := newSearchHandlerRequest(t, "/api/v1/search/label_names")
+		before := time.Now().UnixMilli()
+		req, err := parseSearchRequest(r, false, defaultTimeRange)
+		after := time.Now().UnixMilli()
+		require.NoError(t, err)
+
+		assert.GreaterOrEqual(t, req.endMs, before)
+		assert.LessOrEqual(t, req.endMs, after)
+		assert.Equal(t, defaultTimeRange.Milliseconds(), req.endMs-req.startMs)
+		require.EqualError(t, req.rangeWarning, newMetadataDefaultTimeRangeWarning(req.startMs, req.endMs).Error())
+	})
+
+	t.Run("only end ends the range at end", func(t *testing.T) {
+		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?end=10800")
+		req, err := parseSearchRequest(r, false, defaultTimeRange)
+		require.NoError(t, err)
+
+		assert.Equal(t, int64(3600_000), req.startMs)
+		assert.Equal(t, int64(10800_000), req.endMs)
+		require.EqualError(t, req.rangeWarning, "start or end not given, applied a default: start=1970-01-01T01:00:00Z, end=1970-01-01T03:00:00Z")
+	})
+
+	t.Run("only start ends the range now", func(t *testing.T) {
+		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?start=3600")
+		before := time.Now().UnixMilli()
+		req, err := parseSearchRequest(r, false, defaultTimeRange)
+		after := time.Now().UnixMilli()
+		require.NoError(t, err)
+
+		assert.Equal(t, int64(3600_000), req.startMs)
+		assert.GreaterOrEqual(t, req.endMs, before)
+		assert.LessOrEqual(t, req.endMs, after)
+		require.EqualError(t, req.rangeWarning, newMetadataDefaultTimeRangeWarning(req.startMs, req.endMs).Error())
+	})
+
+	t.Run("start and end are unchanged", func(t *testing.T) {
+		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?start=3600&end=7200")
+		req, err := parseSearchRequest(r, false, defaultTimeRange)
+		require.NoError(t, err)
+
+		assert.Equal(t, int64(3600_000), req.startMs)
+		assert.Equal(t, int64(7200_000), req.endMs)
+		assert.NoError(t, req.rangeWarning)
+	})
+
+	t.Run("disabled keeps the one hour default without a warning", func(t *testing.T) {
+		r := newSearchHandlerRequest(t, "/api/v1/search/label_names")
+		req, err := parseSearchRequest(r, false, 0)
+		require.NoError(t, err)
+
+		assert.Equal(t, time.Hour.Milliseconds(), req.endMs-req.startMs)
+		assert.NoError(t, req.rangeWarning)
+	})
+}
+
+func TestSearchHandlers_MetadataDefaultTimeRangeWarning(t *testing.T) {
+	limits := validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+		tenantLimits["test"] = validation.MockDefaultLimits()
+		tenantLimits["test"].MetadataDefaultTimeRange = model.Duration(2 * time.Hour)
+	})
+	results := func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+		return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("a", 1)}, nil)
+	}
+	valueResults := func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+		return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("a", 1)}, nil)
+	}
+
+	for name, tc := range map[string]struct {
+		handler http.Handler
+		target  string
+	}{
+		"label names": {
+			handler: SearchLabelNamesHandler(newSearchMockQueryable(&searchMockQuerier{namesFn: results}), enabledSearchConfig(), limits),
+			target:  "/api/v1/search/label_names?end=10800",
+		},
+		"label values": {
+			handler: SearchLabelValuesHandler(newSearchMockQueryable(&searchMockQuerier{valuesFn: valueResults}), enabledSearchConfig(), limits),
+			target:  "/api/v1/search/label_values?label=job&end=10800",
+		},
+		"metric names": {
+			handler: SearchMetricNamesHandler(newSearchMockQueryable(&searchMockQuerier{valuesFn: valueResults}), enabledSearchConfig(), limits, log.NewNopLogger()),
+			target:  "/api/v1/search/metric_names?end=10800",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			tc.handler.ServeHTTP(w, newSearchHandlerRequest(t, tc.target))
+			require.Equal(t, http.StatusOK, w.Code)
+
+			lines := drainNDJSON(t, w.Body.String())
+			trailer := lines[len(lines)-1]
+			assert.Equal(t, "success", trailer["status"])
+			assert.Equal(t, []any{"start or end not given, applied a default: start=1970-01-01T01:00:00Z, end=1970-01-01T03:00:00Z"}, trailer["warnings"])
+		})
+	}
+}
+
 func TestParseSearchRequest_ParamRoundTrip(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&search[]=bar&case_sensitive=false&fuzz_alg=jarowinkler&fuzz_threshold=75&sort_by=alpha&sort_dir=dsc&include_score=true&limit=42&batch_size=7&match[]={job=\"prom\"}")
-	req, err := parseSearchRequest(r, false)
+	req, err := parseSearchRequest(r, false, 0)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"foo", "bar"}, req.params.Terms)
 	assert.False(t, req.params.CaseSensitive)
@@ -982,7 +1083,7 @@ func TestParseSearchRequest_ParamRoundTrip(t *testing.T) {
 // searchDefaultBatchSize. Previously Mimir rejected 0; upstream accepts it.
 func TestParseSearchRequest_BatchSizeZeroKeepsDefault(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?batch_size=0")
-	req, err := parseSearchRequest(r, false)
+	req, err := parseSearchRequest(r, false, 0)
 	require.NoError(t, err)
 	assert.Equal(t, searchDefaultBatchSize, req.batchSize)
 }
@@ -996,7 +1097,7 @@ func TestSearchLabelNamesHandler_AcceptsPOSTForm(t *testing.T) {
 			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("a", 1.0)}, nil)
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	body := strings.NewReader("search[]=foo&include_score=true")
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/search/label_names", body)
@@ -1013,7 +1114,7 @@ func TestSearchLabelNamesHandler_AcceptsPOSTForm(t *testing.T) {
 func TestSearchLabelNamesHandler_MissingTenantReturns400(t *testing.T) {
 	// Deliberately do not inject org ID — searcherForRequest must reject.
 	mq := &searchMockQuerier{}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/search/label_names", nil)
 
 	w := httptest.NewRecorder()
@@ -1028,7 +1129,7 @@ func TestSearchLabelNamesHandler_MissingTenantReturns400(t *testing.T) {
 
 func TestSearchLabelNamesHandler_QueryableOpenErrorReturns500(t *testing.T) {
 	wantErr := errors.New("open boom")
-	h := SearchLabelNamesHandler(&erroringQueryable{err: wantErr}, enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(&erroringQueryable{err: wantErr}, enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
@@ -1042,7 +1143,7 @@ func TestSearchLabelNamesHandler_QueryableOpenErrorReturns500(t *testing.T) {
 }
 
 func TestSearchLabelNamesHandler_QuerierNotMimirSearcherReturns500(t *testing.T) {
-	h := SearchLabelNamesHandler(plainQueryable{}, enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(plainQueryable{}, enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
@@ -1064,7 +1165,7 @@ func TestSearchLabelNamesHandler_EmptyResultsEmitsTrailerOnly(t *testing.T) {
 			return storage.EmptySearchResultSet()
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
@@ -1095,7 +1196,7 @@ func TestSearchLabelNamesHandler_RepeatedMatchUnionsSelectors(t *testing.T) {
 			}
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?match[]={job=%22api%22}&match[]={env=%22prod%22}"))
@@ -1128,7 +1229,7 @@ func TestSearchMetricNamesHandler_MetadataEnrichesRecords(t *testing.T) {
 			"cpu_usage_seconds":   {Type: model.MetricTypeGauge, Help: "CPU usage.", Unit: "seconds"},
 		},
 	}
-	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, log.NewNopLogger())
+	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides(), log.NewNopLogger())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
@@ -1162,7 +1263,7 @@ func TestSearchMetricNamesHandler_MetadataFetchScopedByMatchers(t *testing.T) {
 			"http_requests_total": {Type: model.MetricTypeCounter},
 		},
 	}
-	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, log.NewNopLogger())
+	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides(), log.NewNopLogger())
 
 	target := "/api/v1/search/metric_names?include_metadata=true&" + url.Values{"match[]": {`{job="api"}`}}.Encode()
 	w := httptest.NewRecorder()
@@ -1187,7 +1288,7 @@ func TestSearchMetricNamesHandler_MissingMetadataLeavesFieldsEmpty(t *testing.T)
 			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("orphan_metric", 1.0)}, nil)
 		},
 	}
-	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, log.NewNopLogger())
+	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides(), log.NewNopLogger())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
@@ -1209,7 +1310,7 @@ func TestSearchMetricNamesHandler_IncludeScoreAndMetadataCompose(t *testing.T) {
 		},
 		metadata: map[string]metadata.Metadata{"http_requests_total": {Type: model.MetricTypeCounter, Help: "h"}},
 	}
-	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, log.NewNopLogger())
+	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides(), log.NewNopLogger())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true&include_score=true"))
@@ -1258,7 +1359,7 @@ func TestSearchMetricNamesHandler_ShouldFetchMetadataFromIngesters(t *testing.T)
 				{MetricFamily: "http_requests_total", Type: model.MetricTypeCounter, Help: "Total HTTP requests."},
 			}, nil)
 
-		h := SearchMetricNamesHandler(makeQueryable(dist), enabledSearchConfig(), nil, log.NewNopLogger())
+		h := SearchMetricNamesHandler(makeQueryable(dist), enabledSearchConfig(), validation.MockDefaultOverrides(), log.NewNopLogger())
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
 
@@ -1288,7 +1389,7 @@ func TestSearchMetricNamesHandler_ShouldFetchMetadataFromIngesters(t *testing.T)
 		dist := &mockDistributor{searchLabelValuesFn: searchValues("http_requests_total")}
 		dist.On("MetricsMetadata", mock.Anything, mock.Anything).Return([]scrape.MetricMetadata(nil), errors.New("boom"))
 
-		h := SearchMetricNamesHandler(makeQueryable(dist), enabledSearchConfig(), nil, log.NewNopLogger())
+		h := SearchMetricNamesHandler(makeQueryable(dist), enabledSearchConfig(), validation.MockDefaultOverrides(), log.NewNopLogger())
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
 
@@ -1461,7 +1562,7 @@ func TestSearchMetricNamesHandler_ShouldFetchMetadataFromIngesters(t *testing.T)
 					}
 				}
 
-				h := SearchMetricNamesHandler(makeQueryable(dist), enabledSearchConfig(), nil, log.NewNopLogger())
+				h := SearchMetricNamesHandler(makeQueryable(dist), enabledSearchConfig(), validation.MockDefaultOverrides(), log.NewNopLogger())
 				w := httptest.NewRecorder()
 				h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
 				require.Equal(t, http.StatusOK, w.Code)
@@ -1518,7 +1619,7 @@ func TestSearchMetricNamesHandler_ShouldFetchMetadataFromIngesters(t *testing.T)
 			stored:          map[string][]scrape.MetricMetadata{},
 		}
 
-		h := SearchMetricNamesHandler(makeQueryable(dist), enabledSearchConfig(), nil, log.NewNopLogger())
+		h := SearchMetricNamesHandler(makeQueryable(dist), enabledSearchConfig(), validation.MockDefaultOverrides(), log.NewNopLogger())
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
 		require.Equal(t, http.StatusOK, w.Code)
@@ -1547,7 +1648,7 @@ func TestSearchMetricNamesHandler_ShouldFetchMetadataFromIngesters(t *testing.T)
 			},
 		}
 
-		h := SearchMetricNamesHandler(makeQueryable(dist), enabledSearchConfig(), nil, log.NewNopLogger())
+		h := SearchMetricNamesHandler(makeQueryable(dist), enabledSearchConfig(), validation.MockDefaultOverrides(), log.NewNopLogger())
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, newSearchHandlerRequest(t, fmt.Sprintf("/api/v1/search/metric_names?include_metadata=true&batch_size=%d&limit=%d", searchDefaultBatchSize, len(series))))
 		require.Equal(t, http.StatusOK, w.Code)
@@ -1614,7 +1715,7 @@ func TestSearchLabelNamesHandler_MetadataParamSilentlyIgnored(t *testing.T) {
 			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("env", 1.0)}, nil)
 		},
 	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?include_metadata=true"))
@@ -1626,7 +1727,7 @@ func TestSearchLabelNamesHandler_MetadataParamSilentlyIgnored(t *testing.T) {
 }
 
 func TestSearchMetricNamesHandler_InvalidMetadataParamReturns400(t *testing.T) {
-	h := SearchMetricNamesHandler(newSearchMockQueryable(&searchMockQuerier{}), enabledSearchConfig(), nil, log.NewNopLogger())
+	h := SearchMetricNamesHandler(newSearchMockQueryable(&searchMockQuerier{}), enabledSearchConfig(), validation.MockDefaultOverrides(), log.NewNopLogger())
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=maybe"))
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -1643,7 +1744,7 @@ func TestSearchLabelValuesHandler_NameLabelNotEnrichedWithMetadata(t *testing.T)
 		},
 		metadata: map[string]metadata.Metadata{"metric_a": {Type: model.MetricTypeCounter, Help: "h"}},
 	}
-	h := SearchLabelValuesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchLabelValuesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_values?label=__name__&include_metadata=true"))
@@ -1658,7 +1759,7 @@ func TestSearchLabelValuesHandler_NameLabelNotEnrichedWithMetadata(t *testing.T)
 func TestSearchLabelValuesHandler_MalformedMetadataParamReturns400(t *testing.T) {
 	// include_metadata is parsed on every endpoint, so a malformed value is a 400
 	// even where the param has no effect on the response.
-	h := SearchLabelValuesHandler(newSearchMockQueryable(&searchMockQuerier{}), enabledSearchConfig(), nil)
+	h := SearchLabelValuesHandler(newSearchMockQueryable(&searchMockQuerier{}), enabledSearchConfig(), validation.MockDefaultOverrides())
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_values?label=env&include_metadata=maybe"))
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -1716,7 +1817,7 @@ func BenchmarkSearchLabelNamesHandler_Encoding(b *testing.B) {
 				return storage.NewSearchResultSetFromSlice(fixture, nil)
 			},
 		}
-		h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+		h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides())
 
 		// limit must be >= len(fixture) so the iterator emits every result.
 		target := fmt.Sprintf("/api/v1/search/label_names?batch_size=%d&limit=%d", c.batchSize, c.results)
@@ -1754,7 +1855,7 @@ func BenchmarkSearchMetricNamesHandler_MetadataEncoding(b *testing.B) {
 					return storage.NewSearchResultSetFromSlice(fixture, nil)
 				},
 			}
-			h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, log.NewNopLogger())
+			h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), validation.MockDefaultOverrides(), log.NewNopLogger())
 
 			target := fmt.Sprintf("/api/v1/search/metric_names?limit=%d&include_metadata=%t", results, withMetadata)
 			name := fmt.Sprintf("results=%d/include_metadata=%t", results, withMetadata)

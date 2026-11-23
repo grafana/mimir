@@ -807,6 +807,9 @@ All three endpoints accept the following parameters, supplied either as URL quer
 - **match[]** - _optional_ - a PromQL series selector that restricts the candidates to those present in matching series. Repeat the parameter to supply multiple selectors, which are combined with `OR` semantics.
 - **start** - _optional_ - the start of the time range to search, as a Unix timestamp (in seconds, with optional decimal places) or RFC 3339 timestamp. Defaults to one hour before the current time.
 - **end** - _optional_ - the end of the time range to search, in the same formats as `start`. Defaults to the current time. The value must not be before `start`.
+
+  If you set the `-querier.metadata-default-time-range` per-tenant limit, Mimir uses it in place of the one hour default for a missing `start`. If the request has only `end`, the range ends at `end`. If the request does not have `end`, the range ends at the current time. The response trailer includes a warning that shows the applied range.
+
 - **case_sensitive** - _optional_ - whether `search[]` term matching is case-sensitive. Defaults to `true`.
 - **fuzz_alg** - _optional_ - the fuzzy-matching algorithm used to score `search[]` terms. Either `subsequence` (the default) or `jarowinkler`.
 - **fuzz_threshold** - _optional_ - the minimum match score a candidate must reach to be returned, as an integer between `0` and `100`. Defaults to `0`. A higher score indicates a better relevance match. `100` is an exact match.

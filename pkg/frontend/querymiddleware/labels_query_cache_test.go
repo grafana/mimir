@@ -4,16 +4,22 @@ package querymiddleware
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	mimirtest "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestLabelsQueryCache_RoundTrip(t *testing.T) {
@@ -31,6 +37,64 @@ func TestLabelsQueryCache_RoundTrip(t *testing.T) {
 			hashedCacheKey: labelValuesQueryCachePrefix + hashCacheKey("user-1:1688515200000\x001688544000000\x00test\x00{job!=\"test_2\"},{job=\"test_1\"}"),
 		},
 	})
+}
+
+func TestLabelsQueryCache_MetadataDefaultTimeRangeInCacheKey(t *testing.T) {
+	const userID = "user-1"
+
+	unboundedCacheKey := userID + ":" + strings.Join([]string{
+		fmt.Sprintf("%d", v1.MinTime.UnixMilli()),
+		fmt.Sprintf("%d", v1.MaxTime.UnixMilli()),
+		"",
+	}, string(stringParamSeparator))
+
+	cacheBackend := cache.NewInstrumentedMockCache()
+	downstreamCalls := 0
+	downstream := RoundTripFunc(func(*http.Request) (*http.Response, error) {
+		downstreamCalls++
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"status":"success","data":[]}`)),
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+		}, nil
+	})
+
+	roundTrip := func(metadataDefaultTimeRange time.Duration) {
+		limits := multiTenantMockLimits{byTenant: map[string]mockLimits{
+			userID: {resultsCacheTTLForLabelsQuery: time.Minute, metadataDefaultTimeRange: metadataDefaultTimeRange},
+		}}
+		rt := newLabelsQueryCacheRoundTripper(cacheBackend, DefaultCacheKeyGenerator{codec: newTestCodec()}, limits, downstream, mimirtest.NewTestingLogger(t), prometheus.NewPedanticRegistry())
+
+		req, err := http.NewRequest(http.MethodGet, "/prometheus/api/v1/labels", nil)
+		require.NoError(t, err)
+		res, err := rt.RoundTrip(req.WithContext(user.InjectOrgID(t.Context(), userID)))
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, res.StatusCode)
+		_, err = io.ReadAll(res.Body)
+		require.NoError(t, err)
+	}
+	requireCached := func(cacheKey string) {
+		require.Contains(t, cacheBackend.GetItems(), labelNamesQueryCachePrefix+hashCacheKey(cacheKey))
+	}
+
+	// Without the limit, the cache key is the same as the key of the cache key generator.
+	roundTrip(0)
+	require.Equal(t, 1, downstreamCalls)
+	requireCached(unboundedCacheKey)
+
+	// A change to the limit must not return the response that was cached without the limit.
+	roundTrip(2 * time.Hour)
+	require.Equal(t, 2, downstreamCalls)
+	requireCached(unboundedCacheKey + string(stringParamSeparator) + "2h0m0s")
+
+	// The same limit uses the cached response.
+	roundTrip(2 * time.Hour)
+	require.Equal(t, 2, downstreamCalls)
+
+	// Another value of the limit must not return the response that was cached with the previous value.
+	roundTrip(time.Hour)
+	require.Equal(t, 3, downstreamCalls)
+	requireCached(unboundedCacheKey + string(stringParamSeparator) + "1h0m0s")
 }
 
 func TestDefaultCacheKeyGenerator_LabelValuesCacheKey(t *testing.T) {

@@ -4984,6 +4984,16 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -store.max-labels-query-length
 [max_labels_query_length: <duration> | default = 0s]
 
+# (experimental) Time range that the series, label names, label values and
+# search endpoints use when a request does not specify start or end. If the
+# request has neither start nor end, the range ends now. If the request has only
+# end, the range ends at end. If the request has only start, the range starts at
+# start and ends now. The response includes a warning that shows the applied
+# range. 0 to disable. When disabled, the series, label names and label values
+# endpoints query all data, and the search endpoints query the last hour.
+# CLI flag: -querier.metadata-default-time-range
+[metadata_default_time_range: <duration> | default = 0s]
+
 # Maximum number of series, the series endpoint queries. This limit is enforced
 # in the querier. If the requested limit is outside of the allowed value, the
 # request doesn't fail, but is manipulated to only query data up to the allowed
