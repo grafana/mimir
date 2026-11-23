@@ -429,7 +429,7 @@ func (t *trackerStore) cleanup(now time.Time) {
 	t.mtx.Unlock()
 }
 
-// cleanupReceivedSeries drops the minutes that are out of the window from the HLL-timelines.
+// cleanupReceivedSeries prunes the received-series timelines at now.
 // It also creates or drops the timelines of the tenants whose limit changed.
 func (t *trackerStore) cleanupReceivedSeries(tenants map[string]*trackedTenant, now time.Time) {
 	minute := unixMinute(now)
