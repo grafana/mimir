@@ -39,62 +39,142 @@ func TestLabelsQueryCache_RoundTrip(t *testing.T) {
 	})
 }
 
-func TestLabelsQueryCache_MetadataDefaultTimeRangeInCacheKey(t *testing.T) {
+func TestLabelsQueryCache_MetadataDefaultTimeRange(t *testing.T) {
 	const userID = "user-1"
 
-	unboundedCacheKey := userID + ":" + strings.Join([]string{
-		fmt.Sprintf("%d", v1.MinTime.UnixMilli()),
-		fmt.Sprintf("%d", v1.MaxTime.UnixMilli()),
-		"",
-	}, string(stringParamSeparator))
-
-	cacheBackend := cache.NewInstrumentedMockCache()
-	downstreamCalls := 0
-	downstream := RoundTripFunc(func(*http.Request) (*http.Response, error) {
-		downstreamCalls++
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"status":"success","data":[]}`)),
-			Header:     http.Header{"Content-Type": []string{"application/json"}},
-		}, nil
-	})
-
-	roundTrip := func(metadataDefaultTimeRange time.Duration) {
-		limits := multiTenantMockLimits{byTenant: map[string]mockLimits{
-			userID: {resultsCacheTTLForLabelsQuery: time.Minute, metadataDefaultTimeRange: metadataDefaultTimeRange},
-		}}
-		rt := newLabelsQueryCacheRoundTripper(cacheBackend, DefaultCacheKeyGenerator{codec: newTestCodec()}, limits, downstream, mimirtest.NewTestingLogger(t), prometheus.NewPedanticRegistry())
-
-		req, err := http.NewRequest(http.MethodGet, "/prometheus/api/v1/labels", nil)
-		require.NoError(t, err)
-		res, err := rt.RoundTrip(req.WithContext(user.InjectOrgID(t.Context(), userID)))
-		require.NoError(t, err)
-		require.Equal(t, http.StatusOK, res.StatusCode)
-		_, err = io.ReadAll(res.Body)
-		require.NoError(t, err)
+	type request struct {
+		method string
+		path   string
+		params url.Values
 	}
-	requireCached := func(cacheKey string) {
-		require.Contains(t, cacheBackend.GetItems(), labelNamesQueryCachePrefix+hashCacheKey(cacheKey))
+	newRequest := func(t *testing.T, r request) *http.Request {
+		var (
+			req *http.Request
+			err error
+		)
+		switch r.method {
+		case http.MethodGet:
+			req, err = http.NewRequest(r.method, r.path+"?"+r.params.Encode(), nil)
+		case http.MethodPost:
+			req, err = http.NewRequest(r.method, r.path, strings.NewReader(r.params.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		default:
+			t.Fatalf("unsupported HTTP method %q", r.method)
+		}
+		require.NoError(t, err)
+		return req.WithContext(user.InjectOrgID(t.Context(), userID))
 	}
 
-	// Without the limit, the cache key is the same as the key of the cache key generator.
-	roundTrip(0)
-	require.Equal(t, 1, downstreamCalls)
-	requireCached(unboundedCacheKey)
+	const (
+		labelNamesPath  = "/prometheus/api/v1/labels"
+		labelValuesPath = "/prometheus/api/v1/label/job/values"
+	)
+	var (
+		noStartAndNoEnd = url.Values{}
+		onlyStart       = url.Values{"start": []string{"2023-07-05T01:00:00Z"}}
+		onlyEnd         = url.Values{"end": []string{"2023-07-05T08:00:00Z"}}
+		startAndEnd     = url.Values{"start": []string{"2023-07-05T01:00:00Z"}, "end": []string{"2023-07-05T08:00:00Z"}}
+	)
 
-	// A change to the limit must not return the response that was cached without the limit.
-	roundTrip(2 * time.Hour)
-	require.Equal(t, 2, downstreamCalls)
-	requireCached(unboundedCacheKey + string(stringParamSeparator) + "2h0m0s")
+	tests := map[string]struct {
+		metadataDefaultTimeRange time.Duration
+		requests                 []request
+		expectedDownstreamCalls  int
+		expectedCached           bool
+	}{
+		"limit disabled, no start and no end": {
+			requests: []request{
+				{method: http.MethodGet, path: labelNamesPath, params: noStartAndNoEnd},
+				{method: http.MethodGet, path: labelNamesPath, params: noStartAndNoEnd},
+			},
+			expectedDownstreamCalls: 1,
+			expectedCached:          true,
+		},
+		"limit enabled, start and end": {
+			metadataDefaultTimeRange: time.Hour,
+			requests: []request{
+				{method: http.MethodGet, path: labelValuesPath, params: startAndEnd},
+				{method: http.MethodPost, path: labelValuesPath, params: startAndEnd},
+			},
+			expectedDownstreamCalls: 1,
+			expectedCached:          true,
+		},
+		"limit enabled, no start and no end": {
+			metadataDefaultTimeRange: time.Hour,
+			requests: []request{
+				{method: http.MethodGet, path: labelNamesPath, params: noStartAndNoEnd},
+				{method: http.MethodGet, path: labelNamesPath, params: noStartAndNoEnd},
+			},
+			expectedDownstreamCalls: 2,
+		},
+		"limit enabled, only start": {
+			metadataDefaultTimeRange: time.Hour,
+			requests: []request{
+				{method: http.MethodGet, path: labelValuesPath, params: onlyStart},
+				{method: http.MethodGet, path: labelValuesPath, params: onlyStart},
+			},
+			expectedDownstreamCalls: 2,
+		},
+		"limit enabled, only end in a POST form": {
+			metadataDefaultTimeRange: time.Hour,
+			requests: []request{
+				{method: http.MethodPost, path: labelNamesPath, params: onlyEnd},
+				{method: http.MethodPost, path: labelNamesPath, params: onlyEnd},
+			},
+			expectedDownstreamCalls: 2,
+		},
+		// Without the limit, these requests have the same cache key, because the key keeps start at MinTime and
+		// rounds both ends up to 04:00. With the limit, they query different ranges and blocks.
+		"limit enabled, only end at two times that round to the same block boundary": {
+			metadataDefaultTimeRange: time.Hour,
+			requests: []request{
+				{method: http.MethodGet, path: labelValuesPath, params: url.Values{"end": []string{"2023-07-05T02:30:00Z"}}},
+				{method: http.MethodGet, path: labelValuesPath, params: url.Values{"end": []string{"2023-07-05T03:30:00Z"}}},
+			},
+			expectedDownstreamCalls: 2,
+		},
+	}
 
-	// The same limit uses the cached response.
-	roundTrip(2 * time.Hour)
-	require.Equal(t, 2, downstreamCalls)
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			cacheBackend := cache.NewInstrumentedMockCache()
+			downstreamCalls := 0
+			downstream := RoundTripFunc(func(*http.Request) (*http.Response, error) {
+				downstreamCalls++
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"status":"success","data":[]}`)),
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+				}, nil
+			})
+			limits := multiTenantMockLimits{byTenant: map[string]mockLimits{
+				userID: {resultsCacheTTLForLabelsQuery: time.Minute, metadataDefaultTimeRange: tc.metadataDefaultTimeRange},
+			}}
+			generator := DefaultCacheKeyGenerator{codec: newTestCodec()}
+			rt := newLabelsQueryCacheRoundTripper(cacheBackend, generator, limits, downstream, mimirtest.NewTestingLogger(t), prometheus.NewPedanticRegistry())
 
-	// Another value of the limit must not return the response that was cached with the previous value.
-	roundTrip(time.Hour)
-	require.Equal(t, 3, downstreamCalls)
-	requireCached(unboundedCacheKey + string(stringParamSeparator) + "1h0m0s")
+			for _, r := range tc.requests {
+				res, err := rt.RoundTrip(newRequest(t, r))
+				require.NoError(t, err)
+				require.Equal(t, http.StatusOK, res.StatusCode)
+				_, err = io.ReadAll(res.Body)
+				require.NoError(t, err)
+			}
+
+			assert.Equal(t, tc.expectedDownstreamCalls, downstreamCalls)
+			if !tc.expectedCached {
+				assert.Empty(t, cacheBackend.GetItems())
+				return
+			}
+			// The limit does not change the cache key of a request that the cache stores.
+			key, err := generator.LabelValues(newRequest(t, tc.requests[0]))
+			require.NoError(t, err)
+			_, hashedCacheKey := generateGenericQueryRequestCacheKey([]string{userID}, key)
+			items := cacheBackend.GetItems()
+			assert.Len(t, items, 1)
+			assert.Contains(t, items, hashedCacheKey)
+		})
+	}
 }
 
 func TestDefaultCacheKeyGenerator_LabelValuesCacheKey(t *testing.T) {
