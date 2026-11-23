@@ -21,6 +21,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -79,7 +80,7 @@ func BenchmarkLazyBinaryReader_LookupSymbol(b *testing.B) {
 	require.NoError(b, WriteBinary(ctx, bkt, id, filepath.Join(bucketDir, id.String()), BinaryFormatV1))
 
 	newStreamReader := func(ctx context.Context) (Reader, error) {
-		return NewStreamBinaryReader(ctx, id, instrBkt, bucketDir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+		return NewStreamBinaryReader(ctx, id, instrBkt, bucketDir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: 32}, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 	}
 	streamReader, err := newStreamReader(ctx)
 	require.NoError(b, err)
@@ -124,7 +125,7 @@ func BenchmarkLazyBinaryReader_LookupSymbol(b *testing.B) {
 }
 
 func benchmarkLookupSymbol(ctx context.Context, b *testing.B, bkt objstore.InstrumentedBucketReader, bucketDir string, id ulid.ULID, parallelism int, percentageNameLookups int, nameSymbols []string, valueSymbols []string) {
-	binaryReader, err := NewStreamBinaryReader(ctx, id, bkt, bucketDir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+	binaryReader, err := NewStreamBinaryReader(ctx, id, bkt, bucketDir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: 32}, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 	require.NoError(b, err)
 	b.Cleanup(func() { require.NoError(b, binaryReader.Close()) })
 
@@ -193,7 +194,7 @@ func BenchmarkLabelNames(b *testing.B) {
 
 			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, blockDir, BinaryFormatV1))
 
-			binaryReader, err := NewStreamBinaryReader(ctx, idIndexV2, objstore.WithNoopInstr(bkt), blockDir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			binaryReader, err := NewStreamBinaryReader(ctx, idIndexV2, objstore.WithNoopInstr(bkt), blockDir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: 32}, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(b, err)
 			b.Cleanup(func() { require.NoError(b, binaryReader.Close()) })
 
@@ -242,7 +243,7 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 			// configured to read all index-header sections from the on-disk index-header.
 			// This first call to create a reader also builds the index-header and sparse index-header from the block.
 			diskReaderCfg := testIndexHeaderV1Config()
-			diskReader, err := NewStreamBinaryReader(ctx, blockID, instrBkt, dir, diskReaderCfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			diskReader, err := NewStreamBinaryReader(ctx, blockID, instrBkt, dir, diskReaderCfg, streamindex.SamplingConfig{Factor: 32}, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(b, err)
 			b.Cleanup(func() { require.NoError(b, diskReader.Close()) })
 
@@ -255,7 +256,7 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 			splitReaderCfg := Config{
 				Version: BinaryFormatV2,
 			}
-			splitReader, err := NewStreamBinaryReader(ctx, blockID, cachingBucket, dir, splitReaderCfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			splitReader, err := NewStreamBinaryReader(ctx, blockID, cachingBucket, dir, splitReaderCfg, streamindex.SamplingConfig{Factor: 32}, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(b, err)
 			b.Cleanup(func() { require.NoError(b, splitReader.Close()) })
 
@@ -341,7 +342,7 @@ func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 			// configured to read all index-header sections from the on-disk index-header.
 			// This first call to create a reader also builds the index-header and sparse index-header from the block.
 			diskReaderCfg := testIndexHeaderV1Config()
-			diskReader, err := NewStreamBinaryReader(ctx, blockID, instrBkt, blockDir, diskReaderCfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			diskReader, err := NewStreamBinaryReader(ctx, blockID, instrBkt, blockDir, diskReaderCfg, streamindex.SamplingConfig{Factor: 32}, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(b, err)
 			b.Cleanup(func() { require.NoError(b, diskReader.Close()) })
 
@@ -354,7 +355,7 @@ func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 			splitReaderCfg := Config{
 				Version: BinaryFormatV2,
 			}
-			splitReader, err := NewStreamBinaryReader(ctx, blockID, cachingBucket, blockDir, splitReaderCfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			splitReader, err := NewStreamBinaryReader(ctx, blockID, cachingBucket, blockDir, splitReaderCfg, streamindex.SamplingConfig{Factor: 32}, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(b, err)
 			b.Cleanup(func() { require.NoError(b, splitReader.Close()) })
 
@@ -415,7 +416,7 @@ func BenchmarkPostingsOffset(b *testing.B) {
 		require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, filepath.Join(dir, idIndexV2.String()), BinaryFormatV1))
 
 		b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
-			binaryReader, err := NewStreamBinaryReader(ctx, idIndexV2, objstore.WithNoopInstr(bkt), dir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			binaryReader, err := NewStreamBinaryReader(ctx, idIndexV2, objstore.WithNoopInstr(bkt), dir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: 32}, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(b, err)
 			b.Cleanup(func() { require.NoError(b, binaryReader.Close()) })
 
@@ -461,7 +462,7 @@ func BenchmarkNewStreamBinaryReader(b *testing.B) {
 
 			b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
-					binaryReader, err := NewStreamBinaryReader(ctx, idIndexV2, objstore.WithNoopInstr(bkt), blockDir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+					binaryReader, err := NewStreamBinaryReader(ctx, idIndexV2, objstore.WithNoopInstr(bkt), blockDir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: 32}, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 					require.NoError(b, err)
 					b.Cleanup(func() { require.NoError(b, binaryReader.Close()) })
 				}

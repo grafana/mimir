@@ -20,6 +20,7 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/storage/indexheader"
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -225,7 +226,7 @@ func openIndexHeader(blockDir, indexHeaderPath string, size int64) (IndexAnalyze
 		bkt,
 		filepath.Dir(blockDir),
 		indexHeaderCfg,
-		32, // postingOffsetsInMemSampling - default value
+		streamindex.SamplingConfig{Factor: 32}, // postingOffsetsInMemSampling - default value
 		logger,
 		metrics,
 	)

@@ -62,6 +62,7 @@ func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv
 	}
 	order := storepbToOrdering(req.Ordering)
 	limit := int(req.Limit)
+	cursorApplied := req.Filter != nil && req.Filter.ResumeAfter != ""
 
 	stats := newSafeQueryStats()
 	defer s.recordLabelNamesCallResult(grpcRoute(ctx), stats)
@@ -116,11 +117,11 @@ func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv
 	// one-input merge would just pass results through with extra alloc.
 	if len(sets) == 1 {
 		defer sets[0].Close()
-		return streamBucketSearchResults(ctx, sets[0], queriedBlocks, srv.Send)
+		return streamBucketSearchResults(ctx, sets[0], queriedBlocks, cursorApplied, srv.Send)
 	}
 	merged := storage.MergeSearchResultSets(sets, &storage.SearchHints{OrderBy: order, Limit: limit})
 	defer merged.Close()
-	return streamBucketSearchResults(ctx, merged, queriedBlocks, srv.Send)
+	return streamBucketSearchResults(ctx, merged, queriedBlocks, cursorApplied, srv.Send)
 }
 
 // SearchLabelValues streams label values for req.Label matching the wire search
@@ -146,6 +147,7 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 	}
 	order := storepbToOrdering(req.Ordering)
 	limit := int(req.Limit)
+	cursorApplied := req.Filter != nil && req.Filter.ResumeAfter != ""
 
 	stats := newSafeQueryStats()
 	defer s.recordLabelValuesCallResult(grpcRoute(ctx), stats)
@@ -202,11 +204,11 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 	// Single-set fast path: see SearchLabelNames above.
 	if len(sets) == 1 {
 		defer sets[0].Close()
-		return streamBucketSearchResults(ctx, sets[0], queriedBlocks, srv.Send)
+		return streamBucketSearchResults(ctx, sets[0], queriedBlocks, cursorApplied, srv.Send)
 	}
 	merged := storage.MergeSearchResultSets(sets, &storage.SearchHints{OrderBy: order, Limit: limit})
 	defer merged.Close()
-	return streamBucketSearchResults(ctx, merged, queriedBlocks, srv.Send)
+	return streamBucketSearchResults(ctx, merged, queriedBlocks, cursorApplied, srv.Send)
 }
 
 // searchLabelNamesRequestBlockMatchers extracts the block_matchers hint from a
@@ -237,8 +239,9 @@ func searchLabelValuesRequestBlockMatchers(req *storepb.SearchLabelValuesRequest
 
 // applyPerBlockSearchHints builds a per-goroutine filter from params, then
 // runs storage.ApplySearchHints over the block's raw values to apply the
-// filter, ordering, and per-block limit. Returns a SearchResultSet wrapping
-// the per-block results, or (nil, nil) if the block produced nothing useful.
+// filter, cursor, ordering, and per-block limit. Returns a SearchResultSet
+// wrapping the per-block results, or (nil, nil) if the block produced nothing
+// useful.
 //
 // Filters wrap Prometheus matchers that lazily cache term runes on first
 // Unicode candidate and are not safe for concurrent use, so every block-fan-out
@@ -247,7 +250,7 @@ func applyPerBlockSearchHints(values []string, params *streaminglabelvalues.Para
 	if len(values) == 0 {
 		return nil, nil
 	}
-	filter, err := streaminglabelvalues.BuildFilter(params)
+	values, filter, err := streaminglabelvalues.BuildSortedSearch(values, params, order)
 	if err != nil {
 		return nil, err
 	}
@@ -263,10 +266,10 @@ func applyPerBlockSearchHints(values []string, params *streaminglabelvalues.Para
 }
 
 // storepbToParams converts a wire SearchFilter into a validated
-// streaminglabelvalues.Params via NewParams. A nil input returns (nil, nil).
-// An unknown FuzzAlg is an error. A sender that is newer than this server can
-// send a value that this server does not know, and a silent fallback to
-// another algorithm would return wrong results.
+// streaminglabelvalues.Params via NewParams and WithCursor. A nil input
+// returns (nil, nil). An unknown FuzzAlg is an error. A sender that is newer
+// than this server can send a value that this server does not know, and a
+// silent fallback to another algorithm would return wrong results.
 func storepbToParams(wf *storepb.SearchFilter) (*streaminglabelvalues.Params, error) {
 	if wf == nil {
 		return nil, nil
@@ -284,7 +287,11 @@ func storepbToParams(wf *storepb.SearchFilter) (*streaminglabelvalues.Params, er
 	default:
 		return nil, fmt.Errorf("unknown fuzz algorithm %d", wf.FuzzAlg)
 	}
-	return streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	params, err := streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	if err != nil {
+		return nil, err
+	}
+	return params.WithCursor(wf.ResumeAfter, wf.ScoreAfter)
 }
 
 // storepbToOrdering maps the wire SearchOrdering enum onto storage.Ordering.
@@ -311,12 +318,13 @@ func storepbToOrdering(o storepb.SearchOrdering) storage.Ordering {
 // result is forwarded upstream. The trailer never carries response_hints; it
 // exists only when there are trailing warnings. The result slice is allocated
 // lazily so zero-result, zero-warning responses cost no slice alloc beyond
-// the header.
-func streamBucketSearchResults(ctx context.Context, rs storage.SearchResultSet, queriedBlocks []ulid.ULID, send func(*storepb.SearchResultBatch) error) error {
+// the header. cursorApplied marks every batch, the header included, so the
+// caller can tell this server applied its cursor.
+func streamBucketSearchResults(ctx context.Context, rs storage.SearchResultSet, queriedBlocks []ulid.ULID, cursorApplied bool, send func(*storepb.SearchResultBatch) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := send(&storepb.SearchResultBatch{ResponseHints: buildSearchResponseHints(queriedBlocks)}); err != nil {
+	if err := send(&storepb.SearchResultBatch{ResponseHints: buildSearchResponseHints(queriedBlocks), CursorApplied: cursorApplied}); err != nil {
 		return err
 	}
 	var batch *storepb.SearchResultBatch
@@ -325,7 +333,7 @@ func streamBucketSearchResults(ctx context.Context, rs storage.SearchResultSet, 
 			return err
 		}
 		if batch == nil {
-			batch = &storepb.SearchResultBatch{Results: make([]storepb.SearchResultBatch_Result, 0, searchBatchSize)}
+			batch = &storepb.SearchResultBatch{Results: make([]storepb.SearchResultBatch_Result, 0, searchBatchSize), CursorApplied: cursorApplied}
 		}
 		r := rs.At()
 		batch.Results = append(batch.Results, storepb.SearchResultBatch_Result{Value: r.Value, Score: r.Score})
@@ -348,7 +356,7 @@ func streamBucketSearchResults(ctx context.Context, rs storage.SearchResultSet, 
 		return nil
 	}
 	if batch == nil {
-		batch = &storepb.SearchResultBatch{}
+		batch = &storepb.SearchResultBatch{CursorApplied: cursorApplied}
 	}
 	batch.Warnings = warnings
 	return send(batch)

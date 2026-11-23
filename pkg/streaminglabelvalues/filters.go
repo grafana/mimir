@@ -8,6 +8,8 @@ package streaminglabelvalues
 import (
 	"errors"
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 
 	"github.com/prometheus/prometheus/storage"
@@ -219,6 +221,140 @@ func (c *caseFoldingFilter) Accept(value string) (bool, float64) {
 	return c.inner.Accept(strings.ToLower(value))
 }
 
+// scoreScale makes BuildFilter round every score to 9 decimal places. Go may
+// fuse a multiply and an add into one instruction on some architectures, such
+// as arm64, but not on others, such as amd64. So backends on different
+// hardware can score the same value one bit apart. A score cursor compares
+// scores exactly, and merging the results of several backends assumes that
+// they order a value the same way. Rounding to a step far coarser than that
+// error makes a mismatch unlikely, but not impossible: two scores one bit
+// apart can still fall on either side of a rounding boundary. A decimal step
+// keeps a score such as 0.55 printing as 0.55 in API responses.
+const scoreScale = 1e9
+
+// quantizingFilter rounds the score of inner to 9 decimal places. Each step is
+// one correctly rounded operation with no add to fuse, and the conversion to
+// float64 forbids fusing anyway, so every architecture rounds the same score
+// to the same value.
+type quantizingFilter struct {
+	inner storage.Filter
+}
+
+func (q *quantizingFilter) Accept(value string) (bool, float64) {
+	accepted, score := q.inner.Accept(value)
+	return accepted, math.Round(float64(score*scoreScale)) / scoreScale
+}
+
+// BuildSearchFilter returns BuildFilter(p), wrapped to also reject every value
+// that a previous page returned under order. Callers that hold the values use
+// BuildSortedSearch.
+//
+// A cursor makes the filter non-nil, which turns off the no-filter fast paths
+// of storage.ApplySearchHints and the TSDB limit pushdown. So in a TSDB block,
+// every page after the first reads and sorts all values of the label, even for
+// a search without terms. Avoiding that needs a lower bound in
+// storage.LabelHints, which Prometheus does not have.
+func BuildSearchFilter(p *Params, order storage.Ordering) (storage.Filter, error) {
+	filter, err := BuildFilter(p)
+	if err != nil {
+		return nil, err
+	}
+	return applyCursor(filter, p, order), nil
+}
+
+// BuildSortedSearch is BuildSearchFilter for values sorted ascending, as
+// storage.ApplySearchHints requires. It cuts the values of previous pages off
+// with a binary search where order allows it. The filter then stays nil when p
+// has no terms.
+func BuildSortedSearch(values []string, p *Params, order storage.Ordering) ([]string, storage.Filter, error) {
+	filter, err := BuildFilter(p)
+	if err != nil {
+		return nil, nil, err
+	}
+	if p == nil || p.ResumeAfter == "" {
+		return values, filter, nil
+	}
+	switch {
+	case order == storage.OrderByValueDesc:
+		return values[:sort.SearchStrings(values, p.ResumeAfter)], filter, nil
+	case order != storage.OrderByScoreDesc:
+		return values[firstAfter(values, p.ResumeAfter):], filter, nil
+	case filter != nil:
+		return values, applyCursor(filter, p, order), nil
+	case p.ScoreAfter < 1.0:
+		// Without terms every value scores 1.0, so a page that ended on a lower
+		// score returned every value.
+		return nil, nil, nil
+	default:
+		return values[firstAfter(values, p.ResumeAfter):], nil, nil
+	}
+}
+
+// firstAfter returns the index of the first value that sorts after v.
+func firstAfter(values []string, v string) int {
+	return sort.Search(len(values), func(i int) bool { return values[i] > v })
+}
+
+// applyCursor wraps inner so that it also rejects every value that sorts at or
+// before p.ResumeAfter under order. It returns inner when p has no cursor. A nil
+// inner accepts every value with score 1.0, as BuildFilter documents.
+func applyCursor(inner storage.Filter, p *Params, order storage.Ordering) storage.Filter {
+	if p == nil || p.ResumeAfter == "" {
+		return inner
+	}
+	switch order {
+	case storage.OrderByScoreDesc:
+		return &scoreCursorFilter{inner: inner, afterScore: p.ScoreAfter, after: p.ResumeAfter}
+	case storage.OrderByValueDesc:
+		return &valueCursorFilter{inner: inner, after: p.ResumeAfter, descending: true}
+	default:
+		return &valueCursorFilter{inner: inner, after: p.ResumeAfter}
+	}
+}
+
+// valueCursorFilter checks the value before inner, because the value alone
+// decides if a previous page returned it.
+type valueCursorFilter struct {
+	inner      storage.Filter
+	after      string
+	descending bool
+}
+
+func (f *valueCursorFilter) Accept(value string) (bool, float64) {
+	if f.descending {
+		if value >= f.after {
+			return false, 0
+		}
+	} else if value <= f.after {
+		return false, 0
+	}
+	if f.inner == nil {
+		return true, 1.0
+	}
+	return f.inner.Accept(value)
+}
+
+// scoreCursorFilter calls inner first, because the exclusion needs the score.
+// A previous page returned every value with a higher score, and every value
+// with the same score that sorts at or before after. The comparison is exact,
+// so every backend must compute the same score bits for a value.
+type scoreCursorFilter struct {
+	inner      storage.Filter
+	afterScore float64
+	after      string
+}
+
+func (f *scoreCursorFilter) Accept(value string) (bool, float64) {
+	accepted, score := true, 1.0
+	if f.inner != nil {
+		accepted, score = f.inner.Accept(value)
+	}
+	if !accepted || score > f.afterScore || (score == f.afterScore && value <= f.after) {
+		return false, 0
+	}
+	return true, score
+}
+
 // BuildFilter constructs a storage.Filter from Params. Returns (nil, nil)
 // when Params is nil or has zero Terms — a nil storage.Filter accepts every
 // value with score 1.0 by Prometheus convention.
@@ -247,6 +383,8 @@ func (c *caseFoldingFilter) Accept(value string) (bool, float64) {
 // Case folding for !CaseSensitive is applied once per value at the OR root
 // via caseFoldingFilter; per-term filters are built case-sensitive against a
 // pre-lowercased term so they do not re-fold the same value per Accept call.
+//
+// Scores are rounded to 9 decimal places; see scoreScale for why.
 func BuildFilter(p *Params) (storage.Filter, error) {
 	if p == nil || len(p.Terms) == 0 {
 		return nil, nil
@@ -269,10 +407,10 @@ func BuildFilter(p *Params) (storage.Filter, error) {
 	} else {
 		inner = newFilterOr(perTerm...)
 	}
-	if p.CaseSensitive {
-		return inner, nil
+	if !p.CaseSensitive {
+		inner = &caseFoldingFilter{inner: inner}
 	}
-	return &caseFoldingFilter{inner: inner}, nil
+	return &quantizingFilter{inner: inner}, nil
 }
 
 // buildPerTermFilter composes the per-term filter. fuzzThresholdInt is the
@@ -308,7 +446,9 @@ func buildPerTermFilter(term string, caseSensitive bool, alg FuzzAlg, fuzzThresh
 // substring match, so fuzzy recall cannot exclude values that do not contain
 // the term. Leaves are case-sensitive against a lowercased term when
 // !p.CaseSensitive, so the caller must wrap the compiled root in
-// caseFoldingFilter, as BuildFilter does.
+// caseFoldingFilter, as BuildFilter does. The caller must also wrap the result
+// in quantizingFilter, as BuildFilter does, or score cursors can break across
+// architectures; see scoreScale.
 func newTermFilterFactory(p *Params) searchexpr.TermFilterFactory {
 	threshold := float64(p.FuzzThreshold) / 100.0
 	return func(term string, negated bool) (storage.Filter, error) {

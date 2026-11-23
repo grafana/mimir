@@ -9,7 +9,10 @@ import (
 	"context"
 	"errors"
 	fmt "fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -206,4 +209,29 @@ func Test_RetryRoundTripper(t *testing.T) {
 			require.Equal(t, uint32(tc.expectedRetries), stats.LoadRetries())
 		})
 	}
+}
+
+func TestRetryRoundTripper_ResendsRequestBody(t *testing.T) {
+	const body = "match[]=up&start=0&end=3600"
+	errInternal := httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{Code: http.StatusInternalServerError})
+
+	var tries int
+	next := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		tries++
+		// Forwarding the request to the querier reads its body, so do the same.
+		got, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		require.Equal(t, body, string(got), "try %d", tries)
+		if tries < 3 {
+			return nil, errInternal
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/prometheus/api/v1/labels", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := newRetryRoundTripper(next, log.NewNopLogger(), 5, nil).RoundTrip(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, 3, tries)
 }

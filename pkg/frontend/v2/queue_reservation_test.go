@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -300,7 +301,10 @@ func TestQueueReservation_AllSubRequestsGoToOneScheduler(t *testing.T) {
 		cortex_query_frontend_queue_reservations_total{outcome="send_failed"} 0
 		cortex_query_frontend_queue_reservations_total{outcome="shutting_down"} 0
 		cortex_query_frontend_queue_reservations_total{outcome="too_many_requests"} 0
-	`), "cortex_query_frontend_queue_reservations_total"))
+		# HELP cortex_query_frontend_queue_reservation_retries_total Total number of times the query-frontend retried a queue reservation right after a query-scheduler rejected it for too many outstanding requests from the tenant.
+		# TYPE cortex_query_frontend_queue_reservation_retries_total counter
+		cortex_query_frontend_queue_reservation_retries_total 0
+	`), "cortex_query_frontend_queue_reservations_total", "cortex_query_frontend_queue_reservation_retries_total"))
 	verifyEnqueueRequestsMetric(t, reg, map[string]int{"enqueued": subRequests})
 }
 
@@ -571,14 +575,55 @@ func TestQueueReservation_RetriesReserve(t *testing.T) {
 	}
 }
 
-func TestQueueReservation_TooManyRequestsIsFinal(t *testing.T) {
+func TestQueueReservation_TooManyRequestsRetriesOnAnotherScheduler(t *testing.T) {
+	var reserves atomic.Int64
+	var rejectedID atomic.String
+	reply := func(msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if reserves.Inc() == 1 {
+			rejectedID.Store(msg.ReservationID)
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+		}
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	}
+	first := newReservationTestScheduler(t, true, reply)
+	second := newReservationTestScheduler(t, true, reply)
+	reg := prometheus.NewPedanticRegistry()
+	f := setupReservationFrontend(t, reg, nil, first, second)
+
+	ctx, scope := newReservationTestContext(t, 1)
+	defer scope.Close(false)
+	doGroupRequests(t, f, ctx, 1)
+	test.Poll(t, 5*time.Second, 1, func() interface{} {
+		return totalMessages(schedulerpb.ENQUEUE, first, second)
+	})
+
+	rejecting, granting := first, second
+	if second.messages(schedulerpb.RESERVE)[0].ReservationID == rejectedID.Load() {
+		rejecting, granting = second, first
+	}
+	require.Len(t, rejecting.messages(schedulerpb.RESERVE), 1, "the retry must not go to the scheduler that rejected the reservation")
+	require.Empty(t, rejecting.messages(schedulerpb.ENQUEUE))
+	granted := granting.messages(schedulerpb.RESERVE)
+	require.Len(t, granted, 1)
+	require.Equal(t, granted[0].ReservationID, granting.messages(schedulerpb.ENQUEUE)[0].ReservationID)
+	require.Empty(t, rejecting.aborts(), "the scheduler did not open the rejected reservation, so the frontend must not abort it")
+	verifyEnqueueRequestsMetric(t, reg, map[string]int{"enqueued": 1})
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeTooManyRequests)))
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeOK)))
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservationRetries))
+}
+
+func TestQueueReservation_TooManyRequestsOnEverySchedulerFails(t *testing.T) {
 	reject := func(*schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 	}
-	first := newReservationTestScheduler(t, true, reject)
-	second := newReservationTestScheduler(t, true, reject)
+	schedulers := []*reservationTestScheduler{
+		newReservationTestScheduler(t, true, reject),
+		newReservationTestScheduler(t, true, reject),
+		newReservationTestScheduler(t, true, reject),
+	}
 	reg := prometheus.NewPedanticRegistry()
-	f := setupReservationFrontend(t, reg, nil, first, second)
+	f := setupReservationFrontend(t, reg, nil, schedulers...)
 
 	ctx, scope := newReservationTestContext(t, 1)
 	defer scope.Close(false)
@@ -586,8 +631,427 @@ func TestQueueReservation_TooManyRequestsIsFinal(t *testing.T) {
 	// The failed reservation fails each sub-request of the evaluation.
 	verifyEnqueueRequestsMetric(t, reg, map[string]int{"too_many_requests": 2})
 
-	require.Equal(t, 1, totalMessages(schedulerpb.RESERVE, first, second), "a rejected reservation must not go to another scheduler")
-	require.Zero(t, totalMessages(schedulerpb.ENQUEUE, first, second))
+	for i, s := range schedulers {
+		require.Len(t, s.messages(schedulerpb.RESERVE), 1, "scheduler %d must get exactly one RESERVE", i)
+		require.Empty(t, s.messages(schedulerpb.ENQUEUE))
+	}
+	require.Equal(t, float64(len(schedulers)), testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeTooManyRequests)))
+	// The first attempt is not a retry.
+	require.Equal(t, float64(len(schedulers)-1), testutil.ToFloat64(f.queueReservationRetries))
+}
+
+func TestQueueReservation_TooManyRequestsWinsOverLaterFailures(t *testing.T) {
+	var reserves atomic.Int64
+	reply := func(*schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if reserves.Inc() == 1 {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+		}
+		return closeStreamReply
+	}
+	first := newReservationTestScheduler(t, true, reply)
+	second := newReservationTestScheduler(t, true, reply)
+	reg := prometheus.NewPedanticRegistry()
+	// With one stream per scheduler, the reservation makes 2 attempts: the 429, then a transport
+	// error on the other scheduler.
+	f := setupReservationFrontend(t, reg, func(cfg *Config) { cfg.WorkerConcurrency = 1 }, first, second)
+
+	ctx, scope := newReservationTestContext(t, 1)
+	defer scope.Close(false)
+	requireStreamError(t, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests"), doGroupRequests(t, f, ctx, 1))
+	verifyEnqueueRequestsMetric(t, reg, map[string]int{"too_many_requests": 1})
+
+	require.Len(t, first.messages(schedulerpb.RESERVE), 1)
+	require.Len(t, second.messages(schedulerpb.RESERVE), 1)
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeTooManyRequests)))
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeSendFailed)))
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservationRetries))
+}
+
+func TestQueueReservation_ErrorAfterTooManyRequestsRetriesOnAnotherScheduler(t *testing.T) {
+	var reserves atomic.Int64
+	var grantedID atomic.String
+	reply := func(msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		switch reserves.Inc() {
+		case 1:
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+		case 2:
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: "the reservation requests more slots than the per-tenant queue cap"}
+		}
+		grantedID.Store(msg.ReservationID)
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	}
+	schedulers := []*reservationTestScheduler{
+		newReservationTestScheduler(t, true, reply),
+		newReservationTestScheduler(t, true, reply),
+		newReservationTestScheduler(t, true, reply),
+	}
+	reg := prometheus.NewPedanticRegistry()
+	f := setupReservationFrontend(t, reg, nil, schedulers...)
+
+	ctx, scope := newReservationTestContext(t, 1)
+	defer scope.Close(false)
+	doGroupRequests(t, f, ctx, 1)
+	test.Poll(t, 5*time.Second, 1, func() interface{} {
+		return totalMessages(schedulerpb.ENQUEUE, schedulers...)
+	})
+
+	for i, s := range schedulers {
+		require.Len(t, s.messages(schedulerpb.RESERVE), 1, "scheduler %d must get exactly one RESERVE", i)
+		for _, m := range s.messages(schedulerpb.ENQUEUE) {
+			require.Equal(t, grantedID.Load(), m.ReservationID, "the sub-request must use the granted reservation, not the plain path")
+		}
+	}
+	verifyEnqueueRequestsMetric(t, reg, map[string]int{"enqueued": 1})
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeTooManyRequests)))
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeSchedulerError)))
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeOK)))
+	// The retry after ERROR does not come right after a 429.
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservationRetries))
+}
+
+func TestQueueReservation_ErrorAfterTooManyRequestsFailsWhenNoOtherSchedulerRemains(t *testing.T) {
+	var reserves atomic.Int64
+	reply := func(*schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if reserves.Inc() == 1 {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+		}
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: "the reservation requests more slots than the per-tenant queue cap"}
+	}
+	first := newReservationTestScheduler(t, true, reply)
+	second := newReservationTestScheduler(t, true, reply)
+	reg := prometheus.NewPedanticRegistry()
+	f := setupReservationFrontend(t, reg, nil, first, second)
+
+	ctx, scope := newReservationTestContext(t, 1)
+	defer scope.Close(false)
+	requireStreamError(t, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests"), doGroupRequests(t, f, ctx, 1))
+	verifyEnqueueRequestsMetric(t, reg, map[string]int{"too_many_requests": 1})
+
+	for i, s := range []*reservationTestScheduler{first, second} {
+		require.Len(t, s.messages(schedulerpb.RESERVE), 1, "scheduler %d must get exactly one RESERVE", i)
+		require.Empty(t, s.messages(schedulerpb.ENQUEUE), "scheduler %d must get no plain-path ENQUEUE", i)
+	}
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeTooManyRequests)))
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeSchedulerError)))
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservationRetries))
+}
+
+func TestQueueReservation_RetryCountsOnlyTheAttemptRightAfterTooManyRequests(t *testing.T) {
+	rejecting := newTestReservationWorker(t, "rejecting", true)
+	granting := newTestReservationWorker(t, "granting", true)
+	f := newTargetedTestFrontend(map[string]*frontendSchedulerWorker{
+		rejecting.schedulerAddr: rejecting,
+		granting.schedulerAddr:  granting,
+	})
+	// 3 attempts: the 429, a transport error, then the grant.
+	f.cfg.WorkerConcurrency = 2
+	r := &queueReservation{f: f, userID: reservationTestUserID, slots: 1, allStreamsGone: make(chan struct{}), done: make(chan struct{})}
+
+	go func() {
+		req := <-f.reserveCh
+		req.reply <- reserveResult{worker: rejecting, status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+	}()
+	go func() {
+		req := <-granting.targetedReserveCh
+		req.reply <- reserveResult{worker: granting, transportErr: errors.New("stream failed")}
+		req = <-granting.targetedReserveCh
+		req.reply <- reserveResult{worker: granting, streamsGone: granting.reservationStreams.gone(), status: schedulerpb.OK}
+	}()
+	r.run(t.Context())
+
+	require.NoError(t, r.err)
+	require.Same(t, granting, r.worker)
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeOK)))
+	// The grant came after the transport error, not right after the 429, so it is not a retry.
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservationRetries))
+}
+
+func TestQueueReservation_TooManyRequestsLogsOneWarningWhenTheReservationFails(t *testing.T) {
+	a := newTestReservationWorker(t, "a", true)
+	b := newTestReservationWorker(t, "b", true)
+	f := newTargetedTestFrontend(map[string]*frontendSchedulerWorker{
+		a.schedulerAddr: a,
+		b.schedulerAddr: b,
+	})
+	var logs bytes.Buffer
+	f.log = log.NewLogfmtLogger(&logs)
+	// With 3 attempts, the reservation stops because every query-scheduler rejected it.
+	f.cfg.WorkerConcurrency = 2
+	r := &queueReservation{f: f, userID: reservationTestUserID, slots: 1, allStreamsGone: make(chan struct{}), done: make(chan struct{})}
+
+	go func() {
+		req := <-f.reserveCh
+		req.reply <- reserveResult{worker: b, status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+		req = <-a.targetedReserveCh
+		req.reply <- reserveResult{worker: a, status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+	}()
+	r.run(t.Context())
+
+	require.Equal(t, "too_many_requests", r.errOutcome)
+	warnings := logLinesWithLevel(logs.String(), "warn")
+	require.Len(t, warnings, 1, logs.String())
+	require.Contains(t, warnings[0], "attempts=2")
+	require.Contains(t, warnings[0], "rejected_query_schedulers=a,b")
+	require.Len(t, logLinesWithLevel(logs.String(), "debug"), 2, "one line for each 429")
+}
+
+func TestQueueReservation_TooManyRequestsLogsNoWarningWhenTheRetryGetsAGrant(t *testing.T) {
+	rejecting := newTestReservationWorker(t, "rejecting", true)
+	granting := newTestReservationWorker(t, "granting", true)
+	f := newTargetedTestFrontend(map[string]*frontendSchedulerWorker{
+		rejecting.schedulerAddr: rejecting,
+		granting.schedulerAddr:  granting,
+	})
+	var logs bytes.Buffer
+	f.log = log.NewLogfmtLogger(&logs)
+	r := &queueReservation{f: f, userID: reservationTestUserID, slots: 1, allStreamsGone: make(chan struct{}), done: make(chan struct{})}
+
+	go func() {
+		req := <-f.reserveCh
+		req.reply <- reserveResult{worker: rejecting, status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+		req = <-granting.targetedReserveCh
+		req.reply <- reserveResult{worker: granting, streamsGone: granting.reservationStreams.gone(), status: schedulerpb.OK}
+	}()
+	r.run(t.Context())
+
+	require.NoError(t, r.err)
+	require.Empty(t, logLinesWithLevel(logs.String(), "warn"), logs.String())
+	require.Len(t, logLinesWithLevel(logs.String(), "debug"), 1, "one line for the 429")
+}
+
+// logLinesWithLevel returns the logfmt lines in logs that have the level lvl.
+func logLinesWithLevel(logs, lvl string) []string {
+	var lines []string
+	for line := range strings.Lines(logs) {
+		if strings.Contains(line, "level="+lvl+" ") {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+// newTestReservationWorker returns a worker for addr. When streams is true, the worker has one
+// stream that supports queue reservation.
+func newTestReservationWorker(t *testing.T, addr string, streams bool) *frontendSchedulerWorker {
+	w := &frontendSchedulerWorker{
+		schedulerAddr:      addr,
+		cancelCh:           make(chan cancelRequest, 1),
+		targetedReserveCh:  make(chan *reserveRequest),
+		reservationStreams: newReservationStreamCount(),
+	}
+	w.ctx, w.cancel = context.WithCancelCause(t.Context())
+	if streams {
+		w.reservationStreams.add()
+	}
+	return w
+}
+
+func TestFrontendSchedulerWorkers_PickReservationWorker(t *testing.T) {
+	rejected := newTestReservationWorker(t, "rejected", true)
+	noStreams := newTestReservationWorker(t, "no-streams", true)
+	noStreams.reservationStreams.remove()
+	first := newTestReservationWorker(t, "first", true)
+	second := newTestReservationWorker(t, "second", true)
+	workers := &frontendSchedulerWorkers{workers: map[string]*frontendSchedulerWorker{
+		rejected.schedulerAddr:  rejected,
+		noStreams.schedulerAddr: noStreams,
+		first.schedulerAddr:     first,
+		second.schedulerAddr:    second,
+	}}
+	rejectedAddrs := map[string]struct{}{rejected.schedulerAddr: {}}
+
+	picked := map[*frontendSchedulerWorker]int{}
+	for range 200 {
+		picked[workers.pickReservationWorker(rejectedAddrs)]++
+	}
+	require.Len(t, picked, 2, "only the workers that did not reject and have a stream qualify")
+	require.Positive(t, picked[first])
+	require.Positive(t, picked[second])
+
+	rejectedAddrs[first.schedulerAddr] = struct{}{}
+	rejectedAddrs[second.schedulerAddr] = struct{}{}
+	require.Nil(t, workers.pickReservationWorker(rejectedAddrs), "the worker that did not reject has no stream")
+}
+
+func TestQueueReservation_TooManyRequestsFailsWhenTheOtherSchedulersHaveNoStream(t *testing.T) {
+	rejecting := newTestReservationWorker(t, "rejecting", true)
+	// For example, the streams of this query-scheduler reconnect.
+	noStreams := newTestReservationWorker(t, "no-streams", true)
+	noStreams.reservationStreams.remove()
+	f := newTargetedTestFrontend(map[string]*frontendSchedulerWorker{
+		rejecting.schedulerAddr: rejecting,
+		noStreams.schedulerAddr: noStreams,
+	})
+	r := &queueReservation{f: f, userID: reservationTestUserID, slots: 1, allStreamsGone: make(chan struct{}), done: make(chan struct{})}
+
+	go func() {
+		req := <-f.reserveCh
+		req.reply <- reserveResult{worker: rejecting, status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+	}()
+	r.run(t.Context())
+
+	require.False(t, r.plainPath)
+	require.Equal(t, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests"), r.err)
+	require.Equal(t, "too_many_requests", r.errOutcome)
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeTooManyRequests)))
+	require.Zero(t, testutil.ToFloat64(f.queueReservationRetries), "no retry went out")
+}
+
+func newTargetedTestFrontend(workers map[string]*frontendSchedulerWorker) *Frontend {
+	return &Frontend{
+		log:              log.NewNopLogger(),
+		cfg:              Config{WorkerConcurrency: 1},
+		reserveCh:        make(chan *reserveRequest),
+		schedulerWorkers: &frontendSchedulerWorkers{workers: workers},
+		queueReservations: promauto.With(nil).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_frontend_queue_reservations_total",
+		}, []string{"outcome"}),
+		queueReservationRetries: promauto.With(nil).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_query_frontend_queue_reservation_retries_total",
+		}),
+	}
+}
+
+func TestQueueReservation_RetryPicksAnotherWorkerWhenTheTargetStops(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		rejecting := newTestReservationWorker(t, "rejecting", true)
+		// No stream reads the channel of stopping, so the retry waits until stopping stops.
+		stopping := newTestReservationWorker(t, "stopping", true)
+		granting := newTestReservationWorker(t, "granting", true)
+		f := newTargetedTestFrontend(map[string]*frontendSchedulerWorker{
+			rejecting.schedulerAddr: rejecting,
+			stopping.schedulerAddr:  stopping,
+		})
+		// With WorkerConcurrency 1, the reservation makes 2 attempts. So the grant shows that the wait
+		// for stopping did not count as an attempt.
+		r := &queueReservation{f: f, userID: reservationTestUserID, slots: 1, allStreamsGone: make(chan struct{}), done: make(chan struct{})}
+
+		go func() {
+			req := <-f.reserveCh
+			req.reply <- reserveResult{worker: rejecting, status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+		}()
+		go func() {
+			req := <-granting.targetedReserveCh
+			req.reply <- reserveResult{worker: granting, streamsGone: granting.reservationStreams.gone(), status: schedulerpb.OK}
+		}()
+		go r.run(t.Context())
+
+		// stopping is the only worker that did not reject, so the retry waits on its channel.
+		synctest.Wait()
+		select {
+		case <-r.done:
+			require.FailNow(t, "the reservation must wait for stopping", "err: %v", r.err)
+		default:
+		}
+
+		// As removeScheduler does: remove the worker from the map, then stop it.
+		f.schedulerWorkers.mu.Lock()
+		delete(f.schedulerWorkers.workers, stopping.schedulerAddr)
+		f.schedulerWorkers.workers[granting.schedulerAddr] = granting
+		f.schedulerWorkers.mu.Unlock()
+		stopping.cancel(errFrontendSchedulerWorkerStopping)
+
+		<-r.done
+		require.NoError(t, r.err)
+		require.Same(t, granting, r.worker)
+		require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeTooManyRequests)))
+		require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeOK)))
+		// The wait for stopping sent no RESERVE, so only the grant counts as a retry.
+		require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservationRetries))
+	})
+}
+
+func TestQueueReservation_RetryPicksAnotherWorkerWhenTheTargetLosesItsStreams(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		rejecting := newTestReservationWorker(t, "rejecting", true)
+		// No stream reads the channel of reconnecting, so the retry waits until its streams end.
+		reconnecting := newTestReservationWorker(t, "reconnecting", true)
+		granting := newTestReservationWorker(t, "granting", true)
+		f := newTargetedTestFrontend(map[string]*frontendSchedulerWorker{
+			rejecting.schedulerAddr:    rejecting,
+			reconnecting.schedulerAddr: reconnecting,
+		})
+		// With WorkerConcurrency 1, the reservation makes 2 attempts. So the grant shows that the wait
+		// for reconnecting did not count as an attempt.
+		r := &queueReservation{f: f, userID: reservationTestUserID, slots: 1, allStreamsGone: make(chan struct{}), done: make(chan struct{})}
+
+		go func() {
+			req := <-f.reserveCh
+			req.reply <- reserveResult{worker: rejecting, status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+		}()
+		go func() {
+			req := <-granting.targetedReserveCh
+			req.reply <- reserveResult{worker: granting, streamsGone: granting.reservationStreams.gone(), status: schedulerpb.OK}
+		}()
+		go r.run(t.Context())
+
+		// reconnecting is the only worker that did not reject, so the retry waits on its channel.
+		synctest.Wait()
+		select {
+		case <-r.done:
+			require.FailNow(t, "the reservation must wait for reconnecting", "err: %v", r.err)
+		default:
+		}
+
+		// For example, the query-scheduler restarts at the same address. The worker stays in the map,
+		// and its last stream ends.
+		f.schedulerWorkers.mu.Lock()
+		f.schedulerWorkers.workers[granting.schedulerAddr] = granting
+		f.schedulerWorkers.mu.Unlock()
+		reconnecting.reservationStreams.remove()
+
+		<-r.done
+		require.NoError(t, r.err)
+		require.Same(t, granting, r.worker)
+		require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeTooManyRequests)))
+		require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeOK)))
+		// The wait for reconnecting sent no RESERVE, so only the grant counts as a retry.
+		require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservationRetries))
+	})
+}
+
+func TestQueueReservation_TargetedReserveStopsWhenTheQueryContextEnds(t *testing.T) {
+	// No stream reads the channel of target, so the RESERVE waits for one until ctx ends.
+	target := newTestReservationWorker(t, "target", true)
+	r := &queueReservation{f: newTargetedTestFrontend(nil), userID: reservationTestUserID, slots: 1}
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cause := errors.New("query cancelled")
+	cancel(cause)
+
+	_, err := r.reserve(ctx, "reservation", target, true)
+	require.ErrorIs(t, err, cause)
+	require.Zero(t, testutil.ToFloat64(r.f.queueReservationRetries), "no stream took the retry")
+}
+
+func TestQueueReservation_RetryCountsWhenTheQueryEndsBeforeTheReply(t *testing.T) {
+	rejecting := newTestReservationWorker(t, "rejecting", true)
+	target := newTestReservationWorker(t, "target", true)
+	f := newTargetedTestFrontend(map[string]*frontendSchedulerWorker{
+		rejecting.schedulerAddr: rejecting,
+		target.schedulerAddr:    target,
+	})
+	r := &queueReservation{f: f, userID: reservationTestUserID, slots: 1, allStreamsGone: make(chan struct{}), done: make(chan struct{})}
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cause := errors.New("query cancelled")
+
+	go func() {
+		req := <-f.reserveCh
+		req.reply <- reserveResult{worker: rejecting, status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+	}()
+	retried := make(chan *reserveRequest, 1)
+	go func() {
+		req := <-target.targetedReserveCh
+		// The query ends after the stream takes the retry and before the reply.
+		cancel(cause)
+		retried <- req
+	}()
+	r.run(ctx)
+
+	require.ErrorIs(t, r.err, cause)
+	require.Equal(t, "cancelled", r.errOutcome)
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservationRetries))
+	// The late reply ends the goroutine in reserve that waits for it.
+	(<-retried).reply <- reserveResult{worker: target, status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 }
 
 func TestQueueReservation_ErrorUsesPlainPath(t *testing.T) {
@@ -852,6 +1316,19 @@ func TestQueueReservation_ClosesGrantAfterTheEvaluationEnded(t *testing.T) {
 			streams := doGroupRequests(t, f, ctx, 1)
 			test.Poll(t, time.Second, 1, func() interface{} {
 				return len(s.messages(schedulerpb.RESERVE))
+			})
+			// A sub-request that the evaluation ends before it gets a ParallelismLimiter permit fails
+			// without an enqueue outcome. Wait until the sub-request holds the only permit, so that it
+			// waits for the reservation when the evaluation ends.
+			limiter := querymiddleware.ParallelismLimiterFromContext(ctx)
+			test.Poll(t, time.Second, true, func() interface{} {
+				probeCtx, cancelProbe := context.WithTimeout(t.Context(), 100*time.Millisecond)
+				defer cancelProbe()
+				if err := limiter.BeginRequest(probeCtx); err != nil {
+					return true
+				}
+				limiter.RequestFinished()
+				return false
 			})
 
 			tc.endEvaluation(cancel, scope, streams)

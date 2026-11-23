@@ -6,8 +6,10 @@
 package querymiddleware
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/http"
 
 	"github.com/go-kit/log"
@@ -18,6 +20,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -132,7 +135,16 @@ func newRetryRoundTripper(next http.RoundTripper, log log.Logger, maxRetries int
 }
 
 func (r retryRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Forwarding the request reads its body, so each try needs a fresh copy.
+	// Otherwise, a retried POST request loses the parameters sent in its body.
+	body, err := util.ReadRequestBodyWithoutConsuming(req)
+	if err != nil {
+		return nil, err
+	}
 	return doWithRetries(req.Context(), r.log, r.maxRetries, r.metrics, func() (*http.Response, error) {
+		if body != nil {
+			req.Body = io.NopCloser(bytes.NewReader(body))
+		}
 		return r.next.RoundTrip(req)
 	})
 }

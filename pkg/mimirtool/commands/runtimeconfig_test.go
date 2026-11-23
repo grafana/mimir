@@ -23,6 +23,22 @@ func TestRuntimeConfigValidate(t *testing.T) {
 		require.NoError(t, c.validate(nil))
 	})
 
+	t.Run("valid runtime config with Mimir flags", func(t *testing.T) {
+		c := RuntimeConfigCommand{
+			configFile: filepath.Join("testdata", "runtimeconfig", "valid.yaml"),
+			mimirFlags: []string{"-target=querier", "-querier.query-store-after=5h"},
+		}
+		require.NoError(t, c.validate(nil))
+	})
+
+	t.Run("valid runtime config with invalid Mimir flags", func(t *testing.T) {
+		c := RuntimeConfigCommand{
+			configFile: filepath.Join("testdata", "runtimeconfig", "valid.yaml"),
+			mimirFlags: []string{"-querier.query-store-after=not-a-duration"},
+		}
+		require.ErrorContains(t, c.validate(nil), `parse Mimir flags: invalid value "not-a-duration" for flag -querier.query-store-after`)
+	})
+
 	t.Run("invalid runtime config", func(t *testing.T) {
 		c := RuntimeConfigCommand{
 			configFile: filepath.Join("testdata", "runtimeconfig", "invalid.yaml"),

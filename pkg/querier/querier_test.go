@@ -2081,3 +2081,51 @@ func (t *increaseMemoryConsumptionLabelsSeriesSet) Err() error {
 func (t *increaseMemoryConsumptionLabelsSeriesSet) Warnings() annotations.Annotations {
 	return t.inner.Warnings()
 }
+
+func TestConfig_QueryCost(t *testing.T) {
+	for _, interval := range []time.Duration{-time.Second, 0, time.Microsecond, time.Millisecond, time.Minute} {
+		t.Run(interval.String(), func(t *testing.T) {
+			var cfg Config
+			flagext.DefaultValues(&cfg)
+			require.False(t, cfg.ExperimentalQueryCostAPIEnabled)
+			require.Equal(t, time.Minute, cfg.QueryCostEstimatedScrapeInterval)
+			cfg.ExperimentalQueryCostAPIEnabled = true
+			cfg.QueryCostEstimatedScrapeInterval = interval
+			if interval < time.Millisecond {
+				require.EqualError(t, cfg.Validate(), "querier.query-cost-estimated-scrape-interval must be at least 1ms when the query cost API is enabled")
+			} else {
+				require.NoError(t, cfg.Validate())
+			}
+		})
+	}
+}
+
+func TestConfig_QueryCostTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		engine    string
+		timeout   time.Duration
+		enabled   bool
+		expectErr string
+	}{
+		{engine: PrometheusEngine, timeout: -time.Second, enabled: true, expectErr: "querier.timeout must not be negative when the query cost API is enabled"},
+		{engine: PrometheusEngine, timeout: 0, enabled: true, expectErr: "querier.timeout must be positive when the query cost API is enabled with the Prometheus engine"},
+		{engine: PrometheusEngine, timeout: time.Minute, enabled: true},
+		{engine: PrometheusEngine, timeout: 0, enabled: false},
+		{engine: MimirEngine, timeout: -time.Second, enabled: true, expectErr: "querier.timeout must not be negative when the query cost API is enabled"},
+		{engine: MimirEngine, timeout: 0, enabled: true},
+		{engine: MimirEngine, timeout: -time.Second, enabled: false},
+	} {
+		t.Run(fmt.Sprintf("%s/%s/enabled=%t", tc.engine, tc.timeout, tc.enabled), func(t *testing.T) {
+			var cfg Config
+			flagext.DefaultValues(&cfg)
+			cfg.ExperimentalQueryCostAPIEnabled = tc.enabled
+			cfg.QueryEngine = tc.engine
+			cfg.EngineConfig.Timeout = tc.timeout
+			if tc.expectErr != "" {
+				require.EqualError(t, cfg.Validate(), tc.expectErr)
+			} else {
+				require.NoError(t, cfg.Validate())
+			}
+		})
+	}
+}

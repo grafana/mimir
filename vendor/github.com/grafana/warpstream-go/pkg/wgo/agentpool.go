@@ -3,7 +3,10 @@ package wgo
 import (
 	"context"
 	"fmt"
+	"net"
+	"slices"
 	"sort"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -15,9 +18,68 @@ import (
 // Bundling the fields into one pointer prevents readers from observing a torn
 // snapshot across the strategy, topic UUIDs, and agent list.
 type poolState struct {
-	agents   []int32 // sorted ascending so the strategy's hash-walk over non-leaders is consistent
-	topicIDs map[string][16]byte
-	strategy *DefaultPartitionAssignmentStrategy
+	agents    []int32 // sorted ascending so the strategy's hash-walk over non-leaders is consistent
+	topicIDs  map[string][16]byte
+	strategy  *DefaultPartitionAssignmentStrategy
+	addresses addressStats
+}
+
+// brokerAddress is a broker's Host and Port exactly as Metadata reported them.
+// No DNS lookup or normalisation is applied, so two agents share an address
+// only when both Host and Port are identical.
+type brokerAddress struct {
+	host string
+	port int32
+}
+
+func (a brokerAddress) String() string {
+	return net.JoinHostPort(a.host, strconv.Itoa(int(a.port)))
+}
+
+func (a brokerAddress) less(b brokerAddress) bool {
+	if a.host != b.host {
+		return a.host < b.host
+	}
+	return a.port < b.port
+}
+
+// addressStats summarises how many agents in a Metadata response advertise the
+// same address. top is the most-shared address and is only meaningful when
+// shared is above zero.
+type addressStats struct {
+	agents    int
+	shared    int // agents whose address is also advertised by another agent
+	addresses int // distinct addresses
+	top       brokerAddress
+	topAgents int
+}
+
+// summarizeBrokers returns the NodeIDs of brokers, in response order, and the
+// address summary, in one pass.
+func summarizeBrokers(brokers []kmsg.MetadataResponseBroker) ([]int32, addressStats) {
+	agents := make([]int32, 0, len(brokers))
+	counts := make(map[brokerAddress]int, len(brokers))
+	for _, b := range brokers {
+		agents = append(agents, b.NodeID)
+		counts[brokerAddress{host: b.Host, port: b.Port}]++
+	}
+	return agents, summarizeAddresses(len(agents), counts)
+}
+
+// summarizeAddresses builds addressStats from per-address agent counts.
+func summarizeAddresses(agents int, counts map[brokerAddress]int) addressStats {
+	s := addressStats{agents: agents, addresses: len(counts)}
+	for addr, n := range counts {
+		if n < 2 {
+			continue
+		}
+		s.shared += n
+		// Ties go to the smaller address so the result does not depend on map order.
+		if n > s.topAgents || (n == s.topAgents && addr.less(s.top)) {
+			s.top, s.topAgents = addr, n
+		}
+	}
+	return s
 }
 
 // AgentPool is the source of truth for "what agents exist right now and
@@ -35,12 +97,13 @@ type poolState struct {
 // on a fixed cadence by the WarpstreamClient, and exposes it as an immutable
 // poolState pointer swapped in atomically.
 //
-// The snapshot bundles three things together — agent list, per-topic UUIDs,
-// and the partition-assignment strategy — because the produce path needs
+// The snapshot bundles the agent list, per-topic UUIDs, and the
+// partition-assignment strategy together because the produce path needs
 // to read all three coherently. Splitting them across separate atomics
 // would let a reader observe a strategy built from one set of agents while
 // looking up a topic UUID from a different one, which would manifest as
-// rare, hard-to-diagnose hedging-to-departed-agent bugs.
+// rare, hard-to-diagnose hedging-to-departed-agent bugs. The address summary
+// rides in the same snapshot so it always describes the same agent list.
 //
 // Refresh has one data-preservation rule: when Metadata reports a topic
 // with a non-zero ErrorCode (LEADER_NOT_AVAILABLE during reassignment,
@@ -51,7 +114,7 @@ type AgentPool struct {
 	client *kgo.Client
 
 	// state is replaced atomically on every Refresh. Refresh must not be called
-	// concurrently from multiple goroutines; readers go through Strategy() and TopicID().
+	// concurrently from multiple goroutines; readers go through Strategy(), TopicID() and addresses().
 	state atomic.Pointer[poolState]
 }
 
@@ -87,10 +150,7 @@ func (p *AgentPool) refresh(ctx context.Context) (removed []int32, dropped leade
 		return nil, leaderDrops{}, fmt.Errorf("fetching metadata: %w", err)
 	}
 
-	newAgents := make([]int32, 0, len(meta.Brokers))
-	for _, b := range meta.Brokers {
-		newAgents = append(newAgents, b.NodeID)
-	}
+	newAgents, addresses := summarizeBrokers(meta.Brokers)
 	sort.Slice(newAgents, func(i, j int) bool { return newAgents[i] < newAgents[j] })
 
 	agentSet := make(map[int32]struct{}, len(newAgents))
@@ -103,9 +163,10 @@ func (p *AgentPool) refresh(ctx context.Context) (removed []int32, dropped leade
 	removed = diffRemovedAgents(prev.agents, agentSet)
 
 	p.state.Store(&poolState{
-		agents:   newAgents,
-		topicIDs: newTopicIDs,
-		strategy: newDefaultPartitionAssignmentStrategy(newAgents, newLeaders, noLiveLeader, noLeader, partitionCounts),
+		agents:    newAgents,
+		topicIDs:  newTopicIDs,
+		strategy:  newDefaultPartitionAssignmentStrategy(newAgents, newLeaders, noLiveLeader, noLeader, partitionCounts),
+		addresses: addresses,
 	})
 	return removed, dropped, nil
 }
@@ -119,6 +180,11 @@ func (p *AgentPool) Strategy() PartitionAssignmentStrategy {
 // The slice is owned by the immutable snapshot and must not be mutated.
 func (p *AgentPool) Agents() []int32 {
 	return p.state.Load().agents
+}
+
+// addresses returns the address summary from the last Refresh.
+func (p *AgentPool) addresses() addressStats {
+	return p.state.Load().addresses
 }
 
 // TopicID returns the UUID of topic from the last successful Metadata refresh, or
@@ -223,6 +289,12 @@ func diffRemovedAgents(old []int32, newSet map[int32]struct{}) []int32 {
 		}
 	}
 	return removed
+}
+
+// membershipChanged reports whether two sorted agent lists differ. It is the
+// single definition behind the metadata refresh result and the address log.
+func membershipChanged(before, after []int32) bool {
+	return !slices.Equal(before, after)
 }
 
 // diffAgentMembership counts NodeIDs that appeared or disappeared between two

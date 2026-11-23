@@ -494,17 +494,14 @@ func (m *mergeQuerier) FetchMetricMetadata(ctx context.Context, names []string, 
 }
 
 // searchSyntheticIDs builds a SearchResultSet whose values are the matched
-// federation IDs themselves, filtered/ordered/limited per params and hints.
+// federation IDs themselves, filtered/cursored/ordered/limited per params and
+// hints.
 // ids preserves the resolver's original list (used only as the iteration
 // source); matchedIDs is the subset surviving tenant matchers. params is
 // authoritative for the filter; any hints.Filter the caller already set is
 // overwritten, matching the per-leaf semantics described on mimirSearcher
 // (params travel separately from the opaque hints.Filter).
 func searchSyntheticIDs(ids []string, matchedIDs map[string]struct{}, params *streaminglabelvalues.Params, hints *storage.SearchHints) storage.SearchResultSet {
-	filter, err := streaminglabelvalues.BuildFilter(params)
-	if err != nil {
-		return storage.ErrSearchResultSet(err)
-	}
 	values := make([]string, 0, len(matchedIDs))
 	for _, id := range ids {
 		if _, ok := matchedIDs[id]; ok {
@@ -519,6 +516,10 @@ func searchSyntheticIDs(ids []string, matchedIDs map[string]struct{}, params *st
 	var hintsCopy storage.SearchHints
 	if hints != nil {
 		hintsCopy = *hints
+	}
+	values, filter, err := streaminglabelvalues.BuildSortedSearch(values, params, hintsCopy.OrderBy)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
 	}
 	hintsCopy.Filter = filter
 	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(values, &hintsCopy), nil)

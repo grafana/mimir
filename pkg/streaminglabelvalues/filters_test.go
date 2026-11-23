@@ -6,6 +6,8 @@
 package streaminglabelvalues
 
 import (
+	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -375,8 +377,10 @@ func TestBuildFilterCaseInsensitiveWrapsAtORRoot(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, f)
-	_, ok := f.(*caseFoldingFilter)
-	assert.True(t, ok, "case-insensitive BuildFilter must return *caseFoldingFilter root")
+	q, ok := f.(*quantizingFilter)
+	require.True(t, ok, "BuildFilter must return a *quantizingFilter root")
+	_, ok = q.inner.(*caseFoldingFilter)
+	assert.True(t, ok, "case-insensitive BuildFilter must wrap a *caseFoldingFilter under the root")
 
 	// Functional check: the wrapper folds the value before delegating, and the
 	// inner per-term filters were built against pre-lowered terms, so an
@@ -395,8 +399,35 @@ func TestBuildFilterCaseSensitiveReturnsLeafDirectly(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, f)
-	_, ok := f.(*caseFoldingFilter)
+	q, ok := f.(*quantizingFilter)
+	require.True(t, ok, "BuildFilter must return a *quantizingFilter root")
+	_, ok = q.inner.(*caseFoldingFilter)
 	assert.False(t, ok, "case-sensitive BuildFilter must not wrap in caseFoldingFilter")
+}
+
+// TestBuildFilter_ScoresRoundToSameDecimal protects the cross-architecture
+// contract of score cursors: a score that a backend computes one bit off, as a
+// fused multiply-add can, must round to the same score as the exact one.
+func TestBuildFilter_ScoresRoundToSameDecimal(t *testing.T) {
+	t.Run("scores round to a decimal", func(t *testing.T) {
+		// FuzzAlgSubstringLeft scores "b" in "abc" 1 - 0.9*1/2 = 0.55. The
+		// rounded score must be exactly 0.55, so that API responses print it as
+		// 0.55.
+		f, err := BuildFilter(&Params{Terms: []string{"b"}, CaseSensitive: true, FuzzAlg: FuzzAlgSubstringLeft})
+		require.NoError(t, err)
+		accepted, score := f.Accept("abc")
+		require.True(t, accepted)
+		assert.Equal(t, 0.55, score)
+	})
+
+	t.Run("one-bit neighbours round to the same score", func(t *testing.T) {
+		// 0.55 is not near a rounding boundary, so its neighbours one bit away
+		// round to it. The filter is the root that BuildFilter returns.
+		for _, raw := range []float64{math.Nextafter(0.55, 0), 0.55, math.Nextafter(0.55, 1)} {
+			_, got := (&quantizingFilter{inner: &scoreFilter{accepted: true, score: raw}}).Accept("abc")
+			assert.Equal(t, 0.55, got, "raw score %v", raw)
+		}
+	})
 }
 
 // recordingFilter captures every value passed to Accept so a test can assert
@@ -475,6 +506,9 @@ func TestTermFilterFactoryLeaves(t *testing.T) {
 			t.Run("positive term uses the BuildFilter leaf", func(t *testing.T) {
 				want, err := BuildFilter(p)
 				require.NoError(t, err)
+				quantizing, ok := want.(*quantizingFilter)
+				require.True(t, ok, "BuildFilter must return a *quantizingFilter root")
+				want = quantizing.inner
 				if folding, ok := want.(*caseFoldingFilter); ok {
 					want = folding.inner
 				}
@@ -600,4 +634,210 @@ func BenchmarkBuildFilterCaseInsensitiveAccept(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_, _ = f.Accept(values[i%len(values)])
 	}
+}
+
+type mapScoreFilter map[string]float64
+
+func (m mapScoreFilter) Accept(value string) (bool, float64) {
+	score, ok := m[value]
+	return ok, score
+}
+
+var allOrderings = []storage.Ordering{storage.OrderByValueAsc, storage.OrderByValueDesc, storage.OrderByScoreDesc}
+
+func TestApplyCursorReturnsInnerWithoutCursor(t *testing.T) {
+	inner := &scoreFilter{accepted: true, score: 0.5}
+	noCursor, err := NewParams([]string{"a"}, true, FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+
+	for _, order := range allOrderings {
+		assert.Same(t, storage.Filter(inner), applyCursor(inner, nil, order))
+		assert.Same(t, storage.Filter(inner), applyCursor(inner, noCursor, order))
+	}
+	assert.Nil(t, applyCursor(nil, noCursor, storage.OrderByValueAsc))
+}
+
+func TestApplyCursor(t *testing.T) {
+	values := []string{"a", "b", "c", "d", "e"}
+	scores := mapScoreFilter{"a": 0.9, "b": 0.5, "c": 0.5, "d": 0.5, "e": 0.1}
+
+	tests := []struct {
+		name        string
+		inner       storage.Filter
+		order       storage.Ordering
+		resumeAfter string
+		scoreAfter  float64
+		want        []storage.SearchResult
+	}{
+		{
+			name:        "ascending drops values at or before the cursor",
+			inner:       scores,
+			order:       storage.OrderByValueAsc,
+			resumeAfter: "c",
+			want:        []storage.SearchResult{{Value: "d", Score: 0.5}, {Value: "e", Score: 0.1}},
+		},
+		{
+			name:        "descending drops values at or after the cursor",
+			inner:       scores,
+			order:       storage.OrderByValueDesc,
+			resumeAfter: "c",
+			want:        []storage.SearchResult{{Value: "a", Score: 0.9}, {Value: "b", Score: 0.5}},
+		},
+		{
+			name:        "score drops higher scores and tied scores at or before the cursor",
+			inner:       scores,
+			order:       storage.OrderByScoreDesc,
+			resumeAfter: "c",
+			scoreAfter:  0.5,
+			want:        []storage.SearchResult{{Value: "d", Score: 0.5}, {Value: "e", Score: 0.1}},
+		},
+		{
+			name:        "score keeps lower scores whatever the value",
+			inner:       scores,
+			order:       storage.OrderByScoreDesc,
+			resumeAfter: "z",
+			scoreAfter:  0.5,
+			want:        []storage.SearchResult{{Value: "e", Score: 0.1}},
+		},
+		{
+			name:        "inner rejection wins over the value cursor",
+			inner:       mapScoreFilter{"a": 1},
+			order:       storage.OrderByValueAsc,
+			resumeAfter: "b",
+		},
+		{
+			name:        "inner rejection wins over the score cursor",
+			inner:       mapScoreFilter{"a": 0.9, "e": 0.1},
+			order:       storage.OrderByScoreDesc,
+			resumeAfter: "c",
+			scoreAfter:  0.5,
+			want:        []storage.SearchResult{{Value: "e", Score: 0.1}},
+		},
+		{
+			name:        "nil inner scores 1.0 under ascending order",
+			order:       storage.OrderByValueAsc,
+			resumeAfter: "c",
+			want:        []storage.SearchResult{{Value: "d", Score: 1}, {Value: "e", Score: 1}},
+		},
+		{
+			name:        "nil inner scores 1.0 under descending order",
+			order:       storage.OrderByValueDesc,
+			resumeAfter: "c",
+			want:        []storage.SearchResult{{Value: "a", Score: 1}, {Value: "b", Score: 1}},
+		},
+		{
+			name:        "nil inner scores 1.0 under score order",
+			order:       storage.OrderByScoreDesc,
+			resumeAfter: "c",
+			scoreAfter:  1,
+			want:        []storage.SearchResult{{Value: "d", Score: 1}, {Value: "e", Score: 1}},
+		},
+		{
+			name:        "nil inner under score order drops every value above a lower cursor score",
+			order:       storage.OrderByScoreDesc,
+			resumeAfter: "c",
+			scoreAfter:  0.5,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := (&Params{}).WithCursor(tc.resumeAfter, tc.scoreAfter)
+			require.NoError(t, err)
+			f := applyCursor(tc.inner, p, tc.order)
+
+			var got []storage.SearchResult
+			for _, v := range values {
+				if accepted, score := f.Accept(v); accepted {
+					got = append(got, storage.SearchResult{Value: v, Score: score})
+				} else {
+					assert.Zero(t, score, v)
+				}
+			}
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestBuildSortedSearch(t *testing.T) {
+	values := []string{"a", "b", "c", "d"}
+
+	tests := []struct {
+		name        string
+		terms       []string
+		order       storage.Ordering
+		resumeAfter string
+		scoreAfter  float64
+		wantValues  []string
+		wantFilter  bool
+	}{
+		{name: "no cursor keeps every value", order: storage.OrderByValueAsc, wantValues: values},
+		{name: "ascending cuts at a present cursor", order: storage.OrderByValueAsc, resumeAfter: "b", wantValues: []string{"c", "d"}},
+		{name: "ascending cuts at an absent cursor", order: storage.OrderByValueAsc, resumeAfter: "bb", wantValues: []string{"c", "d"}},
+		{name: "descending cuts at the cursor", order: storage.OrderByValueDesc, resumeAfter: "c", wantValues: []string{"a", "b"}},
+		{name: "score without terms cuts like ascending", order: storage.OrderByScoreDesc, resumeAfter: "b", scoreAfter: 1, wantValues: []string{"c", "d"}},
+		{name: "score without terms below 1.0 keeps nothing", order: storage.OrderByScoreDesc, resumeAfter: "b", scoreAfter: 0.5},
+		{name: "terms keep the filter", terms: []string{"a"}, order: storage.OrderByValueAsc, resumeAfter: "a", wantValues: []string{"b", "c", "d"}, wantFilter: true},
+		{name: "score with terms needs the filter", terms: []string{"a"}, order: storage.OrderByScoreDesc, resumeAfter: "a", scoreAfter: 1, wantValues: values, wantFilter: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := (&Params{Terms: tc.terms}).WithCursor(tc.resumeAfter, tc.scoreAfter)
+			require.NoError(t, err)
+			gotValues, filter, err := BuildSortedSearch(values, p, tc.order)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantValues, gotValues)
+			assert.Equal(t, tc.wantFilter, filter != nil)
+		})
+	}
+}
+
+// TestCursorPagesMatchUnpagedResult pages with limit 1, which takes the
+// limited paths of storage.ApplySearchHints, and checks that the pages
+// together equal one unpaged search.
+func TestCursorPagesMatchUnpagedResult(t *testing.T) {
+	// The case-insensitive term "B" scores b and bb 1.0, abc 0.55, Ab and cab
+	// 0.1, so the score order also has ties.
+	values := []string{"Ab", "abc", "b", "bb", "cab"}
+	searches := map[string]*Params{
+		"no terms":         {},
+		"scored with ties": {Terms: []string{"B"}, FuzzAlg: FuzzAlgSubstringLeft},
+	}
+	for name, base := range searches {
+		for _, order := range allOrderings {
+			for _, sorted := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/order %d/sorted %t", name, order, sorted), func(t *testing.T) {
+					filter, err := BuildFilter(base)
+					require.NoError(t, err)
+					want := storage.ApplySearchHints(values, &storage.SearchHints{Filter: filter, OrderBy: order})
+
+					var got []storage.SearchResult
+					p := base
+					for len(got) <= len(values) {
+						page := searchPage(t, values, p, order, sorted)
+						if len(page) == 0 {
+							break
+						}
+						got = append(got, page...)
+						p, err = base.WithCursor(page[0].Value, page[0].Score)
+						require.NoError(t, err)
+					}
+					assert.Equal(t, want, got)
+				})
+			}
+		}
+	}
+}
+
+func searchPage(t *testing.T, values []string, p *Params, order storage.Ordering, sorted bool) []storage.SearchResult {
+	var (
+		filter storage.Filter
+		err    error
+	)
+	if sorted {
+		values, filter, err = BuildSortedSearch(values, p, order)
+	} else {
+		filter, err = BuildSearchFilter(p, order)
+	}
+	require.NoError(t, err)
+	return storage.ApplySearchHints(values, &storage.SearchHints{Filter: filter, OrderBy: order, Limit: 1})
 }

@@ -181,7 +181,7 @@ spec:
             expr: |
               (
                 sum by(cluster, namespace, name, operation) (
-                  rate(thanos_cache_operation_failures_total{operation!~"add|delete"}[4m])
+                  rate(thanos_cache_operation_failures_total{operation!~"add|delete", reason!="canceled"}[4m])
                 )
                 /
                 (
@@ -1215,6 +1215,17 @@ spec:
               # The "last successful run" metric is updated even if the compactor owns no tenants,
               # so this alert correctly doesn't fire if compactor has nothing to do.
               (time() - cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds > 60 * 60 * 6)
+            for: 1h
+            labels:
+              severity: critical
+          - alert: MimirCompactorNotDiscoveringTenants
+            annotations:
+              message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not successfully discovered tenants for blocks cleanup in the last 6 hours.
+              runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimircompactornotdiscoveringtenants
+            expr: |
+              (time() - cortex_compactor_block_cleanup_last_tenants_list_timestamp_seconds > 60 * 60 * 6)
+              and
+              (cortex_compactor_block_cleanup_last_tenants_list_timestamp_seconds > 0)
             for: 1h
             labels:
               severity: critical

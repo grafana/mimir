@@ -37,6 +37,8 @@ const (
 	day                                               = 24 * time.Hour
 	queryRangePathSuffix                              = "/api/v1/query_range"
 	instantQueryPathSuffix                            = "/api/v1/query"
+	queryRangeCostPathSuffix                          = "/api/v1/query_range_cost"
+	instantQueryCostPathSuffix                        = "/api/v1/query_cost"
 	cardinalityLabelNamesPathSuffix                   = "/api/v1/cardinality/label_names"
 	cardinalityLabelValuesPathSuffix                  = "/api/v1/cardinality/label_values"
 	cardinalityActiveSeriesPathSuffix                 = "/api/v1/cardinality/active_series"
@@ -52,6 +54,7 @@ const (
 	queryTypeLabels                       = "label_names_and_values"
 	queryTypeActiveSeries                 = "active_series"
 	queryTypeActiveNativeHistogramMetrics = "active_native_histogram_metrics"
+	queryTypeQueryCost                    = "query_cost"
 	queryTypeOther                        = "other"
 
 	EnableRemoteExecutionFlag = "query-frontend.enable-remote-execution"
@@ -300,7 +303,7 @@ func newQueryTripperware(
 
 	retryMetrics := newRetryMetrics(registerer)
 
-	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(
+	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware, queryCostMiddleware := newQueryMiddlewares(
 		cfg,
 		log,
 		limits,
@@ -370,6 +373,14 @@ func newQueryTripperware(
 			next = newReadConsistencyRoundTripper(next, ingestStorageOffsetsReader, limits, log, metrics)
 		}
 
+		// Cost estimates are not split, sharded or cached, but they are subject to the same
+		// tenant query limits and blocked queries as the queries that they estimate.
+		queryCostNext := next
+		if cfg.MaxRetries > 0 {
+			queryCostNext = newRetryRoundTripper(next, log, cfg.MaxRetries, retryMetrics)
+		}
+		queryCost := newQueryCostRoundTripper(queryCostNext, codec, queryCostMiddleware...)
+
 		// Look up cache as first thing after validation.
 		if cfg.CacheResults {
 			cardinality = newCardinalityQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, cardinality, log, registerer)
@@ -408,6 +419,8 @@ func newQueryTripperware(
 				return series.RoundTrip(r)
 			case IsRemoteReadQuery(r.URL.Path):
 				return remoteRead.RoundTrip(r)
+			case IsQueryCostQuery(r.URL.Path):
+				return queryCost.RoundTrip(r)
 			default:
 				return next.RoundTrip(r)
 			}
@@ -432,7 +445,7 @@ func newQueryMiddlewares(
 	registerer prometheus.Registerer,
 	retryMetrics prometheus.Observer,
 	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker,
-) (queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware []MetricsQueryMiddleware) {
+) (queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware, queryCostMiddleware []MetricsQueryMiddleware) {
 	// Metric used to keep track of each middleware execution duration.
 	metrics := newInstrumentMiddlewareMetrics(registerer)
 	blockedQueriesCounter := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
@@ -451,6 +464,12 @@ func newQueryMiddlewares(
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
+	)
+
+	queryCostMiddleware = append(queryCostMiddleware,
+		newLimitsMiddleware(limits, log),
+		queryBlockerMiddleware,
+		blockInternalFunctionsMiddleware,
 	)
 
 	queryRangeMiddleware = append(queryRangeMiddleware,
@@ -524,6 +543,8 @@ func newQueryMiddlewares(
 	// Does not apply to remote read as those are executed remotely and the enabling of PromQL experimental
 	// functions for those are not controlled here.
 	experimentalFunctionsMiddleware := newExperimentalFeaturesMiddleware(limits, log)
+	// Reject estimates of queries that the query-frontend would reject.
+	queryCostMiddleware = append(queryCostMiddleware, experimentalFunctionsMiddleware)
 	queryRangeMiddleware = append(
 		queryRangeMiddleware,
 		newInstrumentMiddleware("experimental_functions", metrics),
@@ -669,6 +690,8 @@ func newQueryCountTripperware(registerer prometheus.Registerer) Tripperware {
 				op = queryTypeActiveNativeHistogramMetrics
 			case IsLabelsQuery(r.URL.Path):
 				op = queryTypeLabels
+			case IsQueryCostQuery(r.URL.Path):
+				op = queryTypeQueryCost
 			}
 
 			tenantIDs, err := tenant.TenantIDs(r.Context())
@@ -691,6 +714,19 @@ func IsRangeQuery(path string) bool {
 
 func IsInstantQuery(path string) bool {
 	return strings.HasSuffix(path, instantQueryPathSuffix)
+}
+
+func IsRangeQueryCost(path string) bool {
+	return strings.HasSuffix(path, queryRangeCostPathSuffix)
+}
+
+func IsInstantQueryCost(path string) bool {
+	return strings.HasSuffix(path, instantQueryCostPathSuffix)
+}
+
+// IsQueryCostQuery reports whether path is an instant or range query cost estimation endpoint.
+func IsQueryCostQuery(path string) bool {
+	return IsRangeQueryCost(path) || IsInstantQueryCost(path)
 }
 
 func IsCardinalityQuery(path string) bool {
