@@ -5,7 +5,6 @@ package remoteexec
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	"github.com/antithesishq/antithesis-sdk-go/assert"
 
@@ -48,14 +47,6 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	// sharded leg is executed remotely; otherwise the entire subtree is. The rest of the plan (the outer
 	// instant query) runs on the query-frontend.
 	if evaluationRoots := collectEvaluationRoots(plan.Root, plan.Parameters.TimeRange); len(evaluationRoots) > 0 {
-		// An earlier pass can remove all selectors from an evaluation root, for example by simplifying
-		// `sum(foo{a="1",a="2"}) or vector(0)` to `vector(0)`. A remote execution group needs a selector,
-		// and such a root reads no data, so run it locally. Filter before counting the roots, so that a
-		// single remaining root is not eagerly loaded.
-		evaluationRoots = slices.DeleteFunc(evaluationRoots, func(r evaluationRootWithTimeRange) bool {
-			return !optimize.InspectSelectors(r.root.Inner).HasSelectors
-		})
-
 		for _, evaluationRoot := range evaluationRoots {
 			if err := o.wrapEvaluationRoot(evaluationRoot.root, groups, len(evaluationRoots) > 1, maximumSupportedQueryPlanVersion, evaluationRoot.timeRange); err != nil {
 				return nil, err
@@ -183,12 +174,12 @@ func (o *OptimizationPass) applyToRootNode(root planning.Node, groups remoteExec
 	return root, nil
 }
 
-// collectEvaluationRoots returns the EvaluationRoot nodes in the plan.
 type evaluationRootWithTimeRange struct {
 	root      *core.EvaluationRoot
 	timeRange types.QueryTimeRange
 }
 
+// collectEvaluationRoots returns the EvaluationRoot nodes in the plan that need remote execution.
 func collectEvaluationRoots(node planning.Node, timeRange types.QueryTimeRange) []evaluationRootWithTimeRange {
 	seen := map[*core.EvaluationRoot]struct{}{}
 	var roots []evaluationRootWithTimeRange
@@ -196,7 +187,11 @@ func collectEvaluationRoots(node planning.Node, timeRange types.QueryTimeRange) 
 	var collect func(planning.Node, types.QueryTimeRange)
 	collect = func(node planning.Node, timeRange types.QueryTimeRange) {
 		if evaluationRoot, ok := node.(*core.EvaluationRoot); ok {
-			if _, exists := seen[evaluationRoot]; !exists {
+			// An earlier pass can remove all selectors from an evaluation root, for example by simplifying
+			// `sum(foo{a="1",a="2"}) or vector(0)` to `vector(0)`. A remote execution group needs a selector,
+			// and such a root reads no data, so leave it to run locally. Skipping it here also means that a
+			// single remaining root is not counted as one of several roots, so it is not eagerly loaded.
+			if _, exists := seen[evaluationRoot]; !exists && optimize.InspectSelectors(evaluationRoot.Inner).HasSelectors {
 				seen[evaluationRoot] = struct{}{}
 				roots = append(roots, evaluationRootWithTimeRange{
 					root:      evaluationRoot,
