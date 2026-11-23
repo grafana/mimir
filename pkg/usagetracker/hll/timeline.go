@@ -12,7 +12,9 @@ import (
 // of minutes, and each one remembers its minute, so a sketch of a minute that is out of the window is never used.
 // It is safe for concurrent use.
 type Timeline struct {
-	mtx   sync.Mutex
+	mtx sync.Mutex
+
+	// +checklocks:mtx
 	slots []timelineSlot
 }
 
@@ -33,12 +35,11 @@ func NewTimeline(minutes int) *Timeline {
 // Merge does nothing if minute is not in the window. That includes a minute after now: its slot holds a minute
 // that is still in the window, and replacing it would lose values.
 func (t *Timeline) Merge(minute, now int64, s Sketch) {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
 	if !t.inWindow(minute, now) {
 		return
 	}
-
-	t.mtx.Lock()
-	defer t.mtx.Unlock()
 	slot := &t.slots[minute%int64(len(t.slots))]
 	switch {
 	case slot.sketch == nil:
@@ -86,6 +87,7 @@ func (t *Timeline) Sketches(now int64, f func(minute int64, s Sketch)) {
 	}
 }
 
+// +checklocks:t.mtx
 func (t *Timeline) inWindow(minute, now int64) bool {
 	return minute <= now && minute > now-int64(len(t.slots))
 }

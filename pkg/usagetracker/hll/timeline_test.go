@@ -56,6 +56,8 @@ func TestTimeline(t *testing.T) {
 		// Cleanup drops the sketches.
 		tl.Merge(start+minutes+1, start+minutes+1, sketchOf(0, 100))
 		tl.Cleanup(start + 2*minutes + 1)
+		tl.mtx.Lock()
+		defer tl.mtx.Unlock()
 		for _, slot := range tl.slots {
 			require.Nil(t, slot.sketch)
 		}
