@@ -115,6 +115,35 @@ func TestTimeline(t *testing.T) {
 		// The clock went back a whole window: now-minutes is in the window again, and its slot holds now.
 		tl.Merge(now-minutes, now-1, sketchOf(100, 200))
 		require.Equal(t, sketchOf(0, 100).Estimate(), estimate(tl, now))
+
+	t.Run("a cleanup for an earlier minute keeps the next minute", func(t *testing.T) {
+		tl := NewTimeline(minutes)
+		now := start + 100
+		// A write crosses the minute boundary after cleanup reads the clock.
+		tl.Merge(now+1, now+1, sketchOf(0, 100))
+		// A sketch farther ahead models a backward clock jump.
+		tl.Merge(now+2, now+2, sketchOf(100, 200))
+		tl.Cleanup(now)
+		require.Equal(t, []int64{now + 1}, minutesWithSketches(tl, now+2))
+	})
+
+	t.Run("a cleanup for an earlier minute keeps the next minute of a one-minute window", func(t *testing.T) {
+		// An idle timeout of a minute or less has one slot, so the next minute takes the slot of now.
+		tl := NewTimeline(1)
+		now := start + 100
+		tl.Merge(now+1, now+1, sketchOf(0, 100))
+		tl.Cleanup(now)
+		require.Equal(t, []int64{now + 1}, minutesWithSketches(tl, now+1))
+	})
+
+	t.Run("a timeline is empty when no sketch is in the window or after it", func(t *testing.T) {
+		tl := NewTimeline(minutes)
+		tl.Merge(start, start, sketchOf(0, 100))
+		// A cleanup that read the clock before the minute of the sketch must not delete its tenant.
+		require.False(t, tl.Empty(start-1))
+		require.False(t, tl.Empty(start))
+		// No cleanup dropped the sketch of start yet, but it's out of this window.
+		require.True(t, tl.Empty(start+minutes))
 	})
 
 	t.Run("merge keeps a copy of the sketch", func(t *testing.T) {
