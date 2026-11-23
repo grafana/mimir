@@ -484,10 +484,10 @@ func TestUploadCleanup(t *testing.T) {
 
 	{
 		errBkt := errBucket{Bucket: bkt, failSuffix: "/index"}
-		uerr := &UploadError{}
+		var uerr *UploadError
 
 		_, uploadErr := Upload(ctx, log.NewNopLogger(), errBkt, path.Join(tmpDir, b1.String()), nil)
-		require.ErrorAs(t, uploadErr, uerr)
+		require.ErrorAs(t, uploadErr, &uerr)
 
 		// If upload of index fails, block is deleted.
 		require.Equal(t, 0, len(bkt.Objects()))
@@ -496,10 +496,10 @@ func TestUploadCleanup(t *testing.T) {
 
 	{
 		errBkt := errBucket{Bucket: bkt, failSuffix: "/meta.json"}
-		uerr := &UploadError{}
+		var uerr *UploadError
 
 		_, uploadErr := Upload(ctx, log.NewNopLogger(), errBkt, path.Join(tmpDir, b1.String()), nil)
-		require.ErrorAs(t, uploadErr, uerr)
+		require.ErrorAs(t, uploadErr, &uerr)
 
 		// If upload of meta.json fails, nothing is cleaned up.
 		require.Equal(t, 3, len(bkt.Objects()))
@@ -549,7 +549,7 @@ func (eb errBucket) Upload(ctx context.Context, name string, r io.Reader, opts .
 	}
 
 	if strings.HasSuffix(name, eb.failSuffix) {
-		return UploadError{cause: err, fileType: FileType(name)}
+		return &UploadError{cause: err, fileType: FileType(name)}
 	}
 	return nil
 }

@@ -63,7 +63,7 @@ type UploadError struct {
 	fileType FileType
 }
 
-func (e UploadError) Error() string {
+func (e *UploadError) Error() string {
 	return fmt.Sprintf("failed to upload %s: %v", e.fileType, e.cause)
 }
 
