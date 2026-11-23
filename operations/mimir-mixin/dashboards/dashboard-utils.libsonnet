@@ -2077,7 +2077,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     };
     $.timeseriesPanel('Kafka 100th percentile end-to-end latency when ingesters are running (outliers)') +
     $.panelDescription(
-      'Kafka 100th percentile end-to-end latency when ingesters are running (outliers only)',
+      'Kafka 100th percentile end-to-end latency when ingesters are running (outliers)',
       |||
         The 100th percentile of the time between writing request by distributor to Kafka and reading the record by ingester,
         when ingesters are running. This panel only shows ingester outliers, to easily spot if the high end-to-end latency
@@ -2414,7 +2414,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       } + $.aliasColors($.multiZoneSeriesColors(multiZoneQpsSeriesColorFamilies))
     ),
 
-  // A "Latency per zone" panel, showing the per-zone p99 and p50 latency of a write path
+  // A "By zone request latency" panel, showing the per-zone p99 and p50 latency of a write path
   // component. It complements the aggregate "Latency" panel, and it's built from the same
   // recording rules.
   multiZoneLatencyPanel(metric, jobNameFormats, routeRegex)::
@@ -2424,7 +2424,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     local shownPercentiles = ['99th percentile', '50th percentile'];
     local zoneTargets(zone) =
       $.latencyRecordingRulePanelNativeHistogram(metric, $.multiZoneJobSelector(jobNameFormats, zone, routeRegex)).targets;
-    $.timeseriesPanel('Latency per zone') +
+    $.timeseriesPanel('By zone request latency') +
     $.latencyRecordingRulePanelNativeHistogram(metric, $.multiZoneJobSelector(jobNameFormats, zones[0], routeRegex)) +
     {
       // Targets are ordered percentile-first, so that the same percentile from different zones is
@@ -2479,9 +2479,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ];
     local zoneTargets(zone) =
       $.ingestStorageKafkaProducedRecordsLatencyPanel($.jobMatcher($.multiZoneJobNames(jobNameFormats, zone))).targets;
-    $.timeseriesPanel('Kafka produced records latency per zone') +
+    $.timeseriesPanel('By zone Kafka record production latency') +
     $.panelDescription(
-      'Kafka produced records latency per zone',
+      'By zone Kafka record production latency',
       'Latency of records synchronously produced to Kafka, broken down by availability zone.',
     ) +
     {
