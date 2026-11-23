@@ -257,7 +257,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.DurationVar(&cfg.RingChangeDebounce, "ruler.ring-change-debounce", 0, "How long to wait for the ring to stop changing before syncing rules in response to a ring change. This can reduce duplicate rule evaluation when multiple ring changes happen in quick succession, such as during a rollout. 0 disables debouncing and syncs immediately on every detected ring change, which is the default and historical behaviour. Must be less than -ruler.ring-change-max-debounce.")
 	f.DurationVar(&cfg.RingChangeMaxDebounce, "ruler.ring-change-max-debounce", 15*time.Second, "The maximum time to keep postponing a ring-change-triggered sync while the ring keeps changing, so continuous ring churn can't indefinitely delay picking up a ring change. Only used when -ruler.ring-change-debounce is greater than 0.")
-	f.DurationVar(&cfg.ShutdownHandoverPeriod, "ruler.shutdown-handover-period", 0, "How long the ruler keeps evaluating its rule groups on shutdown after leaving the ring, so other rulers can take them over without skipping an evaluation. Should be longer than the time other rulers need to sync after a ring change. 0 to disable.")
+	f.DurationVar(&cfg.ShutdownHandoverPeriod, "ruler.shutdown-handover-period", 0, "How long the ruler keeps evaluating its rule groups on shutdown after leaving the ring, so other rulers can take them over without skipping an evaluation. Set it longer than the ring check (up to 6s) plus two full rule syncs. 0 to disable.")
 
 	cfg.RingCheckPeriod = 5 * time.Second
 }
@@ -545,9 +545,10 @@ func (r *Ruler) starting(ctx context.Context) (err error) {
 }
 
 // stopping stops the Ruler.
-// The ruler leaves the ring before it stops evaluating its rule groups. The other rulers start evaluating
-// these rule groups when they detect the ring change. If the ruler stopped evaluating first, a rule group
-// would have no owner until then, and any evaluation due in the meantime would be skipped.
+// This ruler leaves the ring before it stops evaluating its rule groups.
+// The new owners of these rule groups start evaluating them after they detect the ring change and sync.
+// This ruler keeps evaluating the rule groups for -ruler.shutdown-handover-period after it leaves the ring.
+// With a period of 0, no ruler evaluates the rule groups until the new owners sync.
 func (r *Ruler) stopping(_ error) error {
 	// The lifecycler unregisters the instance from the ring when it stops.
 	if err := services.StopAndAwaitTerminated(context.Background(), r.lifecycler); err != nil {

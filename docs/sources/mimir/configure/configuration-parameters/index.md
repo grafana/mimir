@@ -3280,8 +3280,8 @@ tenant_federation:
 
 # (experimental) How long the ruler keeps evaluating its rule groups on shutdown
 # after leaving the ring, so other rulers can take them over without skipping an
-# evaluation. Should be longer than the time other rulers need to sync after a
-# ring change. 0 to disable.
+# evaluation. Set it longer than the ring check (up to 6s) plus two full rule
+# syncs. 0 to disable.
 # CLI flag: -ruler.shutdown-handover-period
 [shutdown_handover_period: <duration> | default = 0s]
 
