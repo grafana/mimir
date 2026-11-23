@@ -113,7 +113,8 @@
 
   local get_duration_arg_or_default(args, argName) =
     if argName in args then
-      $.util.parseDuration(args[argName])
+      if args[argName] == 0 || args[argName] == '0' then 0
+      else $.util.parseDuration(args[argName])
     else
       $.util.getFlagDefaultSeconds(argName),
 
@@ -126,8 +127,8 @@
     {
       // How long to wait before deleting an inactive partition, that doesn't have an owner.
       'ingester.partition-ring.delete-inactive-partition-after':
-        // If query-ingesters-within is 0, that means "always query ingesters", so we set delete-inactive-partitions-after to 0 to disable deleting inactive partitions.
-        if query_ingesters_within == 0 then 0
+        // Disable deletion when ingesters are always queried or inactive offsets are retained indefinitely.
+        if query_ingesters_within == 0 || include_inactive_partitions_offset < 0 then 0
         else
           $.util.formatDuration(
             query_ingesters_within +
