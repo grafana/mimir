@@ -44,5 +44,12 @@ func Quantile(q float64, values []float64) float64 {
 	if weight == 0 {
 		return values[int(lowerIndex)]
 	}
-	return values[int(lowerIndex)]*(1-weight) + values[int(upperIndex)]*weight
+	lower := values[int(lowerIndex)]
+	upper := values[int(upperIndex)]
+	// Identical samples do not need interpolation; returning one avoids rounding error and underflow.
+	// Comparing bits distinguishes negative zero from positive zero.
+	if lower == upper && math.Float64bits(lower) == math.Float64bits(upper) {
+		return lower
+	}
+	return lower*(1-weight) + upper*weight
 }
