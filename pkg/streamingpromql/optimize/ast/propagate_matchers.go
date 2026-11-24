@@ -74,11 +74,33 @@ func (mapper *propagateMatchers) MapExpr(ctx context.Context, expr parser.Expr) 
 	return e, true, nil
 }
 
-// labelSet is a set of label names: the names in names if include is true, or all names not in
-// names if include is false. The zero value is the set of all label names.
+// labelSet is a set of label names. If include is true, it holds only the labels in names.
+// If include is false, it holds all labels except the labels in names.
+// Use allLabels, onlyLabels, allLabelsExcept or onlyOrAllExcept to create one.
 type labelSet struct {
 	names   stringSet
 	include bool
+}
+
+func allLabels() labelSet {
+	return labelSet{}
+}
+
+func onlyLabels(names stringSet) labelSet {
+	return labelSet{names: names, include: true}
+}
+
+func allLabelsExcept(names stringSet) labelSet {
+	return labelSet{names: names}
+}
+
+// onlyOrAllExcept returns onlyLabels(names) if only is true, or allLabelsExcept(names) otherwise.
+// It is for clauses such as on()/ignoring() and by()/without(), which list labels to keep or to remove.
+func onlyOrAllExcept(names stringSet, only bool) labelSet {
+	if only {
+		return onlyLabels(names)
+	}
+	return allLabelsExcept(names)
 }
 
 func (s labelSet) contains(name string) bool {
@@ -92,13 +114,13 @@ func (s labelSet) isEmpty() bool {
 func (s labelSet) intersect(o labelSet) labelSet {
 	switch {
 	case s.include && o.include:
-		return labelSet{names: s.names.Intersection(o.names), include: true}
+		return onlyLabels(s.names.Intersection(o.names))
 	case s.include:
-		return labelSet{names: s.names.Difference(o.names), include: true}
+		return onlyLabels(s.names.Difference(o.names))
 	case o.include:
-		return labelSet{names: o.names.Difference(s.names), include: true}
+		return onlyLabels(o.names.Difference(s.names))
 	default:
-		return labelSet{names: s.names.Union(o.names)}
+		return allLabelsExcept(s.names.Union(o.names))
 	}
 }
 
@@ -122,8 +144,8 @@ type enrichedVectorSelector struct {
 	propagatable labelSet
 }
 
-// extracted is what the pass knows about an expression after it has propagated matchers inside it.
-type extracted struct {
+// expressionInfo is what the pass knows about an expression after it has propagated matchers inside it.
+type expressionInfo struct {
 	// selectors are the vector selectors in the expression that matchers from outside it can be propagated into.
 	selectors []*enrichedVectorSelector
 	// matchers hold for every series in the result of the expression, so they can be propagated outwards.
@@ -133,8 +155,8 @@ type extracted struct {
 // through returns what the pass knows about a parent expression whose result keeps only the
 // labels in kept from the series in the result of x. required is false if the parent expression
 // can return series that do not come from x, because then the matchers of x do not hold for its result.
-func (x extracted) through(kept labelSet, required bool) extracted {
-	var out extracted
+func (x expressionInfo) through(kept labelSet, required bool) expressionInfo {
+	var out expressionInfo
 	for _, vs := range x.selectors {
 		vs.propagatable = vs.propagatable.intersect(kept)
 		if !vs.propagatable.isEmpty() {
@@ -147,24 +169,24 @@ func (x extracted) through(kept labelSet, required bool) extracted {
 	return out
 }
 
-func merge(a, b extracted) extracted {
-	matchers, _ := combineMatchers(a.matchers, b.matchers, labelSet{})
-	return extracted{selectors: append(a.selectors, b.selectors...), matchers: matchers}
+func merge(a, b expressionInfo) expressionInfo {
+	matchers, _ := combineMatchers(a.matchers, b.matchers, allLabels())
+	return expressionInfo{selectors: append(a.selectors, b.selectors...), matchers: matchers}
 }
 
-func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) extracted {
+func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) expressionInfo {
 	l := mapper.propagateMatchersAndExtractVectorSelectors(e.LHS)
 	r := mapper.propagateMatchersAndExtractVectorSelectors(e.RHS)
 	if e.Op == parser.LOR {
 		// `or` returns the series without a match from both sides, so matchers cannot propagate
 		// across it or out of it. The calls above still process the binary expressions inside each side.
-		return extracted{}
+		return expressionInfo{}
 	}
 
 	matching := e.VectorMatching
 	if matching == nil {
 		// One side is a scalar, so it has no vector selectors.
-		return merge(l.through(labelSet{}, true), r.through(labelSet{}, true))
+		return merge(l.through(allLabels(), true), r.through(allLabels(), true))
 	}
 
 	// A side is required if every series in the result comes from a series on that side. Then the
@@ -174,7 +196,7 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 	// and `unless` only returns LHS series without a match.
 	requiredL := matching.FillValues.LHS == nil
 	requiredR := e.Op != parser.LUNLESS && matching.FillValues.RHS == nil
-	on := labelSet{names: newStringSet(matching.MatchingLabels), include: matching.On}
+	on := onlyOrAllExcept(newStringSet(matching.MatchingLabels), matching.On)
 	if requiredR {
 		mapper.addMatchers(l.selectors, on.filter(r.matchers))
 	}
@@ -201,16 +223,16 @@ func (mapper *propagateMatchers) addMatchers(vss []*enrichedVectorSelector, matc
 func keptLabels(e *parser.BinaryExpr, lhs bool) labelSet {
 	matching := e.VectorMatching
 	if matching == nil {
-		return labelSet{}
+		return allLabels()
 	}
 	if (lhs && matching.Card == parser.CardManyToOne) || (!lhs && matching.Card == parser.CardOneToMany) {
 		// The "many" side of group_left() or group_right() keeps all of its labels in the result,
 		// except the included labels, which are taken from the "one" side.
-		return labelSet{names: newStringSet(matching.Include)}
+		return allLabelsExcept(newStringSet(matching.Include))
 	}
 	if lhs && (e.Op == parser.LAND || e.Op == parser.LUNLESS) {
 		// `and` and `unless` return the left-hand side series unchanged.
-		return labelSet{}
+		return allLabels()
 	}
 	// Otherwise, with on() or ignoring(), only the matching labels are guaranteed to have the same
 	// value on this side and in the result. Other labels on this side do not affect the result
@@ -220,19 +242,21 @@ func keptLabels(e *parser.BinaryExpr, lhs bool) labelSet {
 	if len(matching.Include) > 0 {
 		// The "one" side of group_left() or group_right() also sets the included labels in the result.
 		if matching.On {
-			return labelSet{names: matchingLabelsSet.Union(newStringSet(matching.Include)), include: true}
+			return onlyLabels(matchingLabelsSet.Union(newStringSet(matching.Include)))
 		}
-		return labelSet{names: matchingLabelsSet.Difference(newStringSet(matching.Include))}
+		return allLabelsExcept(matchingLabelsSet.Difference(newStringSet(matching.Include)))
 	}
-	return labelSet{names: matchingLabelsSet, include: matching.On}
+	return onlyOrAllExcept(matchingLabelsSet, matching.On)
 }
 
 // propagateMatchersAndExtractVectorSelectors propagates matchers inside the binary expressions in
-// expr, and returns what the pass knows about expr (see extracted).
-func (mapper *propagateMatchers) propagateMatchersAndExtractVectorSelectors(expr parser.Expr) extracted {
+// expr, and returns what the pass knows about expr (see expressionInfo).
+func (mapper *propagateMatchers) propagateMatchersAndExtractVectorSelectors(expr parser.Expr) expressionInfo {
 	switch e := expr.(type) {
 	case *parser.VectorSelector:
-		return extracted{selectors: []*enrichedVectorSelector{{vs: e}}, matchers: e.LabelMatchers}
+		// Matchers on any label can be propagated into a vector selector. The expressions that
+		// contain it reduce this set with through().
+		return expressionInfo{selectors: []*enrichedVectorSelector{{vs: e, propagatable: allLabels()}}, matchers: e.LabelMatchers}
 	case *parser.MatrixSelector:
 		return mapper.propagateMatchersAndExtractVectorSelectors(e.VectorSelector)
 	case *parser.ParenExpr:
@@ -244,7 +268,7 @@ func (mapper *propagateMatchers) propagateMatchersAndExtractVectorSelectors(expr
 	case *parser.Call:
 		if i, _ := VectorSelectorArgumentIndex(e.Func.Name); i >= 0 {
 			if len(e.Args) <= i {
-				return extracted{}
+				return expressionInfo{}
 			}
 			return mapper.propagateMatchersAndExtractVectorSelectors(e.Args[i])
 		}
@@ -253,12 +277,12 @@ func (mapper *propagateMatchers) propagateMatchersAndExtractVectorSelectors(expr
 		for _, arg := range e.Args {
 			mapper.propagateMatchersAndExtractVectorSelectors(arg)
 		}
-		return extracted{}
+		return expressionInfo{}
 	case *parser.AggregateExpr:
 		// Only the grouping labels keep their values in the result. Without grouping labels, no
 		// matchers can propagate, but the call still processes the binary expressions inside the aggregation.
 		inner := mapper.propagateMatchersAndExtractVectorSelectors(e.Expr)
-		return inner.through(labelSet{names: newStringSet(e.Grouping), include: !e.Without}, true)
+		return inner.through(onlyOrAllExcept(newStringSet(e.Grouping), !e.Without), true)
 	case *parser.BinaryExpr:
 		return mapper.propagateMatchersInBinaryExpr(e)
 	// Explicitly define what is not handled to avoid confusion.
@@ -267,7 +291,7 @@ func (mapper *propagateMatchers) propagateMatchersAndExtractVectorSelectors(expr
 		// but may be added in preprocessing step.
 		return mapper.propagateMatchersAndExtractVectorSelectors(e.Expr)
 	default:
-		return extracted{}
+		return expressionInfo{}
 	}
 }
 
