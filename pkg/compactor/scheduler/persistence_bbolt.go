@@ -182,7 +182,7 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 	jobTrackers := make(map[string]*JobTracker)
 
 	var (
-		numCompactionJobsRecovered        int
+		numPlannedJobsRecovered           int
 		numPlanJobsRecovered              int
 		numBackfillPhasePlanJobsRecovered int
 		numBucketCleanups                 int
@@ -197,7 +197,7 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 			level.Error(m.logger).Log("msg", "failed job recovery for shard", "path", db.Path(), "err", err)
 			return nil, fmt.Errorf("failed recovering jobs from %q: %w", db.Path(), err)
 		}
-		numCompactionJobsRecovered += stats.numCompactionJobs
+		numPlannedJobsRecovered += stats.numPlannedJobs
 		numPlanJobsRecovered += stats.numPlanJobs
 		numBackfillPhasePlanJobsRecovered += stats.numBackfillPhasePlanJobs
 		numBucketCleanups += stats.numBucketCleanups
@@ -207,7 +207,7 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 	level.Info(m.logger).Log(
 		"msg", "completed job recovery",
 		"num_tenants_recovered", len(jobTrackers),
-		"num_compaction_jobs_recovered", numCompactionJobsRecovered,
+		"num_planned_jobs_recovered", numPlannedJobsRecovered,
 		"num_plan_jobs_recovered", numPlanJobsRecovered,
 		"num_backfill_phase_plan_jobs_recovered", numBackfillPhasePlanJobsRecovered,
 		"num_bucket_cleanups", numBucketCleanups,
@@ -218,7 +218,7 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 }
 
 type recoveryStats struct {
-	numCompactionJobs        int
+	numPlannedJobs           int
 	numPlanJobs              int
 	numBackfillPhasePlanJobs int
 	numBucketCleanups        int
@@ -253,8 +253,8 @@ func recoverDB(db *bbolt.DB, logger log.Logger, allowedTenants *util.AllowList, 
 				return nil
 			}
 
-			compactionJobs, planJob, backfillPhasePlanJob, keyCleanup := jobsFromTenantBucket(b, filter)
-			stats.numCompactionJobs += len(compactionJobs)
+			plannedJobs, planJob, backfillPhasePlanJob, keyCleanup := jobsFromTenantBucket(b, filter)
+			stats.numPlannedJobs += len(plannedJobs)
 			if planJob != nil {
 				stats.numPlanJobs++
 			}
@@ -267,7 +267,7 @@ func recoverDB(db *bbolt.DB, logger log.Logger, allowedTenants *util.AllowList, 
 
 			jp := newBboltJobPersister(db, []byte(tenant), logger)
 			jt := jobTrackerFactory(tenant, jp)
-			jt.recoverFrom(compactionJobs, planJob, backfillPhasePlanJob)
+			jt.recoverFrom(plannedJobs, planJob, backfillPhasePlanJob)
 			jobTrackers[tenant] = jt
 			return nil
 		}); err != nil {
@@ -322,8 +322,8 @@ func cleanupBuckets(tx *bbolt.Tx, cleanup map[string]*keyCleanup, logger log.Log
 	return
 }
 
-func jobsFromTenantBucket(bucket *bbolt.Bucket, filter JobRecoveryFilter) ([]*TrackedCompactionJob, *TrackedPlanJob, *TrackedBackfillPhasePlanJob, *keyCleanup) {
-	compactionJobs := make([]*TrackedCompactionJob, 0, 10)
+func jobsFromTenantBucket(bucket *bbolt.Bucket, filter JobRecoveryFilter) ([]TrackedJob, *TrackedPlanJob, *TrackedBackfillPhasePlanJob, *keyCleanup) {
+	plannedJobs := make([]TrackedJob, 0, 10)
 	var planJob *TrackedPlanJob                           // may be nil
 	var backfillPhasePlanJob *TrackedBackfillPhasePlanJob // may be nil
 	var keyErrs []keyError
@@ -339,12 +339,12 @@ func jobsFromTenantBucket(bucket *bbolt.Bucket, filter JobRecoveryFilter) ([]*Tr
 			continue
 		}
 		switch j := job.(type) {
-		case *TrackedCompactionJob:
-			compactionJobs = append(compactionJobs, j)
 		case *TrackedPlanJob:
 			planJob = j
 		case *TrackedBackfillPhasePlanJob:
 			backfillPhasePlanJob = j
+		default:
+			plannedJobs = append(plannedJobs, j)
 		}
 	}
 
@@ -353,12 +353,16 @@ func jobsFromTenantBucket(bucket *bbolt.Bucket, filter JobRecoveryFilter) ([]*Tr
 		kc = &keyCleanup{bucket, keyErrs}
 	}
 
-	return compactionJobs, planJob, backfillPhasePlanJob, kc
+	return plannedJobs, planJob, backfillPhasePlanJob, kc
 }
 
 // deserializeJob deserializes a job from its key and stored value
 func deserializeJob(k, v []byte) (TrackedJob, error) {
-	switch id := string(k); {
+	id := string(k)
+	if jobType, ok := backfillBlockJobType(id); ok {
+		return deserializeBackfillBlockJob(k, v, jobType)
+	}
+	switch {
 	case id == planJobId:
 		return deserializePlanJob(v)
 	case id == backfillPhasePlanJobId:

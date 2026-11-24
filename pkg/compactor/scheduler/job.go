@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/oklog/ulid/v2"
+
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
 
@@ -23,6 +25,8 @@ const (
 	typedJobIDPrefix              = "#"
 	backfillPhasePlanJobId        = typedJobIDPrefix + "b" // the suffix is empty since a tenant has at most one backfill
 	backfillCompactionJobIDPrefix = typedJobIDPrefix + "k" // the suffix is the ID from the planner, kept apart from compaction job IDs
+	backfillValidateJobIDPrefix   = typedJobIDPrefix + "v" // the suffix is the block ID, which is unique within a backfill
+	backfillCopyJobIDPrefix       = typedJobIDPrefix + "c" // the suffix is the block ID, which is unique within a backfill
 )
 
 func isTypedJobID(id string) bool {
@@ -35,6 +39,17 @@ func isReservedJobID(id string) bool {
 
 func isBackfillCompactionJobID(id string) bool {
 	return strings.HasPrefix(id, backfillCompactionJobIDPrefix)
+}
+
+// backfillBlockJobType returns the job type of a backfill block job ID, if it is one
+func backfillBlockJobType(id string) (compactorschedulerpb.JobType, bool) {
+	switch {
+	case strings.HasPrefix(id, backfillValidateJobIDPrefix):
+		return compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE, true
+	case strings.HasPrefix(id, backfillCopyJobIDPrefix):
+		return compactorschedulerpb.JOB_TYPE_BACKFILL_COPY, true
+	}
+	return compactorschedulerpb.JOB_TYPE_UNKNOWN, false
 }
 
 func isPlanJobID(id string) bool {
@@ -315,6 +330,94 @@ func deserializeBackfillPhasePlanJob(content []byte) (*TrackedBackfillPhasePlanJ
 		return nil, err
 	}
 	return &TrackedBackfillPhasePlanJob{baseTrackedJob: base}, nil
+}
+
+// TrackedBackfillBlockJob validates or copies a single block of a backfill
+type TrackedBackfillBlockJob struct {
+	baseTrackedJob
+	jobType    compactorschedulerpb.JobType // JOB_TYPE_BACKFILL_VALIDATE or JOB_TYPE_BACKFILL_COPY
+	backfillID []byte
+	block      []byte
+	order      uint32
+}
+
+func NewTrackedBackfillBlockJob(jobType compactorschedulerpb.JobType, backfillID []byte, block ulid.ULID, order uint32, creationTime time.Time) *TrackedBackfillBlockJob {
+	prefix := backfillValidateJobIDPrefix
+	if jobType == compactorschedulerpb.JOB_TYPE_BACKFILL_COPY {
+		prefix = backfillCopyJobIDPrefix
+	}
+	return &TrackedBackfillBlockJob{
+		baseTrackedJob: newBaseTrackedJob(prefix+block.String(), creationTime),
+		jobType:        jobType,
+		backfillID:     backfillID,
+		block:          block.Bytes(),
+		order:          order,
+	}
+}
+
+func (j *TrackedBackfillBlockJob) CopyBase() TrackedJob {
+	return &TrackedBackfillBlockJob{
+		baseTrackedJob: j.baseTrackedJob,
+		jobType:        j.jobType,
+		backfillID:     j.backfillID,
+		block:          j.block,
+		order:          j.order,
+	}
+}
+
+func (j *TrackedBackfillBlockJob) Serialize() ([]byte, error) {
+	stored := &compactorschedulerpb.StoredBackfillBlockJob{
+		Info:  j.storedInfo(),
+		Job:   j.jobProto(),
+		Order: j.order,
+	}
+	return stored.Marshal()
+}
+
+func (j *TrackedBackfillBlockJob) ToLeaseResponse(tenant string) *compactorschedulerpb.LeaseJobResponse {
+	return &compactorschedulerpb.LeaseJobResponse{
+		Key: &compactorschedulerpb.JobKey{
+			Id:    j.id,
+			Epoch: j.epoch,
+		},
+		Spec: &compactorschedulerpb.JobSpec{
+			Tenant:        tenant,
+			JobType:       j.jobType,
+			BackfillBlock: j.jobProto(),
+		},
+	}
+}
+
+func (j *TrackedBackfillBlockJob) jobProto() *compactorschedulerpb.BackfillBlockJob {
+	return &compactorschedulerpb.BackfillBlockJob{
+		BackfillId: j.backfillID,
+		BlockId:    j.block,
+	}
+}
+
+func (j *TrackedBackfillBlockJob) Order() uint32 {
+	return j.order
+}
+
+func (j *TrackedBackfillBlockJob) Type() compactorschedulerpb.JobType {
+	return j.jobType
+}
+
+func deserializeBackfillBlockJob(k []byte, v []byte, jobType compactorschedulerpb.JobType) (*TrackedBackfillBlockJob, error) {
+	var stored compactorschedulerpb.StoredBackfillBlockJob
+	if err := stored.Unmarshal(v); err != nil {
+		return nil, err
+	}
+	if stored.Info == nil || stored.Job == nil {
+		return nil, errors.New("invalid backfill block job can not be deserialized")
+	}
+	return &TrackedBackfillBlockJob{
+		baseTrackedJob: baseFromStoredInfo(string(k), stored.Info),
+		jobType:        jobType,
+		backfillID:     stored.Job.BackfillId,
+		block:          stored.Job.BlockId,
+		order:          stored.Order,
+	}, nil
 }
 
 func (j *baseTrackedJob) storedInfo() *compactorschedulerpb.StoredJobInfo {

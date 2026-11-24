@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
@@ -293,18 +294,36 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 	switch {
 	case planID != planJobId && !isBackfill:
 		return nil, status.Errorf(codes.InvalidArgument, "key %q is not a plan job key", planID)
-	case req.Unchanged || req.Backfill != nil:
-		if isBackfill {
-			return nil, status.Error(codes.Unimplemented, "unchanged and backfill planned jobs are not supported yet")
-		}
-		return nil, status.Error(codes.InvalidArgument, "unchanged and backfill planned jobs are only valid for backfill phase plan jobs")
+	case !isBackfill && req.Backfill != nil:
+		return nil, status.Error(codes.InvalidArgument, "planned backfill jobs are only valid for backfill phase plan jobs")
+	}
+
+	backfill := req.Backfill
+	hints := offerHints{unchanged: backfill.GetUnchanged(), clear: backfill.GetClear()}
+	plansBackfillJobs := backfill != nil && !hints.unchanged && !hints.clear
+	switch {
+	case hints.unchanged && hints.clear:
+		return nil, status.Error(codes.InvalidArgument, "planning can not be both unchanged and cleared")
+	case (hints.unchanged || hints.clear) && (backfill.JobType != compactorschedulerpb.JOB_TYPE_UNKNOWN || len(backfill.BackfillId) > 0 || len(backfill.BlockIds) > 0 || len(req.Jobs) > 0):
+		return nil, status.Error(codes.InvalidArgument, "planned jobs can not be provided when planning is unchanged or cleared")
+	case plansBackfillJobs && len(req.Jobs) > 0:
+		// A backfill phase is either compaction or work that is planned as backfill jobs
+		return nil, status.Error(codes.InvalidArgument, "planned compaction jobs and backfill jobs can not both be provided")
 	}
 
 	logger := log.With(s.logger, "user", req.Tenant, "plan_job_id", planID, "epoch", req.Key.Epoch)
-	level.Info(logger).Log("msg", "received plan results", "job_count", len(req.Jobs))
+	if plansBackfillJobs {
+		logger = log.With(logger, "backfill_job_type", backfill.JobType.String())
+	}
 
 	now := s.clock.Now()
-	jobs := make([]*TrackedCompactionJob, 0, len(req.Jobs))
+	jobs := make([]TrackedJob, 0, len(req.Jobs))
+	if plansBackfillJobs {
+		var err error
+		if jobs, err = trackedBackfillJobs(logger, backfill, now); err != nil {
+			return nil, err
+		}
+	}
 	idSet := make(map[string]struct{}, len(req.Jobs))
 	for i, job := range req.Jobs {
 		if job.Job == nil {
@@ -348,7 +367,9 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 		))
 	}
 
-	_, found, err := s.rotator.OfferCompactionJobs(req.Tenant, planID, jobs, req.Key.Epoch)
+	level.Info(logger).Log("msg", "received plan results", "job_count", len(jobs), "unchanged", hints.unchanged, "clear", hints.clear)
+
+	_, found, err := s.rotator.OfferJobs(req.Tenant, planID, jobs, req.Key.Epoch, hints)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed offering result of plan job", "err", err)
 		return nil, errFailedCompletingJob // this error is used because PlannedJobs is the completion of a plan job
@@ -367,6 +388,34 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 	}
 	s.metrics.jobsCompleted.WithLabelValues(jobTypeLabel(planJobType)).Inc()
 	return &compactorschedulerpb.PlannedJobsResponse{}, nil
+}
+
+// trackedBackfillJobs converts the backfill jobs planned by a backfill phase plan job into tracked jobs
+func trackedBackfillJobs(logger log.Logger, planned *compactorschedulerpb.PlannedBackfillJobs, now time.Time) ([]TrackedJob, error) {
+	if len(planned.BackfillId) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "planned backfill jobs are missing a backfill ID")
+	}
+	if planned.JobType != compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE && planned.JobType != compactorschedulerpb.JOB_TYPE_BACKFILL_COPY {
+		return nil, status.Errorf(codes.InvalidArgument, "job type %s can not be planned as backfill jobs", planned.JobType)
+	}
+
+	jobs := make([]TrackedJob, 0, len(planned.BlockIds))
+	blockSet := make(map[ulid.ULID]struct{}, len(planned.BlockIds))
+	for i, blockID := range planned.BlockIds {
+		var block ulid.ULID
+		if err := block.UnmarshalBinary(blockID); err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "planned backfill block ID at index %d is invalid: %v", i, err)
+		}
+		if _, ok := blockSet[block]; ok {
+			// This is never expected to actually happen. It enforces a guarantee for later code.
+			level.Warn(logger).Log("msg", "ignoring planned backfill job with a duplicated block ID", "block", block)
+			continue
+		}
+		blockSet[block] = struct{}{}
+		// The +1 ensures plan jobs (order of 0) can deterministically sort first in ordering upon recovery if they exist
+		jobs = append(jobs, NewTrackedBackfillBlockJob(planned.JobType, planned.BackfillId, block, uint32(i+1), now))
+	}
+	return jobs, nil
 }
 
 func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb.UpdatePlanJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
@@ -499,8 +548,72 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorsched
 	return nil, errLeaseNotFound
 }
 
-func (s *Scheduler) UpdateBackfillJob(context.Context, *compactorschedulerpb.UpdateBackfillJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "backfill jobs are not supported yet")
+func (s *Scheduler) UpdateBackfillJob(ctx context.Context, req *compactorschedulerpb.UpdateBackfillJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
+	if req.Key == nil {
+		return nil, errMissingKey
+	}
+	if !s.isRunning() {
+		// This check is required to prevent requests from seeing empty state before startup, but then running when checking to transform not found errors.
+		return nil, errNotRunning
+	}
+
+	jobType, ok := backfillBlockJobType(req.Key.Id)
+	if !ok {
+		return nil, status.Errorf(codes.InvalidArgument, "key %q is not a backfill job key", req.Key.Id)
+	}
+
+	logger := log.With(s.logger, "user", req.Tenant, "id", req.Key.Id, "epoch", req.Key.Epoch)
+
+	switch req.Update {
+	case compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS:
+		if s.rotator.RenewJobLease(req.Tenant, req.Key.Id, req.Key.Epoch) {
+			// Lease renewals are only debug logged to prevent noise
+			level.Debug(logger).Log("msg", "backfill job lease renewed")
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
+		}
+	case compactorschedulerpb.UPDATE_TYPE_COMPLETE:
+		removed, err := s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch, true)
+		if err != nil {
+			level.Error(logger).Log("msg", "failed backfill job completion", "err", err)
+			return nil, errFailedCompletingJob
+		}
+		if removed {
+			s.metrics.jobsCompleted.WithLabelValues(jobTypeLabel(jobType)).Inc()
+			level.Info(logger).Log("msg", "backfill job completed")
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
+		}
+	case compactorschedulerpb.UPDATE_TYPE_ABANDON:
+		removed, err := s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch, false)
+		if err != nil {
+			level.Error(logger).Log("msg", "failed backfill job abandon", "err", err)
+			return nil, errFailedAbandoningJob
+		}
+		if removed {
+			level.Info(logger).Log("msg", "backfill job abandoned")
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
+		}
+	case compactorschedulerpb.UPDATE_TYPE_REASSIGN, compactorschedulerpb.UPDATE_TYPE_INTERRUPTED_REASSIGN:
+		interrupted := req.Update == compactorschedulerpb.UPDATE_TYPE_INTERRUPTED_REASSIGN
+		canceled, err := s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch, interrupted)
+		if err != nil {
+			level.Error(logger).Log("msg", "failed backfill job cancel", "err", err)
+			return nil, errFailedCancelLease
+		}
+		if canceled {
+			level.Info(logger).Log("msg", "backfill job lease canceled", "worker_interrupted", interrupted)
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
+		}
+	default:
+		return nil, invalidUpdateTypeError(req.Update)
+	}
+
+	if !s.isRunning() {
+		// This request may have erroneously seen empty state. Transform it to an unavailable error to preserve state in the worker.
+		return nil, errNotRunning
+	}
+
+	level.Info(logger).Log("msg", "could not find lease during update for backfill job", "update_type", req.Update.String())
+	return nil, errLeaseNotFound
 }
 
 func invalidUpdateTypeError(updateType compactorschedulerpb.UpdateType) error {

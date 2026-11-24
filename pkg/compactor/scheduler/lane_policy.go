@@ -23,6 +23,8 @@ const (
 	compactionLane
 	backfillPhasePlanLane
 	backfillCompactionLane
+	backfillValidateLane
+	backfillCopyLane
 )
 
 func (l lane) String() string {
@@ -35,6 +37,10 @@ func (l lane) String() string {
 		return "backfill_phase_plan"
 	case backfillCompactionLane:
 		return "backfill_compaction"
+	case backfillValidateLane:
+		return "backfill_validate"
+	case backfillCopyLane:
+		return "backfill_copy"
 	}
 	return ""
 }
@@ -123,6 +129,8 @@ func newBackfillLanePolicy() lanePolicy {
 		laneAssignment{jobType: compactorschedulerpb.JOB_TYPE_COMPACTION, lanes: []lane{compactionLane}, plannedBy: compactorschedulerpb.JOB_TYPE_PLANNING},
 		laneAssignment{jobType: compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING, lanes: []lane{backfillPhasePlanLane}},
 		laneAssignment{jobType: compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION, lanes: []lane{backfillCompactionLane}, plannedBy: compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING},
+		laneAssignment{jobType: compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE, lanes: []lane{backfillValidateLane}, plannedBy: compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING},
+		laneAssignment{jobType: compactorschedulerpb.JOB_TYPE_BACKFILL_COPY, lanes: []lane{backfillCopyLane}, plannedBy: compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING},
 	)
 }
 

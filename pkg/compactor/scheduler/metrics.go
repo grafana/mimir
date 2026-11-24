@@ -16,6 +16,8 @@ const (
 	jobTypeCompaction         = "compaction"
 	jobTypeBackfillPhasePlan  = "backfill_phase_plan"
 	jobTypeBackfillCompaction = "backfill_compaction"
+	jobTypeBackfillValidate   = "backfill_validate"
+	jobTypeBackfillCopy       = "backfill_copy"
 
 	compactionTypeSplit = "split"
 	compactionTypeMerge = "merge"
@@ -32,6 +34,10 @@ func jobTypeLabel(t compactorschedulerpb.JobType) string {
 		return jobTypeBackfillPhasePlan
 	case compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION:
 		return jobTypeBackfillCompaction
+	case compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE:
+		return jobTypeBackfillValidate
+	case compactorschedulerpb.JOB_TYPE_BACKFILL_COPY:
+		return jobTypeBackfillCopy
 	}
 	panic(fmt.Sprintf("unknown job type %s", t))
 }
