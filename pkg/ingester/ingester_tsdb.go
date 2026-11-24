@@ -237,8 +237,8 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	userDB.pendingSeriesRemovals.Store(0)
 
 	userDB.db = db
-	_, isPrometheus := db.(prometheusEngine)
-	if isPrometheus {
+	head := db.Head()
+	if _, ok := head.(labelChurnHead); ok {
 		userDB.seriesRefHistory = newSeriesRefHistory(labelChurnRecords)
 	}
 	// We set the limiter here because we don't want to limit
@@ -247,20 +247,22 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	// Set a reference the head's postings for matchers cache, so that ingesters can invalidate entries
 	if i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache && i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheInvalidation {
-		if head, ok := db.Head().(prometheusHead); ok {
-			userDB.postingsCache = head.PostingsForMatchersCache()
+		if cachedHead, ok := head.(interface {
+			PostingsForMatchersCache() *tsdb.PostingsForMatchersCache
+		}); ok {
+			userDB.postingsCache = cachedHead.PostingsForMatchersCache()
 		}
 	}
 
 	// If head is empty (eg. new TSDB), don't close it right after.
 	lastUpdateTime := time.Now()
-	if db.Head().NumSeries() > 0 {
+	if head.NumSeries() > 0 {
 		// If there are series in the head, use the newest data time. If this time is too old,
 		// TSDB will be eligible for flushing and closing sooner, unless more data is pushed to it quickly.
 		//
 		// If TSDB's maxTime is in the future, ignore it. If we set "lastUpdate" to very distant future, it would prevent
 		// us from detecting TSDB as idle for a very long time.
-		if t := newestDataTime(db); t > math.MinInt64 {
+		if t := newestDataTime(userDB); t > math.MinInt64 {
 			if tt := time.UnixMilli(t); tt.Before(lastUpdateTime) {
 				lastUpdateTime = tt
 			}
@@ -269,7 +271,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	userDB.setLastUpdate(lastUpdateTime)
 
 	// Create a shipper for engines that write Prometheus blocks.
-	if isPrometheus && i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
+	if _, ok := db.(blockStorageEngine); ok && i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
 		userDB.shipper = newShipper(
 			userLogger,
 			i.limits,
@@ -310,13 +312,11 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 // of non-owned series and a restart, the head can have series without any in-order sample, so its max time is
 // math.MinInt64 while local blocks hold recent data. Block max times are aligned to the block range, so the
 // result can be up to one block range newer than the newest sample.
-func newestDataTime(db tenantEngine) int64 {
+func newestDataTime(db *userTSDB) int64 {
 	bounds := db.Head().TimeBounds()
 	t := max(bounds.MaxTime, bounds.MaxOOOTime)
-	if engine, ok := db.(prometheusEngine); ok {
-		for _, b := range engine.db.Blocks() {
-			t = max(t, b.Meta().MaxTime)
-		}
+	for _, b := range db.Blocks() {
+		t = max(t, b.Meta().MaxTime)
 	}
 	return t
 }

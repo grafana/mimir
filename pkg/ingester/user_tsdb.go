@@ -93,6 +93,12 @@ type ownedSeriesState struct {
 	localSeriesLimit int // Local series limit when "owned" series was last updated due to ring or shard size changes. Used as a minimum when calculating series limits.
 }
 
+// blockStorageEngine exposes local TSDB blocks to the shipper and retention policy.
+type blockStorageEngine interface {
+	Blocks() []*tsdb.Block
+	BlocksToDelete([]*tsdb.Block) map[ulid.ULID]struct{}
+}
+
 type userTSDB struct {
 	cfg            *Config
 	db             tenantEngine
@@ -180,7 +186,8 @@ type userTSDB struct {
 // generateHeadStatistics generates statistics for this user's head block.
 func (u *userTSDB) generateHeadStatistics() error {
 	// Open head block
-	head, ok := u.Head().(prometheusHead)
+	head := u.Head()
+	withMeta, ok := head.(interface{ Meta() tsdb.BlockMeta })
 	if !ok {
 		return nil
 	}
@@ -191,7 +198,7 @@ func (u *userTSDB) generateHeadStatistics() error {
 	defer indexReader.Close()
 
 	// Get block metadata
-	blockMeta := head.Meta()
+	blockMeta := withMeta.Meta()
 
 	// Generate statistics
 	u.plannerProvider.generateAndStorePlanner(blockMeta, indexReader)
@@ -236,8 +243,8 @@ func (u *userTSDB) Head() engineHead {
 }
 
 func (u *userTSDB) Blocks() []*tsdb.Block {
-	if engine, ok := u.db.(prometheusEngine); ok {
-		return engine.db.Blocks()
+	if engine, ok := u.db.(blockStorageEngine); ok {
+		return engine.Blocks()
 	}
 	return nil
 }
@@ -441,12 +448,12 @@ func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) 
 
 // blocksToDelete filters the input blocks and returns the blocks which are safe to be deleted from the ingester.
 func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
-	engine, ok := u.db.(prometheusEngine)
+	engine, ok := u.db.(blockStorageEngine)
 	if !ok {
 		return nil
 	}
 
-	deletable := tsdb.DefaultBlocksToDelete(engine.db)(blocks)
+	deletable := engine.BlocksToDelete(blocks)
 	result := map[ulid.ULID]struct{}{}
 	deadline := time.Now().Add(-u.blockMinRetention)
 
@@ -760,7 +767,10 @@ func (u *userTSDB) takePendingNonOwnedRefs(notAfter time.Time) []storage.SeriesR
 }
 
 func (u *userTSDB) computeOwnedSeries() int {
-	head, ok := u.Head().(prometheusHead)
+	head := u.Head()
+	withHashes, ok := head.(interface {
+		ForEachSecondaryHash(func([]chunks.HeadSeriesRef, []uint32))
+	})
 	if !ok {
 		return 0
 	}
@@ -772,7 +782,7 @@ func (u *userTSDB) computeOwnedSeries() int {
 		u.activeSeries.Clear()
 	}
 
-	idx := head.MustIndex()
+	idx := mustIndex(head)
 	defer idx.Close()
 
 	count := 0
@@ -784,7 +794,7 @@ func (u *userTSDB) computeOwnedSeries() int {
 		nonOwnedRefs = make(map[storage.SeriesRef]struct{})
 	}
 
-	head.ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
+	withHashes.ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
 		// Fast path: when no token range is owned every series in this batch is non-owned.
 		// activeSeries.Clear() above already handled the active-series side.
 		if allNonOwned {

@@ -635,7 +635,10 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 			continue
 		}
 
-		engine, ok := db.db.(prometheusEngine)
+		engine, ok := db.db.(interface {
+			CompactOOOHead(context.Context) error
+			CompactSelectedSeries([]storage.SeriesRef) error
+		})
 		if !ok {
 			continue
 		}
@@ -670,14 +673,14 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 		// Step 1: compact the OOO head to persist all out-of-order data before any
 		// series are evicted in step 2. CompactOOOHead is a no-op for tenants that
 		// have never ingested out-of-order samples.
-		if err := engine.db.CompactOOOHead(ctx); err != nil {
+		if err := engine.CompactOOOHead(ctx); err != nil {
 			level.Warn(i.logger).Log("msg", "OOO head compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
 			// Fall through: CompactSelectedSeries still helps for non-owned series without OOO data.
 		}
 
 		// Step 2: persist the queued non-owned series in a block and evict them from
 		// the head.
-		err := engine.db.CompactSelectedSeries(refs)
+		err := engine.CompactSelectedSeries(refs)
 		db.updateLastSeriesRemoval()
 		if err != nil {
 			level.Warn(i.logger).Log("msg", "selected series compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)

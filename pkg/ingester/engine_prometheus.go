@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
@@ -95,6 +96,22 @@ func (e prometheusEngine) Ingest(ctx *ingestContext, timeseries []mimirpb.Preall
 	spanlog.DebugLog("event", "complete commit", "commitDuration", commitDuration.String())
 
 	return nil
+}
+
+func (e prometheusEngine) Blocks() []*tsdb.Block {
+	return e.db.Blocks()
+}
+
+func (e prometheusEngine) BlocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
+	return tsdb.DefaultBlocksToDelete(e.db)(blocks)
+}
+
+func (e prometheusEngine) CompactOOOHead(ctx context.Context) error {
+	return e.db.CompactOOOHead(ctx)
+}
+
+func (e prometheusEngine) CompactSelectedSeries(refs []storage.SeriesRef) error {
+	return e.db.CompactSelectedSeries(refs)
 }
 
 func (e prometheusEngine) Close() error {

@@ -125,7 +125,7 @@ func (i *Ingester) recordLabelChurnSeriesRefs(now time.Time) {
 		if db == nil || db.seriesRefHistory == nil {
 			continue
 		}
-		if head, ok := db.Head().(prometheusHead); ok {
+		if head, ok := db.Head().(labelChurnHead); ok {
 			db.seriesRefHistory.record(now.UnixMilli(), head.LastSeriesRef())
 		}
 	}
@@ -243,11 +243,18 @@ func (i *Ingester) labelChurnForRequest(r *http.Request) (*labelChurnResponse, i
 	return response, http.StatusOK, nil
 }
 
+type labelChurnHead interface {
+	engineHead
+	LastSeriesRef() storage.SeriesRef
+	PostingsLength(name, value string) int
+	AppendRandomPostingsRefs(name, value string, count int, buffer []storage.SeriesRef) []storage.SeriesRef
+}
+
 // labelChurn returns the limit highest scores of the label names of the head, in descending order.
 // The score is the number of series that have a value of the label which did not exist before sinceMs.
 // A limit of 0 returns all scores.
 func (u *userTSDB) labelChurn(ctx context.Context, sinceMs int64, limit int) (*labelChurnResponse, error) {
-	head, ok := u.Head().(prometheusHead)
+	head, ok := u.Head().(labelChurnHead)
 	if !ok {
 		return nil, errLabelChurnUnsupportedEngine
 	}
