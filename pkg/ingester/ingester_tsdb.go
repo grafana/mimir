@@ -139,10 +139,13 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		ownedSeriedStateShardSize = i.ownedSeriesService.ringStrategy.shardSizeForUser(userID)
 	}
 
+	// One instance for both, as the order of the tracker names, which the counts follow, is not the same for two.
+	trackerMatchers := asmodel.NewMatchers(matchersConfig)
 	userDB := &userTSDB{
 		cfg:                     &i.cfg,
+		dir:                     udir,
 		userID:                  userID,
-		activeSeries:            activeseries.NewActiveSeries(asmodel.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout, i.costAttributionMgr.ActiveSeriesTracker(userID)),
+		activeSeries:            activeseries.NewActiveSeries(trackerMatchers, i.cfg.ActiveSeriesMetrics.IdleTimeout, i.costAttributionMgr.ActiveSeriesTracker(userID)),
 		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:      util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples:     util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
@@ -151,7 +154,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		instanceErrors:          i.metrics.rejected,
 		blockMinRetention:       i.cfg.BlocksStorageConfig.TSDB.Retention,
 		useOwnedSeriesForLimits: i.cfg.UseIngesterOwnedSeriesForLimits,
-		seriesRefHistory:        newSeriesRefHistory(labelChurnRecords),
 
 		ownedState: ownedSeriesState{
 			shardSize:        ownedSeriedStateShardSize, // initialize series shard size so that it's correct even before we update ownedSeries for the first time
@@ -180,7 +182,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
-	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
+	db, err := openPrometheusEngine(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                    i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
 		MinBlockDuration:                     blockRanges[0],
 		MaxBlockDuration:                     blockRanges[len(blockRanges)-1],
@@ -219,20 +221,17 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			i.metrics.queriedBlocks.WithLabelValues(blockGeneration(b)).Inc()
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
-	}, nil)
+	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
 	}
-	db.DisableCompactions() // we will compact on our own schedule
-
 	// Run compaction before using this TSDB. If there is data in head that needs to be put into blocks,
 	// this will actually create the blocks. If there is no data (empty TSDB), this is a no-op, although
 	// local blocks compaction may still take place if configured.
 	level.Info(userLogger).Log("msg", "Running compaction after WAL replay")
 	// Note that we want to let TSDB creation finish without being interrupted by eventual context cancellation,
 	// so passing an independent context here
-	engine := &prometheusEngine{db: db, blockDuration: blockRanges[0]}
-	err = engine.Compact(context.Background())
+	err = db.Compact(context.Background())
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to compact TSDB: %s", udir)
 	}
@@ -240,25 +239,37 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	// so they do not make a record invalid.
 	userDB.pendingSeriesRemovals.Store(0)
 
-	userDB.db = engine
+	userDB.db = db
+	if _, ok := db.(*prometheusEngine); ok {
+		userDB.seriesRefHistory = newSeriesRefHistory(labelChurnRecords)
+	}
 	// We set the limiter here because we don't want to limit
 	// series during WAL replay.
 	userDB.limiter = i.limiter
 
+	// An engine that keeps the active series itself counts them by the tenant's custom trackers.
+	if head, ok := db.Head().(activeSeriesHead); ok && !testNoNativeActive {
+		userDB.nativeActive = head
+		head.SetActiveTrackers(trackerMatchers)
+		userDB.setCostAttribution(i.costAttributionMgr.ActiveSeriesTracker(userID))
+	}
+
 	// Set a reference the head's postings for matchers cache, so that ingesters can invalidate entries
 	if i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache && i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheInvalidation {
-		userDB.postingsCache = db.Head().PostingsForMatchersCache()
+		if head, ok := db.Head().(prometheusHead); ok {
+			userDB.postingsCache = head.PostingsForMatchersCache()
+		}
 	}
 
 	// If head is empty (eg. new TSDB), don't close it right after.
 	lastUpdateTime := time.Now()
-	if engine.Head().NumSeries() > 0 {
+	if db.Head().NumSeries() > 0 {
 		// If there are series in the head, use the newest data time. If this time is too old,
 		// TSDB will be eligible for flushing and closing sooner, unless more data is pushed to it quickly.
 		//
 		// If TSDB's maxTime is in the future, ignore it. If we set "lastUpdate" to very distant future, it would prevent
 		// us from detecting TSDB as idle for a very long time.
-		if t := engine.NewestDataTime(); t > math.MinInt64 {
+		if t := db.NewestDataTime(); t > math.MinInt64 {
 			if tt := time.UnixMilli(t); tt.Before(lastUpdateTime) {
 				lastUpdateTime = tt
 			}
@@ -266,10 +277,9 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 	userDB.setLastUpdate(lastUpdateTime)
 
-	engine.shippingLogger = userLogger
-
-	// Create a new shipper for this database
-	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
+	// Create a new shipper for the Prometheus engine.
+	if engine, ok := db.(*prometheusEngine); ok && i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
+		engine.shippingLogger = userLogger
 		engine.shipper = newShipper(
 			userLogger,
 			i.limits,
@@ -639,7 +649,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	// We need to remove these series from series count.
 	i.seriesCount.Sub(int64(userDB.Head().NumSeries()))
 
-	dir := userDB.prometheusDB().Dir()
+	dir := userDB.dir
 
 	if err := userDB.Close(); err != nil {
 		level.Error(i.logger).Log("msg", "failed to close idle TSDB", "user", userID, "err", err)

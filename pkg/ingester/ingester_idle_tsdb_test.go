@@ -73,6 +73,7 @@ func TestIngester_ReopenedTSDBWithoutInOrderSamplesIsNotIdle(t *testing.T) {
 }
 
 func testReopenedTSDBWithoutInOrderSamples(t *testing.T, oooSeries bool, oooTimeWindow, oooSampleAge, closeIdleTSDBTimeout time.Duration) {
+	skipIfSeriesstore(t, "tests Prometheus WAL replay and local blocks")
 	const numSeries = 3000 // Enough WAL data for the idle compaction to checkpoint the WAL.
 
 	dataDir := t.TempDir()

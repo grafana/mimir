@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
@@ -60,6 +61,13 @@ func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream clie
 	}
 
 	isNativeHistogram := request.GetType() == client.NATIVE_HISTOGRAM_SERIES
+	if native, ok := idx.(activeSeriesIndex); ok && !db.trackerActive() && !hasShardMatcher(matchers) {
+		// An engine that keeps the active series in its series lists them in a pass over the matchers' series, where each
+		// was looked up twice, for whether it's active and for its labels.
+		return sendActiveSeries(stream, isNativeHistogram, func(visit func([]mimirpb.LabelAdapter, int) error) error {
+			return native.ActiveSeriesMatching(ctx, matchers, db.activeCutoff(time.Now()).UnixMilli(), isNativeHistogram, visit)
+		})
+	}
 	postings, err := getPostings(ctx, db, idx, matchers, isNativeHistogram)
 	if err != nil {
 		return fmt.Errorf("error listing active series: %w", err)
@@ -132,11 +140,69 @@ func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matche
 		}
 	}
 
+	activeRefs := db.activeRefs(time.Now())
 	if isNativeHistogram {
-		return activeseries.NewNativeHistogramPostings(db.activeSeries, postings), nil
+		return activeseries.NewNativeHistogramPostings(activeRefs, postings), nil
 	}
 
-	return &ZeroBucketCountPostings{*activeseries.NewPostings(db.activeSeries, postings)}, nil
+	return &ZeroBucketCountPostings{*activeseries.NewPostings(activeRefs, postings)}, nil
+}
+
+// activeSeriesIndex is an index of an engine that keeps the active series in its series, which lists the ones matching
+// matchers that were ingested since cutoffMs, with their native histogram bucket counts.
+type activeSeriesIndex interface {
+	ActiveSeriesMatching(ctx context.Context, matchers []*labels.Matcher, cutoffMs int64, nativeHistograms bool, visit func(lbls []mimirpb.LabelAdapter, buckets int) error) error
+}
+
+func hasShardMatcher(matchers []*labels.Matcher) bool {
+	for _, m := range matchers {
+		if m.Name == sharding.ShardLabel {
+			return true
+		}
+	}
+	return false
+}
+
+// sendActiveSeries sends the series list visits as the active series API does, in messages of at most
+// activeSeriesMaxSizeBytes.
+func sendActiveSeries(stream client.Ingester_ActiveSeriesServer, isNativeHistogram bool, list func(visit func([]mimirpb.LabelAdapter, int) error) error) error {
+	resp := &client.ActiveSeriesResponse{}
+	currentSize := 0
+	err := list(func(lbls []mimirpb.LabelAdapter, buckets int) error {
+		m := &mimirpb.Metric{Labels: lbls}
+		mSize := m.Size()
+		if isNativeHistogram {
+			mSize += 8 // 8 bytes for the bucket count.
+		}
+		if currentSize+mSize > activeSeriesMaxSizeBytes {
+			if err := client.SendActiveSeriesResponse(stream, resp); err != nil {
+				return fmt.Errorf("error sending response: %w", err)
+			}
+			resp = &client.ActiveSeriesResponse{}
+			currentSize = 0
+		}
+		resp.Metric = append(resp.Metric, m)
+		if isNativeHistogram {
+			resp.BucketCount = append(resp.BucketCount, uint64(buckets))
+		}
+		currentSize += mSize
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("error listing active series: %w", err)
+	}
+	if len(resp.Metric) > 0 {
+		if err := client.SendActiveSeriesResponse(stream, resp); err != nil {
+			return fmt.Errorf("error sending response: %w", err)
+		}
+	}
+	return nil
+}
+
+// activeLabelValueIndex is an index of an engine that keeps the active series in its series, which tells whether a series
+// with the label's value was ingested since cutoffMs.
+type activeLabelValueIndex interface {
+	IsLabelValueActive(ctx context.Context, name, value string, cutoffMs int64) (bool, error)
 }
 
 // Check if matchers will match every series. Not an exhaustive check; just some common examples seen in the wild.

@@ -13,11 +13,11 @@ import (
 // the postings are from the open TSDB head. It is not valid to use
 // Postings if the postings are from a block.
 type Postings struct {
-	activeSeries *ActiveSeries
+	activeSeries ActiveRefs
 	postings     index.Postings
 }
 
-func NewPostings(activeSeries *ActiveSeries, postings index.Postings) *Postings {
+func NewPostings(activeSeries ActiveRefs, postings index.Postings) *Postings {
 	return &Postings{
 		activeSeries: activeSeries,
 		postings:     postings,

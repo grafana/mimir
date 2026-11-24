@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/tsdb"
 
 	"github.com/grafana/mimir/pkg/util"
@@ -164,7 +165,10 @@ func (i *Ingester) TenantTSDBHandler(w http.ResponseWriter, req *http.Request) {
 		c.Head.AppendableMinValidTime = formatMillisTime(m)
 	}
 
-	shipped := db.prometheus().getCachedShippedBlocks()
+	var shipped map[ulid.ULID]time.Time
+	if engine, ok := db.engine().(*prometheusEngine); ok {
+		shipped = engine.getCachedShippedBlocks()
+	}
 
 	blocks := db.Blocks()
 	for _, b := range blocks {

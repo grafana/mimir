@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -89,6 +90,7 @@ func TestIngester_filterUsersToCompactToReduceInMemorySeries(t *testing.T) {
 }
 
 func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnlyIfEstimatedSeriesReductionIsGreaterThanConfiguredPercentage(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx         = context.Background()
 		ctxWithUser = user.InjectOrgID(ctx, userID)
@@ -125,11 +127,11 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 0)
 
 	// Use a trick to track all series we've written so far as "inactive".
-	ingester.getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
+	ingester.getTSDB(userID).markAllInactive(now.Add(30 * time.Minute))
 
 	// Pre-condition check.
 	require.Equal(t, uint64(10), ingester.getTSDB(userID).Head().NumSeries())
-	totalActiveSeries, _, _, _ := ingester.getTSDB(userID).activeSeries.Active()
+	totalActiveSeries := ingester.getTSDB(userID).activeSeriesTotal(time.Now())
 	require.Equal(t, 0, totalActiveSeries)
 
 	// Push 20 more series.
@@ -145,7 +147,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 0)
 
 	require.Equal(t, uint64(30), ingester.getTSDB(userID).Head().NumSeries())
-	totalActiveSeries, _, _, _ = ingester.getTSDB(userID).activeSeries.Active()
+	totalActiveSeries = ingester.getTSDB(userID).activeSeriesTotal(time.Now())
 	require.Equal(t, 20, totalActiveSeries)
 
 	// Advance time until the last series are inactive too. Now we expect the early compaction to trigger.
@@ -155,7 +157,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 1)
 
 	require.Equal(t, uint64(0), ingester.getTSDB(userID).Head().NumSeries())
-	totalActiveSeries, _, _, _ = ingester.getTSDB(userID).activeSeries.Active()
+	totalActiveSeries = ingester.getTSDB(userID).activeSeriesTotal(time.Now())
 	require.Equal(t, 0, totalActiveSeries)
 }
 
@@ -204,6 +206,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_LimitPrecedence(t *testing
 }
 
 func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNowMinusActiveSeriesMetricsIdleTimeout(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx          = context.Background()
 		ctxWithUser  = user.InjectOrgID(ctx, userID)
@@ -366,6 +369,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 }
 
 func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonoringBlockRangePeriod(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx          = context.Background()
 		ctxWithUser  = user.InjectOrgID(ctx, userID)
@@ -435,6 +439,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonorin
 }
 
 func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamplesOlderThanActiveSeriesIdleTimeoutAfterEarlyCompaction(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx         = context.Background()
 		ctxWithUser = user.InjectOrgID(ctx, userID)
@@ -495,6 +500,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 }
 
 func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	util_test.VerifyNoLeak(t)
 
 	const (
@@ -832,7 +838,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_DisabledByDefault(t *testing.
 	}
 
 	// Mark all series as inactive
-	ingester.getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
+	ingester.getTSDB(userID).markAllInactive(now.Add(30 * time.Minute))
 
 	// Per-tenant early compaction should not trigger because threshold is 0 (disabled)
 	ingester.compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(30*time.Minute))
@@ -840,6 +846,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_DisabledByDefault(t *testing.
 }
 
 func TestIngester_compactBlocksToReduceOwnedSeries_TriggersWhenThresholdExceeded(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx         = context.Background()
 		ctxWithUser = user.InjectOrgID(ctx, userID)
@@ -873,7 +880,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_TriggersWhenThresholdExceeded
 	}
 
 	// Mark all series as inactive
-	ingesters[0].getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
+	ingesters[0].getTSDB(userID).markAllInactive(now.Add(30 * time.Minute))
 
 	// Pre-condition: owned series (12) is below the global threshold (20),
 	// but at or above the local per-ingester threshold (20 / 2 = 10).
@@ -890,6 +897,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_TriggersWhenThresholdExceeded
 }
 
 func TestIngester_compactBlocksToReduceOwnedSeries_RespectsCooldown(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx         = context.Background()
 		ctxWithUser = user.InjectOrgID(ctx, userID)
@@ -923,7 +931,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_RespectsCooldown(t *testing.T
 	}
 
 	// Mark all series as inactive
-	ingesters[0].getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
+	ingesters[0].getTSDB(userID).markAllInactive(now.Add(30 * time.Minute))
 
 	// First compaction should trigger
 	ingesters[0].compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(30*time.Minute))
@@ -938,7 +946,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_RespectsCooldown(t *testing.T
 	}
 
 	// Mark new series as inactive
-	ingesters[0].getTSDB(userID).activeSeries.Purge(now.Add(70*time.Minute), nil)
+	ingesters[0].getTSDB(userID).markAllInactive(now.Add(70 * time.Minute))
 
 	// Try compaction again immediately (within cooldown period)
 	// Should not create a new block because cooldown hasn't passed
@@ -983,7 +991,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_RequiresOwnedSeriesForLimits(
 	}
 
 	// Mark all series as inactive
-	ingesters[0].getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
+	ingesters[0].getTSDB(userID).markAllInactive(now.Add(30 * time.Minute))
 
 	// Per-tenant early compaction should NOT trigger because UseIngesterOwnedSeriesForLimits is false
 	ingesters[0].compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(30*time.Minute))
@@ -1078,6 +1086,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotCompactWhenNoPending
 }
 
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx         = context.Background()
 		ctxWithUser = user.InjectOrgID(ctx, userID)
@@ -1183,6 +1192,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *tes
 // queryable through the ingester (owned from the head, non-owned from the
 // local block).
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx         = context.Background()
 		ctxWithUser = user.InjectOrgID(ctx, userID)
@@ -1279,6 +1289,65 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries
 	assert.Equal(t, expected(nonOwnedName), queryStream(nonOwnedName))
 }
 
+func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRetryAfterPartialEviction(t *testing.T) {
+	ctx := t.Context()
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
+	cfg.UpdateIngesterOwnedSeries = true
+	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
+	cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod = 0
+	limits := defaultLimitsTestConfig()
+	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
+	limits.OutOfOrderTimeWindow = model.Duration(time.Hour)
+	ingester := setupTestIngesterRing(t, []string{"zone-a", "zone-b", "zone-c"}, 1, cfg, limits)[0]
+
+	owned, nonOwned, minHash := pickOwnedAndNonOwnedSeries(t, userID)
+	var nonOwnedOOO labels.Labels
+	for n := 0; n < 10000; n++ {
+		candidate := labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("non_owned_ooo_%d", n))
+		if mimirpb.ShardByAllLabels(userID, candidate) > minHash {
+			nonOwnedOOO = candidate
+			break
+		}
+	}
+	require.False(t, nonOwnedOOO.IsEmpty())
+	ctxWithUser := user.InjectOrgID(ctx, userID)
+	timestamp := time.Now().UnixMilli()
+	for _, lbls := range []labels.Labels{owned, nonOwned, nonOwnedOOO} {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels: lbls, Samples: []util_test.Sample{{TS: timestamp, Val: 1}},
+		}}))
+	}
+	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		Labels: nonOwnedOOO, Samples: []util_test.Sample{{TS: timestamp - 100, Val: 2}},
+	}}))
+	db := ingester.getTSDB(userID)
+	require.NotNil(t, db)
+	db.ownedTokenRanges = ring.TokenRanges{0, minHash}
+	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()))
+	require.Len(t, db.pendingNonOwnedRefs, 2)
+	db.getAndClearReasonForRecomputeOwnedSeries()
+
+	// Prevent WBL rotation so OOO compaction fails while in-order eviction can still succeed.
+	wblDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID, wlog.WblDirName)
+	_, lastSegment, err := wlog.Segments(wblDir)
+	require.NoError(t, err)
+	blockedSegment := wlog.SegmentName(wblDir, lastSegment+1)
+	require.NoError(t, os.Mkdir(blockedSegment, 0700))
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
+	require.NoError(t, os.Remove(blockedSegment))
+
+	require.Equal(t, uint64(2), db.Head().NumSeries(), "only the non-owned in-order series should be evicted")
+	require.Empty(t, db.pendingNonOwnedRefs, "the attempt consumed both queued refs")
+	require.Equal(t, recomputeOwnedSeriesReasonEarlyCompaction, db.getAndClearReasonForRecomputeOwnedSeries())
+	require.True(t, db.recomputeOwnedSeries(0, recomputeOwnedSeriesReasonEarlyCompaction, log.NewNopLogger()))
+	require.Len(t, db.pendingNonOwnedRefs, 1, "the remaining OOO series should be queued again")
+
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
+	require.Equal(t, uint64(1), db.Head().NumSeries(), "retry should evict the remaining non-owned series")
+	require.Empty(t, db.pendingNonOwnedRefs)
+}
+
 // TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples
 // verifies the two-step eviction flow when both series contain out-of-order
 // data. In step 1, CompactOOOHead flushes the OOO data of both series into an
@@ -1290,6 +1359,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries
 // series keeps its in-order chunks in the head, while its OOO chunks are
 // persisted on disk.
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx         = context.Background()
 		ctxWithUser = user.InjectOrgID(ctx, userID)
@@ -1429,6 +1499,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *tes
 // remains within the grace period. Eviction proceeds once the timestamp is
 // older than the configured threshold.
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx         = context.Background()
 		ctxWithUser = user.InjectOrgID(ctx, userID)
@@ -1509,6 +1580,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *t
 // after the scale-up, whereas the same ingester state would not have met the
 // eviction threshold before the scale-up.
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	const numSeries = 10000
 
 	cfg := defaultIngesterTestConfig(t)
@@ -1658,6 +1730,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 // pending non-owned. The stale ref should be ignored without error or panic,
 // and no block should be produced.
 func TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	ctx := context.Background()
 	ctxWithUser := user.InjectOrgID(ctx, userID)
 
@@ -1757,6 +1830,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction(t
 // When compaction runs, only the older refs should be selected for eviction, while the newer
 // refs should remain pending. As a result, exactly one block should be compacted.
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldEvictAgedRefsDespiteFresherOnes(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	const (
 		olderSeriesCount = 5
 		newerSeriesCount = 5

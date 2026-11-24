@@ -7,16 +7,19 @@ package ingester
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/ring"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
 	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 // NewestDataTime returns the max time of the head (in-order and out-of-order) and of the local blocks,
@@ -50,57 +53,36 @@ func (e *prometheusEngine) ExemplarQuerier(ctx context.Context) (storage.Exempla
 	return e.db.ExemplarQuerier(ctx)
 }
 
-func (e *prometheusEngine) Ingest(ctx *ingestContext, timeseries []mimirpb.PreallocTimeseries) error {
-	i, userID, startAppend, stats := ctx.i, ctx.userID, ctx.startAppend, ctx.stats
-	spanlog := spanlogger.FromContext(ctx, i.logger)
-	app := e.db.AppenderV2(ctx).(extendedAppender)
-	spanlog.DebugLog("event", "got appender for timeseries", "series", len(timeseries))
-
-	minAppendTime, minAppendTimeAvailable := e.db.Head().AppendableMinValidTime()
-
-	if pushSamplesToAppenderErr := i.pushSamplesToAppender(
-		userID,
-		timeseries,
-		app,
-		startAppend,
-		stats,
-		ctx.errProcessor,
-		ctx.updateFirstPartial,
-		ctx.activeSeries,
-		i.limits.OutOfOrderTimeWindow(userID),
-		minAppendTimeAvailable,
-		minAppendTime,
-		ctx.isOTLP,
-	); pushSamplesToAppenderErr != nil {
-		if err := app.Rollback(); err != nil {
-			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
-		}
-
-		return pushSamplesToAppenderErr
+// Ingest appends the batch with an appender, commits it, and rolls it back when a hard error stops it.
+func (e *prometheusEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcome, error) {
+	// Require commit stats on the Prometheus appender so wrappers cannot silently drop its duplicate accounting.
+	app := e.db.AppenderV2(ctx).(interface {
+		extendedAppender
+		storage.CommitStatsReporter
+	})
+	outcome, err := ingestThroughAppender(ctx, app, batch)
+	if err == nil {
+		ctx.stats.commitDroppedSamples = app.CommitStats().DiscardedSamples
 	}
+	return outcome, err
+}
 
-	// At this point all samples have been added to the appender, so we can track the time it took.
-	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
-
-	spanlog.DebugLog(
-		"event", "start commit",
-		"succeededSamplesCount", stats.succeededSamplesCount,
-		"failedSamplesCount", stats.failedSamplesCount,
-		"succeededExemplarsCount", stats.succeededExemplarsCount,
-		"failedExemplarsCount", stats.failedExemplarsCount,
-	)
+// ingestThroughAppender appends the batch with the appender, commits it, and rolls it back when a hard error stops it.
+func ingestThroughAppender(ctx *ingestContext, app extendedAppender, batch ingestBatch) (ingestOutcome, error) {
+	outcome, err := pushSamplesToAppender(ctx, app, batch, nil, false)
+	if err != nil {
+		if rollbackErr := app.Rollback(); rollbackErr != nil {
+			err = errors.Join(err, fmt.Errorf("roll back the appender: %w", rollbackErr))
+		}
+		return outcome, err
+	}
 
 	startCommit := time.Now()
 	if err := app.Commit(); err != nil {
-		return err
+		return outcome, err
 	}
-	stats.commitDroppedSamples = app.CommitStats().DiscardedSamples
-
-	commitDuration := time.Since(startCommit)
-	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
-	spanlog.DebugLog("event", "complete commit", "commitDuration", commitDuration.String())
-
-	return nil
+	outcome.CommitDuration = time.Since(startCommit)
+	return outcome, nil
 }
 
 func (e *prometheusEngine) Close() error {
@@ -130,6 +112,21 @@ func (e *prometheusEngine) Flush(ctx context.Context, upTo int64) error {
 	}
 
 	return e.db.CompactOOOHead(ctx)
+}
+
+// Evict compacts the out-of-order head first, which persists the out-of-order data of the series before they
+// leave, then the series themselves. The first failure doesn't stop the second: series without out-of-order data
+// can still leave.
+func (e *prometheusEngine) Evict(ctx context.Context, refs []storage.SeriesRef) error {
+	oooErr := e.db.CompactOOOHead(ctx)
+	if oooErr != nil {
+		oooErr = fmt.Errorf("compact the out-of-order head: %w", oooErr)
+	}
+	selectedErr := e.db.CompactSelectedSeries(refs)
+	if selectedErr != nil {
+		selectedErr = fmt.Errorf("compact the selected series: %w", selectedErr)
+	}
+	return errors.Join(oooErr, selectedErr)
 }
 
 func (e *prometheusEngine) Configure(settings engineSettings) error {
@@ -195,4 +192,31 @@ func (e *prometheusEngine) getCachedShippedBlocks() map[ulid.ULID]time.Time {
 
 	// It's safe to directly return the map because it's never updated in-place.
 	return e.shippedBlocks
+}
+
+func openPrometheusEngine(dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options) (tenantEngine, error) {
+	db, err := tsdb.Open(dir, logger, reg, opts, nil)
+	if err != nil {
+		return nil, err
+	}
+	// The ingester compacts on its own schedule.
+	db.DisableCompactions()
+	return &prometheusEngine{db: db, blockDuration: opts.MinBlockDuration}, nil
+}
+
+func (h prometheusHead) Ownership(owned ring.TokenRanges) (int, []storage.SeriesRef) {
+	var (
+		count    int
+		nonOwned []storage.SeriesRef
+	)
+	h.ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
+		for i, hash := range secondaryHashes {
+			if owned.IncludesKey(hash) {
+				count++
+			} else {
+				nonOwned = append(nonOwned, storage.SeriesRef(refs[i]))
+			}
+		}
+	})
+	return count, nonOwned
 }

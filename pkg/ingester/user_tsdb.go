@@ -94,10 +94,16 @@ type ownedSeriesState struct {
 }
 
 type userTSDB struct {
-	cfg            *Config
-	db             tenantEngine
-	userID         string
-	activeSeries   *activeseries.ActiveSeries
+	cfg *Config
+	db  tenantEngine
+	// The directory of the tenant's data, whatever the engine keeps in it.
+	dir          string
+	userID       string
+	activeSeries *activeseries.ActiveSeries
+	// An engine that keeps the active series itself, which answers for them.
+	nativeActive activeSeriesHead
+	// The time the active series were last counted at, in Unix nanoseconds.
+	activeAsOf     atomic.Int64
 	seriesInMetric *metricCounter
 	limiter        *Limiter
 
@@ -172,7 +178,11 @@ type userTSDB struct {
 // generateHeadStatistics generates statistics for this user's head block.
 func (u *userTSDB) generateHeadStatistics() error {
 	// Open head block
-	head := u.prometheusDB().Head()
+	head := u.db.Head()
+	withMeta, ok := head.(prometheusHead)
+	if !ok {
+		return nil
+	}
 	indexReader, err := head.Index()
 	if err != nil {
 		return fmt.Errorf("failed to open TSDB head index reader: %w", err)
@@ -180,7 +190,7 @@ func (u *userTSDB) generateHeadStatistics() error {
 	defer indexReader.Close()
 
 	// Get block metadata
-	blockMeta := head.Meta()
+	blockMeta := withMeta.Meta()
 
 	// Generate statistics
 	u.plannerProvider.generateAndStorePlanner(blockMeta, indexReader)
@@ -237,8 +247,13 @@ func (u *userTSDB) Head() engineHead {
 	return u.db.Head()
 }
 
+// Blocks returns the blocks of the engine, none for an engine that keeps no blocks.
 func (u *userTSDB) Blocks() []*tsdb.Block {
-	return u.prometheusDB().Blocks()
+	// Only the Prometheus TSDB keeps blocks.
+	if engine, ok := u.db.(*prometheusEngine); ok {
+		return engine.db.Blocks()
+	}
+	return nil
 }
 
 func (u *userTSDB) Close() error {
@@ -247,10 +262,6 @@ func (u *userTSDB) Close() error {
 
 func (u *userTSDB) Compact() error {
 	return u.engine().Compact(context.Background())
-}
-
-func (u *userTSDB) StartTime() (int64, error) {
-	return u.prometheusDB().StartTime()
 }
 
 // changeState atomically compare-and-swap the current state, and returns state after the operation.
@@ -297,6 +308,9 @@ func (u *userTSDB) setClosingState() {
 // Call it after each compaction completes, because the head removes postings after it calls PostDeletion.
 // Only the compaction goroutine calls it, thus no PostDeletion call can occur between the load and the reset.
 func (u *userTSDB) updateLastSeriesRemoval() {
+	if u.seriesRefHistory == nil {
+		return
+	}
 	if u.pendingSeriesRemovals.Load() > 0 {
 		// Store the time before the reset. Thus labelChurn always sees a pending removal or a new time.
 		u.lastSeriesRemovalMs.Store(time.Now().UnixMilli())
@@ -323,7 +337,7 @@ func (u *userTSDB) compactHead(forcedCompactionMaxTime int64) error {
 	// (requests appending samples older than forcedMaxTime will fail until forced compaction is completed).
 	u.inFlightAppendsStartedBeforeForcedCompaction.Wait()
 
-	return u.engine().Flush(context.Background(), forcedCompactionMaxTime)
+	return u.db.Flush(context.Background(), forcedCompactionMaxTime)
 }
 
 // nextForcedHeadCompactionRange computes the next TSDB head range to compact when a forced compaction
@@ -423,7 +437,7 @@ func (u *userTSDB) PostCreation(metric labels.Labels) {
 // PostDeletion implements tsdb.SeriesLifecycleCallback.
 func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) {
 	u.instanceSeriesCount.Sub(int64(len(metrics)))
-	if len(metrics) > 0 {
+	if len(metrics) > 0 && u.seriesRefHistory != nil {
 		u.pendingSeriesRemovals.Inc()
 	}
 
@@ -448,13 +462,17 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 		return nil
 	}
 
-	deletable := tsdb.DefaultBlocksToDelete(u.prometheusDB())(blocks)
+	engine, ok := u.db.(*prometheusEngine)
+	if !ok {
+		return nil
+	}
+	deletable := tsdb.DefaultBlocksToDelete(engine.db)(blocks)
 	result := map[ulid.ULID]struct{}{}
 	deadline := time.Now().Add(-u.blockMinRetention)
 
 	// The shipper enabled case goes first because its common in the way we run the ingesters
-	if u.prometheus().shipper != nil {
-		shippedBlocks := u.prometheus().getCachedShippedBlocks()
+	if engine.BlockShippingEnabled() {
+		shippedBlocks := engine.getCachedShippedBlocks()
 
 		for blockID := range deletable {
 			shippedBlockTime, ok := shippedBlocks[blockID]
@@ -479,11 +497,12 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 // TSDB block not shipped to the storage yet, or 0 if all blocks have been shipped.
 func (u *userTSDB) getOldestUnshippedBlockTime() uint64 {
 	// When shipping is disabled, always return 0 because the concept of "unshipped" doesn't apply.
-	if u.prometheus().shipper == nil {
+	engine, ok := u.db.(*prometheusEngine)
+	if !ok || !engine.BlockShippingEnabled() {
 		return 0
 	}
 
-	shippedBlocks := u.prometheus().getCachedShippedBlocks()
+	shippedBlocks := engine.getCachedShippedBlocks()
 	oldestTs := uint64(0)
 
 	for _, b := range u.Blocks() {
@@ -743,43 +762,26 @@ func (u *userTSDB) computeOwnedSeries() int {
 	// refs for targeted eviction.
 	allNonOwned := len(u.ownedTokenRanges) == 0
 	if allNonOwned {
-		u.activeSeries.Clear()
+		u.deactivateAll()
 	}
 
-	idx := u.prometheusDB().Head().MustIndex()
-	defer idx.Close()
-
-	count := 0
+	count, nonOwned := u.Head().Ownership(u.ownedTokenRanges)
+	trackNonOwned := u.cfg.EarlyCompactionNonOwnedSeriesEnabled
 	// Build the non-owned snapshot as a map directly so the reconciliation in
 	// addPendingNonOwnedRefs doesn't have to re-hash a slice under the lock.
 	var nonOwnedRefs map[storage.SeriesRef]struct{}
-	trackNonOwned := u.cfg.EarlyCompactionNonOwnedSeriesEnabled
 	if trackNonOwned {
-		nonOwnedRefs = make(map[storage.SeriesRef]struct{})
+		nonOwnedRefs = make(map[storage.SeriesRef]struct{}, len(nonOwned))
 	}
-
-	u.prometheusDB().Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
-		// Fast path: when no token range is owned every series in this batch is non-owned.
-		// activeSeries.Clear() above already handled the active-series side.
-		if allNonOwned {
-			if trackNonOwned {
-				for _, ref := range refs {
-					nonOwnedRefs[storage.SeriesRef(ref)] = struct{}{}
-				}
-			}
-			return
+	// When no token range is owned, deactivateAll() above already handled the active-series side.
+	if !allNonOwned {
+		u.deactivateSeries(nonOwned)
+	}
+	if trackNonOwned {
+		for _, ref := range nonOwned {
+			nonOwnedRefs[ref] = struct{}{}
 		}
-		for i, sh := range secondaryHashes {
-			if u.ownedTokenRanges.IncludesKey(sh) {
-				count++
-				continue
-			}
-			u.activeSeries.Delete(refs[i], idx)
-			if trackNonOwned {
-				nonOwnedRefs[storage.SeriesRef(refs[i])] = struct{}{}
-			}
-		}
-	})
+	}
 
 	// Queue the non-owned refs for targeted eviction by the next compaction-loop iteration.
 	if trackNonOwned {
