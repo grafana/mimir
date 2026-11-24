@@ -871,9 +871,9 @@ func TestEngineSelectedSeriesWithExemplars(t *testing.T) {
 		require.NoError(t, head.CompactSelectedSeries([]storage.SeriesRef{ref}))
 		require.Equal(t, wantSamples, querySamples(t, head, 0, 2000, nil, matcher))
 	}
-	// Prometheus keeps the identity for exemplar WAL replay; seriesstore stores exemplars
-	// outside the series and must preserve them even after eviction and a clean restart.
-	require.Equal(t, uint64(1), heads[0].NumSeries())
+	// Exemplars do not prevent eviction. SeriesStore keeps them independently of the
+	// head series, including across a clean restart.
+	require.Zero(t, heads[0].NumSeries())
 	require.Zero(t, heads[1].NumSeries())
 	require.NoError(t, heads[1].Close())
 	heads[1] = openEngine(t, dir, opts, nil)
