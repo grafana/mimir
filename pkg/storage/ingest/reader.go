@@ -78,6 +78,9 @@ type PartitionReader interface {
 	// EnforceReadMaxDelay returns an error if the reader is lagging behind more than maxDelay.
 	EnforceReadMaxDelay(maxDelay time.Duration) error
 
+	// NumKafkaClusters returns the number of Kafka clusters the reader consumes from.
+	NumKafkaClusters() int
+
 	// WaitReadConsistencyUntilOffsets waits until the per-Kafka-cluster offsets have been consumed. Each
 	// Kafka cluster's offset is honored independently against that cluster.
 	WaitReadConsistencyUntilOffsets(ctx context.Context, offsets kmeta.PartitionOffsets) error
@@ -1035,6 +1038,11 @@ func (r *SingleClusterPartitionReader) fetchRecordTimestampAtOffset(ctx context.
 	}
 
 	return record.Timestamp, nil
+}
+
+// NumKafkaClusters implements PartitionReader.
+func (r *SingleClusterPartitionReader) NumKafkaClusters() int {
+	return 1
 }
 
 // WaitReadConsistencyUntilLastProducedOffset waits until all data produced up until now has been consumed by the reader.
