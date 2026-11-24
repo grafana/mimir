@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 
@@ -110,6 +111,9 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 	type testCase struct {
 		// reqSamples are the samples of each request, all for the same series.
 		reqSamples [][]mimirpb.Sample
+		// layouts are the request layouts to run the case with. Defaults to all layouts;
+		// a case whose requests hold one sample each only needs one.
+		layouts []requestLayout
 		// expectedLastReqErr is the soft error expected from the last request, nil for none.
 		expectedLastReqErr error
 		expectedIngested   model.Matrix
@@ -177,6 +181,7 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 
 		// Exact duplicate across two requests.
 		"exact duplicate across two requests is discarded as same-value-for-timestamp": {
+			layouts: []requestLayout{entryPerSample},
 			reqSamples: [][]mimirpb.Sample{
 				{{TimestampMs: 100, Value: 1}},
 				{{TimestampMs: 100, Value: 1}},
@@ -201,6 +206,7 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 
 		// Conflicting value across two requests: rejected at Append time with a soft error.
 		"conflicting value across two requests is surfaced as a soft error": {
+			layouts: []requestLayout{entryPerSample},
 			reqSamples: [][]mimirpb.Sample{
 				{{TimestampMs: 100, Value: 1}},
 				{{TimestampMs: 100, Value: 2}},
@@ -225,10 +231,14 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 		},
 	}
 
-	for _, layout := range []requestLayout{entryPerSample, singleEntry} {
-		t.Run(string(layout), func(t *testing.T) {
-			for testName, testData := range tests {
-				t.Run(testName, func(t *testing.T) {
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			layouts := testData.layouts
+			if layouts == nil {
+				layouts = []requestLayout{entryPerSample, singleEntry}
+			}
+			for _, layout := range layouts {
+				t.Run(string(layout), func(t *testing.T) {
 					registry := prometheus.NewRegistry()
 
 					cfg := defaultIngesterTestConfig(t)
@@ -327,7 +337,13 @@ func TestIngester_Push_DuplicateTimestampHistograms(t *testing.T) {
 	}
 
 	type testCase struct {
-		points                       []histogramPoint
+		// reqPoints are the histograms of each request, all for the same series.
+		reqPoints [][]histogramPoint
+		// layouts are the request layouts to run the case with. Defaults to all layouts;
+		// a case whose requests hold one histogram each only needs one.
+		layouts []requestLayout
+		// expectedLastReqErr is the soft error expected from the last request, nil for none.
+		expectedLastReqErr           error
 		expectedMetrics              string
 		expectedTSDBHistogramsAppend float64
 	}
@@ -335,7 +351,7 @@ func TestIngester_Push_DuplicateTimestampHistograms(t *testing.T) {
 	tests := map[string]testCase{
 		// Exact duplicate histogram within one request.
 		"exact duplicate histogram within a single request is discarded as same-value-for-timestamp": {
-			points: []histogramPoint{{ts: 100, idx: 1}, {ts: 100, idx: 1}, {ts: 101, idx: 2}},
+			reqPoints: [][]histogramPoint{{{ts: 100, idx: 1}, {ts: 100, idx: 1}, {ts: 101, idx: 2}}},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -352,7 +368,7 @@ func TestIngester_Push_DuplicateTimestampHistograms(t *testing.T) {
 
 		// Conflicting histogram within one request.
 		"conflicting histogram within a single request is discarded as new-value-for-timestamp": {
-			points: []histogramPoint{{ts: 100, idx: 1}, {ts: 100, idx: 2}, {ts: 101, idx: 3}},
+			reqPoints: [][]histogramPoint{{{ts: 100, idx: 1}, {ts: 100, idx: 2}, {ts: 101, idx: 3}}},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -366,12 +382,53 @@ func TestIngester_Push_DuplicateTimestampHistograms(t *testing.T) {
 			`,
 			expectedTSDBHistogramsAppend: 2,
 		},
+
+		// Exact duplicate histogram across two requests: accepted at Append, dropped at commit.
+		"exact duplicate histogram across two requests is discarded as same-value-for-timestamp": {
+			layouts:   []requestLayout{entryPerSample},
+			reqPoints: [][]histogramPoint{{{ts: 100, idx: 1}}, {{ts: 100, idx: 1}}},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="same-value-for-timestamp",user="test"} 1
+			`,
+			expectedTSDBHistogramsAppend: 1,
+		},
+
+		// Conflicting histogram across two requests: rejected at Append time with a soft error.
+		"conflicting histogram across two requests is surfaced as a soft error": {
+			layouts:            []requestLayout{entryPerSample},
+			reqPoints:          [][]histogramPoint{{{ts: 100, idx: 1}}, {{ts: 100, idx: 2}}},
+			expectedLastReqErr: newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(storage.ErrDuplicateSampleForTimestamp.Error(), model.Time(100), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID), codes.InvalidArgument),
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 1
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
+			`,
+			expectedTSDBHistogramsAppend: 1,
+		},
 	}
 
-	for _, layout := range []requestLayout{entryPerSample, singleEntry} {
-		t.Run(string(layout), func(t *testing.T) {
-			for testName, testData := range tests {
-				t.Run(testName, func(t *testing.T) {
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			layouts := testData.layouts
+			if layouts == nil {
+				layouts = []requestLayout{entryPerSample, singleEntry}
+			}
+			for _, layout := range layouts {
+				t.Run(string(layout), func(t *testing.T) {
 					registry := prometheus.NewRegistry()
 
 					cfg := defaultIngesterTestConfig(t)
@@ -385,8 +442,18 @@ func TestIngester_Push_DuplicateTimestampHistograms(t *testing.T) {
 
 					ctx := user.InjectOrgID(t.Context(), userID)
 
-					_, err = i.Push(ctx, histogramWriteRequestForSeries(layout, metricLabels, testData.points))
-					require.NoError(t, err)
+					// Push all requests. Only the last request may return an error.
+					for idx, points := range testData.reqPoints {
+						_, err := i.Push(ctx, histogramWriteRequestForSeries(layout, metricLabels, points))
+						if idx == len(testData.reqPoints)-1 && testData.expectedLastReqErr != nil {
+							require.Error(t, err)
+							errWithStatus, ok := mapPushErrorToErrorWithStatus(err).(globalerror.ErrorWithStatus)
+							require.True(t, ok)
+							require.Truef(t, errWithStatus.Equals(testData.expectedLastReqErr), "errors don't match \nactual:   '%v'\nexpected: '%v'", errWithStatus, testData.expectedLastReqErr)
+						} else {
+							require.NoError(t, err)
+						}
+					}
 
 					require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), sampleMetricNames...))
 
