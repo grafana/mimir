@@ -268,6 +268,22 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			expectedMetadataRefresh: false,
 			expectedError:           nil,
 		},
+		"closed broker (reworded in newer franz-go versions)": {
+			err:              fmt.Errorf("fetching from kafka: %w", errors.New(chosenBrokerDead)),
+			lso:              5,
+			rangeErrorPolicy: OnRangeErrorResumeFromStart,
+			fw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedFw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedBackoff:         false,
+			expectedMetadataRefresh: false,
+			expectedError:           nil,
+		},
 		"closed network connection": {
 			err:              fmt.Errorf("read tcp 10.0.227.72:37486->10.0.29.4:9092: use of closed network connection"), // this isn't exposed by the standard library so we just make one of our own
 			lso:              5,

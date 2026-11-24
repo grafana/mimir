@@ -32,7 +32,12 @@ const (
 	unknownBroker = "unknown broker"
 
 	// chosenBrokerDied duplicates a constant from franz-go because it isn't exported.
+	// This is the error message used by older franz-go versions.
 	chosenBrokerDied = "the internal broker struct chosen to issue this request has died--either the broker id is migrating or no longer exists"
+
+	// chosenBrokerDead duplicates a constant from franz-go because it isn't exported.
+	// This is the error message used by newer franz-go versions, which reworded chosenBrokerDied.
+	chosenBrokerDead = "the broker connection has died and the request will be retried on a new connection"
 
 	// initialBytesPerRecord is the initial number of estimated bytes per record.
 	// We start with an estimation, we will update it as we consume.
@@ -1052,7 +1057,7 @@ func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, rangeError
 		longBackoff.Wait()
 	case strings.Contains(errString, unknownBroker):
 		// The client's metadata refreshed after we called Broker(). It should already be refreshed, so we can retry immediately.
-	case strings.Contains(errString, chosenBrokerDied):
+	case strings.Contains(errString, chosenBrokerDied), strings.Contains(errString, chosenBrokerDead):
 		// The client's metadata refreshed after we called Broker(). It should already be refreshed, so we can retry immediately.
 	case strings.Contains(errString, "use of closed network connection"):
 		// The client usually immediately handles closed connections, so we can retry immediately.
