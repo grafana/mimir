@@ -2240,6 +2240,22 @@ func getHistogram(t *testing.T, reg *prometheus.Registry, name string) *dto.Hist
 	return m[0].Histogram
 }
 
+func TestEngine_AcquireQuerySlot(t *testing.T) {
+	opts := NewTestEngineOpts()
+	tracker := &testQueryTracker{}
+	opts.ActiveQueryTracker = tracker
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+	require.NoError(t, err)
+
+	release, err := engine.AcquireQuerySlot(t.Context(), "up")
+	require.NoError(t, err)
+	require.Equal(t, []trackedQuery{{expr: "up", stage: "cost-estimation"}}, tracker.queries)
+	release()
+	require.Equal(t, []trackedQuery{{expr: "up", stage: "cost-estimation", deleted: true}}, tracker.queries)
+}
+
 func TestActiveQueryTracker_SuccessfulQuery(t *testing.T) {
 	opts := NewTestEngineOpts()
 	tracker := &testQueryTracker{}

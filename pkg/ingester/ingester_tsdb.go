@@ -22,7 +22,6 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"go.uber.org/atomic"
@@ -49,31 +48,16 @@ func (i *Ingester) applyTSDBSettings() {
 			oooTW = 0
 		}
 
-		// We populate a Config struct with just TSDB related config, which is OK
-		// because DB.ApplyConfig only looks at the specified config.
-		// The other fields in Config are things like Rules, Scrape
-		// settings, which don't apply to Head.
-		cfg := promcfg.Config{
-			StorageConfig: promcfg.StorageConfig{
-				ExemplarsConfig: &promcfg.ExemplarsConfig{
-					MaxExemplars: int64(i.limiter.maxExemplarsPerUser(userID)),
-				},
-				TSDBConfig: &promcfg.TSDBConfig{
-					OutOfOrderTimeWindow: oooTW.Milliseconds(),
-					ChunkEncoding: promcfg.ChunkEncodingConfig{
-						// ApplyConfig() reads the empty string as "keep the encoding resolved at
-						// startup", so a tenant clearing the limit needs an explicit value here to
-						// fall back to the default rather than keep its old encoding.
-						Floats: i.limits.FloatChunkEncodingValue(userID),
-					},
-				},
-			},
+		settings := engineSettings{
+			OutOfOrderTimeWindow: oooTW.Milliseconds(),
+			MaxExemplars:         int64(i.limiter.maxExemplarsPerUser(userID)),
+			FloatChunkEncoding:   i.limits.FloatChunkEncodingValue(userID),
 		}
 		db := i.getTSDB(userID)
 		if db == nil {
 			continue
 		}
-		if err := db.db.ApplyConfig(&cfg); err != nil {
+		if err := db.engine().Configure(settings); err != nil {
 			level.Error(i.logger).Log("msg", "failed to apply config to TSDB", "user", userID, "err", err)
 		}
 	}
@@ -266,13 +250,14 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	// If head is empty (eg. new TSDB), don't close it right after.
 	lastUpdateTime := time.Now()
-	if db.Head().NumSeries() > 0 {
+	engine := userDB.engine()
+	if engine.Head().NumSeries() > 0 {
 		// If there are series in the head, use the newest data time. If this time is too old,
 		// TSDB will be eligible for flushing and closing sooner, unless more data is pushed to it quickly.
 		//
 		// If TSDB's maxTime is in the future, ignore it. If we set "lastUpdate" to very distant future, it would prevent
 		// us from detecting TSDB as idle for a very long time.
-		if t := newestDataTime(db); t > math.MinInt64 {
+		if t := engine.NewestDataTime(); t > math.MinInt64 {
 			if tt := time.UnixMilli(t); tt.Before(lastUpdateTime) {
 				lastUpdateTime = tt
 			}
@@ -312,22 +297,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	userDBReady.Store(true)
 
 	return userDB, nil
-}
-
-// newestDataTime returns the max time of the head (in-order and out-of-order) and of the local blocks,
-// or math.MinInt64 if the TSDB has no data.
-//
-// Head().MaxTime() alone is not enough. On open, it is raised to the max time of the newest in-order block,
-// but blocks written from out-of-order data or by CompactSelectedSeries are skipped. After early compaction
-// of non-owned series and a restart, the head can have series without any in-order sample, so its max time is
-// math.MinInt64 while local blocks hold recent data. Block max times are aligned to the block range, so the
-// result can be up to one block range newer than the newest sample.
-func newestDataTime(db *tsdb.DB) int64 {
-	t := max(db.Head().MaxTime(), db.Head().MaxOOOTime())
-	for _, b := range db.Blocks() {
-		t = max(t, b.Meta().MaxTime)
-	}
-	return t
 }
 
 // createBlockChunkQuerier creates a BlockChunkQuerier that wraps the default querier with stats tracking
