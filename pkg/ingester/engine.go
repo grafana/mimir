@@ -46,22 +46,22 @@ type tenantEngine interface {
 type ingestContext struct {
 	context.Context
 
-	i                  *Ingester
-	userID             string
-	stats              *pushStats
-	errProcessor       *mimir_storage.SoftAppendErrorProcessor
-	updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction)
-	activeSeries       *activeseries.ActiveSeries
-	outOfOrderWindow   time.Duration
+	i                       *Ingester
+	userID                  string
+	stats                   *pushStats
+	errProcessor            *mimir_storage.SoftAppendErrorProcessor
+	updateFirstPartial      func(sampler *util_log.Sampler, errFn softErrorFunction)
+	activeSeries            *activeseries.ActiveSeries
+	outOfOrderWindow        time.Duration
+	nativeHistogramsEnabled bool
+	exemplarsEnabled        bool
 }
 
-// ingestBatch holds the request's series and the limits that apply to them.
+// ingestBatch holds the request's series, timestamp bounds, and source.
 type ingestBatch struct {
 	Series []mimirpb.PreallocTimeseries
 	// The bounds are inclusive and apply to samples, histograms and exemplars.
 	MinTimestampMs, MaxTimestampMs int64
-	NativeHistograms               bool
-	Exemplars                      bool
 	IngestedAt                     time.Time
 	OTLP                           bool
 }

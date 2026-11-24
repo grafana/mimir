@@ -402,22 +402,22 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	}
 
 	outcome, err := db.engine().Ingest(&ingestContext{
-		Context:            ctx,
-		i:                  i,
-		userID:             userID,
-		stats:              &stats,
-		errProcessor:       &errProcessor,
-		updateFirstPartial: updateFirstPartial,
-		activeSeries:       activeSeries,
-		outOfOrderWindow:   outOfOrderWindow,
+		Context:                 ctx,
+		i:                       i,
+		userID:                  userID,
+		stats:                   &stats,
+		errProcessor:            &errProcessor,
+		updateFirstPartial:      updateFirstPartial,
+		activeSeries:            activeSeries,
+		outOfOrderWindow:        outOfOrderWindow,
+		nativeHistogramsEnabled: i.limits.NativeHistogramsIngestionEnabled(userID),
+		exemplarsEnabled:        i.limits.MaxGlobalExemplarsPerUser(userID) > 0,
 	}, ingestBatch{
-		Series:           req.Timeseries,
-		MinTimestampMs:   minTimestampMs,
-		MaxTimestampMs:   startAppend.Add(i.limits.CreationGracePeriod(userID)).UnixMilli(),
-		NativeHistograms: i.limits.NativeHistogramsIngestionEnabled(userID),
-		Exemplars:        i.limits.MaxGlobalExemplarsPerUser(userID) > 0,
-		IngestedAt:       startAppend,
-		OTLP:             req.Source == mimirpb.OTLP,
+		Series:         req.Timeseries,
+		MinTimestampMs: minTimestampMs,
+		MaxTimestampMs: startAppend.Add(i.limits.CreationGracePeriod(userID)).UnixMilli(),
+		IngestedAt:     startAppend,
+		OTLP:           req.Source == mimirpb.OTLP,
 	})
 	if err != nil {
 		return wrapOrAnnotateWithUser(err, userID)
@@ -535,7 +535,7 @@ func (i *Ingester) pushSamplesToAppender(
 		// and out-of-order support is not enabled.
 		// TODO(jesus.vazquez) If we had too many old samples we might want to
 		// extend the fast path to fail early.
-		if batch.NativeHistograms {
+		if ctx.nativeHistogramsEnabled {
 			if ctx.outOfOrderWindow <= 0 && minAppendTimeAvailable && len(ts.Exemplars) == 0 &&
 				(len(ts.Samples) > 0 || len(ts.Histograms) > 0) &&
 				allOutOfBoundsFloats(ts.Samples, minAppendTime) &&
@@ -610,7 +610,7 @@ func (i *Ingester) pushSamplesToAppender(
 				continue
 			}
 
-			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs && (!batch.NativeHistograms || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
+			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs && (!ctx.nativeHistogramsEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
 				if ref != 0 {
 					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
 				} else {
@@ -659,7 +659,7 @@ func (i *Ingester) pushSamplesToAppender(
 		}
 
 		numNativeHistogramBuckets := -1
-		if batch.NativeHistograms {
+		if ctx.nativeHistogramsEnabled {
 			for _, h := range ts.Histograms {
 				var (
 					err error
@@ -741,7 +741,7 @@ func (i *Ingester) pushSamplesToAppender(
 			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, batch.OTLP, idx)
 		}
 
-		if len(ts.Exemplars) > 0 && batch.Exemplars {
+		if len(ts.Exemplars) > 0 && ctx.exemplarsEnabled {
 			// app.AppendExemplar currently doesn't create the series, it must
 			// already exist.  If it does not then drop.
 			if ref == 0 {
