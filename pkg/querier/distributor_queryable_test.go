@@ -7,8 +7,12 @@ package querier
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"testing"
 	"time"
@@ -18,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -32,8 +37,11 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/promqlext"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -917,4 +925,374 @@ func newMockConfigProvider(duration time.Duration) *mockConfigProvider {
 func (p *mockConfigProvider) QueryIngestersWithin(userID string) time.Duration {
 	p.seenUserIDs = append(p.seenUserIDs, userID)
 	return p.queryIngestersWithin
+}
+
+func TestQuery_StartTimestamps_Ingester(t *testing.T) {
+	tests := []struct {
+		name            string
+		encoding        chunkenc.Encoding
+		header          string
+		expectedSamples int
+	}{
+		{
+			name:            "float absent",
+			encoding:        chunkenc.EncXOR2,
+			expectedSamples: 0,
+		},
+		{
+			name:            "float disabled",
+			encoding:        chunkenc.EncXOR2,
+			header:          "false",
+			expectedSamples: 0,
+		},
+		{
+			name:            "float enabled",
+			encoding:        chunkenc.EncXOR2,
+			header:          "true",
+			expectedSamples: 1,
+		},
+		{
+			name:            "histogram absent",
+			encoding:        chunkenc.EncHistogramST,
+			expectedSamples: 0,
+		},
+		{
+			name:            "histogram disabled",
+			encoding:        chunkenc.EncHistogramST,
+			header:          "false",
+			expectedSamples: 0,
+		},
+		{
+			name:            "histogram enabled",
+			encoding:        chunkenc.EncHistogramST,
+			header:          "true",
+			expectedSamples: 1,
+		},
+		{
+			name:            "float histogram absent",
+			encoding:        chunkenc.EncFloatHistogramST,
+			expectedSamples: 0,
+		},
+		{
+			name:            "float histogram disabled",
+			encoding:        chunkenc.EncFloatHistogramST,
+			header:          "false",
+			expectedSamples: 0,
+		},
+		{
+			name:            "float histogram enabled",
+			encoding:        chunkenc.EncFloatHistogramST,
+			header:          "true",
+			expectedSamples: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Each query gets a fresh stream because evaluation consumes it.
+			encoded := newStartTimestampTestChunk(t, tc.encoding)
+			ctx, queryable := newIngesterStartTimestampTestQueryable(t, encoded)
+
+			// Storage collection and engine evaluation both use the request option.
+			headers := http.Header{}
+			if tc.header != "" {
+				headers.Set(requestoptions.UseStartTimestampsHeader, tc.header)
+			}
+			ctx, err := (&requestoptions.StartTimestampsExtractor{}).ExtractFromCarrier(ctx, propagation.HttpHeaderCarrier(headers))
+			require.NoError(t, err)
+
+			useST, err := requestoptions.ParseUseStartTimestamps(tc.header)
+			require.NoError(t, err)
+
+			engine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promql.EngineOpts{
+				Reg:                  prometheus.NewRegistry(),
+				MaxSamples:           1000,
+				Timeout:              time.Minute,
+				EnableAtModifier:     true,
+				EnableNegativeOffset: true,
+				Parser:               promqlext.NewPromQLParser(),
+			}))
+			query, err := engine.NewInstantQuery(ctx, queryable, promql.NewPrometheusQueryOpts(false, 0, useST), "start_timestamp(counter)", time.Unix(200, 0))
+			require.NoError(t, err)
+			defer query.Close()
+
+			result := query.Exec(ctx)
+			require.NoError(t, result.Err)
+
+			// PromQL returns start timestamps in seconds, while chunks store milliseconds.
+			vector, err := result.Vector()
+			require.NoError(t, err)
+			require.Len(t, vector, tc.expectedSamples)
+			if tc.expectedSamples > 0 {
+				require.Equal(t, float64(100), vector[0].F)
+			}
+		})
+	}
+}
+
+func newIngesterStartTimestampTestQueryable(t *testing.T, encoded chunkenc.Chunk) (context.Context, storage.Queryable) {
+	t.Helper()
+
+	ctx := user.InjectOrgID(t.Context(), "tenant")
+	lbls := labels.FromStrings("__name__", "counter")
+
+	// Mock the remote responses while keeping the storage queryable real.
+
+	encodings := map[chunkenc.Encoding]chunk.Encoding{
+		chunkenc.EncXOR:              chunk.PrometheusXorChunk,
+		chunkenc.EncXOR2:             chunk.PrometheusXor2Chunk,
+		chunkenc.EncHistogramST:      chunk.PrometheusHistogramSTChunk,
+		chunkenc.EncFloatHistogramST: chunk.PrometheusFloatHistogramSTChunk,
+	}
+	wireChunk := client.Chunk{
+		StartTimestampMs: 200_000,
+		EndTimestampMs:   200_000,
+		Encoding:         int32(encodings[encoded.Encoding()]),
+		Data:             encoded.Bytes(),
+	}
+	reader := createTestStreamReader([]client.QueryStreamSeriesChunks{
+		{
+			SeriesIndex: 0,
+			Chunks:      []client.Chunk{wireChunk},
+		},
+	})
+
+	distributor := &mockDistributor{
+		memoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(ctx),
+	}
+	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{
+		StreamingSeries: []client.StreamingSeries{{
+			Labels:  lbls,
+			Sources: []client.StreamingSeriesSource{{SeriesIndex: 0, StreamReader: reader}},
+		}},
+	}, nil)
+
+	queryable := NewDistributorQueryable(distributor, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewRegistry()), log.NewNopLogger())
+
+	return ctx, queryable
+
+}
+
+func TestQueryHTTP_StartTimestamps_Ingester(t *testing.T) {
+	tests := []struct {
+		name            string
+		encoding        chunkenc.Encoding
+		expression      string
+		expectedValue   string
+		endpoint        string
+		header          string
+		expectedStatus  int
+		expectedSamples int
+	}{
+		{
+			name:            "legacy float instant absent",
+			encoding:        chunkenc.EncXOR,
+			expression:      "start_timestamp(counter)",
+			expectedValue:   "0",
+			endpoint:        "query",
+			header:          "",
+			expectedStatus:  http.StatusOK,
+			expectedSamples: 0,
+		},
+		{
+			name:            "legacy float instant disabled",
+			encoding:        chunkenc.EncXOR,
+			expression:      "start_timestamp(counter)",
+			expectedValue:   "0",
+			endpoint:        "query",
+			header:          "false",
+			expectedStatus:  http.StatusOK,
+			expectedSamples: 0,
+		},
+		{
+			name:            "legacy float instant enabled",
+			encoding:        chunkenc.EncXOR,
+			expression:      "start_timestamp(counter)",
+			expectedValue:   "0",
+			endpoint:        "query",
+			header:          "true",
+			expectedStatus:  http.StatusOK,
+			expectedSamples: 1,
+		},
+		{
+			name:            "float instant enabled",
+			encoding:        chunkenc.EncXOR2,
+			expression:      "start_timestamp(counter)",
+			expectedValue:   "100",
+			endpoint:        "query",
+			header:          "true",
+			expectedStatus:  http.StatusOK,
+			expectedSamples: 1,
+		},
+		{
+			name:            "float instant invalid",
+			encoding:        chunkenc.EncXOR2,
+			expression:      "start_timestamp(counter)",
+			expectedValue:   "100",
+			endpoint:        "query",
+			header:          "invalid",
+			expectedStatus:  http.StatusBadRequest,
+			expectedSamples: 0,
+		},
+		{
+			name:            "float range invalid",
+			encoding:        chunkenc.EncXOR2,
+			expression:      "start_timestamp(counter)",
+			expectedValue:   "100",
+			endpoint:        "query_range",
+			header:          "invalid",
+			expectedStatus:  http.StatusBadRequest,
+			expectedSamples: 0,
+		},
+		{
+			name:            "histogram instant enabled",
+			encoding:        chunkenc.EncHistogramST,
+			expression:      "start_timestamp(counter)",
+			expectedValue:   "100",
+			endpoint:        "query",
+			header:          "true",
+			expectedStatus:  http.StatusOK,
+			expectedSamples: 1,
+		},
+		{
+			name:            "float histogram instant enabled",
+			encoding:        chunkenc.EncFloatHistogramST,
+			expression:      "start_timestamp(counter)",
+			expectedValue:   "100",
+			endpoint:        "query",
+			header:          "true",
+			expectedStatus:  http.StatusOK,
+			expectedSamples: 1,
+		},
+		{
+			name:            "single sample rate instant absent",
+			encoding:        chunkenc.EncXOR2,
+			expression:      "rate(counter[150s])",
+			expectedValue:   "0.28",
+			endpoint:        "query",
+			header:          "",
+			expectedStatus:  http.StatusOK,
+			expectedSamples: 0,
+		},
+		{
+			name:            "single sample rate instant disabled",
+			encoding:        chunkenc.EncXOR2,
+			expression:      "rate(counter[150s])",
+			expectedValue:   "0.28",
+			endpoint:        "query",
+			header:          "false",
+			expectedStatus:  http.StatusOK,
+			expectedSamples: 0,
+		},
+		{
+			name:            "single sample rate instant enabled",
+			encoding:        chunkenc.EncXOR2,
+			expression:      "rate(counter[150s])",
+			expectedValue:   "0.28",
+			endpoint:        "query",
+			header:          "true",
+			expectedStatus:  http.StatusOK,
+			expectedSamples: 1,
+		},
+		{
+			name:            "single sample rate range absent",
+			encoding:        chunkenc.EncXOR2,
+			expression:      "rate(counter[150s])",
+			expectedValue:   "0.28",
+			endpoint:        "query_range",
+			header:          "",
+			expectedStatus:  http.StatusOK,
+			expectedSamples: 0,
+		},
+		{
+			name:            "single sample rate range disabled",
+			encoding:        chunkenc.EncXOR2,
+			expression:      "rate(counter[150s])",
+			expectedValue:   "0.28",
+			endpoint:        "query_range",
+			header:          "false",
+			expectedStatus:  http.StatusOK,
+			expectedSamples: 0,
+		},
+		{
+			name:            "single sample rate range enabled",
+			encoding:        chunkenc.EncXOR2,
+			expression:      "rate(counter[150s])",
+			expectedValue:   "0.28",
+			endpoint:        "query_range",
+			header:          "true",
+			expectedStatus:  http.StatusOK,
+			expectedSamples: 2,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Each request gets a fresh stream because query evaluation consumes it.
+			encoded := newStartTimestampTestChunk(t, tc.encoding)
+			ctx, queryable := newIngesterStartTimestampTestQueryable(t, encoded)
+			engine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promql.EngineOpts{
+				Reg:                  prometheus.NewRegistry(),
+				MaxSamples:           1000,
+				Timeout:              time.Minute,
+				EnableAtModifier:     true,
+				EnableNegativeOffset: true,
+				Parser:               promqlext.NewPromQLParser(),
+			}))
+			handler := propagation.Middleware(&requestoptions.StartTimestampsExtractor{}).Wrap(
+				createPrometheusAPIWithEngine(sampleOnlyTestQueryable{Queryable: queryable}, engine),
+			)
+
+			// Exercise header parsing and storage selection through the HTTP API.
+			params := url.Values{
+				"query": {tc.expression},
+				"time":  {"200"},
+				"start": {"200"},
+				"end":   {"210"},
+				"step":  {"10"},
+			}
+			req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/"+tc.endpoint+"?"+params.Encode(), nil)
+			if tc.header != "" {
+				req.Header.Set(requestoptions.UseStartTimestampsHeader, tc.header)
+			}
+
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, req)
+
+			require.Equal(t, tc.expectedStatus, response.Code, response.Body.String())
+			if tc.expectedStatus != http.StatusOK {
+				return
+			}
+
+			// Instant and range responses use different fields for their samples.
+			var body struct {
+				Data struct {
+					Result []struct {
+						Value  []json.RawMessage   `json:"value"`
+						Values [][]json.RawMessage `json:"values"`
+					} `json:"result"`
+				} `json:"data"`
+			}
+			require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
+			if tc.expectedSamples == 0 {
+				require.Empty(t, body.Data.Result)
+				return
+			}
+
+			require.Len(t, body.Data.Result, 1)
+			samples := body.Data.Result[0].Values
+			if tc.endpoint == "query" {
+				samples = [][]json.RawMessage{body.Data.Result[0].Value}
+			}
+			require.Len(t, samples, tc.expectedSamples)
+
+			for _, sample := range samples {
+				require.Len(t, sample, 2)
+
+				var actual string
+				require.NoError(t, json.Unmarshal(sample[1], &actual))
+				require.Equal(t, tc.expectedValue, actual)
+			}
+		})
+	}
 }

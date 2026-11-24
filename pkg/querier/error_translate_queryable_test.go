@@ -28,6 +28,7 @@ import (
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -142,6 +143,10 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 		Timeout:            5 * time.Second,
 	})
 
+	return createPrometheusAPIWithEngine(q, engine)
+}
+
+func createPrometheusAPIWithEngine(q storage.SampleAndChunkQueryable, engine promql.QueryEngine) *route.Router {
 	api := v1.NewAPI(
 		engine,
 		q,
@@ -182,7 +187,7 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 		nil,
 		nil,
 		v1.OpenAPIOptions{},
-		nil,
+		promqlext.NewPromQLParser(),
 		false,
 		0,
 	)
@@ -251,4 +256,12 @@ func (t errorTestSeriesSet) Err() error {
 
 func (t errorTestSeriesSet) Warnings() annotations.Annotations {
 	return nil
+}
+
+type sampleOnlyTestQueryable struct {
+	storage.Queryable
+}
+
+func (sampleOnlyTestQueryable) ChunkQuerier(int64, int64) (storage.ChunkQuerier, error) {
+	panic("chunk queries are not used by this test")
 }
