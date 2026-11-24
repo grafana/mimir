@@ -244,7 +244,7 @@ The following features are currently experimental:
     - `-querier.experimental-query-cost-api-enabled`
     - `-querier.query-cost-estimated-scrape-interval`
   - Streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}` returning NDJSON, mirroring the [Prometheus search API](https://github.com/prometheus/prometheus/pull/18573) (`-querier.experimental-search-api-enabled`).
-  - Default time range for series, label names, label values and search requests that do not specify start or end (`-querier.metadata-default-time-range`)
+  - Default time range for series, label names, label values and search requests that do not specify both start and end (`-querier.metadata-default-time-range`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-querier.query-engine` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
