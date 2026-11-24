@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/grafana/dskit/middleware"
@@ -13,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/storage/series"
@@ -86,31 +88,48 @@ func NewMetadataDefaultTimeRangeMiddleware(limits *validation.Overrides) middlew
 			var startMs, endMs int64
 			var err error
 			if hasStart {
-				if startMs, err = util.ParseTime(startParam); err != nil {
+				if startMs, err = parseMetadataTime(startParam); err != nil {
 					// Prometheus reports the invalid value.
 					next.ServeHTTP(w, r)
 					return
 				}
 			}
 			if hasEnd {
-				if endMs, err = util.ParseTime(endParam); err != nil {
+				if endMs, err = parseMetadataTime(endParam); err != nil {
 					next.ServeHTTP(w, r)
 					return
 				}
 			}
 
 			startMs, endMs = applyMetadataDefaultTimeRange(startMs, endMs, hasStart, hasEnd, time.Now().UnixMilli(), d)
+			// Prometheus cannot parse an RFC3339 time with a year after 9999, so the middleware sets Unix seconds.
 			if !hasStart {
-				r.Form.Set("start", time.UnixMilli(startMs).UTC().Format(time.RFC3339Nano))
+				r.Form.Set("start", strconv.FormatFloat(float64(startMs)/1000, 'f', -1, 64))
 			}
 			if !hasEnd {
-				r.Form.Set("end", time.UnixMilli(endMs).UTC().Format(time.RFC3339Nano))
+				r.Form.Set("end", strconv.FormatFloat(float64(endMs)/1000, 'f', -1, 64))
 			}
 
 			ctx := context.WithValue(r.Context(), metadataDefaultTimeRangeWarningKey{}, newMetadataDefaultTimeRangeWarning(startMs, endMs))
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	})
+}
+
+// parseMetadataTime parses a timestamp in the same way as Prometheus. Prometheus also accepts its formatted MinTime
+// and MaxTime, which util.ParseTime rejects because their years have more than 4 digits.
+func parseMetadataTime(s string) (int64, error) {
+	t, err := util.ParseTime(s)
+	if err == nil {
+		return t, nil
+	}
+	switch s {
+	case v1.MinTime.Format(time.RFC3339Nano):
+		return v1.MinTime.UnixMilli(), nil
+	case v1.MaxTime.Format(time.RFC3339Nano):
+		return v1.MaxTime.UnixMilli(), nil
+	}
+	return 0, err
 }
 
 func writeMetadataDefaultTimeRangeError(w http.ResponseWriter, err error) {

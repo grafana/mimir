@@ -93,8 +93,10 @@ func TestMetadataDefaultTimeRangeMiddleware_PrometheusAPI(t *testing.T) {
 		endIsNow bool
 		endMs    int64
 		// startIsDefault means that the querier must receive a start of end minus the default time range.
-		startIsDefault  bool
-		startMs         int64
+		startIsDefault bool
+		startMs        int64
+		// startDeltaMs is the error that the conversion of a very large start to Unix seconds can add.
+		startDeltaMs    float64
 		expectedWarning bool
 	}{
 		"label names, no start and no end": {
@@ -119,6 +121,31 @@ func TestMetadataDefaultTimeRangeMiddleware_PrometheusAPI(t *testing.T) {
 			target:          "/api/v1/labels?start=3600",
 			endIsNow:        true,
 			startMs:         3600_000,
+			expectedWarning: true,
+		},
+		"label names, only end at the formatted Prometheus MaxTime": {
+			tenant:          "enabled",
+			method:          http.MethodGet,
+			target:          "/api/v1/labels?end=" + url.QueryEscape(v1.MaxTime.Format(time.RFC3339Nano)),
+			endMs:           v1.MaxTime.UnixMilli(),
+			startIsDefault:  true,
+			startDeltaMs:    2000,
+			expectedWarning: true,
+		},
+		"label names, only start at the formatted Prometheus MinTime": {
+			tenant:          "enabled",
+			method:          http.MethodGet,
+			target:          "/api/v1/labels?start=" + url.QueryEscape(v1.MinTime.Format(time.RFC3339Nano)),
+			endIsNow:        true,
+			startMs:         v1.MinTime.UnixMilli(),
+			expectedWarning: true,
+		},
+		"label names, only end in the year 10000": {
+			tenant:          "enabled",
+			method:          http.MethodGet,
+			target:          "/api/v1/labels?end=253402387200",
+			endMs:           253402387200_000,
+			startIsDefault:  true,
 			expectedWarning: true,
 		},
 		"label names, start and end": {
@@ -192,14 +219,18 @@ func TestMetadataDefaultTimeRangeMiddleware_PrometheusAPI(t *testing.T) {
 			} else {
 				assert.Equal(t, tc.endMs, endMs)
 			}
+			expectedStartMs := tc.startMs
 			if tc.startIsDefault {
-				assert.Equal(t, endMs-defaultTimeRange.Milliseconds(), startMs)
+				expectedStartMs = endMs - defaultTimeRange.Milliseconds()
+			}
+			if tc.startDeltaMs > 0 {
+				assert.InDelta(t, expectedStartMs, startMs, tc.startDeltaMs)
 			} else {
-				assert.Equal(t, tc.startMs, startMs)
+				assert.Equal(t, expectedStartMs, startMs)
 			}
 
 			if tc.expectedWarning {
-				assert.Equal(t, []string{newMetadataDefaultTimeRangeWarning(startMs, endMs).Error()}, resp.Warnings)
+				assert.Equal(t, []string{newMetadataDefaultTimeRangeWarning(expectedStartMs, endMs).Error()}, resp.Warnings)
 			} else {
 				assert.Empty(t, resp.Warnings)
 			}
