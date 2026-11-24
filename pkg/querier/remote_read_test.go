@@ -32,6 +32,8 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -1658,6 +1660,27 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 		"single query - promQL storage error while iterating samples": {
 			getQuerierErr: []error{nil},
 			seriesSet:     []storage.SeriesSet{&partiallyFailingSeriesSet{ss: someSeries, failAfter: 1, err: errors.New("cannot reach ingesters")}},
+
+			expectedStatusCode:  500,
+			expectedContentType: "text/plain; charset=utf-8",
+		},
+		"single query - limit error from store-gateway": {
+			getQuerierErr: []error{nil},
+			seriesSet:     []storage.SeriesSet{storage.ErrSeriesSet(status.Error(codes.Code(http.StatusUnprocessableEntity), "the query exceeded the maximum number of chunks"))},
+
+			expectedStatusCode:  400,
+			expectedContentType: "text/plain; charset=utf-8",
+		},
+		"single query - limit error from store-gateway while iterating samples": {
+			getQuerierErr: []error{nil},
+			seriesSet:     []storage.SeriesSet{&partiallyFailingSeriesSet{ss: someSeries, failAfter: 1, err: errors.Wrap(status.Error(codes.Code(http.StatusUnprocessableEntity), "the query exceeded the maximum number of chunks"), "the store-gateway chunks stream has failed")}},
+
+			expectedStatusCode:  400,
+			expectedContentType: "text/plain; charset=utf-8",
+		},
+		"single query - gRPC error that is not a client error": {
+			getQuerierErr: []error{nil},
+			seriesSet:     []storage.SeriesSet{storage.ErrSeriesSet(status.Error(codes.Unavailable, "store-gateway is not reachable"))},
 
 			expectedStatusCode:  500,
 			expectedContentType: "text/plain; charset=utf-8",

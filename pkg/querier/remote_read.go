@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -257,6 +258,15 @@ func remoteReadErrorStatusCode(err error) int {
 	case errors.As(err, &promql.ErrStorage{}):
 		return http.StatusInternalServerError
 	default:
+		// Store-gateways return limit errors as gRPC errors with an HTTP 4xx status code.
+		if s, ok := grpcutil.ErrorToStatus(err); ok {
+			code := s.Code()
+
+			if util.IsHTTPStatusCode(code) && code >= 400 && code < 500 {
+				return http.StatusBadRequest
+			}
+		}
+
 		return http.StatusInternalServerError
 	}
 }
