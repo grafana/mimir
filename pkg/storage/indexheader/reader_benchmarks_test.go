@@ -457,7 +457,7 @@ func BenchmarkStreamBinaryReader_ParallelDiskReads(b *testing.B) {
 	require.NoError(b, err)
 
 	cfg := Config{Version: BinaryFormatV1, MaxIdleFileHandles: 1}
-	reader, err := NewStreamBinaryReader(ctx, id, instrBkt, bucketDir, cfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+	reader, err := NewStreamBinaryReader(ctx, id, instrBkt, bucketDir, cfg, streamindex.SamplingConfig{Factor: 32}, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 	require.NoError(b, err)
 	b.Cleanup(func() { require.NoError(b, reader.Close()) })
 
