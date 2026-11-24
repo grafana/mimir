@@ -242,7 +242,9 @@ var resultsCacheAlwaysEnabled = func(_ MetricsQueryRequest) bool { return true }
 var resultsCacheAlwaysDisabled = func(_ MetricsQueryRequest) bool { return false }
 
 var resultsCacheEnabledByOption = func(r MetricsQueryRequest) bool {
-	return !r.GetOptions().CacheDisabled
+	// Cache keys do not distinguish start-timestamp-aware evaluation.
+	useStartTimestamps := r.GetUseStartTimestamps()
+	return !r.GetOptions().CacheDisabled && (useStartTimestamps == nil || !*useStartTimestamps)
 }
 
 // isRequestCachable says whether the request is eligible for caching.

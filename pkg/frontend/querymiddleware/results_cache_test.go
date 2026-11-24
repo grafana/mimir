@@ -15,12 +15,15 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestResultsCacheConfig_Validate(t *testing.T) {
@@ -750,4 +753,98 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 
 func toMs(t time.Duration) int64 {
 	return int64(t / time.Millisecond)
+}
+
+func TestResultsCache_StartTimestampsIsolation(t *testing.T) {
+	tests := []struct {
+		name                    string
+		useStartTimestamps      *bool
+		expectedValue           float64
+		expectedDownstreamCalls int
+		expectCacheBypass       bool
+	}{
+		{
+			name:                    "absent option populates cache",
+			useStartTimestamps:      nil,
+			expectedValue:           1000,
+			expectedDownstreamCalls: 1,
+			expectCacheBypass:       false,
+		},
+		{
+			name:                    "enabled option bypasses populated cache",
+			useStartTimestamps:      new(true),
+			expectedValue:           999,
+			expectedDownstreamCalls: 2,
+			expectCacheBypass:       true,
+		},
+		{
+			name:                    "disabled option reuses cached response",
+			useStartTimestamps:      new(false),
+			expectedValue:           1000,
+			expectedDownstreamCalls: 2,
+			expectCacheBypass:       false,
+		},
+		{
+			name:                    "enabled option bypasses cache again",
+			useStartTimestamps:      new(true),
+			expectedValue:           999,
+			expectedDownstreamCalls: 3,
+			expectCacheBypass:       true,
+		},
+		{
+			name:                    "absent option still reuses original response",
+			useStartTimestamps:      nil,
+			expectedValue:           1000,
+			expectedDownstreamCalls: 3,
+			expectCacheBypass:       false,
+		},
+	}
+
+	c := cache.NewInstrumentedMockCache()
+	reg := prometheus.NewRegistry()
+	limits := mockLimits{resultsCacheTTL: time.Hour, resultsCacheTTLForErrors: time.Hour}
+	codec := newTestCodec()
+	keyGen := NewDefaultCacheKeyGenerator(codec, time.Hour)
+
+	calls := 0
+	downstream := HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
+		calls++
+		enabled := req.GetUseStartTimestamps() != nil && *req.GetUseStartTimestamps()
+		response := mkAPIResponse(req.GetStart(), req.GetEnd(), req.GetStep())
+		if enabled {
+			response.Data.Result[0].Samples[0].Value = 999
+		}
+
+		return response, nil
+	})
+	handler := newSplitAndCacheMiddleware(true, true, time.Hour, limits, newMockQueryLimitsProvider(&limits), codec, c, keyGen, PrometheusResponseExtractor{}, resultsCacheEnabledByOption, log.NewNopLogger(), reg, limiter.NewUnlimintedInflightMemoryConsumptionTracker(reg)).Wrap(downstream)
+
+	// Run in order against one cache to detect responses leaking between options.
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := user.InjectOrgID(t.Context(), "tenant")
+			req := &PrometheusRangeQueryRequest{
+				queryExpr:          parseQuery(t, "counter"),
+				start:              1000,
+				end:                2000,
+				step:               1000,
+				useStartTimestamps: tc.useStartTimestamps,
+			}
+			fetches, stores := c.CountFetchCalls(), c.CountStoreCalls()
+
+			response, err := handler.Do(ctx, req)
+			require.NoError(t, err)
+			defer response.Close()
+
+			promResponse, ok := response.GetPrometheusResponse()
+			require.True(t, ok)
+			require.Equal(t, tc.expectedValue, promResponse.Data.Result[0].Samples[0].Value)
+
+			if tc.expectCacheBypass {
+				require.Equal(t, fetches, c.CountFetchCalls())
+				require.Equal(t, stores, c.CountStoreCalls())
+			}
+			require.Equal(t, tc.expectedDownstreamCalls, calls)
+		})
+	}
 }
