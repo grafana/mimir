@@ -7,16 +7,37 @@ package ingester
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
 	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+func openPrometheusTSDB(
+	dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options,
+	tenantReady *atomic.Bool, filterDeletableBlocks func(map[ulid.ULID]struct{}) map[ulid.ULID]struct{},
+) (*tsdb.DB, error) {
+	var db *tsdb.DB
+	opts.BlocksToDelete = func(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
+		// Opening the TSDB can call this before the DB and tenant shipper are ready.
+		if !tenantReady.Load() {
+			return nil
+		}
+		return filterDeletableBlocks(tsdb.DefaultBlocksToDelete(db)(blocks))
+	}
+	var err error
+	db, err = tsdb.Open(dir, logger, reg, opts, nil)
+	return db, err
+}
 
 func (e prometheusEngine) Querier(mint, maxt int64) (storage.Querier, error) {
 	return e.db.Querier(mint, maxt)

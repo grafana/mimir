@@ -440,13 +440,8 @@ func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) 
 	u.activeSeries.PostDeletion(metrics)
 }
 
-// blocksToDelete filters the input blocks and returns the blocks which are safe to be deleted from the ingester.
-func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
-	if u.db == nil {
-		return nil
-	}
-
-	deletable := tsdb.DefaultBlocksToDelete(u.db)(blocks)
+// filterDeletableBlocks enforces minimum local retention and waits for shipping when enabled.
+func (u *userTSDB) filterDeletableBlocks(deletable map[ulid.ULID]struct{}) map[ulid.ULID]struct{} {
 	result := map[ulid.ULID]struct{}{}
 	deadline := time.Now().Add(-u.blockMinRetention)
 

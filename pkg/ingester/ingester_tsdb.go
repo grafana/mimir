@@ -19,7 +19,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/tenant"
-	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/storage"
@@ -166,12 +165,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	userDBReady := atomic.NewBool(false)
-	blocksToDelete := func(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
-		if !userDBReady.Load() {
-			return nil
-		}
-		return userDB.blocksToDelete(blocks)
-	}
 	blockGeneration := blockGenerationCalculator(userDB, blockRanges[0])
 
 	if i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled {
@@ -180,7 +173,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
-	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
+	db, err := openPrometheusTSDB(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                    i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
 		MinBlockDuration:                     blockRanges[0],
 		MaxBlockDuration:                     blockRanges[len(blockRanges)-1],
@@ -192,7 +185,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		WALSegmentSize:                       i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
 		WALReplayConcurrency:                 walReplayConcurrency,
 		SeriesLifecycleCallback:              userDB,
-		BlocksToDelete:                       blocksToDelete,
 		EnableExemplarStorage:                true, // enable for everyone so we can raise the limit later
 		MaxExemplars:                         int64(i.limiter.maxExemplarsPerUser(userID)),
 		SeriesHashCache:                      i.seriesHashCache,
@@ -218,7 +210,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			i.metrics.queriedBlocks.WithLabelValues(blockGeneration(b)).Inc()
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
-	}, nil)
+	}, userDBReady, userDB.filterDeletableBlocks)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
 	}
@@ -291,8 +283,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		}
 	}
 
-	// Must be the last statement: once flipped, blocksToDelete can run against userDB from
-	// the goroutine tsdb.Open started, so every field it reads must already be initialised.
+	// Publish readiness after the shipper and its cache are initialized so the engine can safely delete blocks.
 	userDBReady.Store(true)
 
 	return userDB, nil
