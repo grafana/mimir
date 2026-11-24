@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -174,6 +175,16 @@ func (i HealthStats) AnyErr() error {
 	return nil
 }
 
+// ChunkDataError reports invalid data in an opened chunk segment. Errors opening
+// the segment files are not classified as invalid chunk data.
+type ChunkDataError struct {
+	err error
+}
+
+func (e ChunkDataError) Error() string { return e.err.Error() }
+
+func (e ChunkDataError) Unwrap() error { return e.err }
+
 // GatherBlockHealthStats returns useful counters as well as outsider chunks (chunks outside of block time range) that
 // helps to assess index and optionally chunk health.
 // It considers https://github.com/prometheus/tsdb/issues/347 as something that Thanos can handle.
@@ -221,6 +232,9 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 
 	// Per series.
 	for p.Next() {
+		if err := ctx.Err(); err != nil {
+			return stats, err
+		}
 		lastLset = lset
 
 		id := p.At()
@@ -257,11 +271,18 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 		ooo := 0
 		// Per chunk in series.
 		for i, c := range chks {
+			if err := ctx.Err(); err != nil {
+				return stats, err
+			}
 			// Check if chunk data is valid.
 			if checkChunkData {
 				err := verifyChunks(cr, c)
 				if err != nil {
-					return stats, errors.Wrapf(err, "verify chunk %d of series %d", i, id)
+					segmentIndex, _ := chunks.BlockChunkRef(c.Ref).Unpack()
+					if accessErr := verifyChunkSegmentPrefix(chunkDir, segmentIndex); accessErr != nil {
+						return stats, accessErr
+					}
+					return stats, ChunkDataError{err: errors.Wrapf(err, "verify chunk %d of series %d", i, id)}
 				}
 			}
 
@@ -525,6 +546,38 @@ OUTER:
 	}
 
 	return repl, nil
+}
+
+// verifyChunkSegmentPrefix checks the numeric filenames in the same order as
+// chunks.NewDirReader before a chunk failure is classified as invalid data.
+func verifyChunkSegmentPrefix(chunkDir string, lastSegment int) error {
+	entries, err := os.ReadDir(chunkDir)
+	if err != nil {
+		return errors.Wrapf(err, "read chunk dir %s", chunkDir)
+	}
+	segment := 0
+	for _, entry := range entries {
+		if _, err := strconv.ParseUint(entry.Name(), 10, 64); err != nil {
+			continue
+		}
+		expectedName := fmt.Sprintf("%06d", segment+1)
+		segmentPath := filepath.Join(chunkDir, expectedName)
+		if _, accessErr := os.Stat(segmentPath); accessErr != nil {
+			return errors.Wrapf(accessErr, "access chunk segment %s", segmentPath)
+		}
+		if entry.Name() != expectedName {
+			return errors.Errorf("chunk segment %s is out of sequence, expected %s", entry.Name(), expectedName)
+		}
+		if segment == lastSegment {
+			return nil
+		}
+		segment++
+	}
+	segmentPath := filepath.Join(chunkDir, fmt.Sprintf("%06d", lastSegment+1))
+	if _, accessErr := os.Stat(segmentPath); accessErr != nil {
+		return errors.Wrapf(accessErr, "access chunk segment %s", segmentPath)
+	}
+	return errors.Errorf("chunk segment %s is missing from directory listing", segmentPath)
 }
 
 func verifyChunks(cr *chunks.Reader, cm chunks.Meta) error {
