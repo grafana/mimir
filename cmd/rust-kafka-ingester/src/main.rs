@@ -564,7 +564,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
     let head_period =
         Duration::from_millis(parse_duration_ms(&owned_series_update_interval)? as u64);
     let serving = Arc::new(AtomicBool::new(false));
-    spawn_accounting(
+    let mut accounting = spawn_accounting(
         Arc::clone(&store),
         Accounting {
             active_series_update,
@@ -576,6 +576,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
             owned_series: track_owned_series || use_owned_series_for_limits,
             serving: Arc::clone(&serving),
         },
+        shutdown_tx.subscribe(),
     );
     let consistency = Arc::new(Consistency::new(
         partition,
@@ -936,7 +937,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
         tokio::select! {
             result = ready => result.context("Kafka consumer stopped before initial replay")?,
             _ = startup_shutdown_rx.changed() => {
-                return shutdown_with_snapshot(&store, &shutdown_tx, workers, &fatal_rx, partition).await;
+                return shutdown_with_snapshot(&store, &shutdown_tx, workers, &mut accounting, &fatal_rx, partition).await;
             }
         }
     }
@@ -944,12 +945,20 @@ async fn serve(args: ServeArgs) -> Result<()> {
     tokio::select! {
         _ = consistency.wait_for_startup_lag(Duration::from_secs(15)) => {}
         _ = startup_shutdown_rx.changed() => {
-            return shutdown_with_snapshot(&store, &shutdown_tx, workers, &fatal_rx, partition).await;
+            return shutdown_with_snapshot(&store, &shutdown_tx, workers, &mut accounting, &fatal_rx, partition).await;
         }
         _ = fatal_rx.changed() => anyhow::bail!("Kafka applier stopped during startup"),
     }
     if shutdown_requested.load(Ordering::Relaxed) {
-        return shutdown_with_snapshot(&store, &shutdown_tx, workers, &fatal_rx, partition).await;
+        return shutdown_with_snapshot(
+            &store,
+            &shutdown_tx,
+            workers,
+            &mut accounting,
+            &fatal_rx,
+            partition,
+        )
+        .await;
     }
 
     let address: std::net::SocketAddr = listen.parse().context("parse listen address")?;
@@ -1008,8 +1017,15 @@ async fn serve(args: ServeArgs) -> Result<()> {
     shutdown_tx.send_replace(true);
     serving.store(false, Ordering::Release);
     eprintln!("phase=grpc_stopped partition={partition}");
-    let saved =
-        shutdown_with_snapshot(&store, &shutdown_tx, workers, &fatal_state, partition).await;
+    let saved = shutdown_with_snapshot(
+        &store,
+        &shutdown_tx,
+        workers,
+        &mut accounting,
+        &fatal_state,
+        partition,
+    )
+    .await;
     if let Some(task) = ring_task {
         task.await.context("join native ring lifecycle")?;
     }
@@ -1137,7 +1153,12 @@ impl CompactionSchedule {
 // Refreshes the ingester metrics on Mimir's schedules: active series every update period, the head,
 // owned series and limit metrics every owned series interval, the ingestion rate every second, and
 // purges metadata that was not seen recently.
-fn spawn_accounting(store: Arc<Store>, accounting: Accounting) {
+fn spawn_accounting(
+    store: Arc<Store>,
+    accounting: Accounting,
+    shutdown: tokio::sync::watch::Receiver<bool>,
+) -> tokio::task::JoinSet<()> {
+    let mut tasks = tokio::task::JoinSet::new();
     let Accounting {
         active_series_update,
         metadata_retain_ms,
@@ -1147,10 +1168,10 @@ fn spawn_accounting(store: Arc<Store>, accounting: Accounting) {
         serving,
     } = accounting;
     let report_store = Arc::clone(&store);
-    tokio::spawn(async move {
+    let mut stopping = shutdown.clone();
+    tasks.spawn(async move {
         let mut ticker = tokio::time::interval(active_series_update);
-        loop {
-            ticker.tick().await;
+        while accounting_tick(&mut ticker, &mut stopping).await {
             let store = Arc::clone(&report_store);
             match tokio::task::spawn_blocking(move || store.active_series_report()).await {
                 Ok(reports) => metrics::export_active_series(&reports),
@@ -1159,11 +1180,11 @@ fn spawn_accounting(store: Arc<Store>, accounting: Accounting) {
         }
     });
     let head_store = Arc::clone(&store);
-    tokio::spawn(async move {
+    let mut stopping = shutdown.clone();
+    tasks.spawn(async move {
         let mut ticker = tokio::time::interval(head_period);
         let mut schedule = CompactionSchedule::default();
-        loop {
-            ticker.tick().await;
+        while accounting_tick(&mut ticker, &mut stopping).await {
             let serving = serving.load(Ordering::Relaxed);
             let compact = schedule.due(Instant::now(), compaction_interval, serving);
             let store = Arc::clone(&head_store);
@@ -1192,25 +1213,37 @@ fn spawn_accounting(store: Arc<Store>, accounting: Accounting) {
         }
     });
     let rate_store = Arc::clone(&store);
-    tokio::spawn(async move {
+    let mut stopping = shutdown.clone();
+    tasks.spawn(async move {
         // Mimir's instance ingestion rate: an EWMA with alpha 0.2, ticked every second.
         let mut ticker = tokio::time::interval(Duration::from_secs(1));
         let mut rate = metrics::IngestionRate::default();
-        loop {
-            ticker.tick().await;
+        while accounting_tick(&mut ticker, &mut stopping).await {
             metrics::INGESTION_RATE.set(rate.tick(rate_store.ingested_samples()));
         }
     });
-    tokio::spawn(async move {
+    let mut stopping = shutdown;
+    tasks.spawn(async move {
         // Mimir checks for stale metadata every five minutes.
         let mut ticker = tokio::time::interval(Duration::from_secs(5 * 60));
-        loop {
-            ticker.tick().await;
+        while accounting_tick(&mut ticker, &mut stopping).await {
             let store = Arc::clone(&store);
             let _ =
                 tokio::task::spawn_blocking(move || store.purge_metadata(metadata_retain_ms)).await;
         }
     });
+    tasks
+}
+
+async fn accounting_tick(
+    ticker: &mut tokio::time::Interval,
+    shutdown: &mut tokio::sync::watch::Receiver<bool>,
+) -> bool {
+    tokio::select! {
+        biased;
+        _ = shutdown.wait_for(|stopping| *stopping) => false,
+        _ = ticker.tick() => true,
+    }
 }
 
 fn open_store(
@@ -1314,6 +1347,7 @@ async fn shutdown_with_snapshot(
     store: &Arc<Store>,
     shutdown_tx: &tokio::sync::watch::Sender<bool>,
     workers: Vec<tokio::task::JoinHandle<SnapshotOffset>>,
+    accounting: &mut tokio::task::JoinSet<()>,
     fatal_rx: &tokio::sync::watch::Receiver<bool>,
     partition: i32,
 ) -> Result<()> {
@@ -1322,6 +1356,10 @@ async fn shutdown_with_snapshot(
     if *fatal_rx.borrow() {
         eprintln!("phase=head_snapshot_skipped partition={partition} reason=fatal_error");
         return Ok(());
+    }
+    // A final head compaction can replace cold blocks referenced by the snapshot.
+    while let Some(result) = accounting.join_next().await {
+        result.context("join ingester accounting task")?;
     }
     let started = Instant::now();
     let snapshot_store = Arc::clone(store);
@@ -1952,6 +1990,54 @@ mod tests {
         assert!(initial_replay_complete(StartOffset::Earliest, 42, 42));
         assert!(!initial_replay_complete(StartOffset::Earliest, 41, 42));
         assert!(initial_replay_complete(StartOffset::At(42), 41, 42));
+    }
+
+    #[tokio::test]
+    async fn shutdown_waits_for_in_flight_accounting_before_snapshot() {
+        let chunk_dir = std::env::temp_dir().join(format!(
+            "mimir-rust-accounting-shutdown-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let store =
+            Arc::new(Store::with_shards(1000, None, Some(chunk_dir.clone()), 1, 1).unwrap());
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let (_fatal_tx, fatal_rx) = tokio::sync::watch::channel(false);
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (finish_tx, finish_rx) = tokio::sync::oneshot::channel();
+        let mut accounting = tokio::task::JoinSet::new();
+        accounting.spawn(async move {
+            tokio::task::spawn_blocking(move || {
+                started_tx.send(()).unwrap();
+                finish_rx.blocking_recv().unwrap();
+            })
+            .await
+            .unwrap();
+        });
+        started_rx.await.unwrap();
+
+        let stopping = shutdown_with_snapshot(
+            &store,
+            &shutdown_tx,
+            Vec::new(),
+            &mut accounting,
+            &fatal_rx,
+            0,
+        );
+        tokio::pin!(stopping);
+        // Keep the blocking work in flight even after the periodic tasks are told to stop.
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), &mut stopping)
+                .await
+                .is_err()
+        );
+        assert!(*shutdown_rx.borrow());
+        assert!(!chunk_dir.join("snapshot").exists());
+        finish_tx.send(()).unwrap();
+        stopping.await.unwrap();
+
+        assert!(Store::restore(1000, None, &chunk_dir, 1).unwrap().is_some());
+        std::fs::remove_dir_all(chunk_dir).unwrap();
     }
 
     #[test]
