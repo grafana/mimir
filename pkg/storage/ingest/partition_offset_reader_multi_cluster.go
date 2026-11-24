@@ -5,6 +5,7 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 
 	"github.com/go-kit/log"
@@ -29,6 +30,10 @@ type MultiClusterOffsetsReader struct {
 	offsetClients      []*partitionOffsetClient
 	offsetsReader      *GenericOffsetReader[kmeta.TopicsPartitionsOffsets]
 	subservicesWatcher *services.FailureWatcher
+
+	// additionalReadClusterTopic is empty if there is no additional read cluster. Otherwise, the last
+	// offset client belongs to the additional read cluster.
+	additionalReadClusterTopic string
 }
 
 // NewMultiClusterOffsetsReader creates a MultiClusterOffsetsReader. clusterConfigs holds one KafkaConfig
@@ -36,7 +41,11 @@ type MultiClusterOffsetsReader struct {
 // are indexed by read compartment ID, and are shared across Kafka clusters because every cluster holds the
 // same read-compartment topics with the same partitions. component labels the per-cluster Kafka client
 // metrics.
-func NewMultiClusterOffsetsReader(clusterConfigs []KafkaConfig, topics []string, getPartitionIDs []GetPartitionIDsFunc, component string, reg prometheus.Registerer, logger log.Logger) (*MultiClusterOffsetsReader, error) {
+//
+// additionalReadClusterConfig is optional. When set, the reader also monitors the topic of that Kafka
+// cluster, which gets the Kafka cluster ID after the write compartments' clusters. Ingesters of all read
+// compartments consume this same topic, so its offsets are returned for each read compartment's topic.
+func NewMultiClusterOffsetsReader(clusterConfigs []KafkaConfig, additionalReadClusterConfig *KafkaConfig, topics []string, getPartitionIDs []GetPartitionIDsFunc, component string, reg prometheus.Registerer, logger log.Logger) (*MultiClusterOffsetsReader, error) {
 	if len(clusterConfigs) < 1 {
 		return nil, fmt.Errorf("at least one Kafka cluster must be configured, got %d", len(clusterConfigs))
 	}
@@ -47,11 +56,23 @@ func NewMultiClusterOffsetsReader(clusterConfigs []KafkaConfig, topics []string,
 		return nil, fmt.Errorf("the number of topics (%d) and partition ID functions (%d) must match", len(topics), len(getPartitionIDs))
 	}
 
+	clusterNames := make([]string, len(clusterConfigs))
+	for writeCompartmentID := range clusterConfigs {
+		clusterNames[writeCompartmentID] = strconv.Itoa(writeCompartmentID)
+	}
+	additionalReadClusterTopic := ""
+	if additionalReadClusterConfig != nil {
+		clusterConfigs = slices.Concat(clusterConfigs, []KafkaConfig{*additionalReadClusterConfig})
+		clusterNames = append(clusterNames, additionalReadClusterName)
+		additionalReadClusterTopic = additionalReadClusterConfig.Topic
+	}
+
 	clients := make([]*kgo.Client, 0, len(clusterConfigs))
 	offsetClients := make([]*partitionOffsetClient, 0, len(clusterConfigs))
 	for kafkaClusterID, clusterCfg := range clusterConfigs {
-		clusterReg := prometheus.WrapRegistererWith(prometheus.Labels{"write_compartment": strconv.Itoa(kafkaClusterID)}, reg)
-		clusterLogger := log.With(logger, "write_compartment", kafkaClusterID)
+		clusterName := clusterNames[kafkaClusterID]
+		clusterReg := prometheus.WrapRegistererWith(prometheus.Labels{"write_compartment": clusterName}, reg)
+		clusterLogger := log.With(logger, "write_compartment", clusterName)
 
 		client, err := newTopicOffsetsReaderKafkaClient(component, clusterCfg, clusterReg, clusterLogger)
 		if err != nil {
@@ -59,7 +80,7 @@ func NewMultiClusterOffsetsReader(clusterConfigs []KafkaConfig, topics []string,
 			for _, created := range clients {
 				created.Close()
 			}
-			return nil, errors.Wrapf(err, "creating Kafka client for write compartment %d", kafkaClusterID)
+			return nil, errors.Wrapf(err, "creating Kafka client for write compartment %s", clusterName)
 		}
 
 		clients = append(clients, client)
@@ -73,6 +94,8 @@ func NewMultiClusterOffsetsReader(clusterConfigs []KafkaConfig, topics []string,
 		clients:            clients,
 		offsetClients:      offsetClients,
 		subservicesWatcher: services.NewFailureWatcher(),
+
+		additionalReadClusterTopic: additionalReadClusterTopic,
 	}
 	// All clusters share the same poll interval (same base KafkaConfig).
 	r.offsetsReader = NewGenericOffsetReader[kmeta.TopicsPartitionsOffsets](r.fetchLastProducedOffsets, clusterConfigs[0].LastProducedOffsetPollInterval, logger)
@@ -120,6 +143,15 @@ func (r *MultiClusterOffsetsReader) fetchLastProducedOffsets(ctx context.Context
 	g, gctx := errgroup.WithContext(ctx)
 	for kafkaClusterID, offsetClient := range r.offsetClients {
 		g.Go(func() error {
+			if r.additionalReadClusterTopic != "" && kafkaClusterID == len(r.offsetClients)-1 {
+				fetched, err := fetchAdditionalReadClusterLastProducedOffsets(gctx, offsetClient, r.additionalReadClusterTopic, partitionsByTopic)
+				if err != nil {
+					return errors.Wrap(err, "additional read cluster")
+				}
+				perCluster[kafkaClusterID] = fetched
+				return nil
+			}
+
 			fetched, err := offsetClient.FetchPartitionsLastProducedOffsets(gctx, partitionsByTopic)
 			if err != nil {
 				return errors.Wrapf(err, "write compartment %d", kafkaClusterID)
@@ -133,6 +165,35 @@ func (r *MultiClusterOffsetsReader) fetchLastProducedOffsets(ctx context.Context
 	}
 
 	return kmeta.MergeTopicsPartitionsOffsets(perCluster), nil
+}
+
+// fetchAdditionalReadClusterLastProducedOffsets fetches the last produced offsets of the partitions of all
+// read compartments from the single topic of the additional read cluster. It returns these offsets for each
+// read compartment's topic, so that they merge with the offsets of the write compartments' clusters.
+func fetchAdditionalReadClusterLastProducedOffsets(ctx context.Context, offsetClient *partitionOffsetClient, additionalReadClusterTopic string, partitionsByTopic map[string][]int32) (map[string]map[int32]int64, error) {
+	var allPartitionIDs []int32
+	for _, partitionIDs := range partitionsByTopic {
+		allPartitionIDs = append(allPartitionIDs, partitionIDs...)
+	}
+	slices.Sort(allPartitionIDs)
+	allPartitionIDs = slices.Compact(allPartitionIDs)
+
+	fetched, err := offsetClient.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{additionalReadClusterTopic: allPartitionIDs})
+	if err != nil {
+		return nil, err
+	}
+
+	offsetsByTopic := make(map[string]map[int32]int64, len(partitionsByTopic))
+	for topic, partitionIDs := range partitionsByTopic {
+		offsets := make(map[int32]int64, len(partitionIDs))
+		for _, partitionID := range partitionIDs {
+			if offset, ok := fetched[additionalReadClusterTopic][partitionID]; ok {
+				offsets[partitionID] = offset
+			}
+		}
+		offsetsByTopic[topic] = offsets
+	}
+	return offsetsByTopic, nil
 }
 
 // WaitNextFetchLastProducedOffset returns the result of the next "last produced offset" fetch across all

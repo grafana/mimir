@@ -196,6 +196,7 @@ func TestReadConsistencyRoundTripper_MultiCluster(t *testing.T) {
 
 	reader, err := ingest.NewMultiClusterOffsetsReader(
 		[]ingest.KafkaConfig{cfg0, cfg1},
+		nil,
 		[]string{topic0, topic1},
 		[]ingest.GetPartitionIDsFunc{allTopicPartitionIDs(numPartitions), allTopicPartitionIDs(numPartitions)},
 		"query-frontend",
