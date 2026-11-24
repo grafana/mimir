@@ -1215,7 +1215,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 					} else {
 						seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{
 							series:                 myStreamingSeriesLabels,
-							collectStartTimestamps: requestoptions.UseStartTimestampsFromContext(ctx),
+							collectStartTimestamps: requestoptions.CollectStartTimestampsFromContext(ctx),
 							streamReader:           streamReader,
 							chunkInfo:              chunkInfo,
 							remoteAddress:          c.RemoteAddress(),

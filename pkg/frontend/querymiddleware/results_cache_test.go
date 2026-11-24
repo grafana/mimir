@@ -758,6 +758,8 @@ func toMs(t time.Duration) int64 {
 func TestResultsCache_StartTimestampsIsolation(t *testing.T) {
 	tests := []struct {
 		name                    string
+		engineDefault           bool
+		cacheDisabled           bool
 		useStartTimestamps      *bool
 		expectedValue           float64
 		expectedDownstreamCalls int
@@ -798,30 +800,80 @@ func TestResultsCache_StartTimestampsIsolation(t *testing.T) {
 			expectedDownstreamCalls: 3,
 			expectCacheBypass:       false,
 		},
+		{
+			name:                    "true default absent bypasses populated cache",
+			engineDefault:           true,
+			expectedValue:           999,
+			expectedDownstreamCalls: 4,
+			expectCacheBypass:       true,
+		},
+		{
+			name:                    "true default disabled reuses cached response",
+			engineDefault:           true,
+			useStartTimestamps:      new(false),
+			expectedValue:           1000,
+			expectedDownstreamCalls: 4,
+		},
+		{
+			name:                    "true default enabled bypasses populated cache",
+			engineDefault:           true,
+			useStartTimestamps:      new(true),
+			expectedValue:           999,
+			expectedDownstreamCalls: 5,
+			expectCacheBypass:       true,
+		},
+		{
+			name:                    "true default absent bypasses cache again",
+			engineDefault:           true,
+			expectedValue:           999,
+			expectedDownstreamCalls: 6,
+			expectCacheBypass:       true,
+		},
+		{
+			name:                    "false default cache disabled bypasses cached response",
+			cacheDisabled:           true,
+			useStartTimestamps:      new(false),
+			expectedValue:           1000,
+			expectedDownstreamCalls: 7,
+			expectCacheBypass:       true,
+		},
+		{
+			name:                    "true default cache disabled bypasses cached response",
+			engineDefault:           true,
+			cacheDisabled:           true,
+			useStartTimestamps:      new(false),
+			expectedValue:           1000,
+			expectedDownstreamCalls: 8,
+			expectCacheBypass:       true,
+		},
 	}
 
 	c := cache.NewInstrumentedMockCache()
-	reg := prometheus.NewRegistry()
 	limits := mockLimits{resultsCacheTTL: time.Hour, resultsCacheTTLForErrors: time.Hour}
 	codec := newTestCodec()
 	keyGen := NewDefaultCacheKeyGenerator(codec, time.Hour)
 
 	calls := 0
-	downstream := HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
-		calls++
-		enabled := req.GetUseStartTimestamps() != nil && *req.GetUseStartTimestamps()
-		response := mkAPIResponse(req.GetStart(), req.GetEnd(), req.GetStep())
-		if enabled {
-			response.Data.Result[0].Samples[0].Value = 999
-		}
-
-		return response, nil
-	})
-	handler := newSplitAndCacheMiddleware(true, true, time.Hour, limits, newMockQueryLimitsProvider(&limits), codec, c, keyGen, PrometheusResponseExtractor{}, resultsCacheEnabledByOption, log.NewNopLogger(), reg, limiter.NewUnlimintedInflightMemoryConsumptionTracker(reg)).Wrap(downstream)
 
 	// Run in order against one cache to detect responses leaking between options.
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			reg := prometheus.NewRegistry()
+			downstream := HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
+				calls++
+				enabled := tc.engineDefault
+				if req.GetUseStartTimestamps() != nil {
+					enabled = *req.GetUseStartTimestamps()
+				}
+				response := mkAPIResponse(req.GetStart(), req.GetEnd(), req.GetStep())
+				if enabled {
+					response.Data.Result[0].Samples[0].Value = 999
+				}
+
+				return response, nil
+			})
+			handler := newSplitAndCacheMiddleware(true, true, time.Hour, limits, newMockQueryLimitsProvider(&limits), codec, c, keyGen, PrometheusResponseExtractor{}, resultsCacheEnabledByOption(tc.engineDefault), log.NewNopLogger(), reg, limiter.NewUnlimintedInflightMemoryConsumptionTracker(reg)).Wrap(downstream)
+
 			ctx := user.InjectOrgID(t.Context(), "tenant")
 			req := &PrometheusRangeQueryRequest{
 				queryExpr:          parseQuery(t, "counter"),
@@ -829,6 +881,7 @@ func TestResultsCache_StartTimestampsIsolation(t *testing.T) {
 				end:                2000,
 				step:               1000,
 				useStartTimestamps: tc.useStartTimestamps,
+				options:            requestoptions.Options{CacheDisabled: tc.cacheDisabled},
 			}
 			fetches, stores := c.CountFetchCalls(), c.CountStoreCalls()
 

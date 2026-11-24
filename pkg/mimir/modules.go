@@ -713,7 +713,6 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		t.Extractors,
 		&chunkinfologger.Extractor{},
 		&streamingpromqlcompat.EngineFallbackExtractor{},
-		&requestoptions.StartTimestampsExtractor{},
 
 		// Since we don't use the regular RegisterQueryAPI, we need to register the consistency extractor here too.
 		&querierapi.ConsistencyExtractor{},
@@ -993,7 +992,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	var eng promql.QueryEngine
 	switch t.Cfg.Frontend.QueryEngine {
 	case querier.PrometheusEngine:
-		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.PrometheusEngineOpts()))
+		eng = engine.NewPrometheusEngine(opts.PrometheusEngineOpts())
 		memoryConsumptionTrackerFactory = limiter.NewUnlimintedInflightMemoryConsumptionTracker(opts.CommonOpts.Reg)
 	case querier.MimirEngine:
 		var err error
@@ -1007,7 +1006,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		}
 
 		if t.Cfg.Frontend.EnableQueryEngineFallback {
-			eng = streamingpromqlcompat.NewEngineWithFallback(t.QueryFrontendStreamingEngine, limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.PrometheusEngineOpts())), opts.CommonOpts.Reg, util_log.Logger)
+			eng = streamingpromqlcompat.NewEngineWithFallback(t.QueryFrontendStreamingEngine, engine.NewPrometheusEngine(opts.PrometheusEngineOpts()), opts.CommonOpts.Reg, util_log.Logger)
 		} else {
 			eng = t.QueryFrontendStreamingEngine
 		}

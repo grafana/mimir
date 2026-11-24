@@ -7,10 +7,39 @@ import (
 	"strconv"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
-type startTimestampsContextKey struct{}
+// StartTimestampOption preserves whether a request overrides the engine default.
+type StartTimestampOption uint8
+
+const (
+	StartTimestampsUnset StartTimestampOption = iota
+	StartTimestampsDisabled
+	StartTimestampsEnabled
+)
+
+func StartTimestampOptionFromBool(value *bool) StartTimestampOption {
+	if value == nil {
+		return StartTimestampsUnset
+	}
+	if *value {
+		return StartTimestampsEnabled
+	}
+	return StartTimestampsDisabled
+}
+
+func (o StartTimestampOption) Resolve(engineDefault bool) bool {
+	switch o {
+	case StartTimestampsEnabled:
+		return true
+	case StartTimestampsDisabled:
+		return false
+	default:
+		return engineDefault
+	}
+}
+
+type startTimestampCollectionContextKey struct{}
 
 func ParseUseStartTimestamps(value string) (*bool, error) {
 	if value == "" {
@@ -25,18 +54,12 @@ func ParseUseStartTimestamps(value string) (*bool, error) {
 	return &enabled, nil
 }
 
-type StartTimestampsExtractor struct{}
-
-func (*StartTimestampsExtractor) ExtractFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
-	enabled, err := ParseUseStartTimestamps(carrier.Get(UseStartTimestampsHeader))
-	if err != nil {
-		return nil, err
-	}
-
-	return context.WithValue(ctx, startTimestampsContextKey{}, enabled != nil && *enabled), nil
+// ContextWithStartTimestampCollection carries the resolved engine setting to storage.
+func ContextWithStartTimestampCollection(ctx context.Context, enabled bool) context.Context {
+	return context.WithValue(ctx, startTimestampCollectionContextKey{}, enabled)
 }
 
-func UseStartTimestampsFromContext(ctx context.Context) bool {
-	enabled, _ := ctx.Value(startTimestampsContextKey{}).(bool)
+func CollectStartTimestampsFromContext(ctx context.Context) bool {
+	enabled, _ := ctx.Value(startTimestampCollectionContextKey{}).(bool)
 	return enabled
 }

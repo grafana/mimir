@@ -507,7 +507,7 @@ func newQueryMiddlewares(
 	}
 
 	if cfg.CacheResults && cfg.CacheErrors {
-		errorCachingMiddleware := newErrorCachingMiddleware(cacheClient, limits, resultsCacheEnabledByOption, cacheKeyGenerator, log, registerer)
+		errorCachingMiddleware := newErrorCachingMiddleware(cacheClient, limits, resultsCacheEnabledByOption(engineOpts.UseStartTimestamps), cacheKeyGenerator, log, registerer)
 
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
@@ -548,7 +548,7 @@ func newQueryMiddlewares(
 			cacheClient,
 			cacheKeyGenerator,
 			cacheExtractor,
-			resultsCacheEnabledByOption,
+			resultsCacheEnabledByOption(engineOpts.UseStartTimestamps),
 			log,
 			registerer,
 			memoryConsumptionTrackerFactory,

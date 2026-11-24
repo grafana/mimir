@@ -34,6 +34,7 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
@@ -41,7 +42,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
-	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -933,6 +933,7 @@ func TestQuery_StartTimestamps_Ingester(t *testing.T) {
 		encoding        chunkenc.Encoding
 		header          string
 		expectedSamples int
+		engineDefault   bool
 	}{
 		{
 			name:            "float absent",
@@ -985,6 +986,69 @@ func TestQuery_StartTimestamps_Ingester(t *testing.T) {
 			header:          "true",
 			expectedSamples: 1,
 		},
+		{
+			name:            "float true default absent",
+			encoding:        chunkenc.EncXOR2,
+			engineDefault:   true,
+			header:          "",
+			expectedSamples: 1,
+		},
+		{
+			name:            "float true default disabled",
+			encoding:        chunkenc.EncXOR2,
+			engineDefault:   true,
+			header:          "false",
+			expectedSamples: 0,
+		},
+		{
+			name:            "float true default enabled",
+			encoding:        chunkenc.EncXOR2,
+			engineDefault:   true,
+			header:          "true",
+			expectedSamples: 1,
+		},
+		{
+			name:            "histogram true default absent",
+			encoding:        chunkenc.EncHistogramST,
+			engineDefault:   true,
+			header:          "",
+			expectedSamples: 1,
+		},
+		{
+			name:            "histogram true default disabled",
+			encoding:        chunkenc.EncHistogramST,
+			engineDefault:   true,
+			header:          "false",
+			expectedSamples: 0,
+		},
+		{
+			name:            "histogram true default enabled",
+			encoding:        chunkenc.EncHistogramST,
+			engineDefault:   true,
+			header:          "true",
+			expectedSamples: 1,
+		},
+		{
+			name:            "float histogram true default absent",
+			encoding:        chunkenc.EncFloatHistogramST,
+			engineDefault:   true,
+			header:          "",
+			expectedSamples: 1,
+		},
+		{
+			name:            "float histogram true default disabled",
+			encoding:        chunkenc.EncFloatHistogramST,
+			engineDefault:   true,
+			header:          "false",
+			expectedSamples: 0,
+		},
+		{
+			name:            "float histogram true default enabled",
+			encoding:        chunkenc.EncFloatHistogramST,
+			engineDefault:   true,
+			header:          "true",
+			expectedSamples: 1,
+		},
 	}
 
 	for _, tc := range tests {
@@ -994,24 +1058,18 @@ func TestQuery_StartTimestamps_Ingester(t *testing.T) {
 			ctx, queryable := newIngesterStartTimestampTestQueryable(t, encoded)
 
 			// Storage collection and engine evaluation both use the request option.
-			headers := http.Header{}
-			if tc.header != "" {
-				headers.Set(requestoptions.UseStartTimestampsHeader, tc.header)
-			}
-			ctx, err := (&requestoptions.StartTimestampsExtractor{}).ExtractFromCarrier(ctx, propagation.HttpHeaderCarrier(headers))
-			require.NoError(t, err)
-
 			useST, err := requestoptions.ParseUseStartTimestamps(tc.header)
 			require.NoError(t, err)
 
-			engine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promql.EngineOpts{
+			engine := engine.NewPrometheusEngine(promql.EngineOpts{
 				Reg:                  prometheus.NewRegistry(),
 				MaxSamples:           1000,
+				UseStartTimestamps:   tc.engineDefault,
 				Timeout:              time.Minute,
 				EnableAtModifier:     true,
 				EnableNegativeOffset: true,
 				Parser:               promqlext.NewPromQLParser(),
-			}))
+			})
 			query, err := engine.NewInstantQuery(ctx, queryable, promql.NewPrometheusQueryOpts(false, 0, useST), "start_timestamp(counter)", time.Unix(200, 0))
 			require.NoError(t, err)
 			defer query.Close()
@@ -1231,17 +1289,15 @@ func TestQueryHTTP_StartTimestamps_Ingester(t *testing.T) {
 			// Each request gets a fresh stream because query evaluation consumes it.
 			encoded := newStartTimestampTestChunk(t, tc.encoding)
 			ctx, queryable := newIngesterStartTimestampTestQueryable(t, encoded)
-			engine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promql.EngineOpts{
+			engine := engine.NewPrometheusEngine(promql.EngineOpts{
 				Reg:                  prometheus.NewRegistry(),
 				MaxSamples:           1000,
 				Timeout:              time.Minute,
 				EnableAtModifier:     true,
 				EnableNegativeOffset: true,
 				Parser:               promqlext.NewPromQLParser(),
-			}))
-			handler := propagation.Middleware(&requestoptions.StartTimestampsExtractor{}).Wrap(
-				createPrometheusAPIWithEngine(sampleOnlyTestQueryable{Queryable: queryable}, engine),
-			)
+			})
+			handler := createPrometheusAPIWithEngine(sampleOnlyTestQueryable{Queryable: queryable}, engine)
 
 			// Exercise header parsing and storage selection through the HTTP API.
 			params := url.Values{
