@@ -33,7 +33,7 @@ type Config struct {
 func main() {
 	// Parse CLI flags.
 	cfg := Config{}
-	flag.IntVar(&cfg.ServerMetricsPort, "server.metrics-port", 9900, "The port where metrics are exposed.")
+	flag.IntVar(&cfg.ServerMetricsPort, "server.metrics-port", 9900, "The port where metrics and profiles are exposed.")
 	cfg.ProxyConfig.RegisterFlags(flag.CommandLine)
 
 	// Parse CLI arguments.
@@ -52,7 +52,7 @@ func main() {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(collectors.NewGoCollector())
 
-	i := instrumentation.NewMetricsServer(cfg.ServerMetricsPort, registry, util_log.Logger)
+	i := instrumentation.NewInstrumentationServer(cfg.ServerMetricsPort, registry, util_log.Logger)
 	if err := i.Start(); err != nil {
 		level.Error(util_log.Logger).Log("msg", "Unable to start instrumentation server", "err", err.Error())
 		util_log.Flush()
@@ -123,10 +123,8 @@ func mimirReadRoutes(cfg Config) []querytee.Route {
 		{Path: "/api/v1/alerts", RouteName: "api_v1_alerts", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
 		{Path: "/api/v1/read", RouteName: "api_v1_read", Methods: []string{"POST"}, ResponseComparator: nil},
 		{Path: "/api/v1/format_query", RouteName: "api_v1_format_query", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
-		{Path: "/api/v1/cardinality/label_names", RouteName: "api_v1_cardinality_label_names", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
-		{Path: "/api/v1/cardinality/label_values", RouteName: "api_v1_cardinality_label_values", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
-		{Path: "/api/v1/cardinality/active_series", RouteName: "api_v1_cardinality_active_series", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
-		{Path: "/api/v1/cardinality/active_native_histogram_metrics", RouteName: "api_v1_cardinality_active_native_histogram_metrics", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		// Do not register /api/v1/cardinality/* routes. Their responses can be many GB, and a registered route
+		// buffers the full response body in memory. Pass-through streams these responses instead.
 		{Path: "/api/v1/search/metric_names", RouteName: "api_v1_search_metric_names", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
 		{Path: "/api/v1/search/label_names", RouteName: "api_v1_search_label_names", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
 		{Path: "/api/v1/search/label_values", RouteName: "api_v1_search_label_values", Methods: []string{"GET", "POST"}, ResponseComparator: nil},

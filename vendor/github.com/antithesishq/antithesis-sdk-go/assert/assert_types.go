@@ -10,10 +10,6 @@ type operandConstraint interface {
 	int32 | int64 | uint64 | float64
 }
 
-type numConstraint interface {
-	uint64 | float64
-}
-
 // Used for boolean assertions
 type NamedBool struct {
 	First  string `json:"first"`

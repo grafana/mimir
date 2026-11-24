@@ -35,7 +35,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/streamingpromql"
@@ -74,6 +73,10 @@ type Config struct {
 	// endpoints (/api/v1/search/{metric_names,label_names,label_values}).
 	// Mirrors Prometheus PR #18573's experimental.search-api feature flag.
 	ExperimentalSearchAPIEnabled bool `yaml:"experimental_search_api_enabled" category:"experimental"`
+
+	// ExperimentalQueryCostAPIEnabled gates the query cost estimation endpoints.
+	ExperimentalQueryCostAPIEnabled  bool          `yaml:"experimental_query_cost_api_enabled" category:"experimental"`
+	QueryCostEstimatedScrapeInterval time.Duration `yaml:"query_cost_estimated_scrape_interval" category:"experimental"`
 
 	// MaxConcurrentRemoteReadQueries limits the number of remote read queries that execute concurrently.
 	// 0 or negative values mean unlimited concurrency.
@@ -118,11 +121,26 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxConcurrentRemoteReadQueries, "querier.max-concurrent-remote-read-queries", 2, "Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency.")
 
 	f.BoolVar(&cfg.ExperimentalSearchAPIEnabled, "querier.experimental-search-api-enabled", false, "If set to true, enables the experimental streaming label/value search HTTP endpoints (/api/v1/search/{metric_names,label_names,label_values}). Mirrors Prometheus's experimental.search-api feature gate.")
+	f.BoolVar(&cfg.ExperimentalQueryCostAPIEnabled, "querier.experimental-query-cost-api-enabled", false, "Enable the experimental /api/v1/query_cost and /api/v1/query_range_cost endpoints to estimate query storage input without evaluating the query.")
+	f.DurationVar(&cfg.QueryCostEstimatedScrapeInterval, "querier.query-cost-estimated-scrape-interval", time.Minute, "Assumed scrape interval for experimental query cost estimates. Mimir cannot determine the actual scrape interval or native histogram size through bounded storage sampling.")
 
 	cfg.EngineConfig.RegisterFlags(f)
 }
 
 func (cfg *Config) Validate() error {
+	if cfg.ExperimentalQueryCostAPIEnabled {
+		if cfg.QueryCostEstimatedScrapeInterval < time.Millisecond {
+			return errors.New("querier.query-cost-estimated-scrape-interval must be at least 1ms when the query cost API is enabled")
+		}
+		// These timeouts expire each query at once, so each estimate would fail too.
+		if cfg.EngineConfig.Timeout < 0 {
+			return errors.New("querier.timeout must not be negative when the query cost API is enabled")
+		}
+		if cfg.EngineConfig.Timeout == 0 && cfg.QueryEngine == PrometheusEngine {
+			return errors.New("querier.timeout must be positive when the query cost API is enabled with the Prometheus engine")
+		}
+	}
+
 	if cfg.QueryEngine != PrometheusEngine && cfg.QueryEngine != MimirEngine {
 		return fmt.Errorf("unknown PromQL engine '%s'", cfg.QueryEngine)
 	}
@@ -461,9 +479,7 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 		}
 	}
 
-	// we have all the sets from different sources (chunk from store, chunks from ingesters).
-	// mergeSeriesSets will return sorted set.
-	return mq.mergeSeriesSets(result)
+	return storage.NewMergeSeriesSet(result, 0, storage.ChainedSeriesMerge)
 }
 
 func clampToMaxLabelQueryLength(spanLog *spanlogger.SpanLogger, startMs, endMs, nowMs, maxLabelQueryLengthMs int64) int64 {
@@ -678,74 +694,6 @@ func (mq *multiQuerier) Close() error {
 
 	mq.queriers = nil
 	return me.Err()
-}
-
-func (mq *multiQuerier) mergeSeriesSets(sets []storage.SeriesSet) storage.SeriesSet {
-	// Here we deal with sets that are based on chunks and build single set from them.
-	// Remaining sets are merged with chunks-based one using storage.NewMergeSeriesSet
-
-	otherSets := []storage.SeriesSet(nil)
-	chunks := []chunk.Chunk(nil)
-
-	for _, set := range sets {
-		nonChunkSeries := []storage.Series(nil)
-
-		// SeriesSet may have some series backed up by chunks, and some not.
-		for set.Next() {
-			s := set.At()
-
-			if sc, ok := s.(SeriesWithChunks); ok {
-				chunks = append(chunks, sc.Chunks()...)
-			} else {
-				nonChunkSeries = append(nonChunkSeries, s)
-			}
-		}
-
-		if err := set.Err(); err != nil {
-			otherSets = append(otherSets, storage.ErrSeriesSet(err))
-		} else if len(nonChunkSeries) > 0 {
-			otherSets = append(otherSets, &sliceSeriesSet{series: nonChunkSeries, ix: -1})
-		}
-	}
-
-	if len(chunks) == 0 {
-		return storage.NewMergeSeriesSet(otherSets, 0, storage.ChainedSeriesMerge)
-	}
-
-	// partitionChunks returns set with sorted series, so it can be used by NewMergeSeriesSet
-	chunksSet := partitionChunks(chunks)
-
-	if len(otherSets) == 0 {
-		return chunksSet
-	}
-
-	otherSets = append(otherSets, chunksSet)
-	return storage.NewMergeSeriesSet(otherSets, 0, storage.ChainedSeriesMerge)
-}
-
-type sliceSeriesSet struct {
-	series []storage.Series
-	ix     int
-}
-
-func (s *sliceSeriesSet) Next() bool {
-	s.ix++
-	return s.ix < len(s.series)
-}
-
-func (s *sliceSeriesSet) At() storage.Series {
-	if s.ix < 0 || s.ix >= len(s.series) {
-		return nil
-	}
-	return s.series[s.ix]
-}
-
-func (s *sliceSeriesSet) Err() error {
-	return nil
-}
-
-func (s *sliceSeriesSet) Warnings() annotations.Annotations {
-	return nil
 }
 
 func validateQueryTimeRange(userID string, startMs, endMs, now int64, limits *validation.Overrides, spanLog *spanlogger.SpanLogger) (int64, int64, error) {

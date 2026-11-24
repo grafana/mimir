@@ -1,0 +1,31 @@
+# Pin kube version so results are the same in CI and locally.
+kubeVersionOverride: "1.32"
+
+# Opt in to deriving leaders when an external operator runs the webhooks.
+# Zone-b follows zone-a and zone-c follows zone-b for both components.
+rollout_operator:
+  enabled: false
+  webhooks:
+    enabled: true
+
+ingester:
+  zoneAwareReplication:
+    enabled: true
+    zones:
+    - name: zone-a
+      prepareDownscale: true
+    - name: zone-b
+      prepareDownscale: true
+    - name: zone-c
+      prepareDownscale: true
+
+store_gateway:
+  zoneAwareReplication:
+    enabled: true
+    zones:
+    - name: zone-a
+      prepareDownscale: true
+    - name: zone-b
+      prepareDownscale: true
+    - name: zone-c
+      prepareDownscale: true

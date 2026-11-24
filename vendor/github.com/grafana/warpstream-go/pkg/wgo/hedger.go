@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"sync"
 	"time"
@@ -70,12 +71,18 @@ type produceStop int8
 
 const (
 	produceStopNone produceStop = iota
-	produceStopCandidatesExhausted
+	produceStopNoAlternate
+	produceStopListDrained
+	produceStopBudgetCap
 	produceStopTerminalError
 	produceStopWriteTimeout
 	produceStopCanceled
 	produceStopInternal
 )
+
+func (s produceStop) exhausted() bool {
+	return s == produceStopNoAlternate || s == produceStopListDrained || s == produceStopBudgetCap
+}
 
 // Hedger orchestrates produce attempts across multiple agents for the
 // same batch of partitions. The whole "retry on a different agent,
@@ -140,6 +147,13 @@ func NewHedger(inner DirectProducer, tracker AgentStatsReader, strategy Partitio
 	if logger == nil {
 		logger = nopLogger{}
 	}
+	// Start counters at zero so scrapes can capture the first increment.
+	for state := primaryStateHealthy; state < primaryStateCount; state++ {
+		for n := 0; n < cfg.MaxHedgeAgents; n++ {
+			m.hedgeCandidateSet(state, n, cfg.MaxHedgeAgents)
+		}
+	}
+
 	h := &Hedger{
 		inner:    inner,
 		tracker:  tracker,
@@ -300,8 +314,12 @@ func (h *Hedger) observeProduceFailure(stop produceStop) {
 	switch stop {
 	case produceStopNone, produceStopCanceled:
 		return
-	case produceStopCandidatesExhausted:
-		reason = produceFailureReasonCandidatesExhausted
+	case produceStopNoAlternate:
+		reason = produceFailureReasonNoAlternate
+	case produceStopListDrained:
+		reason = produceFailureReasonListDrained
+	case produceStopBudgetCap:
+		reason = produceFailureReasonBudgetCap
 	case produceStopTerminalError:
 		reason = produceFailureReasonTerminalError
 	case produceStopWriteTimeout:
@@ -316,7 +334,7 @@ func (h *Hedger) observeProduceFailure(stop produceStop) {
 // error wins over a context that expires afterward, explicit cancellation is
 // not a failure reason, and an expired deadline outranks candidate
 // exhaustion.
-func classifyProduceStop(terminal bool, terminalErr, ctxErr error, exhausted bool) produceStop {
+func classifyProduceStop(terminal bool, terminalErr, ctxErr error, exhaustion produceStop) produceStop {
 	if terminal && !errors.Is(terminalErr, context.Canceled) {
 		return produceStopTerminalError
 	}
@@ -326,8 +344,8 @@ func classifyProduceStop(terminal bool, terminalErr, ctxErr error, exhausted boo
 	if ctxErr != nil && errors.Is(ctxErr, context.DeadlineExceeded) {
 		return produceStopWriteTimeout
 	}
-	if exhausted {
-		return produceStopCandidatesExhausted
+	if exhaustion.exhausted() {
+		return exhaustion
 	}
 	if terminal {
 		return produceStopTerminalError
@@ -343,7 +361,7 @@ func classifyProduceStop(terminal bool, terminalErr, ctxErr error, exhausted boo
 // also the cause of an exhausted stop. Other stops are already settled; a
 // canceled stop remains omitted.
 func finalStop(workCtx context.Context, primary, result ProduceResult, stop produceStop) produceStop {
-	if (stop != produceStopCandidatesExhausted && stop != produceStopWriteTimeout) || result.succeeded() {
+	if (!stop.exhausted() && stop != produceStopWriteTimeout) || result.succeeded() {
 		return stop
 	}
 	if err := primary.error(); err != nil && !errors.Is(err, context.Canceled) && !getProduceResultErr(err).retriable {
@@ -394,6 +412,7 @@ func (h *Hedger) withCoverageCheck(res ProduceResult, nodeID int32, requested []
 // cancel as soon as this function returns, which unwinds the losing leg.
 // The reported attempts is the depth of the winning leg: 1 when the
 // primary wins, the fallback's own depth when the fallback wins.
+// If both legs fail, the fallback's attempt depth is reported.
 func (h *Hedger) runHedgingAttemptsAndRaceWithPrimary(workCtx context.Context, primaryID int32, partitions []encodedTopicPartitionRecords, candidates *hedgerCandidates, primaryCh <-chan ProduceResult, trigger hedgeTrigger) hedgerProduceResult {
 	fallbackCh := make(chan hedgerProduceResult, 1)
 	go func() {
@@ -431,13 +450,41 @@ func (h *Hedger) runHedgingAttemptsAndRaceWithPrimary(workCtx context.Context, p
 		}
 		// Fallback failed (e.g. exhausted candidates) — the primary may
 		// still produce a usable outcome, so let it finish. If the primary
-		// then succeeds it won on its single attempt (depth 1). When the
-		// fallback failed too the depth-1 label is best-effort: the
-		// fallback's wave count isn't surfaced on this branch.
+		// then succeeds it won on its single attempt (depth 1). If both legs
+		// fail, report the fallback's full attempt depth.
 		primaryResult := <-primaryCh
+		attempts := fb.attempts
+		if primaryResult.succeeded() {
+			attempts = 1
+		}
 		result := selectProduceResult(primaryResult, fb.result)
-		return hedgerProduceResult{result: result, attempts: 1, stop: finalStop(workCtx, primaryResult, result, fb.stop)}
+		return hedgerProduceResult{result: result, attempts: attempts, stop: finalStop(workCtx, primaryResult, result, fb.stop)}
 	}
+}
+
+// observeCandidates counts each cascade by its shortest fallback list,
+// capped at MaxHedgeAgents-1 because the primary uses one attempt.
+// Cached lists keep the metric and retries consistent.
+func (h *Hedger) observeCandidates(trigger hedgeTrigger, primaryID int32, partitions []encodedTopicPartitionRecords, candidates *hedgerCandidates) {
+	if len(partitions) == 0 {
+		return
+	}
+	fewest := math.MaxInt
+	seen := make(map[int32]struct{})
+	for _, p := range partitions {
+		clear(seen)
+		for _, c := range candidates.fetch(topicPartition{topic: p.topic, partition: p.partition}) {
+			if c.NodeID != primaryID {
+				seen[c.NodeID] = struct{}{}
+			}
+		}
+		fewest = min(fewest, len(seen))
+	}
+	state := primaryStateHealthy
+	if trigger == hedgeTriggerDemotedProbe {
+		state = primaryStateDemoted
+	}
+	h.metrics.hedgeCandidateSet(state, min(fewest, h.cfg.MaxHedgeAgents-1), h.cfg.MaxHedgeAgents).Inc()
 }
 
 // runHedgingAttempts runs the per-partition retry loop across other
@@ -470,14 +517,15 @@ func (h *Hedger) runHedgingAttempts(workCtx context.Context, primaryID int32, pa
 	// The primary is attempt 1; each dispatched hedge wave adds one. A wave
 	// that bails before dispatching (candidates exhausted) must not count.
 	out.attempts = 1
-	exhausted := false
+	h.observeCandidates(trigger, primaryID, partitions, candidates)
+	exhaustion := produceStopNone
 	for workCtx.Err() == nil {
-		dispatched, canRetry, waveExhausted := h.runHedgingAttempt(workCtx, acc, tried, candidates)
+		dispatched, canRetry, waveExhaustion := h.runHedgingAttempt(workCtx, acc, tried, candidates)
 		if dispatched {
 			out.attempts++
 		}
 		if !canRetry {
-			exhausted = waveExhausted
+			exhaustion = waveExhaustion
 			break
 		}
 	}
@@ -493,7 +541,7 @@ func (h *Hedger) runHedgingAttempts(workCtx context.Context, primaryID int32, pa
 		out.result.err = ctxErr
 	}
 	terminal, terminalErr := acc.terminalErr()
-	out.stop = classifyProduceStop(terminal, terminalErr, ctxStopErr(workCtx), exhausted)
+	out.stop = classifyProduceStop(terminal, terminalErr, ctxStopErr(workCtx), exhaustion)
 	return out
 }
 
@@ -503,12 +551,12 @@ func (h *Hedger) runHedgingAttempts(workCtx context.Context, primaryID int32, pa
 // pending or a partition exhausted its candidates). canRetry reports
 // whether the caller should iterate again — false when no further work
 // would change the outcome (every partition resolved, accumulator aborted,
-// a partition exhausted candidates, or ctx canceled mid-wave). exhausted is
+// a partition exhausted candidates, or ctx canceled mid-wave). exhaustion is
 // set only for the candidate-budget stop.
-func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAccumulator, tried map[topicPartition][]int32, candidates *hedgerCandidates) (dispatched, canRetry, exhausted bool) {
+func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAccumulator, tried map[topicPartition][]int32, candidates *hedgerCandidates) (dispatched, canRetry bool, exhaustion produceStop) {
 	pending := acc.remaining()
 	if len(pending) == 0 {
-		return false, false, false
+		return false, false, produceStopNone
 	}
 
 	// Pick the next candidate per partition; group by chosen agent.
@@ -526,7 +574,7 @@ func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAc
 		// termination even if a strategy returns more entries (or
 		// duplicates) than MaxHedgeAgents.
 		if len(tried[tp]) >= h.cfg.MaxHedgeAgents {
-			return false, false, true
+			return false, false, produceStopBudgetCap
 		}
 
 		var (
@@ -543,7 +591,10 @@ func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAc
 
 		// We exhausted all candidates for this partition. We give up.
 		if !found {
-			return false, false, true
+			if len(tried[tp]) == 1 {
+				return false, false, produceStopNoAlternate
+			}
+			return false, false, produceStopListDrained
 		}
 
 		tried[tp] = append(tried[tp], next)
@@ -583,13 +634,13 @@ func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAc
 				// Either every partition resolved or a non-retriable
 				// err aborted the batch — either way, no further wave
 				// would change the outcome.
-				return true, false, false
+				return true, false, produceStopNone
 			}
 		case <-attemptCtx.Done():
-			return true, false, false
+			return true, false, produceStopNone
 		}
 	}
-	return true, true, false
+	return true, true, produceStopNone
 }
 
 // shouldHedge returns the hedge decision for primaryID, reading the cause from

@@ -21,7 +21,9 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
@@ -41,6 +43,7 @@ import (
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -93,6 +96,7 @@ func TestTripperware_RangeQuery(t *testing.T) {
 		engine,
 		engineOpts,
 		nil,
+		false,
 		false,
 		nil,
 		nil,
@@ -149,6 +153,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		engine,
 		engineOpts,
 		nil,
+		false,
 		false,
 		nil,
 		nil,
@@ -233,6 +238,65 @@ func TestTripperware_InstantQuery(t *testing.T) {
 	})
 }
 
+func TestTripperware_LegacyCardinalityEstimationUsesDedicatedCache(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	codec := newTestCodec()
+	limits := mockLimits{totalShards: 8}
+	resultsCache := cache.NewMockCache()
+	cardinalityCache := cache.NewMockCache()
+
+	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
+	tw, err := NewTripperware(
+		makeTestConfig(func(cfg *Config) {
+			cfg.UseMQEForSplittingAndCachingResults = false
+			cfg.ShardedQueries = true
+			cfg.UseMQEForSharding = false
+			cfg.TargetSeriesPerShard = 1000
+			cfg.CardinalityEstimationCacheClient = cardinalityCache
+		}),
+		log.NewNopLogger(),
+		limits,
+		newMockQueryLimitsProvider(&limits),
+		codec,
+		resultsCache,
+		nil,
+		engine,
+		engineOpts,
+		nil,
+		false,
+		false,
+		nil,
+		nil,
+		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
+	)
+	require.NoError(t, err)
+
+	rt := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return codec.EncodeMetricsQueryResponse(r.Context(), r, &PrometheusResponse{
+			Status: "success",
+			Data:   &PrometheusData{ResultType: "vector"},
+		})
+	})
+
+	queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: tw(rt)})
+	require.NoError(t, err)
+	_, _, _, err = v1.NewAPI(queryClient).Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC))
+	require.NoError(t, err)
+
+	// The version prefix keeps the keys the same as when the results cache held the estimates.
+	expectedPrefix := fmt.Sprintf("%d@QS:", resultsCacheVersion)
+	hasCardinalityKey := func(items map[string]cache.Item) bool {
+		for k := range items {
+			if strings.HasPrefix(k, expectedPrefix) {
+				return true
+			}
+		}
+		return false
+	}
+	require.True(t, hasCardinalityKey(cardinalityCache.GetItems()), "cardinality cache should hold the estimate")
+	require.False(t, hasCardinalityKey(resultsCache.GetItems()), "results cache should not hold the estimate")
+}
+
 func TestTripperware_Metrics(t *testing.T) {
 	tests := map[string]struct {
 		request          *http.Request
@@ -286,6 +350,30 @@ func TestTripperware_Metrics(t *testing.T) {
 				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
 				# TYPE cortex_query_frontend_queries_total counter
 				cortex_query_frontend_queries_total{op="query",user="user-1"} 1
+			`,
+		},
+		"instant query cost": {
+			request: httptest.NewRequest("GET", "/api/v1/query_cost?query=up&time=1536673680", http.NoBody),
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="query_cost",user="user-1"} 1
+			`,
+		},
+		"range query cost": {
+			request: httptest.NewRequest("GET", "/api/v1/query_range_cost?query=up&start=1536673680&end=1536716880&step=120", http.NoBody),
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="query_cost",user="user-1"} 1
 			`,
 		},
 		"remote read, start/end is aligned to step": {
@@ -482,6 +570,7 @@ func TestTripperware_Metrics(t *testing.T) {
 				engineOpts,
 				nil,
 				false,
+				false,
 				nil,
 				reg,
 				limiter.NewInflightMemoryConsumptionTracker(reg, nil),
@@ -548,6 +637,7 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 		engine,
 		engineOpts,
 		nil,
+		false,
 		false,
 		nil,
 		nil,
@@ -627,6 +717,7 @@ func TestTripperware_ShouldRetryFailedRequestsUpToMaxRetries(t *testing.T) {
 				engineOpts,
 				nil,
 				false,
+				false,
 				nil,
 				reg,
 				limiter.NewInflightMemoryConsumptionTracker(reg, nil),
@@ -635,6 +726,49 @@ func TestTripperware_ShouldRetryFailedRequestsUpToMaxRetries(t *testing.T) {
 
 			ctx := user.InjectOrgID(t.Context(), "user-1")
 			req := httptest.NewRequest("GET", path, http.NoBody).WithContext(ctx)
+			require.NoError(t, user.InjectOrgIDIntoHTTPRequest(ctx, req))
+
+			resp, err := tw(downstream).RoundTrip(req)
+			require.ErrorIs(t, err, downstreamErr)
+			require.Nil(t, resp)
+			require.Equal(t, maxRetries, downstreamCalls)
+		})
+	}
+}
+
+func TestTripperware_RetriesKeepPostParameters(t *testing.T) {
+	const maxRetries = 3
+
+	for testName, path := range map[string]string{
+		"label names":  labelNamesPathSuffix,
+		"label values": "/api/v1/label/job/values",
+		"series":       seriesPathSuffix,
+	} {
+		t.Run(testName, func(t *testing.T) {
+			downstreamErr := errors.New("downstream failed")
+			downstreamCalls := 0
+			downstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+				downstreamCalls++
+				// Forwarding the request to the querier reads its body, so do the same.
+				body, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+				values, err := url.ParseQuery(string(body))
+				require.NoError(t, err)
+				require.Equal(t, []string{"up"}, values["match[]"], "try %d", downstreamCalls)
+				return nil, downstreamErr
+			})
+
+			engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
+			reg := prometheus.NewPedanticRegistry()
+			limits := mockLimits{}
+			tw, err := NewTripperware(Config{MaxRetries: maxRetries}, log.NewNopLogger(), limits,
+				newMockQueryLimitsProvider(&limits), newTestCodec(), nil, nil, engine, engineOpts, nil,
+				false, false, nil, reg, limiter.NewInflightMemoryConsumptionTracker(reg, nil))
+			require.NoError(t, err)
+
+			ctx := user.InjectOrgID(t.Context(), "user-1")
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader("match[]=up")).WithContext(ctx)
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			require.NoError(t, user.InjectOrgIDIntoHTTPRequest(ctx, req))
 
 			resp, err := tw(downstream).RoundTrip(req)
@@ -666,12 +800,13 @@ func TestMiddlewaresConsistency(t *testing.T) {
 
 	limits := mockLimits{alignQueriesWithStep: true}
 	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
-	queryRangeMiddlewares, queryInstantMiddlewares, remoteReadMiddlewares := newQueryMiddlewares(
+	queryRangeMiddlewares, queryInstantMiddlewares, remoteReadMiddlewares, _ := newQueryMiddlewares(
 		cfg,
 		log.NewNopLogger(),
 		limits,
 		newMockQueryLimitsProvider(&limits),
 		newTestCodec(),
+		nil,
 		nil,
 		nil,
 		nil,
@@ -913,6 +1048,7 @@ func TestTripperware_RemoteRead(t *testing.T) {
 				engineOpts,
 				nil,
 				false,
+				false,
 				nil,
 				reg,
 				limiter.NewInflightMemoryConsumptionTracker(reg, nil),
@@ -1051,6 +1187,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		promOpts,
 		NewSingleClusterReadConsistencyOffsetsReader(offsetsReader),
 		false,
+		false,
 		nil,
 		nil,
 		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
@@ -1126,4 +1263,291 @@ func makeTestConfig(overrides ...func(*Config)) Config {
 	}
 
 	return cfg
+}
+
+func TestTripperware_QueryCostPassThrough(t *testing.T) {
+	for _, remoteExecution := range []bool{false, true} {
+		for _, endpoint := range []string{"query_cost", "query_range_cost"} {
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				t.Run(fmt.Sprintf("%s/%s/remoteExecution=%v", method, endpoint, remoteExecution), func(t *testing.T) {
+					engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
+					limits := mockLimits{}
+					tw, err := NewTripperware(Config{CacheResults: true, SplitQueriesByInterval: time.Hour}, log.NewNopLogger(), limits,
+						newMockQueryLimitsProvider(&limits), newTestCodec(), nil, nil, engine, engineOpts, nil,
+						remoteExecution, false, nil, prometheus.NewRegistry(), limiter.NewInflightMemoryConsumptionTracker(nil, nil))
+					require.NoError(t, err)
+					params := "query=up&start=0&end=86400&step=60"
+					target := "/prometheus/api/v1/" + endpoint
+					var body io.Reader
+					if method == http.MethodGet {
+						target += "?" + params
+					} else {
+						body = strings.NewReader(params)
+					}
+					req := httptest.NewRequest(method, target, body).WithContext(user.InjectOrgID(t.Context(), "user-1"))
+					if method == http.MethodPost {
+						req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+					}
+					calls := 0
+					responseBody := `{"status":"success","data":{"estimate":{"seriesTouched":2,"samplesRead":100}},"warnings":["estimate warning"]}`
+					next := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+						calls++
+						require.Equal(t, req.URL, r.URL)
+						require.Equal(t, method, r.Method)
+						if method == http.MethodPost {
+							data, err := io.ReadAll(r.Body)
+							require.NoError(t, err)
+							require.Equal(t, params, string(data))
+						}
+						return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(responseBody))}, nil
+					})
+					resp, err := tw(next).RoundTrip(req)
+					require.NoError(t, err)
+					data, err := io.ReadAll(resp.Body)
+					require.NoError(t, err)
+					require.NoError(t, resp.Body.Close())
+					require.Equal(t, responseBody, string(data))
+					require.Equal(t, 1, calls)
+				})
+			}
+		}
+	}
+}
+
+func TestTripperware_QueryCostLimits(t *testing.T) {
+	const (
+		rangeParams   = "query=up&start=0&end=86400&step=60"
+		instantParams = "query=up[1d]&time=86400"
+	)
+	for _, tc := range []struct {
+		name      string
+		limits    mockLimits
+		expectErr map[string]string
+		params    map[string]string
+	}{
+		{
+			name:   "blocked query",
+			limits: mockLimits{blockedQueries: []validation.BlockedQuery{{Pattern: "up.*", Regex: true, Reason: "blocked for test"}}},
+			expectErr: map[string]string{
+				"query_cost":       "the request has been blocked by the cluster administrator blocked for test (err-mimir-query-blocked)",
+				"query_range_cost": "the request has been blocked by the cluster administrator blocked for test (err-mimir-query-blocked)",
+			},
+		},
+		{
+			name:   "max total query length",
+			limits: mockLimits{maxTotalQueryLength: time.Hour},
+			expectErr: map[string]string{
+				"query_cost":       "the total query time range exceeds the limit (query length: 23h59m59.999s, limit: 1h0m0s) (err-mimir-max-total-query-length). To adjust the related per-tenant limit, configure -query-frontend.max-total-query-length, or contact your service administrator.",
+				"query_range_cost": "the total query time range exceeds the limit (query length: 24h0m0s, limit: 1h0m0s) (err-mimir-max-total-query-length). To adjust the related per-tenant limit, configure -query-frontend.max-total-query-length, or contact your service administrator.",
+			},
+		},
+		{
+			name:   "max query expression size",
+			limits: mockLimits{maxQueryExpressionSizeBytes: 1},
+			expectErr: map[string]string{
+				"query_cost":       "the raw query size in bytes exceeds the limit (query size: 6, limit: 1) (err-mimir-max-query-expression-size-bytes). To adjust the related per-tenant limit, configure -query-frontend.max-query-expression-size-bytes, or contact your service administrator.",
+				"query_range_cost": "the raw query size in bytes exceeds the limit (query size: 2, limit: 1) (err-mimir-max-query-expression-size-bytes). To adjust the related per-tenant limit, configure -query-frontend.max-query-expression-size-bytes, or contact your service administrator.",
+			},
+		},
+		{
+			name: "invalid parameters",
+			params: map[string]string{
+				"query_cost":       "query=sum(",
+				"query_range_cost": "query=up&start=0&end=86400",
+			},
+			expectErr: map[string]string{
+				"query_cost":       "invalid parameter \"query\": 1:5: parse error: unclosed left parenthesis",
+				"query_range_cost": "missing required parameter \"step\"",
+			},
+		},
+		{
+			name: "experimental function not enabled",
+			params: map[string]string{
+				"query_cost":       "query=mad_over_time(up[5m])&time=86400",
+				"query_range_cost": "query=mad_over_time(up[5m])&start=0&end=86400&step=60",
+			},
+			expectErr: map[string]string{
+				"query_cost":       "invalid parameter \"query\": experimental function \"mad_over_time\" is not enabled for tenant",
+				"query_range_cost": "invalid parameter \"query\": experimental function \"mad_over_time\" is not enabled for tenant",
+			},
+		},
+	} {
+		for _, endpoint := range []string{"query_cost", "query_range_cost"} {
+			t.Run(tc.name+"/"+endpoint, func(t *testing.T) {
+				engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
+				limits := tc.limits
+				tw, err := NewTripperware(Config{CacheResults: true, SplitQueriesByInterval: time.Hour}, log.NewNopLogger(), limits,
+					newMockQueryLimitsProvider(&limits), newTestCodec(), nil, nil, engine, engineOpts, nil,
+					false, false, nil, prometheus.NewRegistry(), limiter.NewInflightMemoryConsumptionTracker(nil, nil))
+				require.NoError(t, err)
+				params, ok := tc.params[endpoint]
+				if !ok {
+					params = rangeParams
+					if endpoint == "query_cost" {
+						// The range selector spans the same time range as the range request.
+						params = instantParams
+					}
+				}
+				req := httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/"+endpoint+"?"+params, nil).WithContext(user.InjectOrgID(t.Context(), "user-1"))
+				next := RoundTripFunc(func(*http.Request) (*http.Response, error) {
+					t.Fatal("a rejected request must not reach the querier")
+					return nil, nil
+				})
+				_, err = tw(next).RoundTrip(req)
+				require.EqualError(t, err, tc.expectErr[endpoint])
+			})
+		}
+	}
+}
+
+func TestTripperware_QueryCostLookback(t *testing.T) {
+	newTripperware := func(t *testing.T) Tripperware {
+		engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
+		limits := mockLimits{maxQueryLookback: time.Hour}
+		tw, err := NewTripperware(Config{CacheResults: true, SplitQueriesByInterval: time.Hour}, log.NewNopLogger(), limits,
+			newMockQueryLimitsProvider(&limits), newTestCodec(), nil, nil, engine, engineOpts, nil,
+			false, false, nil, prometheus.NewRegistry(), limiter.NewInflightMemoryConsumptionTracker(nil, nil))
+		require.NoError(t, err)
+		return tw
+	}
+	newRequest := func(t *testing.T, method, endpoint, params string) *http.Request {
+		target := "/prometheus/api/v1/" + endpoint
+		var body io.Reader
+		if method == http.MethodGet {
+			target += "?" + params
+		} else {
+			body = strings.NewReader(params)
+		}
+		req := httptest.NewRequest(method, target, body).WithContext(user.InjectOrgID(t.Context(), "user-1"))
+		if method == http.MethodPost {
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		return req
+	}
+
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		for _, endpoint := range []string{"query_cost", "query_range_cost"} {
+			t.Run("outside the lookback/"+method+"/"+endpoint, func(t *testing.T) {
+				next := RoundTripFunc(func(*http.Request) (*http.Response, error) {
+					t.Fatal("a skipped estimate must not reach the querier")
+					return nil, nil
+				})
+				req := newRequest(t, method, endpoint, "query=up&time=3600&start=0&end=3600&step=60")
+				resp, err := newTripperware(t)(next).RoundTrip(req)
+				require.NoError(t, err)
+				require.Equal(t, http.StatusOK, resp.StatusCode)
+				data, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+				require.NoError(t, resp.Body.Close())
+				require.JSONEq(t, `{"status":"success","data":{"estimate":{"seriesTouched":0,"samplesRead":0}}}`, string(data))
+			})
+		}
+
+		t.Run("clamped to the lookback/"+method, func(t *testing.T) {
+			end := time.Now()
+			var forwarded url.Values
+			next := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+				require.Equal(t, r.URL.RequestURI(), r.RequestURI)
+				var err error
+				forwarded, err = util.ParseRequestFormWithoutConsumingBody(r)
+				require.NoError(t, err)
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+			})
+			params := fmt.Sprintf("query=up&start=%d&end=%d&step=60&timeout=10s", end.Add(-3*time.Hour).Unix(), end.Unix())
+			resp, err := newTripperware(t)(next).RoundTrip(newRequest(t, method, "query_range_cost", params))
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+
+			start, err := strconv.ParseFloat(forwarded.Get("start"), 64)
+			require.NoError(t, err)
+			require.InDelta(t, float64(end.Add(-time.Hour).Unix()), start, 60)
+			require.Equal(t, "up", forwarded.Get("query"))
+			require.Equal(t, strconv.FormatInt(end.Unix(), 10), forwarded.Get("end"))
+			require.Equal(t, "60", forwarded.Get("step"))
+			require.Equal(t, "10s", forwarded.Get("timeout"))
+		})
+	}
+
+	t.Run("clamped to the lookback/POST with URL parameters", func(t *testing.T) {
+		end := time.Now()
+		var forwarded url.Values
+		next := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			var err error
+			forwarded, err = util.ParseRequestFormWithoutConsumingBody(r)
+			require.NoError(t, err)
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+		})
+		params := fmt.Sprintf("query=up&start=%d&end=%d&step=60", end.Add(-3*time.Hour).Unix(), end.Unix())
+		req := httptest.NewRequest(http.MethodPost, "/prometheus/api/v1/query_range_cost?"+params, http.NoBody).WithContext(user.InjectOrgID(t.Context(), "user-1"))
+		resp, err := newTripperware(t)(next).RoundTrip(req)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+
+		start, err := strconv.ParseFloat(forwarded.Get("start"), 64)
+		require.NoError(t, err)
+		require.InDelta(t, float64(end.Add(-time.Hour).Unix()), start, 60)
+		require.Equal(t, "up", forwarded.Get("query"))
+		require.Equal(t, strconv.FormatInt(end.Unix(), 10), forwarded.Get("end"))
+	})
+}
+
+func TestTripperware_QueryCostRetries(t *testing.T) {
+	const maxRetries = 3
+	end := time.Now()
+	params := fmt.Sprintf("query=up&start=%d&end=%d&step=60", end.Add(-time.Hour).Unix(), end.Unix())
+
+	for _, tc := range []struct {
+		name   string
+		method string
+		// clamp sets a lookback that moves the start, so the request body is rewritten.
+		clamp bool
+	}{
+		{name: "GET", method: http.MethodGet},
+		{name: "POST", method: http.MethodPost},
+		{name: "POST clamped", method: http.MethodPost, clamp: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			downstreamErr := errors.New("downstream failed")
+			var calls int
+			next := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+				calls++
+				// httpgrpc.FromHTTPRequest reads the body, so do the same.
+				forwarded, err := httpgrpc.FromHTTPRequest(r)
+				require.NoError(t, err)
+				httpReq, err := httpgrpc.ToHTTPRequest(t.Context(), forwarded)
+				require.NoError(t, err)
+				values, err := util.ParseRequestFormWithoutConsumingBody(httpReq)
+				require.NoError(t, err)
+				require.Equal(t, "up", values.Get("query"), "try %d", calls)
+				return nil, downstreamErr
+			})
+
+			engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
+			limits := mockLimits{}
+			if tc.clamp {
+				limits.maxQueryLookback = 30 * time.Minute
+			}
+			tw, err := NewTripperware(Config{MaxRetries: maxRetries}, log.NewNopLogger(), limits,
+				newMockQueryLimitsProvider(&limits), newTestCodec(), nil, nil, engine, engineOpts, nil,
+				false, false, nil, prometheus.NewRegistry(), limiter.NewInflightMemoryConsumptionTracker(nil, nil))
+			require.NoError(t, err)
+
+			target := "/prometheus/api/v1/query_range_cost"
+			var body io.Reader = http.NoBody
+			if tc.method == http.MethodGet {
+				target += "?" + params
+			} else {
+				body = strings.NewReader(params)
+			}
+			req := httptest.NewRequest(tc.method, target, body).WithContext(user.InjectOrgID(t.Context(), "user-1"))
+			if tc.method == http.MethodPost {
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			}
+
+			resp, err := tw(next).RoundTrip(req)
+			require.ErrorIs(t, err, downstreamErr)
+			require.Nil(t, resp)
+			require.Equal(t, maxRetries, calls)
+		})
+	}
 }

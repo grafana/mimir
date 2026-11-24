@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -480,16 +481,31 @@ func (s *OperatorEvaluationStats) HalveCounts() {
 //
 // The returned QuerySamples instance is only valid until Close is called, as it contains references to slices
 // that will be returned to a pool when Close is called.
-func (s *OperatorEvaluationStats) FinalizeAndComputePrometheusStats() (*promstats.QuerySamples, error) {
+func (s *OperatorEvaluationStats) FinalizeAndComputePrometheusStats() (*promstats.QuerySamples, []NodeQueryCost, error) {
 	var err error
 	s.finalizedSamplesRead, err = Int64SlicePool.Get(len(s.allSeries.samplesReadIfSubsequentStep), s.memoryConsumptionTracker)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	s.finalizedSamplesRead = s.finalizedSamplesRead[:len(s.allSeries.samplesReadIfSubsequentStep)]
 	s.finalizedSamplesRead[0] = s.allSeries.samplesReadIfFirstStep[0]
 	copy(s.finalizedSamplesRead[1:], s.allSeries.samplesReadIfSubsequentStep[1:])
+
+	var nodeCosts []NodeQueryCost
+	if len(s.allSeries.samplesPerNode) > 0 {
+		nodeCosts = make([]NodeQueryCost, 0, len(s.allSeries.samplesPerNode))
+		for nodeId, node := range s.allSeries.samplesPerNode {
+			nodeCosts = append(nodeCosts, NodeQueryCost{
+				NodeId:      nodeId,
+				SamplesRead: node.samplesReadIfFirstStep[0] + sum(node.samplesReadIfSubsequentStep[1:]),
+			})
+		}
+
+		slices.SortFunc(nodeCosts, func(a, b NodeQueryCost) int {
+			return int(a.NodeId - b.NodeId)
+		})
+	}
 
 	return &promstats.QuerySamples{
 		TotalSamples:        sum(s.allSeries.samplesProcessedPerStep),
@@ -499,7 +515,13 @@ func (s *OperatorEvaluationStats) FinalizeAndComputePrometheusStats() (*promstat
 		EnablePerStepStats:  true,
 		Interval:            s.timeRange.IntervalMilliseconds,
 		StartTimestamp:      s.timeRange.StartT,
-	}, nil
+	}, nodeCosts, nil
+}
+
+// NodeQueryCost is the equivalent cost in samples read at a per-selector node granularity.
+type NodeQueryCost struct {
+	NodeId      int64
+	SamplesRead int64
 }
 
 func sum(s []int64) int64 {

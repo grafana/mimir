@@ -55,6 +55,9 @@ func SplitWriteRequestByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) 
 // The request will split the RW2 symbols among the various sub-requests. The original symbols table will no longer be valid for the individual timeseries.
 // Timeseries are re-symbolized in place, so this function mutates the input.
 func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize int, offset uint32, commonSymbols *CommonSymbols) []*WriteRequest {
+	if maxSize <= 0 {
+		return []*WriteRequest{req}
+	}
 	if reqSize <= maxSize {
 		return []*WriteRequest{req}
 	}
@@ -63,20 +66,15 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 	}
 
 	// Assume that the distribution of symbols usage is even across all timeseries, and that the timeseries are a roughly even size.
-	// so we preallocate the returned slice just adding 1 extra item (+2 because a +1 is to round up).
-	estimatedPartialReqs := (reqSize / maxSize) + 2
+	// so we preallocate the returned slice just adding 1 extra item (+2 because a +1 is to round up),
+	// capped at the number of timeseries.
+	estimatedPartialReqs := min((reqSize/maxSize)+2, len(req.TimeseriesRW2))
 	partialReqs := make([]*WriteRequest, 0, estimatedPartialReqs)
 	estimatedTimeseriesPerPartialReq := (len(req.TimeseriesRW2) / estimatedPartialReqs) + 1 // +1 is to round up
 
 	newPartialReq := func() (*WriteRequest, int) {
-		r := &WriteRequest{
-			Source:                          req.Source,
-			SkipLabelValidation:             req.SkipLabelValidation,
-			skipUnmarshalingExemplars:       req.skipUnmarshalingExemplars,
-			skipNormalizeMetadataMetricName: req.skipNormalizeMetadataMetricName,
-			skipDeduplicateMetadata:         req.skipDeduplicateMetadata,
-			TimeseriesRW2:                   make([]TimeSeriesRW2, 0, estimatedTimeseriesPerPartialReq),
-		}
+		r := newPartialWriteRequest(req)
+		r.TimeseriesRW2 = make([]TimeSeriesRW2, 0, estimatedTimeseriesPerPartialReq)
 
 		return r, r.Size()
 	}
@@ -92,11 +90,12 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 		// Both are upper bounds. In particular symbolsSize does not have knowledge of whether symbols can be re-used.
 		// The actual growth will be less than or equal to these values.
 		seriesSize, symbolsSize := maxRW2SeriesSizeAfterResymbolization(&req.TimeseriesRW2[i], req.SymbolsRW2, offset)
+		seriesFieldSize := embeddedMessageFieldSize(seriesSize)
 
 		// Check if the next partial request is full (or close to be full), and so it's time to finalize it and create a new one.
 		// If the next partial request doesn't have any timeseries yet, we add the series anyway, in order to avoid an infinite loop
 		// if a single timeseries is bigger than the limit.
-		if nextReqSize+seriesSize+symbolsSize > maxSize && len(nextReq.TimeseriesRW2) > 0 {
+		if nextReqSize+seriesFieldSize+symbolsSize > maxSize && len(nextReq.TimeseriesRW2) > 0 {
 			// Finalize the next partial request.
 			nextReq.SymbolsRW2 = nextReqSymbols.Symbols()
 			partialReqs = append(partialReqs, nextReq)
@@ -111,7 +110,7 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 		// Resymbolize the current series and add it to next partial request.
 		newTS := resymbolizeTimeSeriesRW2(&req.TimeseriesRW2[i], req.SymbolsRW2, nextReqSymbols)
 		// Add the growth in series size...
-		nextReqSize += newTS.Size() + 1 + sovMimir(uint64(seriesSize)) // Math copied from Size().
+		nextReqSize += embeddedMessageFieldSize(newTS.Size())
 		// ...and the growth in symbols size.
 		newSymbolsSize := nextReqSymbols.SymbolsSizeProto()
 		nextReqSize += newSymbolsSize - nextReqSymbolsSize

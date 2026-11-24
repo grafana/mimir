@@ -90,6 +90,18 @@ func (cfg *CombinedFrontendConfig) Validate() error {
 		}
 	}
 
+	if cfg.FrontendV2.QueueReservationEnabled {
+		// The split and shard middlewares of the query-frontend run concurrent evaluations. Each
+		// evaluation reserves its own slots, but all of them share -querier.max-query-parallelism.
+		// With MQE splitting enabled, the check above already requires MQE sharding.
+		if !cfg.QueryMiddleware.EnableRemoteExecution {
+			return fmt.Errorf("queue reservation is only supported when remote execution is enabled (-%v=true)", querymiddleware.EnableRemoteExecutionFlag)
+		}
+		if !cfg.QueryMiddleware.UseMQEForSplittingAndCachingResults {
+			return errors.New("queue reservation is only supported when splitting and caching results inside MQE is enabled (-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true)")
+		}
+	}
+
 	return nil
 }
 

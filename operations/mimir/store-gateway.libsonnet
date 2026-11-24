@@ -79,6 +79,9 @@
 
   store_gateway_node_affinity_matchers:: [],
 
+  // Add key-value pairs as annotations specifically to store-gateway.
+  store_gateway_annotations:: {},
+
   store_gateway_container::
     container.new('store-gateway', $._images.store_gateway) +
     container.withPorts($.store_gateway_ports) +
@@ -96,6 +99,7 @@
     local store_gateway_data_pvc = newStoreGatewayDataPvc(dataDiskClass);
     $.newMimirStatefulSet(name, 3, container, store_gateway_data_pvc) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
+    $.newMimirStatefulsetAnnotationsMixin($.mimirComponentAnnotations + $.store_gateway_annotations) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds($.store_gateway_termination_grace_period_seconds) +
     $.mimirVolumeMounts +
     $.mimirActivityTrackerMount +

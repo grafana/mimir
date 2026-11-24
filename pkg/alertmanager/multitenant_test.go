@@ -92,6 +92,16 @@ receivers:
 	badConfig         = `
 route:
   receiver: NOT_EXIST`
+
+	configThatFailsValidation = `
+receivers:
+- name: default-receiver
+  webhook_configs:
+    - url_file: /secrets
+
+route:
+  receiver: 'default-receiver'
+`
 )
 
 func mockAlertmanagerConfig(t *testing.T) *MultitenantAlertmanagerConfig {
@@ -521,6 +531,165 @@ templates:
 
 		_, amExists := am.alertmanagers["user5"]
 		require.False(t, amExists)
+	})
+
+	t.Run("when config that fails validation is loaded", func(t *testing.T) {
+		require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
+			User:      "user6",
+			RawConfig: configThatFailsValidation,
+			Templates: []*alertspb.TemplateDesc{},
+		}))
+
+		err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+
+		require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+			# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
+			# TYPE cortex_alertmanager_config_last_reload_successful gauge
+			cortex_alertmanager_config_last_reload_successful{user="user1"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user2"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user3"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user4"} 0
+			cortex_alertmanager_config_last_reload_successful{user="user5"} 0
+			cortex_alertmanager_config_last_reload_successful{user="user6"} 0
+		`), "cortex_alertmanager_config_last_reload_successful"))
+
+		_, amExists := am.alertmanagers["user6"]
+		require.False(t, amExists)
+	})
+
+	t.Run("should preserve existing config if config that fails validation is loaded", func(t *testing.T) {
+		require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
+			User:      "user7",
+			RawConfig: simpleConfigOne,
+			Templates: []*alertspb.TemplateDesc{},
+		}))
+
+		err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+
+		require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+				# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
+				# TYPE cortex_alertmanager_config_last_reload_successful gauge
+				cortex_alertmanager_config_last_reload_successful{user="user1"} 1
+				cortex_alertmanager_config_last_reload_successful{user="user2"} 1
+				cortex_alertmanager_config_last_reload_successful{user="user3"} 1
+				cortex_alertmanager_config_last_reload_successful{user="user4"} 0
+				cortex_alertmanager_config_last_reload_successful{user="user5"} 0
+				cortex_alertmanager_config_last_reload_successful{user="user6"} 0
+				cortex_alertmanager_config_last_reload_successful{user="user7"} 1
+			`), "cortex_alertmanager_config_last_reload_successful"))
+
+		goodCfgFingerprint, amExists := am.alertmanagers["user7"]
+		require.True(t, amExists)
+
+		require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
+			User:      "user7",
+			RawConfig: configThatFailsValidation,
+			Templates: []*alertspb.TemplateDesc{},
+		}))
+
+		err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+
+		require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+			# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
+			# TYPE cortex_alertmanager_config_last_reload_successful gauge
+			cortex_alertmanager_config_last_reload_successful{user="user1"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user2"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user3"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user4"} 0
+			cortex_alertmanager_config_last_reload_successful{user="user5"} 0
+			cortex_alertmanager_config_last_reload_successful{user="user6"} 0
+			cortex_alertmanager_config_last_reload_successful{user="user7"} 0
+		`), "cortex_alertmanager_config_last_reload_successful"))
+
+		newFingerprint, amExists := am.alertmanagers["user7"]
+		require.True(t, amExists)
+		require.Equal(t, goodCfgFingerprint, newFingerprint)
+	})
+
+	t.Run("should preserve existing config if bad config is loaded", func(t *testing.T) {
+		require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
+			User:      "user8",
+			RawConfig: simpleConfigOne,
+			Templates: []*alertspb.TemplateDesc{},
+		}))
+
+		err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+
+		require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+				# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
+				# TYPE cortex_alertmanager_config_last_reload_successful gauge
+				cortex_alertmanager_config_last_reload_successful{user="user1"} 1
+				cortex_alertmanager_config_last_reload_successful{user="user2"} 1
+				cortex_alertmanager_config_last_reload_successful{user="user3"} 1
+				cortex_alertmanager_config_last_reload_successful{user="user4"} 0
+				cortex_alertmanager_config_last_reload_successful{user="user5"} 0
+				cortex_alertmanager_config_last_reload_successful{user="user6"} 0
+				cortex_alertmanager_config_last_reload_successful{user="user7"} 0
+				cortex_alertmanager_config_last_reload_successful{user="user8"} 1
+			`), "cortex_alertmanager_config_last_reload_successful"))
+
+		goodCfgFingerprint, amExists := am.alertmanagers["user8"]
+		require.True(t, amExists)
+
+		require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
+			User:      "user8",
+			RawConfig: badConfig,
+			Templates: []*alertspb.TemplateDesc{},
+		}))
+
+		err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+
+		require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+			# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
+			# TYPE cortex_alertmanager_config_last_reload_successful gauge
+			cortex_alertmanager_config_last_reload_successful{user="user1"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user2"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user3"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user4"} 0
+			cortex_alertmanager_config_last_reload_successful{user="user5"} 0
+			cortex_alertmanager_config_last_reload_successful{user="user6"} 0
+			cortex_alertmanager_config_last_reload_successful{user="user7"} 0
+			cortex_alertmanager_config_last_reload_successful{user="user8"} 0
+		`), "cortex_alertmanager_config_last_reload_successful"))
+
+		newFingerprint, amExists := am.alertmanagers["user8"]
+		require.True(t, amExists)
+		require.Equal(t, goodCfgFingerprint, newFingerprint)
+	})
+
+	t.Run("when config that fails validation is loaded, but the tenant is on the list of tenants exempt from validation", func(t *testing.T) {
+		am.cfg.TenantsExemptFromConfigValidationForExistingConfig = []string{"user9"}
+
+		require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
+			User:      "user9",
+			RawConfig: configThatFailsValidation,
+			Templates: []*alertspb.TemplateDesc{},
+		}))
+
+		err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+
+		require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+			# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
+			# TYPE cortex_alertmanager_config_last_reload_successful gauge
+			cortex_alertmanager_config_last_reload_successful{user="user1"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user2"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user3"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user4"} 0
+			cortex_alertmanager_config_last_reload_successful{user="user5"} 0
+			cortex_alertmanager_config_last_reload_successful{user="user6"} 0
+			cortex_alertmanager_config_last_reload_successful{user="user7"} 0
+			cortex_alertmanager_config_last_reload_successful{user="user8"} 0
+			cortex_alertmanager_config_last_reload_successful{user="user9"} 1
+		`), "cortex_alertmanager_config_last_reload_successful"))
+
+		_, amExists := am.alertmanagers["user9"]
+		require.True(t, amExists)
 	})
 }
 
@@ -1316,6 +1485,44 @@ receivers:
 
 	resp = w.Result()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestMultitenantAlertmanager_LoadValidationAppliesToTenantConfigOnly(t *testing.T) {
+	ctx := t.Context()
+	amConfig := mockAlertmanagerConfig(t)
+	store := prepareInMemoryAlertStore()
+
+	am := setupSingleMultitenantAlertmanager(t, amConfig, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
+	am.fallbackConfig = configThatFailsValidation
+
+	t.Run("tenant with an empty stored config loads the fallback", func(t *testing.T) {
+		require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{User: "user1"}))
+		require.NoError(t, am.loadAndSyncConfigs(ctx, reasonPeriodic))
+
+		_, exists := am.alertmanagers["user1"]
+		require.True(t, exists)
+	})
+
+	t.Run("tenant with no stored config loads the fallback on request", func(t *testing.T) {
+		req := httptest.NewRequest("GET", amConfig.ExternalURL.String()+"/api/v2/status", nil)
+		w := httptest.NewRecorder()
+		am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), "user2")))
+
+		require.Equal(t, http.StatusOK, w.Result().StatusCode)
+		_, exists := am.alertmanagers["user2"]
+		require.True(t, exists)
+	})
+
+	t.Run("tenant with a stored config that fails validation does not load", func(t *testing.T) {
+		require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{User: "user3", RawConfig: configThatFailsValidation}))
+		require.NoError(t, am.loadAndSyncConfigs(ctx, reasonPeriodic))
+
+		_, exists := am.alertmanagers["user3"]
+		require.False(t, exists)
+
+		_, err := am.setConfig(&alertspb.AlertConfigDesc{User: "user3", RawConfig: configThatFailsValidation})
+		require.ErrorIs(t, err, errFileNotAllowed)
+	})
 }
 
 func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T) {

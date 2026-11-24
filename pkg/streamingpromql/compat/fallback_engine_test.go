@@ -109,6 +109,43 @@ func TestEngineWithFallback(t *testing.T) {
 	}
 }
 
+func TestEngineWithFallback_AcquireQuerySlot(t *testing.T) {
+	preferred := &fakeSlotEngine{}
+	fallback := &fakeSlotEngine{}
+	engine := NewEngineWithFallback(preferred, fallback, prometheus.NewPedanticRegistry(), log.NewNopLogger()).(promql.QuerySlotAcquirer)
+	release, err := engine.AcquireQuerySlot(t.Context(), "up")
+	require.NoError(t, err)
+	require.Equal(t, []string{"up"}, preferred.acquired)
+	require.Empty(t, fallback.acquired)
+	release()
+	require.Equal(t, 1, preferred.released)
+
+	// The fallback engine is used when only it implements promql.QuerySlotAcquirer.
+	engine = NewEngineWithFallback(newFakeEngineThatSupportsAllQueries(), fallback, prometheus.NewPedanticRegistry(), log.NewNopLogger()).(promql.QuerySlotAcquirer)
+	release, err = engine.AcquireQuerySlot(t.Context(), "down")
+	require.NoError(t, err)
+	require.Equal(t, []string{"down"}, fallback.acquired)
+	release()
+	require.Equal(t, 1, fallback.released)
+
+	// No engine implements promql.QuerySlotAcquirer.
+	engine = NewEngineWithFallback(newFakeEngineThatSupportsAllQueries(), newFakeEngineThatSupportsAllQueries(), prometheus.NewPedanticRegistry(), log.NewNopLogger()).(promql.QuerySlotAcquirer)
+	release, err = engine.AcquireQuerySlot(t.Context(), "up")
+	require.NoError(t, err)
+	release()
+}
+
+type fakeSlotEngine struct {
+	fakeEngineThatSupportsAllQueries
+	acquired []string
+	released int
+}
+
+func (f *fakeSlotEngine) AcquireQuerySlot(_ context.Context, qs string) (func(), error) {
+	f.acquired = append(f.acquired, qs)
+	return func() { f.released++ }, nil
+}
+
 type fakeEngineThatSupportsAllQueries struct {
 	query     *fakeQuery
 	wasCalled bool

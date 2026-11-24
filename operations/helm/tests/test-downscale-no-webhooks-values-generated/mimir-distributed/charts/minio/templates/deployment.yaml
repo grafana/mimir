@@ -1,0 +1,86 @@
+---
+# Source: mimir-distributed/charts/minio/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-downscale-no-webhooks-values-minio
+  labels:
+    app: minio
+    chart: minio-5.4.0
+    release: test-downscale-no-webhooks-values
+    heritage: Helm
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 0
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+      release: test-downscale-no-webhooks-values
+  template:
+    metadata:
+      name: test-downscale-no-webhooks-values-minio
+      labels:
+        app: minio
+        release: test-downscale-no-webhooks-values
+      annotations:
+        checksum/secrets: a500c8b2ddd8d68ff5002acdd060acdacd83fb0726baac62ac48a31f2c0a93b7
+        checksum/config: f8b60e09e85e80ddf7efaff4ce42ee4bbece50ea870e3e2ae5c91990cf3854dc
+    spec:
+      securityContext:
+        
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
+      
+      serviceAccountName: minio-sa
+      containers:
+        - name: minio
+          image: "pgsty/silo:RELEASE.2026-09-03T13-18-01Z"
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/bin/sh"
+            - "-ce"
+            - "/usr/bin/docker-entrypoint.sh minio server /export -S /etc/minio/certs/ --address :9000 --console-address :9001"
+          volumeMounts:
+            - name: minio-user
+              mountPath: "/tmp/credentials"
+              readOnly: true
+            - name: export
+              mountPath: /export            
+          ports:
+            - name: http
+              containerPort: 9000
+            - name: http-console
+              containerPort: 9001
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: test-downscale-no-webhooks-values-minio
+                  key: rootUser
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: test-downscale-no-webhooks-values-minio
+                  key: rootPassword
+            - name: MINIO_PROMETHEUS_AUTH_TYPE
+              value: "public"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext: 
+            readOnlyRootFilesystem: false      
+      volumes:
+        - name: export
+          persistentVolumeClaim:
+            claimName: test-downscale-no-webhooks-values-minio
+        - name: minio-user
+          secret:
+            secretName: test-downscale-no-webhooks-values-minio        
+

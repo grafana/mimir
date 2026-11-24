@@ -40,13 +40,13 @@
     $.newQuerySchedulerZoneContainer('c', $.query_scheduler_zone_c_args, $.query_scheduler_zone_c_env_map),
 
   query_scheduler_zone_a_deployment: if !isZoneAEnabled then null else
-    $.newQuerySchedulerZoneDeployment('a', $.query_scheduler_zone_a_container, $.query_scheduler_zone_a_node_affinity_matchers),
+    $.newQuerySchedulerZoneDeployment('a', $.query_scheduler_zone_a_container, $.query_scheduler_zone_a_node_affinity_matchers, $.query_scheduler_annotations),
 
   query_scheduler_zone_b_deployment: if !isZoneBEnabled then null else
-    $.newQuerySchedulerZoneDeployment('b', $.query_scheduler_zone_b_container, $.query_scheduler_zone_b_node_affinity_matchers),
+    $.newQuerySchedulerZoneDeployment('b', $.query_scheduler_zone_b_container, $.query_scheduler_zone_b_node_affinity_matchers, $.query_scheduler_annotations),
 
   query_scheduler_zone_c_deployment: if !isZoneCEnabled then null else
-    $.newQuerySchedulerZoneDeployment('c', $.query_scheduler_zone_c_container, $.query_scheduler_zone_c_node_affinity_matchers),
+    $.newQuerySchedulerZoneDeployment('c', $.query_scheduler_zone_c_container, $.query_scheduler_zone_c_node_affinity_matchers, $.query_scheduler_annotations),
 
   query_scheduler_zone_a_service: if !isZoneAEnabled then null else
     $.util.serviceFor($.query_scheduler_zone_a_deployment, $._config.service_ignored_labels),
@@ -71,10 +71,10 @@
     container.withArgs($.util.mapToFlags(args)) +
     (if std.length(extraEnvVarMap) > 0 then container.withEnvMixin(std.prune(extraEnvVarMap)) else {}),
 
-  newQuerySchedulerZoneDeployment(zone, container, nodeAffinityMatchers=[])::
+  newQuerySchedulerZoneDeployment(zone, container, nodeAffinityMatchers=[], annotations={})::
     local name = 'query-scheduler-zone-%s' % zone;
 
-    $.newQuerySchedulerDeployment(name, container, nodeAffinityMatchers) +
+    $.newQuerySchedulerDeployment(name, container, nodeAffinityMatchers, annotations) +
     deployment.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
 
   querySchedulerClientZoneArgs(zone):: {

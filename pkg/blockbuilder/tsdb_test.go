@@ -31,6 +31,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -605,8 +606,8 @@ func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir st
 			blockIDs = append(blockIDs, blockID)
 			sparseHeadersPath := path.Join(blockID.String(), block.SparseIndexHeaderFilename)
 
-			allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err := indexheader.LoadSparseIndexHeaderFromDisk(
-				ctx, blockID, dbDir, cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling, ll,
+			sparseSymbols, sparsePostingsOffsets, err := indexheader.LoadSparseIndexHeaderFromDisk(
+				ctx, blockID, dbDir, streamindex.SamplingConfig{Factor: cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling}, ll,
 			)
 
 			require.NoErrorf(t, err, "expected sparse index headers not found %s", sparseHeadersPath)
@@ -615,8 +616,8 @@ func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir st
 			// 1. At least one symbol is sampled
 			// 2. The total symbol count recorded for the block is greater than the sampled symbols;
 			//   this is always true even with only one symbol written because the block includes the empty string symbol.
-			require.NotEmpty(t, len(sparseSymbolsOffsets))
-			require.Greater(t, allSymbolsCount, len(sparseSymbolsOffsets))
+			require.NotZero(t, sparseSymbols.NumOffsets())
+			require.Greater(t, sparseSymbols.Count(), sparseSymbols.NumOffsets())
 
 			require.NoError(t, err)
 			require.NotZero(t, len(sparsePostingsOffsets))

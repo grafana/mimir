@@ -4,13 +4,17 @@ package distributor
 
 import (
 	"slices"
+	"strconv"
 	"testing"
 
+	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
 )
 
 func TestCompartmentTokens_WriteRequestIndexes(t *testing.T) {
@@ -98,4 +102,42 @@ func TestGetCompartmentTokensForWriteRequest(t *testing.T) {
 		}
 		assert.Equal(t, 1, total)
 	})
+}
+
+func TestGroupSeriesHashesByReadCompartment(t *testing.T) {
+	const (
+		userID          = "user-1"
+		numCompartments = 5
+	)
+	metadata := tenant.NewMetadata(":source=test")
+	router := compartments.NewTopicRouter(numCompartments, "comp-<read-compartment-id>")
+
+	metricNames := []string{"metric_a", "metric_b", "metric_a", "metric_c", "metric_d", "metric_b"}
+	timeseries := make([]mimirpb.PreallocTimeseries, 0, len(metricNames))
+	seriesHashes := make([]uint64, 0, len(metricNames))
+	expectedHashes := map[int][]uint64{}
+	for i, metricName := range metricNames {
+		timeseries = append(timeseries, makeTimeseries([]string{model.MetricNameLabel, metricName}, makeSamples(1000, 1), nil, nil))
+		hash := uint64(100 + i)
+		seriesHashes = append(seriesHashes, hash)
+		compartment := router.CompartmentForMetric(userID, metricName)
+		expectedHashes[compartment] = append(expectedHashes[compartment], hash)
+	}
+
+	var expectedGroups []usagetrackerclient.UserSeries
+	for compartment := range numCompartments {
+		if hashes, ok := expectedHashes[compartment]; ok {
+			expectedGroups = append(expectedGroups, usagetrackerclient.UserSeries{
+				UserID: userID + "/rc/" + strconv.Itoa(compartment) + ":source=test",
+				Series: hashes,
+			})
+		}
+	}
+	// The test needs more than one group and at least one empty compartment.
+	require.Greater(t, len(expectedGroups), 1)
+	require.Less(t, len(expectedGroups), numCompartments)
+
+	assert.Equal(t, expectedGroups, groupSeriesHashesByReadCompartment(router, userID, metadata, timeseries, seriesHashes))
+	// The second call can get the scratch buffers that the first call returned to the pool.
+	assert.Equal(t, expectedGroups, groupSeriesHashesByReadCompartment(router, userID, metadata, timeseries, seriesHashes))
 }

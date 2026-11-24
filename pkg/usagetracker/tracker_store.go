@@ -14,11 +14,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/util/zeropool"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
 	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 )
@@ -158,7 +158,7 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 }
 
 func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint64, eventTimestamp, timeNow time.Time) {
-	if _, _, err := tenant.ParseWithMetadata(tenantID); err != nil {
+	if _, _, err := compartments.ParseTenantIDWithMetadata(tenantID); err != nil {
 		level.Warn(t.logger).Log("msg", "skipping series created event for invalid tenant ID", "tenant", fmt.Sprintf("%q", tenantID), "err", err)
 		return
 	}

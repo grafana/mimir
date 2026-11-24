@@ -30,6 +30,20 @@ func TestServerStopViaContext(t *testing.T) {
 	require.NoError(t, s.AwaitTerminated(context.Background()))
 }
 
+func TestServerStopWhileStarting(t *testing.T) {
+	serv, err := server.New(getServerConfig(t, log.LogfmtFormat, "info"))
+	require.NoError(t, err)
+
+	s := NewServerService(serv, func() []services.Service { return nil })
+	require.NoError(t, s.StartAsync(t.Context()))
+	// A module stops its service like this when its context is canceled while the service is starting.
+	s.StopAsync()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, s.AwaitTerminated(ctx))
+}
+
 func TestServerStopViaShutdown(t *testing.T) {
 	serv, err := server.New(getServerConfig(t, log.LogfmtFormat, "info"))
 	require.NoError(t, err)

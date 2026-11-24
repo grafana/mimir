@@ -163,6 +163,12 @@ compactor.compaction-concurrency * max_compaction_range_blocks_size * 2
 
 Alternatively, assuming the largest `-compactor.block-ranges` is `24h` (the default), you could estimate needing 150GB of disk space for every 10M active series owned by the largest tenant. For example, if your largest tenant has 30M active series and `-compactor.compaction-concurrency=1` (standalone mode), we would recommend having a disk with at least 450GB available.
 
+{{% admonition type="note" %}}
+The disk requirement is estimated assuming a scrape interval of 15 seconds, and 2 bytes per sample per compacted TSDB block (accounts for both index and chunks).
+A shorter scrape interval increases block size proportionally. For example, a 10s interval needs about 1.5x the disk space.
+TSDB chunk compression reduces the average sample size, so the actual value depends on how much the sequence of sample values changes.
+{{% /admonition %}}
+
 In scheduler mode, the compaction concurrency is determined by the number of workers leasing jobs from lanes with compaction work, which is one with the default `-compactor.scheduler-client.lanes`.
 
 ## Compactor configuration

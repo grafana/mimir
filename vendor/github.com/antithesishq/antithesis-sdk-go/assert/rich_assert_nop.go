@@ -17,7 +17,7 @@ func SometimesAll(named_bool []NamedBool, message string, details map[string]any
 func NumericGuidanceRaw[T Number](left, right T,
 	message, id string,
 	classname, funcname, filename string,
-	line int,
+	line int, column int,
 	behavior string,
 	hit bool,
 ) {
@@ -27,7 +27,7 @@ func BooleanGuidanceRaw(
 	named_bools []NamedBool,
 	message, id string,
 	classname, funcname, filename string,
-	line int,
+	line int, column int,
 	behavior string,
 	hit bool,
 ) {

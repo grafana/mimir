@@ -2047,10 +2047,13 @@ func TestSingleClusterPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhen
 							consumedRecordsMx sync.Mutex
 							consumedRecords   []string
 							blocked           = atomic.NewBool(false)
+							consumerBlocked   = atomic.NewBool(false)
 						)
 
 						consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
 							if blocked.Load() {
+								consumerBlocked.Store(true)
+
 								blockedTicker := time.NewTicker(100 * time.Millisecond)
 								defer blockedTicker.Stop()
 
@@ -2148,6 +2151,14 @@ func TestSingleClusterPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhen
 
 						// Now, produce more records after the reader has started.
 						produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-3"))
+
+						// The fake Kafka cluster builds a fetch response from the records that exist when it
+						// handles the fetch, which can be after the next produce. Wait until the consumer blocks on
+						// record-3, so that record-4 comes in a later fetch and stays buffered.
+						test.Poll(t, time.Second, true, func() interface{} {
+							return consumerBlocked.Load()
+						})
+
 						produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-4"))
 						t.Log("produced 2 records")
 
@@ -3616,6 +3627,12 @@ func withFetchConcurrency(i int) readerTestCfgOpt {
 	}
 }
 
+func withClientRack(rack string) readerTestCfgOpt {
+	return func(cfg *readerTestCfg) {
+		cfg.kafka.ClientRack = rack
+	}
+}
+
 func withMaxBufferedBytes(i int) readerTestCfgOpt {
 	return func(cfg *readerTestCfg) {
 		cfg.kafka.MaxBufferedBytes = i
@@ -3703,6 +3720,61 @@ func createAndStartReader(ctx context.Context, t *testing.T, addr string, topicN
 	})
 
 	return reader
+}
+
+func TestSingleClusterPartitionReader_ShouldWarnIfClientRackIsSetWithConcurrentFetching(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 1
+	)
+
+	tests := map[string]struct {
+		clientRack          string
+		fetchConcurrencyMax int
+		expectWarning       bool
+	}{
+		"no client rack configured": {
+			clientRack:          "",
+			fetchConcurrencyMax: 2,
+			expectWarning:       false,
+		},
+		"client rack configured and concurrent fetching enabled": {
+			clientRack:          "zone-a",
+			fetchConcurrencyMax: 2,
+			expectWarning:       true,
+		},
+		"client rack configured and concurrent fetching disabled": {
+			clientRack:          "zone-a",
+			fetchConcurrencyMax: 0,
+			expectWarning:       false,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithCancelCause(context.Background())
+			t.Cleanup(func() { cancel(errors.New("test done")) })
+
+			_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+			consumer := consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
+
+			logs := &concurrency.SyncBuffer{}
+			createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer,
+				withClientRack(testData.clientRack),
+				withFetchConcurrency(testData.fetchConcurrencyMax),
+				withLogger(log.NewLogfmtLogger(logs)),
+			)
+
+			const warning = "the configured Kafka client rack has no effect because concurrent fetching is enabled"
+			if testData.expectWarning {
+				assert.Contains(t, logs.String(), warning)
+			} else {
+				assert.NotContains(t, logs.String(), warning)
+			}
+		})
+	}
 }
 
 func TestSingleClusterPartitionReader_Commit(t *testing.T) {

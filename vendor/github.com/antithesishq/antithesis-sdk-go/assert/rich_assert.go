@@ -2,6 +2,12 @@
 
 package assert
 
+import (
+	"reflect"
+
+	"github.com/antithesishq/antithesis-sdk-go/internal"
+)
+
 // A type for writing raw assertions.
 // guidanceFnType allows the assertion to provide guidance to
 // the Antithesis platform when testing in Antithesis.
@@ -45,29 +51,19 @@ type guidanceInfo struct {
 	Hit          bool          `json:"hit"`
 }
 
-type booleanGuidanceInfo struct {
-	Data         any           `json:"guidance_data,omitempty"`
-	Location     *locationInfo `json:"location"`
-	GuidanceType string        `json:"guidance_type"`
-	Message      string        `json:"message"`
-	Id           string        `json:"id"`
-	Maximize     bool          `json:"maximize"`
-	Hit          bool          `json:"hit"`
-}
-
 func uses_maximize(gt guidanceFnType) bool {
 	return gt == guidanceFnMaximize || gt == guidanceFnWantAll
 }
 
 func newOperands[T Number](left, right T) any {
-	switch any(left).(type) {
-	case int8, int16, int32:
+	switch operandKind[T]() {
+	case reflect.Int8, reflect.Int16, reflect.Int32:
 		return numericOperands[int32]{int32(left), int32(right)}
-	case int, int64:
+	case reflect.Int, reflect.Int64:
 		return numericOperands[int64]{int64(left), int64(right)}
-	case uint8, uint16, uint32, uint, uint64, uintptr:
+	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint, reflect.Uint64, reflect.Uintptr:
 		return numericOperands[uint64]{uint64(left), uint64(right)}
-	case float32, float64:
+	case reflect.Float32, reflect.Float64:
 		return numericOperands[float64]{float64(left), float64(right)}
 	}
 	return nil
@@ -75,9 +71,9 @@ func newOperands[T Number](left, right T) any {
 
 func build_numeric_guidance[T Number](gt guidanceFnType, message string, left, right T, loc *locationInfo, id string, hit bool) *guidanceInfo {
 
-	operands := newOperands(left, right)
-	if !hit {
-		operands = nil
+	var operands any
+	if hit {
+		operands = newOperands(left, right)
 	}
 
 	gI := guidanceInfo{
@@ -97,7 +93,7 @@ type namedBoolDictionary map[string]bool
 
 func build_boolean_guidance(gt guidanceFnType, message string, named_bools []NamedBool,
 	loc *locationInfo,
-	id string, hit bool) *booleanGuidanceInfo {
+	id string, hit bool) *guidanceInfo {
 
 	var guidance_data any
 
@@ -110,7 +106,7 @@ func build_boolean_guidance(gt guidanceFnType, message string, named_bools []Nam
 		guidance_data = named_bool_dictionary
 	}
 
-	bgI := booleanGuidanceInfo{
+	bgI := guidanceInfo{
 		GuidanceType: get_guidance_type_string(gt),
 		Message:      message,
 		Id:           id,
@@ -139,13 +135,16 @@ func behavior_to_guidance(behavior string) guidanceFnType {
 }
 
 func numericGuidanceImpl[T Number](left, right T, message, id string, loc *locationInfo, guidanceFn guidanceFnType, hit bool) {
-	tI := numeric_guidance_tracker.getTrackerEntry(id, gapTypeForOperand(left), uses_maximize(guidanceFn))
-	gI := build_numeric_guidance(guidanceFn, message, left, right, loc, id, hit)
-	send_value_if_needed(tI, gI)
+	tI := getNumericGuidanceEntry(id, uses_maximize(guidanceFn))
+	if !hit {
+		emitGuidance(build_numeric_guidance(guidanceFn, message, left, right, loc, id, false))
+		return
+	}
+	sendNumericGuidance(tI, left, right, message, id, loc, guidanceFn)
 }
 
 func booleanGuidanceImpl(named_bools []NamedBool, message, id string, loc *locationInfo, guidanceFn guidanceFnType, hit bool) {
-	tI := boolean_guidance_tracker.getTrackerEntry(id)
+	tI := getBooleanGuidanceEntry(id)
 	bgI := build_boolean_guidance(guidanceFn, message, named_bools, loc, id, hit)
 	tI.send_value(bgI)
 }
@@ -155,11 +154,18 @@ func NumericGuidanceRaw[T Number](
 	left, right T,
 	message, id string,
 	classname, funcname, filename string,
-	line int,
+	line int, column int,
 	behavior string,
 	hit bool,
 ) {
-	loc := &locationInfo{classname, funcname, filename, line, columnUnknown}
+	if hit {
+		if entry, ok := numericGuidanceTracker.Load(id); ok {
+			if _, improves := numericGuidanceImproves(entry.(*numericGuidanceInfo), left, right, id); !improves {
+				return
+			}
+		}
+	}
+	loc := &locationInfo{classname, funcname, filename, line, column}
 	guidanceFn := behavior_to_guidance(behavior)
 	numericGuidanceImpl(left, right, message, id, loc, guidanceFn, hit)
 }
@@ -169,128 +175,160 @@ func BooleanGuidanceRaw(
 	named_bools []NamedBool,
 	message, id string,
 	classname, funcname, filename string,
-	line int,
+	line int, column int,
 	behavior string,
 	hit bool,
 ) {
-	loc := &locationInfo{classname, funcname, filename, line, columnUnknown}
+	loc := &locationInfo{classname, funcname, filename, line, column}
 	guidanceFn := behavior_to_guidance(behavior)
 	booleanGuidanceImpl(named_bools, message, id, loc, guidanceFn, hit)
 }
 
-func add_numeric_details[T Number](details map[string]any, left, right T) map[string]any {
-	// ----------------------------------------------------
-	// Can not use maps.Clone() until go 1.21.0 or above
-	// enhancedDetails := maps.Clone(details)
-	// ----------------------------------------------------
-	enhancedDetails := map[string]any{}
-	for k, v := range details {
-		enhancedDetails[k] = v
-	}
-	enhancedDetails["left"] = left
-	enhancedDetails["right"] = right
-	return enhancedDetails
+func numericFields[T Number](left, right T) map[string]any {
+	return map[string]any{"left": left, "right": right}
 }
 
-func add_boolean_details(details map[string]any, named_bools []NamedBool) map[string]any {
-	// ----------------------------------------------------
-	// Can not use maps.Clone() until go 1.21.0 or above
-	// enhancedDetails := maps.Clone(details)
-	// ----------------------------------------------------
-	enhancedDetails := map[string]any{}
-	for k, v := range details {
-		enhancedDetails[k] = v
-	}
+func booleanFields(named_bools []NamedBool) map[string]any {
+	fields := make(map[string]any, len(named_bools))
 	for _, named_bool := range named_bools {
-		enhancedDetails[named_bool.First] = named_bool.Second
+		fields[named_bool.First] = named_bool.Second
 	}
-	return enhancedDetails
+	return fields
+}
+
+// Whether a numeric rich-assert evaluation can return before capturing its
+// location or building its details: the assertion side has already emitted
+// for this condition, and the guidance side does not improve the tracked
+// extremum. Both checks are lock-free loads. False while the guidance entry
+// does not exist, so the first evaluation still takes the full path.
+func numericRichAssertSettled[T Number](left, right T, message string, condition bool) bool {
+	if !trackerEmitted(message, condition) {
+		return false
+	}
+	entry, ok := numericGuidanceTracker.Load(message)
+	if !ok {
+		return false
+	}
+	_, improves := numericGuidanceImproves(entry.(*numericGuidanceInfo), left, right, message)
+	return !improves
 }
 
 // Equivalent to asserting Always(left > right, message, details). Information about left and right will automatically be added to the details parameter, with keys left and right. If you use this function for assertions that compare numeric quantities, you may help Antithesis find more bugs.
 func AlwaysGreaterThan[T Number](left, right T, message string, details map[string]any) {
+	if numericRichAssertSettled(left, right, message, left > right) {
+		return
+	}
 	loc := newLocationInfo(offsetAPICaller)
 	id := makeKey(message, loc)
 	condition := left > right
-	all_details := add_numeric_details(details, left, right)
-	assertImpl(condition, message, all_details, loc, wasHit, mustBeHit, universalTest, alwaysDisplay, id)
+	assertImpl(condition, message, details, loc, wasHit, mustBeHit, universalTest, alwaysDisplay, id, func() map[string]any {
+		return numericFields(left, right)
+	})
 
 	numericGuidanceImpl(left, right, message, id, loc, guidanceFnMinimize, wasHit)
 }
 
 // Equivalent to asserting Always(left >= right, message, details). Information about left and right will automatically be added to the details parameter, with keys left and right. If you use this function for assertions that compare numeric quantities, you may help Antithesis find more bugs.
 func AlwaysGreaterThanOrEqualTo[T Number](left, right T, message string, details map[string]any) {
+	if numericRichAssertSettled(left, right, message, left >= right) {
+		return
+	}
 	loc := newLocationInfo(offsetAPICaller)
 	id := makeKey(message, loc)
 	condition := left >= right
-	all_details := add_numeric_details(details, left, right)
-	assertImpl(condition, message, all_details, loc, wasHit, mustBeHit, universalTest, alwaysDisplay, id)
+	assertImpl(condition, message, details, loc, wasHit, mustBeHit, universalTest, alwaysDisplay, id, func() map[string]any {
+		return numericFields(left, right)
+	})
 
 	numericGuidanceImpl(left, right, message, id, loc, guidanceFnMinimize, wasHit)
 }
 
 // Equivalent to asserting Sometimes(T left > T right, message, details). Information about left and right will automatically be added to the details parameter, with keys left and right. If you use this function for assertions that compare numeric quantities, you may help Antithesis find more bugs.
 func SometimesGreaterThan[T Number](left, right T, message string, details map[string]any) {
+	if numericRichAssertSettled(left, right, message, left > right) {
+		return
+	}
 	loc := newLocationInfo(offsetAPICaller)
 	id := makeKey(message, loc)
 	condition := left > right
-	all_details := add_numeric_details(details, left, right)
-	assertImpl(condition, message, all_details, loc, wasHit, mustBeHit, existentialTest, sometimesDisplay, id)
+	assertImpl(condition, message, details, loc, wasHit, mustBeHit, existentialTest, sometimesDisplay, id, func() map[string]any {
+		return numericFields(left, right)
+	})
 
 	numericGuidanceImpl(left, right, message, id, loc, guidanceFnMaximize, wasHit)
 }
 
 // Equivalent to asserting Sometimes(T left >= T right, message, details). Information about left and right will automatically be added to the details parameter, with keys left and right. If you use this function for assertions that compare numeric quantities, you may help Antithesis find more bugs.
 func SometimesGreaterThanOrEqualTo[T Number](left, right T, message string, details map[string]any) {
+	if numericRichAssertSettled(left, right, message, left >= right) {
+		return
+	}
 	loc := newLocationInfo(offsetAPICaller)
 	id := makeKey(message, loc)
 	condition := left >= right
-	all_details := add_numeric_details(details, left, right)
-	assertImpl(condition, message, all_details, loc, wasHit, mustBeHit, existentialTest, sometimesDisplay, id)
+	assertImpl(condition, message, details, loc, wasHit, mustBeHit, existentialTest, sometimesDisplay, id, func() map[string]any {
+		return numericFields(left, right)
+	})
 
 	numericGuidanceImpl(left, right, message, id, loc, guidanceFnMaximize, wasHit)
 }
 
 // Equivalent to asserting Always(left < right, message, details). Information about left and right will automatically be added to the details parameter, with keys left and right. If you use this function for assertions that compare numeric quantities, you may help Antithesis find more bugs.
 func AlwaysLessThan[T Number](left, right T, message string, details map[string]any) {
+	if numericRichAssertSettled(left, right, message, left < right) {
+		return
+	}
 	loc := newLocationInfo(offsetAPICaller)
 	id := makeKey(message, loc)
 	condition := left < right
-	all_details := add_numeric_details(details, left, right)
-	assertImpl(condition, message, all_details, loc, wasHit, mustBeHit, universalTest, alwaysDisplay, id)
+	assertImpl(condition, message, details, loc, wasHit, mustBeHit, universalTest, alwaysDisplay, id, func() map[string]any {
+		return numericFields(left, right)
+	})
 
 	numericGuidanceImpl(left, right, message, id, loc, guidanceFnMaximize, wasHit)
 }
 
 // Equivalent to asserting Always(left <= right, message, details). Information about left and right will automatically be added to the details parameter, with keys left and right. If you use this function for assertions that compare numeric quantities, you may help Antithesis find more bugs.
 func AlwaysLessThanOrEqualTo[T Number](left, right T, message string, details map[string]any) {
+	if numericRichAssertSettled(left, right, message, left <= right) {
+		return
+	}
 	loc := newLocationInfo(offsetAPICaller)
 	id := makeKey(message, loc)
 	condition := left <= right
-	all_details := add_numeric_details(details, left, right)
-	assertImpl(condition, message, all_details, loc, wasHit, mustBeHit, universalTest, alwaysDisplay, id)
+	assertImpl(condition, message, details, loc, wasHit, mustBeHit, universalTest, alwaysDisplay, id, func() map[string]any {
+		return numericFields(left, right)
+	})
 
 	numericGuidanceImpl(left, right, message, id, loc, guidanceFnMaximize, wasHit)
 }
 
 // Equivalent to asserting Sometimes(T left < T right, message, details). Information about left and right will automatically be added to the details parameter, with keys left and right. If you use this function for assertions that compare numeric quantities, you may help Antithesis find more bugs.
 func SometimesLessThan[T Number](left, right T, message string, details map[string]any) {
+	if numericRichAssertSettled(left, right, message, left < right) {
+		return
+	}
 	loc := newLocationInfo(offsetAPICaller)
 	id := makeKey(message, loc)
 	condition := left < right
-	all_details := add_numeric_details(details, left, right)
-	assertImpl(condition, message, all_details, loc, wasHit, mustBeHit, existentialTest, sometimesDisplay, id)
+	assertImpl(condition, message, details, loc, wasHit, mustBeHit, existentialTest, sometimesDisplay, id, func() map[string]any {
+		return numericFields(left, right)
+	})
 
 	numericGuidanceImpl(left, right, message, id, loc, guidanceFnMinimize, wasHit)
 }
 
 // Equivalent to asserting Sometimes(T left <= T right, message, details). Information about left and right will automatically be added to the details parameter, with keys left and right. If you use this function for assertions that compare numeric quantities, you may help Antithesis find more bugs.
 func SometimesLessThanOrEqualTo[T Number](left, right T, message string, details map[string]any) {
+	if numericRichAssertSettled(left, right, message, left <= right) {
+		return
+	}
 	loc := newLocationInfo(offsetAPICaller)
 	id := makeKey(message, loc)
 	condition := left <= right
-	all_details := add_numeric_details(details, left, right)
-	assertImpl(condition, message, all_details, loc, wasHit, mustBeHit, existentialTest, sometimesDisplay, id)
+	assertImpl(condition, message, details, loc, wasHit, mustBeHit, existentialTest, sometimesDisplay, id, func() map[string]any {
+		return numericFields(left, right)
+	})
 
 	numericGuidanceImpl(left, right, message, id, loc, guidanceFnMinimize, wasHit)
 }
@@ -306,8 +344,9 @@ func AlwaysSome(named_bools []NamedBool, message string, details map[string]any)
 			break
 		}
 	}
-	all_details := add_boolean_details(details, named_bools)
-	assertImpl(disjunction, message, all_details, loc, wasHit, mustBeHit, universalTest, alwaysDisplay, id)
+	assertImpl(disjunction, message, details, loc, wasHit, mustBeHit, universalTest, alwaysDisplay, id, func() map[string]any {
+		return booleanFields(named_bools)
+	})
 
 	booleanGuidanceImpl(named_bools, message, id, loc, guidanceFnWantNone, wasHit)
 }
@@ -323,8 +362,18 @@ func SometimesAll(named_bools []NamedBool, message string, details map[string]an
 			break
 		}
 	}
-	all_details := add_boolean_details(details, named_bools)
-	assertImpl(conjunction, message, all_details, loc, wasHit, mustBeHit, existentialTest, sometimesDisplay, id)
+	assertImpl(conjunction, message, details, loc, wasHit, mustBeHit, existentialTest, sometimesDisplay, id, func() map[string]any {
+		return booleanFields(named_bools)
+	})
 
 	booleanGuidanceImpl(named_bools, message, id, loc, guidanceFnWantAll, wasHit)
+}
+
+// Guidance data is nil or already an object (the numeric operands struct or
+// the named-bool map), so the packet needs no wrapping and serializes in one
+// pass; a failure drops it.
+func emitGuidance(gI *guidanceInfo) {
+	internal.EmitWithDetails(struct {
+		Guidance *guidanceInfo `json:"antithesis_guidance"`
+	}{gI}, gI.Id)
 }

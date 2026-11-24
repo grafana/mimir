@@ -24,6 +24,7 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
 
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -64,7 +65,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			}
 			pool := NewReaderPool(log.NewNopLogger(), indexHeaderConfig, gate.NewNoop(), metrics)
 
-			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, indexHeaderConfig)
+			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, streamindex.SamplingConfig{Factor: 3}, indexHeaderConfig)
 			require.NoError(t, err)
 			defer func() { require.NoError(t, r.Close()) }()
 
@@ -94,7 +95,7 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 			LazyLoadingIdleTimeout: idleTimeout,
 		}, gate.NewNoop(), metrics)
 
-		r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, testIndexHeaderV1Config())
+		r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, streamindex.SamplingConfig{Factor: 3}, testIndexHeaderV1Config())
 		require.NoError(t, err)
 
 		// Ensure it can read data.
@@ -143,7 +144,7 @@ func TestReaderPool_OnDiskVersionMetric(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			pool := newReaderPool(log.NewNopLogger(), Config{Version: BinaryFormatV1, LazyLoadingEnabled: lazyReaderEnabled}, gate.NewNoop(), metrics)
 
-			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, testIndexHeaderV1Config())
+			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, streamindex.SamplingConfig{Factor: 3}, testIndexHeaderV1Config())
 			require.NoError(t, err)
 			require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")))
 
@@ -174,7 +175,7 @@ func TestReaderPool_OnDiskVersionMetricIdleUnload(t *testing.T) {
 		LazyLoadingIdleTimeout: idleTimeout,
 	}, gate.NewNoop(), metrics)
 
-	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, testIndexHeaderV1Config())
+	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, streamindex.SamplingConfig{Factor: 3}, testIndexHeaderV1Config())
 	require.NoError(t, err)
 	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")))
 

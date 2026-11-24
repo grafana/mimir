@@ -364,9 +364,9 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 // DecodeMetricsQueryRequest decodes a MetricsQueryRequest from an http request.
 func (c Codec) DecodeMetricsQueryRequest(_ context.Context, r *http.Request) (MetricsQueryRequest, error) {
 	switch {
-	case IsRangeQuery(r.URL.Path):
+	case IsRangeQuery(r.URL.Path), IsRangeQueryCost(r.URL.Path):
 		return c.decodeRangeQueryRequest(r)
-	case IsInstantQuery(r.URL.Path):
+	case IsInstantQuery(r.URL.Path), IsInstantQueryCost(r.URL.Path):
 		return c.decodeInstantQueryRequest(r)
 	default:
 		return nil, fmt.Errorf("unknown metrics query API endpoint %s", dskitlog.DropUnsafeChars(r.URL.Path))
@@ -395,7 +395,10 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 		return nil, DecorateWithParamName(err, "query")
 	}
 
-	options := c.optionDecoder.DecodeOptions(r)
+	options, err := c.optionDecoder.DecodeOptions(r)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
 
 	stats := reqValues.Get("stats")
 	explain := reqValues["explain"]
@@ -428,7 +431,10 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 		return nil, DecorateWithParamName(err, "query")
 	}
 
-	options := c.optionDecoder.DecodeOptions(r)
+	options, err := c.optionDecoder.DecodeOptions(r)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
 
 	stats := reqValues.Get("stats")
 	explain := reqValues["explain"]
@@ -1109,7 +1115,7 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 		sp.SetAttributes(attribute.Int("series", len(a.Data.Result)))
 	}
 
-	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
+	selectedContentType, formatter := c.NegotiateContentType(req.Header.Get("Accept"))
 	if formatter == nil {
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
 	}
@@ -1200,7 +1206,7 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 		}
 	}()
 
-	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
+	selectedContentType, formatter := c.NegotiateContentType(req.Header.Get("Accept"))
 	if formatter == nil {
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
 	}
@@ -1265,7 +1271,7 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 	return &resp, nil
 }
 
-func (Codec) negotiateContentType(acceptHeader string) (string, formatter) {
+func (Codec) NegotiateContentType(acceptHeader string) (string, formatter) {
 	if acceptHeader == "" {
 		return jsonMimeType, jsonFormatterInstance
 	}

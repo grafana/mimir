@@ -52,6 +52,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/promtest"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -265,6 +266,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 	generateStorageBlock(t, storageDir, userID, metricName, 10, 100, 15)
 	createBucketIndex(t, bucket, userID)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
+	require.NoError(t, promtest.HasNativeHistogram(reg, "cortex_bucket_stores_blocks_sync_seconds"))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), stores))
 	})

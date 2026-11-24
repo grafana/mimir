@@ -345,6 +345,7 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 	manySideGroupKeyFunc := g.manySideGroupKeyFunc()
 	outputSeriesLabelsFunc := g.outputSeriesLabelsFunc()
 	buf := make([]byte, 0, types.LabelBytesBufferSize)
+	outputSeriesMapKeysBytes := uint64(0)
 
 	manySideSeriesUsed, err := types.BoolSlicePool.Get(len(g.manySideMetadata), g.MemoryConsumptionTracker)
 	if err != nil {
@@ -385,7 +386,8 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 			// so just create the series labels directly rather than trying to avoid their creation until we know for sure we'll
 			// need them.
 			l := outputSeriesLabelsFunc(g.oneSideMetadata[oneSide.seriesIndices[0]].Labels, s.Labels)
-			_, exists := outputSeriesMap[string(l.Bytes(buf))]
+			buf = l.Bytes(buf)
+			_, exists := outputSeriesMap[string(buf)]
 
 			if !exists {
 				oneSide.outputSeriesCount++
@@ -399,7 +401,15 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 					return nil, nil, nil, -1, nil, -1, err
 				}
 
-				outputSeriesMap[string(l.Bytes(buf))] = groupedBinaryOperationOutputSeriesWithLabels{
+				// The map key is a copy of the labels, so account for it separately until the map is discarded below.
+				keyBytes := uint64(len(buf))
+				if err := g.MemoryConsumptionTracker.IncreaseMemoryConsumption(keyBytes, limiter.BinaryOperationOutputSeries); err != nil {
+					return nil, nil, nil, -1, nil, -1, err
+				}
+
+				outputSeriesMapKeysBytes += keyBytes
+
+				outputSeriesMap[string(buf)] = groupedBinaryOperationOutputSeriesWithLabels{
 					labels: l,
 					outputSeries: &groupedBinaryOperationOutputSeries{
 						manySide: thisManySide,
@@ -456,6 +466,8 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 		outputMetadata = append(outputMetadata, types.SeriesMetadata{Labels: o.labels})
 		outputSeries = append(outputSeries, o.outputSeries)
 	}
+
+	g.MemoryConsumptionTracker.DecreaseMemoryConsumption(outputSeriesMapKeysBytes, limiter.BinaryOperationOutputSeries)
 
 	return outputMetadata, outputSeries, oneSideSeriesUsed, lastOneSideSeriesUsedIndex, manySideSeriesUsed, lastManySideSeriesUsedIndex, nil
 }

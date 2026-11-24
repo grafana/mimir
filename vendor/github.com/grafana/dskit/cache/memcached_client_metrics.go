@@ -23,6 +23,8 @@ const (
 	reasonMalformedKey    = "malformed-key"
 	reasonInvalidTTL      = "invalid-ttl"
 	reasonNotStored       = "not-stored"
+	reasonCASConflict     = "cas-conflict"
+	reasonCacheMiss       = "cache-miss"
 	reasonConnectTimeout  = "connect-timeout"
 	reasonTimeout         = "request-timeout"
 	reasonServerError     = "server-error"
@@ -94,6 +96,9 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 		cm.failures.WithLabelValues(op, reasonCanceled)
 		cm.failures.WithLabelValues(op, reasonOther)
 	}
+	cm.failures.WithLabelValues(opTouch, reasonCacheMiss)
+	cm.failures.WithLabelValues(opCompareAndSwap, reasonCASConflict)
+	cm.failures.WithLabelValues(opCompareAndSwap, reasonCacheMiss)
 
 	cm.skipped = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "operation_skipped_total",

@@ -52,11 +52,6 @@ const (
 	maxSearchTermsPerRequest = 32
 )
 
-// defaultSuccessTrailer is the byte-for-byte JSON output for the common
-// "no warnings, has_more=false" trailer, written verbatim to skip the
-// json.Encoder reflection round-trip for the most frequent request shape.
-var defaultSuccessTrailer = []byte(`{"status":"success","has_more":false}` + "\n")
-
 // Per-(endpoint × score) pools for the per-request batch envelope. The
 // pool stores the envelope wrapper (not just the slice) so the
 // per-request wrapper alloc is also amortised, and so the encoded
@@ -154,8 +149,11 @@ type searchBatchEnvelope[T any] struct {
 
 // searchTrailerEnvelope is the final NDJSON line on a successful stream.
 type searchTrailerEnvelope struct {
-	Status   string   `json:"status"`
-	HasMore  bool     `json:"has_more"`
+	Status  string `json:"status"`
+	HasMore bool   `json:"has_more"`
+	// Returned is the number of records in this response. It excludes the
+	// limit+1 has_more probe record.
+	Returned int      `json:"returned"`
 	Warnings []string `json:"warnings,omitempty"`
 }
 
@@ -693,7 +691,10 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 	env.Results = env.Results[:0]
 
 	flushedAny := false
+	// emitted counts the records written to the wire. probeHit records that
+	// the iterator produced the (req.limit+1)-th has_more probe record.
 	emitted := 0
+	probeHit := false
 	flushBatch := func() error {
 		if len(env.Results) == 0 {
 			return nil
@@ -714,15 +715,16 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 	}
 
 	for rs.Next() {
-		emitted++
 		// req.hints.Limit was set to req.limit+1 to probe for has_more.
 		// When the iterator returns that (limit+1)-th record we now know
 		// data extends past the user's limit — record the signal and drop
 		// the probe record so we never emit more than req.limit to the
 		// wire.
-		if req.limit > 0 && emitted > req.limit {
+		if req.limit > 0 && emitted == req.limit {
+			probeHit = true
 			break
 		}
+		emitted++
 		env.Results = append(env.Results, build(rs.At()))
 		if len(env.Results) >= req.batchSize {
 			if err := flushBatch(); err != nil {
@@ -756,21 +758,6 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 		return
 	}
 
-	// has_more uses two signals OR'd together:
-	//   1. emitted > req.limit. We asked the iterator for req.limit+1
-	//      records as a probe; if it produced the extra one we know the
-	//      data extends past the user's limit. This avoids the false
-	//      positive that "emitted >= limit" would have when the data
-	//      exactly fills req.limit.
-	//   2. A per-source clamp warning (*MaxLimitError on the search
-	//      label-{names,values} flags) AND the iterator actually
-	//      saturated the post-clamp cap. The clamp warning fires when the
-	//      effective limit was cut (e.g. limit=0 raised to the tenant
-	//      ceiling), but iteration may still finish below the cap with
-	//      no truncation. Requiring emitted >= enforced avoids the false
-	//      positive that "clamp fired" alone would have for limit=0
-	//      requests against tenants with a positive ceiling.
-	trailer := searchTrailerEnvelope{Status: "success"}
 	// If no batches were flushed (e.g. the result set is empty), ensure the
 	// NDJSON content type and the internal streaming header are still set
 	// before writing the trailer so clients see the expected Content-Type.
@@ -778,6 +765,7 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 		w.Header().Set("Content-Type", searchAPIContentType)
 		w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
 	}
+	trailer := searchTrailerEnvelope{Status: "success", Returned: emitted}
 	// clampEnforcedMin tracks the smallest post-clamp cap observed across
 	// per-source warnings. -1 means "no clamp fired".
 	clampEnforcedMin := -1
@@ -789,21 +777,22 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 			}
 		}
 	}
-	switch {
-	case req.limit > 0 && emitted > req.limit:
-		trailer.HasMore = true
-	case clampEnforcedMin >= 0 && emitted >= clampEnforcedMin:
-		trailer.HasMore = true
-	}
-	// Fast path for the common case: success trailer with no warnings and
-	// no has_more flag. Bypassing json.Encoder skips one bytes allocation
-	// per request and is the only trailer shape the encoder would have
-	// emitted byte-for-byte identical to defaultSuccessTrailer anyway.
-	if !trailer.HasMore && len(trailer.Warnings) == 0 {
-		_, _ = w.Write(defaultSuccessTrailer)
-	} else {
-		_ = enc.Encode(trailer)
-	}
+	// has_more uses two signals OR'd together:
+	//   1. probeHit. We asked the iterator for req.limit+1 records as a
+	//      probe; if it produced the extra one we know the data extends
+	//      past the user's limit. This avoids the false positive that
+	//      "emitted >= limit" would have when the data exactly fills
+	//      req.limit.
+	//   2. A per-source clamp warning (*MaxLimitError on the search
+	//      label-{names,values} flags) AND the iterator actually
+	//      saturated the post-clamp cap. The clamp warning fires when the
+	//      effective limit was cut (e.g. limit=0 raised to the tenant
+	//      ceiling), but iteration may still finish below the cap with
+	//      no truncation. Requiring emitted >= enforced avoids the false
+	//      positive that "clamp fired" alone would have for limit=0
+	//      requests against tenants with a positive ceiling.
+	trailer.HasMore = probeHit || (clampEnforcedMin >= 0 && emitted >= clampEnforcedMin)
+	_ = enc.Encode(trailer)
 	if flusher != nil {
 		flusher.Flush()
 	}

@@ -829,7 +829,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 						Count:         &mimirpb.Histogram_CountInt{CountInt: 1},
 						Sum:           5,
 						Schema:        0,
-						ZeroThreshold: 1e-128,
+						ZeroThreshold: 0,
 						ZeroCount:     &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
 						Timestamp:     ts.UnixMilli(),
 						ResetHint:     mimirpb.Histogram_GAUGE,
@@ -1765,15 +1765,15 @@ func TestHandlerOTLPPush(t *testing.T) {
 			series:     sampleSeries,
 			metadata:   sampleMetadata,
 			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
-				return newActiveSeriesLimitedError(10, 3, 100, http.StatusTooManyRequests, 5)
+				return newActiveSeriesLimitedError(10, 3, http.StatusTooManyRequests, 5)
 			},
 			responseCode:          http.StatusOK,
 			responseContentType:   pbContentType,
-			responseContentLength: 321,
+			responseContentLength: 309,
 			expectedRetryHeader:   false,
 			expectedPartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
 				RejectedDataPoints: 5,
-				ErrorMessage:       newActiveSeriesLimitedError(10, 3, 100, http.StatusTooManyRequests, 5).Error(),
+				ErrorMessage:       newActiveSeriesLimitedError(10, 3, http.StatusTooManyRequests, 5).Error(),
 			},
 		},
 		{
@@ -1782,13 +1782,13 @@ func TestHandlerOTLPPush(t *testing.T) {
 			series:     sampleSeries,
 			metadata:   sampleMetadata,
 			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
-				return newActiveSeriesLimitedError(10, 10, 100, http.StatusTooManyRequests, 15)
+				return newActiveSeriesLimitedError(10, 10, http.StatusTooManyRequests, 15)
 			},
 			responseCode:          http.StatusTooManyRequests,
 			responseContentType:   pbContentType,
-			responseContentLength: 319,
-			errMessage:            newActiveSeriesLimitedError(10, 10, 100, http.StatusTooManyRequests, 15).Error(),
-			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=429 err="` + newActiveSeriesLimitedError(10, 10, 100, http.StatusTooManyRequests, 15).Error() + `" insight=true`},
+			responseContentLength: 307,
+			errMessage:            newActiveSeriesLimitedError(10, 10, http.StatusTooManyRequests, 15).Error(),
+			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=429 err="` + newActiveSeriesLimitedError(10, 10, http.StatusTooManyRequests, 15).Error() + `" insight=true`},
 			expectedRetryHeader:   true,
 		},
 		{
@@ -1855,17 +1855,17 @@ func TestHandlerOTLPPush(t *testing.T) {
 				limitsCfg.PastGracePeriod = model.Duration(time.Hour)
 				distributors, _, _, _ := prepare(t, prepConfig{numDistributors: 1, limits: &limitsCfg})
 				stubNext := func(context.Context, *Request) error {
-					return newActiveSeriesLimitedError(10, 3, 100, http.StatusTooManyRequests, 5)
+					return newActiveSeriesLimitedError(10, 3, http.StatusTooManyRequests, 5)
 				}
 				return distributors[0].prePushValidationMiddleware(stubNext)(ctx, pushReq)
 			},
 			responseCode:          http.StatusOK,
 			responseContentType:   pbContentType,
-			responseContentLength: 321,
+			responseContentLength: 309,
 			expectedRetryHeader:   false,
 			expectedPartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
 				RejectedDataPoints: 6, // 5 from active-series + 1 from validation
-				ErrorMessage:       newActiveSeriesLimitedError(10, 3, 100, http.StatusTooManyRequests, 5).Error(),
+				ErrorMessage:       newActiveSeriesLimitedError(10, 3, http.StatusTooManyRequests, 5).Error(),
 			},
 		},
 	}
@@ -2692,19 +2692,19 @@ func TestHandler_toOtlpGRPCHTTPStatus(t *testing.T) {
 			expectedSoft:       true,
 		},
 		"an activeSeriesLimitedError with all series rejected gets translated into gRPC codes.ResourceExhausted and HTTP 429 statuses": {
-			err:                newActiveSeriesLimitedError(10, 10, 100, http.StatusTooManyRequests, 15),
+			err:                newActiveSeriesLimitedError(10, 10, http.StatusTooManyRequests, 15),
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedGRPCStatus: codes.ResourceExhausted,
 			expectedSoft:       false,
 		},
 		"an activeSeriesLimitedError with overridden 400 gets translated into gRPC codes.ResourceExhausted and HTTP 400 statuses": {
-			err:                newActiveSeriesLimitedError(100, 100, 50, http.StatusBadRequest, 0),
+			err:                newActiveSeriesLimitedError(100, 100, http.StatusBadRequest, 0),
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.ResourceExhausted,
 			expectedSoft:       false,
 		},
 		"an activeSeriesLimitedError with some series rejected gets translated into soft": {
-			err:                newActiveSeriesLimitedError(10, 3, 100, http.StatusTooManyRequests, 5),
+			err:                newActiveSeriesLimitedError(10, 3, http.StatusTooManyRequests, 5),
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedGRPCStatus: codes.ResourceExhausted,
 			expectedSoft:       true,

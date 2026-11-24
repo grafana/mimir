@@ -5,7 +5,7 @@
     memcachedExporter: 'prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728',
 
     // Our services.
-    mimir: 'grafana/mimir:3.2.3',
+    mimir: 'grafana/mimir:3.2.5',
 
     alertmanager: self.mimir,
     distributor: self.mimir,
@@ -20,9 +20,10 @@
     store_gateway: self.mimir,
     query_scheduler: self.mimir,
     overrides_exporter: self.mimir,
+    usage_tracker: self.mimir,
 
-    query_tee: 'grafana/query-tee:3.2.3',
+    query_tee: 'grafana/query-tee:3.2.5',
     continuous_test: self.mimir,
-    mimirtool: 'grafana/mimirtool:3.2.3',
+    mimirtool: 'grafana/mimirtool:3.2.5',
   },
 }

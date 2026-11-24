@@ -40,6 +40,9 @@
 
   compactor_scheduler_node_affinity_matchers:: [],
 
+  // Add key-value pairs as annotations specifically to compactor-scheduler.
+  compactor_scheduler_annotations:: {},
+
   local compactor_scheduler_data_pvc =
     pvc.new() +
     pvc.mixin.spec.resources.withRequests({ storage: $._config.compactor_scheduler_data_disk_size }) +
@@ -70,6 +73,7 @@
   newCompactorSchedulerStatefulSet(name, container, nodeAffinityMatchers=[])::
     $.newMimirStatefulSet(name, 1, container, compactor_scheduler_data_pvc) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
+    $.newMimirStatefulsetAnnotationsMixin($.mimirComponentAnnotations + $.compactor_scheduler_annotations) +
     $.mimirVolumeMounts +
     pvc_retention_policy,
 

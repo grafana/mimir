@@ -1,0 +1,84 @@
+{{- /*gotype: github.com/grafana/mimir/pkg/ingester.labelChurnPageContent */ -}}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Ingester: label churn for tenant {{ .Tenant }}</title>
+    <style>
+        .explanation { max-width: 60em; }
+    </style>
+</head>
+<body>
+<h1>Ingester: label churn for tenant {{ .Tenant }}</h1>
+<p>Current time: {{ .Now }}</p>
+<p><a href="../{{ .Tenant }}">TSDB of the tenant</a> | <a href="{{ .JSONLink }}">Download as JSON</a></p>
+
+<div class="explanation">
+    <h2>What you see</h2>
+    <p>
+        This page shows the label names whose new values created the most new series for tenant {{ .Tenant }} in this ingester.
+        A new value is a label value that did not exist in the in-memory head of the ingester at the start of the queried time window.
+    </p>
+
+    <h2>How the ingester collects the data</h2>
+    <ul>
+        <li>Every minute, the ingester records the newest series of each tenant.</li>
+        <li>A label value is new when its first series is newer than the record at the start of the queried time window.</li>
+        <li>The score of a label is the number of series that have a new value of that label.</li>
+        <li>For each new value, the ingester reads up to {{ .SampledSeriesPerValue }} random series. The metric names of these series are the example metric names, they can be useful to find the metric names high-churn labels are associated with.</li>
+        <li>When the head removes old series, old label values can look new. The start of the queried time window can be adjusted automatically to be later than the specified lookback, to ensure it is later than the last removal of series.</li>
+    </ul>
+
+    <h2>How to read the data</h2>
+    <ul>
+        <li>A high score shows a label whose values change frequently and create new series. Common examples are pod names, IDs and timestamps.</li>
+        <li>One new series can have new values of more than one label. Thus the scores overlap, and their sum is not the total number of new series.</li>
+        <li>The data includes only the series of the tenant in this ingester. Other ingesters can have other series of the tenant.</li>
+        <li>The number after each example metric name is the number of sampled series with that metric name, to provide an approximate weight of which metrics are more affected.</li>
+    </ul>
+
+    <h2>What the data is useful for</h2>
+    <p>
+        Use the data to find the labels that cause series churn, and which metrics they're associated with.
+    </p>
+</div>
+
+<h2>Label churn</h2>
+<form method="get">
+    <label>Lookback: <input type="text" name="lookback" value="{{ .Lookback }}" size="6"></label>
+    <label>Limit: <input type="text" name="limit" value="{{ .Limit }}" size="4"></label>
+    <input type="submit" value="Show">
+    <small>A limit of 0 shows all labels with new values.</small>
+</form>
+
+{{ if .Error }}
+<p><strong>The ingester cannot show the label churn:</strong> {{ .Error }}</p>
+{{ else }}
+<p>Time window start: {{ .Since }}</p>
+{{ if .Scores }}
+<table border="1" cellpadding="5" style="border-collapse: collapse">
+    <thead>
+    <tr>
+        <th>Rank</th>
+        <th>Label name</th>
+        <th>Score</th>
+        <th>Example metric names</th>
+    </tr>
+    </thead>
+    <tbody style="font-family: monospace;">
+    {{ range $index, $score := .Scores }}
+        <tr>
+            <td align="right">{{ rank $index }}</td>
+            <td>{{ .LabelName }}</td>
+            <td align="right">{{ .Score }}</td>
+            <td>{{ range $index, $metricName := .MetricNames }}{{ if $index }}, {{ end }}{{ $metricName.MetricName }} ({{ $metricName.SampledSeries }}){{ end }}</td>
+        </tr>
+    {{ end }}
+    </tbody>
+</table>
+{{ else }}
+<p>No label has new values in this time window.</p>
+{{ end }}
+{{ end }}
+</body>
+</html>

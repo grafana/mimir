@@ -71,6 +71,9 @@
 
   block_builder_node_affinity_matchers:: [],
 
+  // Add key-value pairs as annotations specifically to block-builder.
+  block_builder_annotations:: {},
+
   newBlockBuilderContainer(name, args, envmap={})::
     container.new(name, $._images.block_builder) +
     container.withPorts($.block_builder_ports) +
@@ -89,6 +92,7 @@
   newBlockBuilderDeployment(name, container, nodeAffinityMatchers=[])::
     deployment.new(name, $._config.block_builder.replicas, [container]) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
+    $.newMimirDeploymentAnnotationsMixin($.mimirComponentAnnotations + $.block_builder_annotations) +
     deployment.spec.template.spec.withVolumes([
       {
         name: 'block-builder-data',

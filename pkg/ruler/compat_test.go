@@ -48,6 +48,7 @@ import (
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -67,10 +68,18 @@ type fakePusher struct {
 	request  *mimirpb.WriteRequest
 	response *mimirpb.WriteResponse
 	err      error
+
+	pushedNonEmptyWrite atomic.Bool
 }
 
 func (p *fakePusher) Push(_ context.Context, r *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	p.request = r
+	for _, series := range r.Timeseries {
+		if len(series.Samples) > 0 || len(series.Histograms) > 0 {
+			p.pushedNonEmptyWrite.Store(true)
+			break
+		}
+	}
 	return p.response, p.err
 }
 
@@ -261,6 +270,38 @@ func TestPusherErrors(t *testing.T) {
 			returnedError:    errors.New("test error"),
 			expectedWrites:   1,
 			expectedFailures: 1, // unknown errors are not 400, so they are reported.
+		},
+		"a tenant REQUEST_RATE_LIMITED push error is reported as client failure": {
+			returnedError:         mustStatusWithMessageAndDetails(codes.ResourceExhausted, globalerror.RequestRateLimited.MessageWithPerTenantLimitConfig("request rate exceeded", "request-rate-limit"), mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED).Err(),
+			expectedWrites:        1,
+			expectedFailures:      1,
+			expectedFailureReason: failureReasonClientError,
+		},
+		"an INGESTION_RATE_LIMITED push error is reported as client failure": {
+			returnedError:         mustStatusWithDetails(codes.ResourceExhausted, mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED).Err(),
+			expectedWrites:        1,
+			expectedFailures:      1,
+			expectedFailureReason: failureReasonClientError,
+		},
+		"an ACTIVE_SERIES_LIMITED push error is reported as client failure": {
+			returnedError:         mustStatusWithDetails(codes.ResourceExhausted, mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED).Err(),
+			expectedWrites:        1,
+			expectedFailures:      1,
+			expectedFailureReason: failureReasonClientError,
+		},
+		"a forwarded ingester REQUEST_RATE_LIMITED push error is reported as failure": {
+			// Ingester overload shares the request-rate cause, and the distributor forwards it as
+			// ResourceExhausted. Only the missing tenant error ID tells it apart from a tenant limit.
+			returnedError:    mustStatusWithMessageAndDetails(codes.ResourceExhausted, "failed pushing to ingester <id>: limit exceeded", mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED).Err(),
+			expectedWrites:   1,
+			expectedFailures: 1,
+		},
+		"a ResourceExhausted error without details is reported as failure": {
+			// gRPC rejects oversized messages to a remote distributor with ResourceExhausted and no
+			// details, so the code alone doesn't identify a tenant limit.
+			returnedError:    status.New(codes.ResourceExhausted, "grpc: received message larger than max").Err(),
+			expectedWrites:   1,
+			expectedFailures: 1,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -614,68 +655,74 @@ func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t 
 		t.Run(fmt.Sprintf("write enabled: %t", writeEnabled), func(t *testing.T) {
 			t.Parallel()
 
-			// Create a test recording rule.
-			ruleGroup := rulespb.RuleGroupDesc{
-				Name:     "test",
-				Interval: time.Second,
-				Rules: []*rulespb.RuleDesc{{
-					Record: "test",
-					Expr:   "1",
-				}},
-			}
+			// Run in a synctest bubble, so that the group's evaluations happen at exact times and the test can wait until
+			// an evaluation has finished, whatever the load on the machine.
+			synctest.Test(t, func(t *testing.T) {
+				// Create a test recording rule.
+				ruleGroup := rulespb.RuleGroupDesc{
+					Name:     "test",
+					Interval: time.Second,
+					Rules: []*rulespb.RuleDesc{{
+						Record: "test",
+						Expr:   "1",
+					}},
+				}
 
-			// Setup ruler with writes disabled.
-			cfg := defaultRulerConfig(t)
-			cfg.RuleEvaluationWriteEnabled = writeEnabled
+				// Setup ruler with writes disabled.
+				cfg := defaultRulerConfig(t)
+				cfg.RuleEvaluationWriteEnabled = writeEnabled
 
-			var (
-				options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
-				notifierManager = notifier.NewManager(&notifier.Options{
-					Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil },
-				}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
-				fs        = afero.NewMemMapFs()
-				ruleFiles = writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, ruleGroup)
-				queryable = newMockQueryable()
-				tracker   = newTestActiveQueryTracker(t, util_log.SlogFromGoKit(log.NewNopLogger()))
-				eng       = promql.NewEngine(promql.EngineOpts{
-					MaxSamples:         1e6,
-					ActiveQueryTracker: tracker,
-					Timeout:            2 * time.Minute,
-				})
-				queryFunc = rules.EngineQueryFunc(eng, queryable)
-			)
+				var (
+					options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
+					notifierManager = notifier.NewManager(&notifier.Options{
+						Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil },
+					}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
+					fs        = afero.NewMemMapFs()
+					ruleFiles = writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, ruleGroup)
+					queryable = newMockQueryable()
+					tracker   = newTestActiveQueryTracker(t, util_log.SlogFromGoKit(log.NewNopLogger()))
+					eng       = promql.NewEngine(promql.EngineOpts{
+						MaxSamples:         1e6,
+						ActiveQueryTracker: tracker,
+						Timeout:            2 * time.Minute,
+					})
+					queryFunc = rules.EngineQueryFunc(eng, queryable)
+				)
 
-			pusher := newPusherMock()
-			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
+				pusher := newPusherMock()
+				pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 
-			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
-			manager := factory(context.Background(), userID, notifierManager, options.logger, nil)
+				// Give the manager a different queryable than the query function. The manager also calls Querier to restore
+				// the alerts' state after the group's second evaluation, so with a shared queryable, queryable.called would be
+				// closed even if the rule's query never ran.
+				factory := DefaultTenantManagerFactory(cfg, pusher, newMockQueryable(), queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+				manager := factory(context.Background(), userID, notifierManager, options.logger, nil)
 
-			// Load rules into manager and start it.
-			require.NoError(t, manager.Update(time.Millisecond, ruleFiles, labels.EmptyLabels(), "", nil))
-			go manager.Run()
+				// Load rules into manager and start it.
+				require.NoError(t, manager.Update(time.Millisecond, ruleFiles, labels.EmptyLabels(), "", nil))
+				go manager.Run()
+				t.Cleanup(manager.Stop)
 
-			// Wait until the query has been executed.
-			select {
-			case <-queryable.called:
-				t.Log("query executed")
-			case <-time.NewTimer(time.Second).C:
-				require.Fail(t, "no query executed")
-			}
+				// Wait until the query has been executed. The group's first evaluation can be delayed by up to one group
+				// interval (see rules.Group.EvalTimestamp), so wait for two intervals.
+				select {
+				case <-queryable.called:
+					t.Log("query executed")
+				case <-time.NewTimer(2 * time.Second).C:
+					require.Fail(t, "no query executed")
+				}
 
-			if writeEnabled {
-				// Ensure the result has been written.
-				require.EventuallyWithT(t, func(collect *assert.CollectT) {
-					pusher.AssertCalled(test.NewCollectWithLogf(collect), "Push", mock.Anything, mock.Anything)
-				}, 5*time.Second, 100*time.Millisecond)
-			} else {
-				// Ensure no write occurred within a reasonable amount of time.
-				time.Sleep(time.Second)
-				pusher.AssertNumberOfCalls(t, "Push", 0)
-			}
-
-			manager.Stop()
-
+				if writeEnabled {
+					// Ensure the result has been written. Wait until the rule evaluation that ran the query has finished.
+					synctest.Wait()
+					pusher.AssertCalled(t, "Push", mock.Anything, mock.Anything)
+				} else {
+					// Ensure no write occurred within a reasonable amount of time.
+					time.Sleep(time.Second)
+					synctest.Wait()
+					pusher.AssertNumberOfCalls(t, "Push", 0)
+				}
+			})
 		})
 	}
 
@@ -920,6 +967,15 @@ func (m *mockQueryable) Querier(_, _ int64) (storage.Querier, error) {
 
 func mustStatusWithDetails(code codes.Code, cause mimirpb.ErrorCause) *status.Status {
 	s, err := status.New(code, "").WithDetails(&mimirpb.ErrorDetails{Cause: cause})
+	if err != nil {
+		panic(err)
+	}
+	return s
+}
+
+// mustStatusWithMessageAndDetails is like mustStatusWithDetails, for errors whose classification depends on the message.
+func mustStatusWithMessageAndDetails(code codes.Code, message string, cause mimirpb.ErrorCause) *status.Status {
+	s, err := status.New(code, message).WithDetails(&mimirpb.ErrorDetails{Cause: cause})
 	if err != nil {
 		panic(err)
 	}
@@ -1194,17 +1250,44 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 			expectedOperatorFailed: false,
 			expectedUserFailed:     true,
 		},
+		"tenant REQUEST_RATE_LIMITED push error during write (user)": {
+			writeError:             mustStatusWithMessageAndDetails(codes.ResourceExhausted, globalerror.RequestRateLimited.MessageWithPerTenantLimitConfig("request rate exceeded", "request-rate-limit"), mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED).Err(),
+			expectedOperatorFailed: false,
+			expectedUserFailed:     true,
+		},
+		"INGESTION_RATE_LIMITED push error during write (user)": {
+			writeError:             mustStatusWithDetails(codes.ResourceExhausted, mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED).Err(),
+			expectedOperatorFailed: false,
+			expectedUserFailed:     true,
+		},
+		"ACTIVE_SERIES_LIMITED push error during write (user)": {
+			writeError:             mustStatusWithDetails(codes.ResourceExhausted, mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED).Err(),
+			expectedOperatorFailed: false,
+			expectedUserFailed:     true,
+		},
+		"forwarded ingester REQUEST_RATE_LIMITED push error during write (operator)": {
+			// Ingester overload shares the request-rate cause, and the distributor forwards it as
+			// ResourceExhausted. Only the missing tenant error ID tells it apart from a tenant limit.
+			writeError:             mustStatusWithMessageAndDetails(codes.ResourceExhausted, "failed pushing to ingester <id>: limit exceeded", mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED).Err(),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
+			// Write failures need a real result sample, rather than relying on empty commits.
+			expression := "vector(1)"
+			if tc.queryError != nil {
+				expression = "up"
+			}
 			// Create a simple recording rule
 			ruleGroup := rulespb.RuleGroupDesc{
 				Name:     "test",
 				Interval: interval100ms,
 				Rules: []*rulespb.RuleDesc{{
 					Record: "test_metric",
-					Expr:   "up",
+					Expr:   expression,
 				}},
 			}
 
@@ -1255,6 +1338,10 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 			require.NoError(t, manager.Update(interval100ms, ruleFiles, labels.EmptyLabels(), "", nil))
 			go manager.Run()
 			t.Cleanup(manager.Stop)
+
+			if tc.writeError != nil {
+				require.Eventually(t, pusher.pushedNonEmptyWrite.Load, 5*time.Second, 100*time.Millisecond, "expected a nonempty write before classifying its failure")
+			}
 
 			// Wait for rule evaluation to complete and metrics to be recorded
 			if tc.expectedOperatorFailed {
