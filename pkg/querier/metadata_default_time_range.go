@@ -28,7 +28,7 @@ const formMaxMemory = 32 << 20
 type metadataDefaultTimeRangeWarningKey struct{}
 
 // MetadataDefaultTimeRange returns the default time range for series, label names, label values and search requests
-// that do not specify start or end. A request for many tenants uses the smallest non-zero value of the tenants.
+// that do not specify both start and end. A request for many tenants uses the smallest non-zero value of the tenants.
 // It returns 0 when no default applies, or when the context has no tenant.
 func MetadataDefaultTimeRange(ctx context.Context, limits *validation.Overrides) time.Duration {
 	tenantIDs, err := tenant.TenantIDs(ctx)

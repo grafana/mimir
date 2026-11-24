@@ -104,7 +104,7 @@ type Limits interface {
 	ResultsCacheTTLForLabelsQuery(userID string) time.Duration
 
 	// MetadataDefaultTimeRange returns the time range that the querier uses for series, label names and label values
-	// requests that do not specify start or end.
+	// requests that do not specify both start and end.
 	MetadataDefaultTimeRange(userID string) time.Duration
 
 	// ResultsCacheTTLForErrors returns TTL for cached non-transient errors.

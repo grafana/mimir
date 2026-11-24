@@ -1234,8 +1234,8 @@ func (o *Overrides) MaxLabelsQueryLength(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).MaxLabelsQueryLength)
 }
 
-// MetadataDefaultTimeRange returns the time range that series, label names, label values and search requests use
-// when they do not specify start or end.
+// MetadataDefaultTimeRange returns the default time range for series, label names, label values and search requests
+// that do not specify both start and end. A missing end becomes now, and a missing start becomes end minus this range.
 func (o *Overrides) MetadataDefaultTimeRange(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).MetadataDefaultTimeRange)
 }
