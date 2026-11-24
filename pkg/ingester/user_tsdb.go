@@ -95,7 +95,7 @@ type ownedSeriesState struct {
 
 type userTSDB struct {
 	cfg            *Config
-	db             *tsdb.DB
+	db             tenantEngine
 	dir            string
 	userID         string
 	activeSeries   *activeseries.ActiveSeries
@@ -180,7 +180,10 @@ type userTSDB struct {
 // generateHeadStatistics generates statistics for this user's head block.
 func (u *userTSDB) generateHeadStatistics() error {
 	// Open head block
-	head := u.db.Head()
+	head, ok := u.Head().(prometheusHead)
+	if !ok {
+		return nil
+	}
 	indexReader, err := head.Index()
 	if err != nil {
 		return fmt.Errorf("failed to open TSDB head index reader: %w", err)
@@ -211,45 +214,40 @@ func (u *userTSDB) getIndexLookupPlannerFunc() tsdb.IndexLookupPlannerFunc {
 	}
 }
 
-func (u *userTSDB) engine() tenantEngine {
-	return prometheusEngine{db: u.db, blockDuration: u.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds()}
-}
-
 // Querier returns a new querier over the data partition for the given time range.
 func (u *userTSDB) Querier(mint, maxt int64) (storage.Querier, error) {
-	return u.engine().Querier(mint, maxt)
+	return u.db.Querier(mint, maxt)
 }
 
 func (u *userTSDB) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
-	return u.engine().ChunkQuerier(mint, maxt, false)
+	return u.db.ChunkQuerier(mint, maxt, false)
 }
 
 func (u *userTSDB) UnorderedChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
-	return u.engine().ChunkQuerier(mint, maxt, true)
+	return u.db.ChunkQuerier(mint, maxt, true)
 }
 
 func (u *userTSDB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
-	return u.engine().ExemplarQuerier(ctx)
+	return u.db.ExemplarQuerier(ctx)
 }
 
 func (u *userTSDB) Head() engineHead {
-	return (prometheusEngine{db: u.db}).Head()
+	return u.db.Head()
 }
 
 func (u *userTSDB) Blocks() []*tsdb.Block {
-	return u.db.Blocks()
+	if engine, ok := u.db.(prometheusEngine); ok {
+		return engine.db.Blocks()
+	}
+	return nil
 }
 
 func (u *userTSDB) Close() error {
-	return u.engine().Close()
+	return u.db.Close()
 }
 
 func (u *userTSDB) Compact() error {
-	return u.engine().Compact(context.Background())
-}
-
-func (u *userTSDB) StartTime() (int64, error) {
-	return u.db.StartTime()
+	return u.db.Compact(context.Background())
 }
 
 // changeState atomically compare-and-swap the current state, and returns state after the operation.
@@ -322,7 +320,7 @@ func (u *userTSDB) compactHead(forcedCompactionMaxTime int64) error {
 	// (requests appending samples older than forcedMaxTime will fail until forced compaction is completed).
 	u.inFlightAppendsStartedBeforeForcedCompaction.Wait()
 
-	return u.engine().Flush(context.Background(), forcedCompactionMaxTime)
+	return u.db.Flush(context.Background(), forcedCompactionMaxTime)
 }
 
 // nextForcedHeadCompactionRange computes the next TSDB head range to compact when a forced compaction
@@ -443,11 +441,12 @@ func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) 
 
 // blocksToDelete filters the input blocks and returns the blocks which are safe to be deleted from the ingester.
 func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
-	if u.db == nil {
+	engine, ok := u.db.(prometheusEngine)
+	if !ok {
 		return nil
 	}
 
-	deletable := tsdb.DefaultBlocksToDelete(u.db)(blocks)
+	deletable := tsdb.DefaultBlocksToDelete(engine.db)(blocks)
 	result := map[ulid.ULID]struct{}{}
 	deadline := time.Now().Add(-u.blockMinRetention)
 
@@ -761,6 +760,10 @@ func (u *userTSDB) takePendingNonOwnedRefs(notAfter time.Time) []storage.SeriesR
 }
 
 func (u *userTSDB) computeOwnedSeries() int {
+	head, ok := u.Head().(prometheusHead)
+	if !ok {
+		return 0
+	}
 	// If no token ranges are assigned, all head series are non-owned.
 	// activeSeries.Clear handles the active-series state; the loop below collects
 	// refs for targeted eviction.
@@ -769,7 +772,7 @@ func (u *userTSDB) computeOwnedSeries() int {
 		u.activeSeries.Clear()
 	}
 
-	idx := u.db.Head().MustIndex()
+	idx := head.MustIndex()
 	defer idx.Close()
 
 	count := 0
@@ -781,7 +784,7 @@ func (u *userTSDB) computeOwnedSeries() int {
 		nonOwnedRefs = make(map[storage.SeriesRef]struct{})
 	}
 
-	u.db.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
+	head.ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
 		// Fast path: when no token range is owned every series in this batch is non-owned.
 		// activeSeries.Clear() above already handled the active-series side.
 		if allNonOwned {

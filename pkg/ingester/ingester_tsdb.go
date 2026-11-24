@@ -57,7 +57,7 @@ func (i *Ingester) applyTSDBSettings() {
 		if db == nil {
 			continue
 		}
-		if err := db.engine().Configure(settings); err != nil {
+		if err := db.db.Configure(settings); err != nil {
 			level.Error(i.logger).Log("msg", "failed to apply config to TSDB", "user", userID, "err", err)
 		}
 	}
@@ -152,7 +152,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		instanceErrors:          i.metrics.rejected,
 		blockMinRetention:       i.cfg.BlocksStorageConfig.TSDB.Retention,
 		useOwnedSeriesForLimits: i.cfg.UseIngesterOwnedSeriesForLimits,
-		seriesRefHistory:        newSeriesRefHistory(labelChurnRecords),
 
 		ownedState: ownedSeriesState{
 			shardSize:        ownedSeriedStateShardSize, // initialize series shard size so that it's correct even before we update ownedSeries for the first time
@@ -181,7 +180,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
-	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
+	db, err := openPrometheusEngine(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                    i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
 		MinBlockDuration:                     blockRanges[0],
 		MaxBlockDuration:                     blockRanges[len(blockRanges)-1],
@@ -219,19 +218,17 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			i.metrics.queriedBlocks.WithLabelValues(blockGeneration(b)).Inc()
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
-	}, nil)
+	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
 	}
-	db.DisableCompactions() // we will compact on our own schedule
-
 	// Run compaction before using this TSDB. If there is data in head that needs to be put into blocks,
 	// this will actually create the blocks. If there is no data (empty TSDB), this is a no-op, although
 	// local blocks compaction may still take place if configured.
 	level.Info(userLogger).Log("msg", "Running compaction after WAL replay")
 	// Note that we want to let TSDB creation finish without being interrupted by eventual context cancellation,
 	// so passing an independent context here
-	err = (prometheusEngine{db: db}).Compact(context.Background())
+	err = db.Compact(context.Background())
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to compact TSDB: %s", udir)
 	}
@@ -240,13 +237,19 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	userDB.pendingSeriesRemovals.Store(0)
 
 	userDB.db = db
+	_, isPrometheus := db.(prometheusEngine)
+	if isPrometheus {
+		userDB.seriesRefHistory = newSeriesRefHistory(labelChurnRecords)
+	}
 	// We set the limiter here because we don't want to limit
 	// series during WAL replay.
 	userDB.limiter = i.limiter
 
 	// Set a reference the head's postings for matchers cache, so that ingesters can invalidate entries
 	if i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache && i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheInvalidation {
-		userDB.postingsCache = db.Head().PostingsForMatchersCache()
+		if head, ok := db.Head().(prometheusHead); ok {
+			userDB.postingsCache = head.PostingsForMatchersCache()
+		}
 	}
 
 	// If head is empty (eg. new TSDB), don't close it right after.
@@ -265,8 +268,8 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 	userDB.setLastUpdate(lastUpdateTime)
 
-	// Create a new shipper for this database
-	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
+	// Create a shipper for engines that write Prometheus blocks.
+	if isPrometheus && i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
 		userDB.shipper = newShipper(
 			userLogger,
 			i.limits,
@@ -307,10 +310,13 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 // of non-owned series and a restart, the head can have series without any in-order sample, so its max time is
 // math.MinInt64 while local blocks hold recent data. Block max times are aligned to the block range, so the
 // result can be up to one block range newer than the newest sample.
-func newestDataTime(db *tsdb.DB) int64 {
-	t := max(db.Head().MaxTime(), db.Head().MaxOOOTime())
-	for _, b := range db.Blocks() {
-		t = max(t, b.Meta().MaxTime)
+func newestDataTime(db tenantEngine) int64 {
+	bounds := db.Head().TimeBounds()
+	t := max(bounds.MaxTime, bounds.MaxOOOTime)
+	if engine, ok := db.(prometheusEngine); ok {
+		for _, b := range engine.db.Blocks() {
+			t = max(t, b.Meta().MaxTime)
+		}
 	}
 	return t
 }

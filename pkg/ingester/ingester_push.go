@@ -396,7 +396,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		activeSeries = db.activeSeries
 	}
 
-	if err := db.engine().Ingest(&ingestContext{
+	if err := db.db.Ingest(&ingestContext{
 		Context:            ctx,
 		i:                  i,
 		userID:             userID,

@@ -7560,7 +7560,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 }
 
 func getWALReplayConcurrencyFromTSDBHeadOptions(userTSDB *userTSDB) int {
-	head := reflect.ValueOf(userTSDB.db.Head()).Elem()
+	head := reflect.ValueOf(userTSDB.Head().(prometheusHead).Head).Elem()
 	opts := head.FieldByName("opts").Elem()
 	walReplayConcurrency := opts.FieldByName("WALReplayConcurrency")
 	return int(walReplayConcurrency.Int())
@@ -7697,7 +7697,7 @@ func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInP
 
 	// Mock the shipper meta (no blocks).
 	db := i.getTSDB(userID)
-	require.NoError(t, writeShipperMetaFile(log.NewNopLogger(), db.db.Dir(), shipperMeta{
+	require.NoError(t, writeShipperMetaFile(log.NewNopLogger(), db.dir, shipperMeta{
 		Version: shipperMetaVersion1,
 	}))
 
@@ -8716,7 +8716,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	`, oldBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
 
 	// Saying that we have shipped the second block, so only that should get deleted.
-	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), shipperMeta{
+	require.Nil(t, writeShipperMetaFile(nil, db.dir, shipperMeta{
 		Version: shipperMetaVersion1,
 		Shipped: map[ulid.ULID]model.Time{oldBlocks[1].Meta().ULID: model.TimeFromUnixNano(time.Now().UnixNano())},
 	}))
@@ -8744,7 +8744,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	`, newBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
 
 	// Shipping 2 more blocks, hence all the blocks from first round.
-	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), shipperMeta{
+	require.Nil(t, writeShipperMetaFile(nil, db.dir, shipperMeta{
 		Version: shipperMetaVersion1,
 		Shipped: map[ulid.ULID]model.Time{
 			oldBlocks[1].Meta().ULID: model.TimeFromUnixNano(time.Now().UnixNano()),
@@ -8820,7 +8820,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 	`, oldBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
 
 	// Lets say that the first block was shipped 2 hours ago and the second block only 30 minutes ago.
-	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), shipperMeta{
+	require.Nil(t, writeShipperMetaFile(nil, db.dir, shipperMeta{
 		Version: shipperMetaVersion1,
 		Shipped: map[ulid.ULID]model.Time{
 			oldBlocks[0].Meta().ULID: model.TimeFromUnixNano(time.Now().Add(-2 * time.Hour).UnixNano()),
@@ -12190,7 +12190,7 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 	require.InDelta(t, time.Now().Unix(), db.getLastUpdate().Unix(), 5) // within 5 seconds of "now"
 
 	// Verify that maxTime of TSDB is actually our future sample.
-	require.Equal(t, futureTS, db.db.Head().MaxTime())
+	require.Equal(t, futureTS, db.Head().TimeBounds().MaxTime)
 }
 
 func checkErrorWithStatus(t *testing.T, err error, expectedErr error) {
@@ -12677,7 +12677,7 @@ func TestBlockGenerationCalculator(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	userDB := &userTSDB{db: db}
+	userDB := &userTSDB{db: prometheusEngine{db: db}}
 	blockGen := blockGenerationCalculator(userDB, blockRange)
 
 	testCases := []struct {
@@ -12733,7 +12733,7 @@ func TestBlockGenerationCalculator_EmptyHead(t *testing.T) {
 
 	require.Equal(t, int64(math.MaxInt64), db.Head().MinTime())
 
-	userDB := &userTSDB{db: db}
+	userDB := &userTSDB{db: prometheusEngine{db: db}}
 	blockGen := blockGenerationCalculator(userDB, blockRange)
 
 	testCases := []struct {

@@ -7,9 +7,11 @@ package ingester
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -17,6 +19,16 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+func openPrometheusEngine(dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options) (tenantEngine, error) {
+	db, err := tsdb.Open(dir, logger, reg, opts, nil)
+	if err != nil {
+		return nil, err
+	}
+	// The ingester schedules compaction alongside its other tenant maintenance.
+	db.DisableCompactions()
+	return prometheusEngine{db: db, blockDuration: opts.MinBlockDuration}, nil
+}
 
 func (e prometheusEngine) Querier(mint, maxt int64) (storage.Querier, error) {
 	return e.db.Querier(mint, maxt)
