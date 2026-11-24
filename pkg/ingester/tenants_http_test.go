@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/user"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
@@ -62,6 +64,36 @@ func TestIngester_TenantsHandlers(t *testing.T) {
 		require.Equal(t, http.StatusOK, rec.Code)
 		require.Contains(t, rec.Body.String(), "<li>Number of series: 1</li>")
 		require.Contains(t, rec.Body.String(), fmt.Sprintf(`<a href="%s/label_churn">Label churn</a>`, userID))
+	})
+
+	t.Run("tenant TSDB shows block diagnostics", func(t *testing.T) {
+		db := i.getTSDB(userID)
+		require.NoError(t, db.compactHead(math.MaxInt64))
+		blocks := db.Blocks()
+		require.Len(t, blocks, 1)
+		id := blocks[0].Meta().ULID
+
+		uploaded := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+		require.NoError(t, writeShipperMetaFile(nil, db.prometheusDB().Dir(), shipperMeta{
+			Version: shipperMetaVersion1,
+			Shipped: map[ulid.ULID]model.Time{id: model.TimeFromUnixNano(uploaded.UnixNano())},
+		}))
+		require.NoError(t, db.prometheus().updateCachedShippedBlocks())
+
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/tsdb", nil)
+		i.TenantTSDBHandler(rec, mux.SetURLVars(req, map[string]string{"tenant": userID}))
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Contains(t, rec.Body.String(), "<td>"+id.String()+"</td>")
+		require.Contains(t, rec.Body.String(), "<td>"+uploaded.Format(time.RFC3339)+"</td>")
+		rec = httptest.NewRecorder()
+		req.Header.Set("Accept", "application/json")
+		i.TenantTSDBHandler(rec, mux.SetURLVars(req, map[string]string{"tenant": userID}))
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Contains(t, rec.Body.String(), fmt.Sprintf(`"Blocks":[{"ID":%q`, id.String()))
+		require.Contains(t, rec.Body.String(), fmt.Sprintf(`"UploadedOn":%q`, uploaded.Format(time.RFC3339)))
 	})
 
 	t.Run("tenant TSDB for unknown tenant", func(t *testing.T) {

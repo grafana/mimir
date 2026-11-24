@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/prometheus/prometheus/tsdb"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -27,7 +26,6 @@ type tenantsPageContent struct {
 type tenantStats struct {
 	Tenant  string
 	Series  uint64
-	Blocks  int
 	MinTime string
 	MaxTime string
 
@@ -43,39 +41,6 @@ type tenantStats struct {
 //go:embed tenants.gohtml
 var tenantsPageHTML string
 var tenantsTemplate = template.Must(template.New("webpage").Parse(tenantsPageHTML))
-
-type tenantTSDBPageContent struct {
-	Now    time.Time
-	Tenant string
-
-	Head   tenantTSDBHeadPageContent
-	Blocks []tenantTSDBBlockPageContent
-
-	LabelChurnEnabled bool
-}
-
-type tenantTSDBHeadPageContent struct {
-	MinTime                string
-	MaxTime                string
-	NumSeries              uint64
-	AppendableMinValidTime string
-	MinOOOTime             string
-	MaxOOOTime             string
-}
-
-type tenantTSDBBlockPageContent struct {
-	ID         string
-	MinTime    string
-	MaxTime    string
-	OutOfOrder bool
-	Compaction tsdb.BlockMetaCompaction
-	Stats      tsdb.BlockStats
-	UploadedOn string
-}
-
-//go:embed tenant_tsdb.gohtml
-var tenantTSDBPageHTML string
-var tenantTSDBTemplate = template.Must(template.New("webpage").Parse(tenantTSDBPageHTML))
 
 func (i *Ingester) TenantsHandler(w http.ResponseWriter, req *http.Request) {
 	tenants := i.getTSDBUsers()
@@ -93,7 +58,6 @@ func (i *Ingester) TenantsHandler(w http.ResponseWriter, req *http.Request) {
 		s := tenantStats{}
 		s.Tenant = t
 		s.Series = db.Head().NumSeries()
-		s.Blocks = len(db.Blocks())
 		s.PastGracePeriod = i.limits.PastGracePeriod(t) + i.limits.OutOfOrderTimeWindow(t)
 		s.FutureGracePeriod = i.limits.CreationGracePeriod(t)
 
@@ -142,51 +106,7 @@ func (i *Ingester) TenantTSDBHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	head := db.Head()
-	bounds := head.TimeBounds()
-
-	c := tenantTSDBPageContent{
-		Now:    time.Now(),
-		Tenant: tenant,
-
-		Head: tenantTSDBHeadPageContent{
-			NumSeries:  head.NumSeries(),
-			MinTime:    formatMillisTime(bounds.MinTime),
-			MaxTime:    formatMillisTime(bounds.MaxTime),
-			MinOOOTime: formatMillisTime(bounds.MinOOOTime),
-			MaxOOOTime: formatMillisTime(bounds.MaxOOOTime),
-		},
-
-		LabelChurnEnabled: i.cfg.LabelChurnEnabled,
-	}
-
-	if m, ok := head.MinInOrderAppendTime(); ok {
-		c.Head.AppendableMinValidTime = formatMillisTime(m)
-	}
-
-	shipped := db.prometheus().getCachedShippedBlocks()
-
-	blocks := db.Blocks()
-	for _, b := range blocks {
-		m := b.Meta()
-
-		bc := tenantTSDBBlockPageContent{
-			ID:         m.ULID.String(),
-			MinTime:    formatMillisTime(m.MinTime),
-			MaxTime:    formatMillisTime(m.MaxTime),
-			Stats:      m.Stats,
-			OutOfOrder: m.OutOfOrder,
-			Compaction: m.Compaction,
-		}
-
-		if t, ok := shipped[m.ULID]; ok {
-			bc.UploadedOn = formatTime(t)
-		}
-
-		c.Blocks = append(c.Blocks, bc)
-	}
-
-	util.RenderHTTPResponse(w, c, tenantTSDBTemplate, req)
+	db.engine().RenderDiagnosticsPage(w, req, tenant, i.cfg.LabelChurnEnabled)
 }
 
 func formatMillisTime(t int64) string {

@@ -13,7 +13,6 @@
     <tr>
         <th>Tenant</th>
         <th>Head series</th>
-        <th>Blocks</th>
         <th>Head MinT</th>
         <th>Head MaxT</th>
         <th>Grace interval</th>
@@ -25,7 +24,6 @@
         <tr>
             <td><a href="tsdb/{{ .Tenant }}">{{ .Tenant }}</a></td>
             <td>{{.Series}}</td>
-            <td>{{.Blocks}}</td>
             <td>{{.MinTime}}</td>
             <td>{{.MaxTime}}</td>
             <td>(-{{.PastGracePeriod}}, +{{.FutureGracePeriod}})</td>

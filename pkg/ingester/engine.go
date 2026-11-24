@@ -4,11 +4,9 @@ package ingester
 
 import (
 	"context"
-	"sync"
+	"net/http"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -51,6 +49,8 @@ type tenantEngine interface {
 	BlockShippingEnabled() bool
 	// The caller must prevent idle close while ShipBlocks uses the local data.
 	ShipBlocks(ctx context.Context)
+
+	RenderDiagnosticsPage(w http.ResponseWriter, req *http.Request, tenant string, labelChurnEnabled bool)
 }
 
 // ingestContext must not be retained after Ingest returns because its bookkeeping belongs to the request.
@@ -72,17 +72,6 @@ type engineSettings struct {
 	OutOfOrderTimeWindow int64
 	MaxExemplars         int64
 	FloatChunkEncoding   string
-}
-
-type prometheusEngine struct {
-	db            *tsdb.DB
-	blockDuration int64
-
-	shippingLogger log.Logger
-	shipper        BlocksUploader
-
-	shippedBlocksMtx sync.Mutex
-	shippedBlocks    map[ulid.ULID]time.Time
 }
 
 // timeBounds are the times of the samples in the head, in milliseconds.
