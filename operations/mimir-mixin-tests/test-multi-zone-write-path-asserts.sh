@@ -28,17 +28,17 @@ GATEWAY_EXCLUSION='job!~"($namespace)/((cortex-gw.*-zone-a|cortex-gw.*-zone-b|co
 echo "Checking ${WRITES_DASHBOARD}"
 
 # Every row showing the traffic of a multi-zone write path component must contain a
-# "Latency per zone" panel next to the aggregate "Latency" panel.
+# "By zone request latency" panel next to the aggregate "Request latency" panel.
 for ROW in "Gateway - all write requests" "Gateway - Prometheus remote write requests" "Gateway - OTLP write requests" "Gateway - Influx write requests" "Distributor"; do
-  MATCHES=$(jq -r --arg row "${ROW}" '.rows[] | select(.title == $row) | .panels[] | select(.title == "Latency per zone") | .title' "${WRITES_DASHBOARD}")
+  MATCHES=$(jq -r --arg row "${ROW}" '.rows[] | select(.title == $row) | .panels[] | select(.title == "By zone request latency") | .title' "${WRITES_DASHBOARD}")
   if [ -z "$MATCHES" ]; then
-    assert_failed "The row '${ROW}' of the dashboard at ${WRITES_DASHBOARD} does not contain a 'Latency per zone' panel"
+    assert_failed "The row '${ROW}' of the dashboard at ${WRITES_DASHBOARD} does not contain a 'By zone request latency' panel"
   fi
 done
 
-MATCHES=$(jq -r '.rows[] | select(.title == "Distributor (ingest storage)") | .panels[] | select(.title == "Kafka produced records latency per zone") | .title' "${WRITES_DASHBOARD}")
+MATCHES=$(jq -r '.rows[] | select(.title == "Distributor (ingest storage)") | .panels[] | select(.title == "By zone Kafka record production latency") | .title' "${WRITES_DASHBOARD}")
 if [ -z "$MATCHES" ]; then
-  assert_failed "The row 'Distributor (ingest storage)' of the dashboard at ${WRITES_DASHBOARD} does not contain a 'Kafka produced records latency per zone' panel"
+  assert_failed "The row 'Distributor (ingest storage)' of the dashboard at ${WRITES_DASHBOARD} does not contain a 'By zone Kafka record production latency' panel"
 fi
 
 # The panels showing per-zone series must have them for every configured zone.
@@ -65,7 +65,7 @@ echo "Checking ${RULER_DASHBOARD}"
 # The per-zone panels are specific to the Writes dashboard: the Ruler dashboard, which shares the
 # Kafka produced records panels, must not show any per-zone panel and must not exclude the
 # per-zone jobs from its series.
-MATCHES=$(jq -r '.rows[].panels[] | select(.title | test("per zone")) | .title' "${RULER_DASHBOARD}")
+MATCHES=$(jq -r '.rows[].panels[] | select(.title | test("per zone|^By zone ")) | .title' "${RULER_DASHBOARD}")
 if [ -n "$MATCHES" ]; then
   assert_failed "The dashboard at ${RULER_DASHBOARD} unexpectedly contains per-zone panels:\n$MATCHES"
 fi

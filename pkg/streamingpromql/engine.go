@@ -209,6 +209,16 @@ func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts 
 	return e.newQueryFromPlanner(ctx, q, opts, qs, types.NewInstantQueryTimeRange(ts))
 }
 
+// AcquireQuerySlot implements promql.QuerySlotAcquirer. It records work that does not run a
+// query, such as query cost estimation, in the active query tracker.
+func (e *Engine) AcquireQuerySlot(ctx context.Context, qs string) (func(), error) {
+	queryID, err := e.activeQueryTracker.InsertWithDetails(ctx, qs, "cost-estimation", false, types.QueryTimeRange{})
+	if err != nil {
+		return func() {}, err
+	}
+	return func() { e.activeQueryTracker.Delete(queryID) }, nil
+}
+
 func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
 	if interval <= 0 {
 		return nil, apierror.Newf(apierror.TypeBadData, "%v is not a valid interval for a range query, must be greater than 0", interval)

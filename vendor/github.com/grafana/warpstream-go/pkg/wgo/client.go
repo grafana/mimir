@@ -154,6 +154,7 @@ func NewWarpstreamClient(logger kgo.Logger, reg prometheus.Registerer, opts ...O
 	// Publish the excluded-leader count and do not nudge: the refresh goroutine starts below.
 	// The periodic tick fetches the next snapshot.
 	c.noteLeaderDrops(dropped, false)
+	c.noteAgentAddresses(addressStats{}, false)
 	// Demoter sits on top of the lazy pool strategy so refresh-driven
 	// agent-pool changes flow through transparently while the Demoter's
 	// per-agent probe-timing state persists across refreshes.
@@ -488,6 +489,7 @@ func (c *WarpstreamClient) triggerRefresh() {
 // and leave the previous snapshot in place.
 func (c *WarpstreamClient) refreshPool(trigger metadataRefreshTrigger) {
 	before := c.pool.Agents()
+	beforeAddresses := c.pool.addresses()
 	removed, dropped, err := c.pool.refresh(c.refreshCtx)
 	c.metrics.observeMetadataRefresh(trigger, before, c.pool.Agents(), err)
 	if err != nil {
@@ -498,6 +500,7 @@ func (c *WarpstreamClient) refreshPool(trigger metadataRefreshTrigger) {
 		c.tracker.PurgeAgents(removed)
 	}
 	c.demoter.Refresh(c.pool.Agents())
+	c.noteAgentAddresses(beforeAddresses, membershipChanged(before, c.pool.Agents()))
 	// Nudge so a stand-in does not wait for the next periodic tick. Produce does
 	// not block. The refresh loop paces the follow-up.
 	c.noteLeaderDrops(dropped, true)
@@ -519,6 +522,26 @@ func (c *WarpstreamClient) noteLeaderDrops(dropped leaderDrops, nudge bool) {
 	if nudge {
 		c.triggerRefresh()
 	}
+}
+
+// noteAgentAddresses publishes the unique/shared agent split and logs when some
+// agents share an address. It logs on a membership change or when the summary
+// moved, because a membership change only compares NodeIDs and misses agents
+// that keep their NodeID but change address. prev is the snapshot from before
+// this refresh; the zero value on the constructor refresh logs a shared state
+// at startup.
+func (c *WarpstreamClient) noteAgentAddresses(prev addressStats, agentsChanged bool) {
+	cur := c.pool.addresses()
+	c.metrics.observeAgentAddresses(cur)
+	if cur.shared == 0 || (!agentsChanged && cur == prev) {
+		return
+	}
+	log(c.logger, kgo.LogLevelWarn, "warpstream agentpool: agents share an address",
+		"agents", cur.agents,
+		"agents_sharing_address", cur.shared,
+		"distinct_addresses", cur.addresses,
+		"top_shared_address", cur.top.String(),
+		"top_shared_address_agents", cur.topAgents)
 }
 
 // waitRefreshCooldown sleeps out the rest of delay. Time already spent

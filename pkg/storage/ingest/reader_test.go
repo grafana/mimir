@@ -2047,10 +2047,13 @@ func TestSingleClusterPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhen
 							consumedRecordsMx sync.Mutex
 							consumedRecords   []string
 							blocked           = atomic.NewBool(false)
+							consumerBlocked   = atomic.NewBool(false)
 						)
 
 						consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
 							if blocked.Load() {
+								consumerBlocked.Store(true)
+
 								blockedTicker := time.NewTicker(100 * time.Millisecond)
 								defer blockedTicker.Stop()
 
@@ -2148,6 +2151,14 @@ func TestSingleClusterPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhen
 
 						// Now, produce more records after the reader has started.
 						produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-3"))
+
+						// The fake Kafka cluster builds a fetch response from the records that exist when it
+						// handles the fetch, which can be after the next produce. Wait until the consumer blocks on
+						// record-3, so that record-4 comes in a later fetch and stays buffered.
+						test.Poll(t, time.Second, true, func() interface{} {
+							return consumerBlocked.Load()
+						})
+
 						produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-4"))
 						t.Log("produced 2 records")
 

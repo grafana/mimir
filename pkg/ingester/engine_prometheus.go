@@ -10,11 +10,28 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
+	promcfg "github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+func (e prometheusEngine) Querier(mint, maxt int64) (storage.Querier, error) {
+	return e.db.Querier(mint, maxt)
+}
+
+func (e prometheusEngine) ChunkQuerier(mint, maxt int64, unordered bool) (storage.ChunkQuerier, error) {
+	if unordered {
+		return e.db.UnorderedChunkQuerier(mint, maxt)
+	}
+	return e.db.ChunkQuerier(mint, maxt)
+}
+
+func (e prometheusEngine) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
+	return e.db.ExemplarQuerier(ctx)
+}
 
 func (e prometheusEngine) Ingest(ctx *ingestContext, timeseries []mimirpb.PreallocTimeseries) error {
 	i, userID, startAppend, stats := ctx.i, ctx.userID, ctx.startAppend, ctx.stats
@@ -68,6 +85,10 @@ func (e prometheusEngine) Ingest(ctx *ingestContext, timeseries []mimirpb.Preall
 	return nil
 }
 
+func (e prometheusEngine) Close() error {
+	return e.db.Close()
+}
+
 func (e prometheusEngine) Compact(ctx context.Context) error {
 	return e.db.Compact(ctx)
 }
@@ -91,4 +112,18 @@ func (e prometheusEngine) Flush(ctx context.Context, upTo int64) error {
 	}
 
 	return e.db.CompactOOOHead(ctx)
+}
+
+func (e prometheusEngine) Configure(settings engineSettings) error {
+	// DB.ApplyConfig only uses the storage settings.
+	return e.db.ApplyConfig(&promcfg.Config{
+		StorageConfig: promcfg.StorageConfig{
+			ExemplarsConfig: &promcfg.ExemplarsConfig{MaxExemplars: settings.MaxExemplars},
+			TSDBConfig: &promcfg.TSDBConfig{
+				OutOfOrderTimeWindow: settings.OutOfOrderTimeWindow,
+				// The caller resolves the default so ApplyConfig can reset the encoding when the tenant clears its limit.
+				ChunkEncoding: promcfg.ChunkEncodingConfig{Floats: settings.FloatChunkEncoding},
+			},
+		},
+	})
 }

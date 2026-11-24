@@ -109,7 +109,7 @@ func TestNewLazyStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T)
 	require.NoError(t, err)
 
 	// First, create a StreamBinaryReader to generate the sparse header file
-	origReader, err := NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, testIndexHeaderV1Config(), samplingRate, logger, NewStreamBinaryReaderMetrics(nil))
+	origReader, err := NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: samplingRate}, logger, NewStreamBinaryReaderMetrics(nil))
 	require.NoError(t, err)
 	require.NoError(t, origReader.Close())
 
@@ -138,7 +138,7 @@ func TestNewLazyStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T)
 	}
 
 	factory := func(ctx context.Context) (Reader, error) {
-		return NewStreamBinaryReader(ctx, blockID, trackedBkt, tmpDir, testIndexHeaderV1Config(), samplingRate, logger, NewStreamBinaryReaderMetrics(nil))
+		return NewStreamBinaryReader(ctx, blockID, trackedBkt, tmpDir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: samplingRate}, logger, NewStreamBinaryReaderMetrics(nil))
 	}
 
 	// Create a new StreamBinaryReader - it should use the sparse header from the object store
@@ -434,7 +434,7 @@ func testLazyBinaryReader(t *testing.T, bkt objstore.InstrumentedBucketReader, d
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 	factory := func(ctx context.Context) (Reader, error) {
-		return NewStreamBinaryReader(ctx, id, bkt, dir, testIndexHeaderV1Config(), 3, logger, NewStreamBinaryReaderMetrics(nil))
+		return NewStreamBinaryReader(ctx, id, bkt, dir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: 3}, logger, NewStreamBinaryReaderMetrics(nil))
 	}
 
 	reader, err := NewLazyBinaryReader(ctx, testIndexHeaderV1Config(), factory, logger, bkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
@@ -992,7 +992,7 @@ func BenchmarkLazyBinaryReader_LoadReader(b *testing.B) {
 			) *LazyBinaryReader {
 				ll := log.NewNopLogger()
 				diskReaderFactory := func(ctx context.Context) (Reader, error) {
-					return NewStreamBinaryReader(ctx, idIndexV2, cachingBucket, bucketDir, testIndexHeaderV1Config(), 32, ll, NewStreamBinaryReaderMetrics(nil))
+					return NewStreamBinaryReader(ctx, idIndexV2, cachingBucket, bucketDir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: 32}, ll, NewStreamBinaryReaderMetrics(nil))
 				}
 				lazyReader, err := NewLazyBinaryReader(
 					ctx, testIndexHeaderV1Config(),
@@ -1013,7 +1013,7 @@ func BenchmarkLazyBinaryReader_LoadReader(b *testing.B) {
 					Version: BinaryFormatV2,
 				}
 				splitReaderFactory := func(ctx context.Context) (Reader, error) {
-					return NewStreamBinaryReader(ctx, idIndexV2, cachingBucket, bucketDir, splitReaderCfg, 32, ll, NewStreamBinaryReaderMetrics(nil))
+					return NewStreamBinaryReader(ctx, idIndexV2, cachingBucket, bucketDir, splitReaderCfg, streamindex.SamplingConfig{Factor: 32}, ll, NewStreamBinaryReaderMetrics(nil))
 				}
 				lazyReader, err := NewLazyBinaryReader(
 					ctx, splitReaderCfg,

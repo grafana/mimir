@@ -2544,6 +2544,28 @@
         },
         {
           "kind": "field",
+          "name": "experimental_query_cost_api_enabled",
+          "required": false,
+          "desc": "Enable the experimental /api/v1/query_cost and /api/v1/query_range_cost endpoints to estimate query storage input without evaluating the query.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.experimental-query-cost-api-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "query_cost_estimated_scrape_interval",
+          "required": false,
+          "desc": "Assumed scrape interval for experimental query cost estimates. Mimir cannot determine the actual scrape interval or native histogram size through bounded storage sampling.",
+          "fieldValue": null,
+          "fieldDefaultValue": 60000000000,
+          "fieldFlag": "querier.query-cost-estimated-scrape-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent_remote_read_queries",
           "required": false,
           "desc": "Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency.",
@@ -13158,6 +13180,17 @@
               "fieldCategory": "advanced"
             },
             {
+              "kind": "field",
+              "name": "postings_offsets_in_mem_sampling_cardinality_threshold",
+              "required": false,
+              "desc": "Label cardinality above which the store holds progressively fewer postings offsets in memory for that label. Above the threshold, the number of postings offsets in memory grows logarithmically with the label cardinality, instead of linearly. The label cardinality is estimated as the number of sampled postings offsets times the sampling ratio. 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.bucket-store.posting-offsets-in-mem-sampling-cardinality-threshold",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
               "kind": "block",
               "name": "index_header",
               "required": false,
@@ -18229,6 +18262,17 @@
           "fieldValue": null,
           "fieldDefaultValue": 15000000000,
           "fieldFlag": "ruler.ring-change-max-debounce",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "shutdown_handover_period",
+          "required": false,
+          "desc": "How long the ruler keeps evaluating its rule groups on shutdown after leaving the ring, so other rulers can take them over without skipping an evaluation. Set it longer than the ring check (up to 6s) plus two full rule syncs. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.shutdown-handover-period",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },

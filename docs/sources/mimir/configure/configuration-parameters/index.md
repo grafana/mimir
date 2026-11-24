@@ -2135,6 +2135,18 @@ store_gateway_client:
 # CLI flag: -querier.experimental-search-api-enabled
 [experimental_search_api_enabled: <boolean> | default = false]
 
+# (experimental) Enable the experimental /api/v1/query_cost and
+# /api/v1/query_range_cost endpoints to estimate query storage input without
+# evaluating the query.
+# CLI flag: -querier.experimental-query-cost-api-enabled
+[experimental_query_cost_api_enabled: <boolean> | default = false]
+
+# (experimental) Assumed scrape interval for experimental query cost estimates.
+# Mimir cannot determine the actual scrape interval or native histogram size
+# through bounded storage sampling.
+# CLI flag: -querier.query-cost-estimated-scrape-interval
+[query_cost_estimated_scrape_interval: <duration> | default = 1m]
+
 # (advanced) Maximum number of remote read queries that can be executed
 # concurrently. 0 or negative values mean unlimited concurrency.
 # CLI flag: -querier.max-concurrent-remote-read-queries
@@ -3277,6 +3289,13 @@ tenant_federation:
 # -ruler.ring-change-debounce is greater than 0.
 # CLI flag: -ruler.ring-change-max-debounce
 [ring_change_max_debounce: <duration> | default = 15s]
+
+# (experimental) How long the ruler keeps evaluating its rule groups on shutdown
+# after leaving the ring, so other rulers can take them over without skipping an
+# evaluation. Set it longer than the ring check (up to 6s) plus two full rule
+# syncs. 0 to disable.
+# CLI flag: -ruler.shutdown-handover-period
+[shutdown_handover_period: <duration> | default = 0s]
 
 # (experimental) Number of rules rules that don't have dependencies that we
 # allow to be evaluated concurrently across all tenants. 0 to disable.
@@ -6568,6 +6587,14 @@ bucket_store:
   # will hold in memory.
   # CLI flag: -blocks-storage.bucket-store.posting-offsets-in-mem-sampling
   [postings_offsets_in_mem_sampling: <int> | default = 32]
+
+  # (experimental) Label cardinality above which the store holds progressively
+  # fewer postings offsets in memory for that label. Above the threshold, the
+  # number of postings offsets in memory grows logarithmically with the label
+  # cardinality, instead of linearly. The label cardinality is estimated as the
+  # number of sampled postings offsets times the sampling ratio. 0 to disable.
+  # CLI flag: -blocks-storage.bucket-store.posting-offsets-in-mem-sampling-cardinality-threshold
+  [postings_offsets_in_mem_sampling_cardinality_threshold: <int> | default = 0]
 
   index_header:
     # (deprecated) Maximum number of idle file handles the store-gateway keeps

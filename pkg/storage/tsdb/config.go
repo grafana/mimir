@@ -109,6 +109,7 @@ var (
 	errInvalidWALReplayConcurrency                  = errors.New("invalid TSDB WAL replay concurrency")
 	errInvalidStripeSize                            = errors.New("invalid TSDB stripe size")
 	errInvalidStreamingBatchSize                    = errors.New("invalid store-gateway streaming batch size")
+	errInvalidPostingOffsetsCardinalityThreshold    = errors.New("invalid store-gateway posting offsets in-memory sampling cardinality threshold")
 	errInvalidEarlyHeadCompactionMinSeriesReduction = errors.New("early compaction minimum series reduction percentage must be a value between 0 and 100 (included)")
 	errEarlyCompactionRequiresActiveSeries          = fmt.Errorf("early compaction requires -%s to be enabled", activeseries.EnabledFlag)
 	errEmptyBlockranges                             = errors.New("empty block ranges for TSDB")
@@ -451,6 +452,10 @@ type BucketStoreConfig struct {
 	// 1 will keep all in memory. Default value is the same as in Prometheus which gives a good balance.
 	PostingOffsetsInMemSampling int `yaml:"postings_offsets_in_mem_sampling" category:"advanced"`
 
+	// Reduces the growth rate of in-memory postings offsets for labels with very high cardinality.
+	// Without it, such labels dominate the retained memory of loaded index-headers.
+	PostingOffsetsInMemSamplingCardinalityThreshold int `yaml:"postings_offsets_in_mem_sampling_cardinality_threshold" category:"experimental"`
+
 	// Controls advanced options for index-header file reading.
 	IndexHeader indexheader.Config `yaml:"index_header" category:"advanced"`
 
@@ -481,6 +486,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 		"This ensures queriers still query blocks that are meant to be deleted but do not have a replacement yet.")
 	f.DurationVar(&cfg.IgnoreBlocksWithin, "blocks-storage.bucket-store.ignore-blocks-within", 10*time.Hour, "Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter.")
 	f.IntVar(&cfg.PostingOffsetsInMemSampling, "blocks-storage.bucket-store.posting-offsets-in-mem-sampling", DefaultPostingOffsetInMemorySampling, "Controls what is the ratio of postings offsets that the store will hold in memory.")
+	f.IntVar(&cfg.PostingOffsetsInMemSamplingCardinalityThreshold, "blocks-storage.bucket-store.posting-offsets-in-mem-sampling-cardinality-threshold", 0, "Label cardinality above which the store holds progressively fewer postings offsets in memory for that label. Above the threshold, the number of postings offsets in memory grows logarithmically with the label cardinality, instead of linearly. The label cardinality is estimated as the number of sampled postings offsets times the sampling ratio. 0 to disable.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytesChunks, "blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks", 0, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. Overrides the 'bucket-store.partitioner-max-gap-bytes' when requesting chunks")
 	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "This option controls how many series to fetch per batch. The batch size must be greater than 0.")
@@ -491,6 +497,9 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 func (cfg *BucketStoreConfig) Validate() error {
 	if cfg.StreamingBatchSize <= 0 {
 		return errInvalidStreamingBatchSize
+	}
+	if cfg.PostingOffsetsInMemSamplingCardinalityThreshold < 0 {
+		return errInvalidPostingOffsetsCardinalityThreshold
 	}
 	if cfg.IgnoreDeletionMarksWhileQueryingDelay >= cfg.IgnoreDeletionMarksInStoreGatewayDelay {
 		// If we ignore deletion marks for longer while querying, we'll try to query blocks that store-gateways have

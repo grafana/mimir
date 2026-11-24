@@ -353,8 +353,16 @@ func SparsePostingsOffsetsTableToProto(
 	return proto
 }
 
-// SparsePostingsOffsetsTableFromProto loads the protobuf format to in-memory sparse postings offsets data
-func SparsePostingsOffsetsTableFromProto(proto *indexheaderpb.PostingOffsetTable, sparseSampleFactor int) (
+// SamplingConfig controls which postings offsets table entries the sparse index-header keeps in memory.
+type SamplingConfig struct {
+	// Factor is the ratio of postings offsets kept in memory: one in every Factor entries.
+	Factor int
+	// CardinalityThreshold is the estimated label cardinality above which a label keeps fewer sampled entries.
+	CardinalityThreshold int
+}
+
+// SparsePostingsOffsetsTableFromProto loads the protobuf format to in-memory sparse postings offsets data.
+func SparsePostingsOffsetsTableFromProto(proto *indexheaderpb.PostingOffsetTable, sampling SamplingConfig) (
 	sparsePostingsOffsets map[string]*SparseTableOffsetsForLabel, err error,
 ) {
 	protoSampleFactor := int(proto.GetPostingOffsetInMemorySampling())
@@ -362,20 +370,19 @@ func SparsePostingsOffsetsTableFromProto(proto *indexheaderpb.PostingOffsetTable
 		return nil, fmt.Errorf("sparse index-header sampling rate not set")
 	}
 
-	if protoSampleFactor > sparseSampleFactor {
+	if protoSampleFactor > sampling.Factor {
 		return nil, fmt.Errorf("sparse index-header sampling rate exceeds in-mem-sampling rate")
 	}
 
 	// if the sampling rate in the sparse index-header is set lower (more frequent) than
-	// the configured sparseSampleFactor we downsample to the configured rate
-	step, ok := stepSize(protoSampleFactor, sparseSampleFactor)
+	// the configured sampling factor we downsample to the configured rate
+	step, ok := stepSize(protoSampleFactor, sampling.Factor)
 	if !ok {
 		return nil, fmt.Errorf("sparse index-header sampling rate not compatible with in-mem-sampling rate")
 	}
 
 	sparsePostingsOffsets = make(map[string]*SparseTableOffsetsForLabel, len(proto.Postings))
 	for sName, sOffsets := range proto.Postings {
-
 		olen := len(sOffsets.Offsets)
 		downsampledLen := (olen + step - 1) / step
 		if (olen > 1) && (downsampledLen == 1) {
@@ -394,20 +401,51 @@ func SparsePostingsOffsetsTableFromProto(proto *indexheaderpb.PostingOffsetTable
 			return k * step
 		}
 
-		valueBytes := 0
-		for k := 0; k < downsampledLen; k++ {
-			valueBytes += len(sOffsets.Offsets[srcIdx(k)].Value)
+		// Lookups don't assume a fixed stride between sampled entries, so out of the downsampled entries
+		// we pick retainedLen evenly spaced ones, including the first and the last.
+		retainedLen := cardinalityCappedLen(downsampledLen, sampling.Factor, sampling.CardinalityThreshold)
+		retainedIdx := func(k int) int {
+			if retainedLen <= 1 {
+				return srcIdx(0)
+			}
+			return srcIdx(k * (downsampledLen - 1) / (retainedLen - 1))
 		}
-		offsets.grow(downsampledLen, valueBytes)
 
-		for k := 0; k < downsampledLen; k++ {
-			sPostingOff := sOffsets.Offsets[srcIdx(k)]
+		valueBytes := 0
+		for k := range retainedLen {
+			valueBytes += len(sOffsets.Offsets[retainedIdx(k)].Value)
+		}
+		offsets.grow(retainedLen, valueBytes)
+
+		for k := range retainedLen {
+			sPostingOff := sOffsets.Offsets[retainedIdx(k)]
 			if err := offsets.appendOffset(sPostingOff.Value, sPostingOff.TableOff); err != nil {
 				return nil, err
 			}
 		}
 	}
 	return sparsePostingsOffsets, err
+}
+
+// cardinalityCappedLen returns the number of sampled entries to retain for a label with n sampled entries.
+// The label's cardinality is estimated as n*sampleFactor. Up to the threshold, all n entries are retained.
+// Above it, the retained count grows logarithmically. Both the count and its slope are continuous at the threshold,
+// so a label with more values never retains fewer entries than a label with fewer values.
+func cardinalityCappedLen(n, sampleFactor, threshold int) int {
+	if threshold <= 0 {
+		return n
+	}
+	// At least the first and the last entries are always retained.
+	nCap := max(threshold/sampleFactor, 2)
+	if n <= nCap {
+		return n
+	}
+	// Above nCap, the retained count is nCap*(1+ln(n/nCap)).
+	// At n = nCap it equals nCap, the same as the uncapped count n, so there is no jump at the threshold.
+	// Each extra sampled entry adds nCap/n retained entries: 1 at the threshold, and less as n grows.
+	// So the retained count always increases with n, but slower and slower.
+	// Because ln(x) <= x-1, the formula never exceeds n; min only guards against float rounding.
+	return min(n, int(float64(nCap)*(1+math.Log(float64(n)/float64(nCap)))))
 }
 
 func stepSize(cur, tgt int) (int, bool) {

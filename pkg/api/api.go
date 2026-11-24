@@ -365,7 +365,8 @@ func (a *API) RegisterIngester(i ingester.API) {
 
 	a.RegisterRoute("/ingester/tenants", http.HandlerFunc(i.TenantsHandler), false, true, "GET")
 	a.RegisterRoute("/ingester/tsdb/{tenant}", http.HandlerFunc(i.TenantTSDBHandler), false, true, "GET")
-	a.RegisterRoute("/ingester/label_churn/{tenant}", http.HandlerFunc(i.LabelChurnHandler), false, true, "GET")
+	a.RegisterRoute("/ingester/tsdb/{tenant}/label_churn", http.HandlerFunc(i.LabelChurnPageHandler), false, true, "GET")
+	a.RegisterRoute("/ingester/tsdb/{tenant}/label_churn.json", http.HandlerFunc(i.LabelChurnHandler), false, true, "GET")
 }
 
 // RegisterRuler registers routes associated with the Ruler service.
@@ -514,6 +515,8 @@ func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handl
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/read"), handler, true, true, maxBodySizeIfAny, "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query_range"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query_cost"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query_range_cost"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query_exemplars"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/labels"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/label/{name}/values"), handler, true, true, maxBodySizeIfAny, "GET")

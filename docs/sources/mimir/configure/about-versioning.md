@@ -94,6 +94,7 @@ The following features are currently experimental:
   - Debounce ring-change-triggered rule syncs.
     - `-ruler.ring-change-debounce`
     - `-ruler.ring-change-max-debounce`
+  - Keep evaluating rule groups on shutdown after leaving the ring, so other rulers can take them over (`-ruler.shutdown-handover-period`)
   - `-ruler.min-rule-evaluation-interval`
   - Attach headers identifying the rule being evaluated to the queries sent to the query-frontend.
     - `-ruler.query-frontend.enable-rule-detail-headers`
@@ -239,6 +240,9 @@ The following features are currently experimental:
   - Kafka write request timeout overhead
     - `-ingest-storage.kafka.write-timeout-overhead`
 - Querier
+  - [Query cost estimation HTTP endpoints](../../references/http-api/#query-cost) `/api/v1/query_cost` and `/api/v1/query_range_cost`
+    - `-querier.experimental-query-cost-api-enabled`
+    - `-querier.query-cost-estimated-scrape-interval`
   - Streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}` returning NDJSON, mirroring the [Prometheus search API](https://github.com/prometheus/prometheus/pull/18573) (`-querier.experimental-search-api-enabled`).
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-querier.query-engine` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
@@ -293,6 +297,7 @@ The following features are currently experimental:
   - Per-zone shard size, useful for computing automatic shard sizes based on the number of zone `-store-gateway.tenant-shard-size-per-zone`
   - Specify the partitioner gap size for chunks (excluding posting & series) `-blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks`
   - Load only symbols table onto disk index-header `-blocks-storage.bucket-store.index-header.version=2`
+  - Logarithmic in-memory postings offsets sampling for high-cardinality labels `-blocks-storage.bucket-store.posting-offsets-in-mem-sampling-cardinality-threshold`
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`
