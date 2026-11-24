@@ -49,8 +49,8 @@ func newLabelsQueryCacheRoundTripper(
 		if err != nil {
 			return nil, err
 		}
-		// The querier replaces a missing start or end with a range that depends on the time of the request, and
-		// adds a warning with that range to the response. The cache key cannot hold that range, so the response
+		// The cache key uses MinTime for a missing start and MaxTime for a missing end. The querier replaces them
+		// with the default range instead, and adds a warning with that range to the response. Thus the response
 		// must not be cached.
 		if validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, limits.MetadataDefaultTimeRange) > 0 {
 			params, err := util.ParseRequestFormWithoutConsumingBody(r)

@@ -158,11 +158,15 @@ type searchTrailerEnvelope struct {
 }
 
 // searchErrorEnvelope is the final NDJSON line when iteration fails after at
-// least one batch has been flushed. Mirrors Prometheus's error trailer shape.
+// least one batch has been flushed. It has the fields of the Prometheus error
+// trailer, and also Warnings, which Prometheus does not have.
 type searchErrorEnvelope struct {
 	Status    string `json:"status"`
 	ErrorType string `json:"errorType"`
 	Error     string `json:"error"`
+	// Warnings holds the metadata default time range warning when iteration fails after a batch, because the client
+	// already has results from that range.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // searchRequest holds the parsed, validated query parameters for one search
@@ -757,11 +761,15 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 	// Prometheus' respondPreStreamSearchError.
 	if err := rs.Err(); err != nil {
 		if flushedAny {
-			_ = enc.Encode(searchErrorEnvelope{
+			errEnv := searchErrorEnvelope{
 				Status:    "error",
 				ErrorType: searchErrorType(err),
 				Error:     err.Error(),
-			})
+			}
+			if req.rangeWarning != nil {
+				errEnv.Warnings = []string{req.rangeWarning.Error()}
+			}
+			_ = enc.Encode(errEnv)
 			if flusher != nil {
 				flusher.Flush()
 			}

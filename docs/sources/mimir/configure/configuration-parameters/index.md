@@ -5008,11 +5008,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # start nor end queries from now minus this value to now. A request with only
 # end queries from end minus this value to end. A request with only start
 # queries from start to now. A request with both start and end does not change.
-# The response to a changed request includes a warning that shows the applied
-# range. 0 to disable. When disabled, a missing start or end does not limit the
-# range of the series, label names and label values endpoints. The search
-# endpoints then use a default start of one hour before now and a default end of
-# now.
+# The response to a changed request includes a warning that shows the default
+# range. Other limits, such as -store.max-labels-query-length and
+# -querier.max-query-lookback, can make the queried range shorter. 0 to disable.
+# When disabled, the series, label names and label values endpoints use the
+# earliest possible time for a missing start, and the latest possible time for a
+# missing end. The search endpoints then use a default start of one hour before
+# now and a default end of now.
 # CLI flag: -querier.metadata-default-time-range
 [metadata_default_time_range: <duration> | default = 0s]
 

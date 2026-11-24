@@ -1022,40 +1022,51 @@ func TestSearchHandlers_MetadataDefaultTimeRangeWarning(t *testing.T) {
 		tenantLimits["test"] = validation.MockDefaultLimits()
 		tenantLimits["test"].MetadataDefaultTimeRange = model.Duration(2 * time.Hour)
 	})
-	results := func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
-		return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("a", 1)}, nil)
-	}
-	valueResults := func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
-		return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("a", 1)}, nil)
-	}
 
-	for name, tc := range map[string]struct {
-		handler http.Handler
-		target  string
-	}{
-		"label names": {
-			handler: SearchLabelNamesHandler(newSearchMockQueryable(&searchMockQuerier{namesFn: results}), enabledSearchConfig(), limits),
-			target:  "/api/v1/search/label_names?end=10800",
-		},
-		"label values": {
-			handler: SearchLabelValuesHandler(newSearchMockQueryable(&searchMockQuerier{valuesFn: valueResults}), enabledSearchConfig(), limits),
-			target:  "/api/v1/search/label_values?label=job&end=10800",
-		},
-		"metric names": {
-			handler: SearchMetricNamesHandler(newSearchMockQueryable(&searchMockQuerier{valuesFn: valueResults}), enabledSearchConfig(), limits, log.NewNopLogger()),
-			target:  "/api/v1/search/metric_names?end=10800",
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			w := httptest.NewRecorder()
-			tc.handler.ServeHTTP(w, newSearchHandlerRequest(t, tc.target))
-			require.Equal(t, http.StatusOK, w.Code)
+	for _, iterErr := range []error{nil, errors.New("iteration failed")} {
+		results := func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSliceAndError([]storage.SearchResult{sr("a", 1)}, nil, iterErr)
+		}
+		valueResults := func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSliceAndError([]storage.SearchResult{sr("a", 1)}, nil, iterErr)
+		}
 
-			lines := drainNDJSON(t, w.Body.String())
-			trailer := lines[len(lines)-1]
-			assert.Equal(t, "success", trailer["status"])
-			assert.Equal(t, []any{"start or end not given, applied a default: start=1970-01-01T01:00:00Z, end=1970-01-01T03:00:00Z"}, trailer["warnings"])
-		})
+		for name, tc := range map[string]struct {
+			handler http.Handler
+			target  string
+		}{
+			"label names": {
+				handler: SearchLabelNamesHandler(newSearchMockQueryable(&searchMockQuerier{namesFn: results}), enabledSearchConfig(), limits),
+				target:  "/api/v1/search/label_names?end=10800",
+			},
+			"label values": {
+				handler: SearchLabelValuesHandler(newSearchMockQueryable(&searchMockQuerier{valuesFn: valueResults}), enabledSearchConfig(), limits),
+				target:  "/api/v1/search/label_values?label=job&end=10800",
+			},
+			"metric names": {
+				handler: SearchMetricNamesHandler(newSearchMockQueryable(&searchMockQuerier{valuesFn: valueResults}), enabledSearchConfig(), limits, log.NewNopLogger()),
+				target:  "/api/v1/search/metric_names?end=10800",
+			},
+		} {
+			t.Run(fmt.Sprintf("%s, iteration error: %v", name, iterErr), func(t *testing.T) {
+				w := httptest.NewRecorder()
+				tc.handler.ServeHTTP(w, newSearchHandlerRequest(t, tc.target))
+				require.Equal(t, http.StatusOK, w.Code)
+
+				lines := drainNDJSON(t, w.Body.String())
+				require.Len(t, lines, 2)
+				assert.Len(t, lines[0]["results"], 1)
+				trailer := lines[1]
+				if iterErr == nil {
+					assert.Equal(t, "success", trailer["status"])
+				} else {
+					// The client already has results from the default range, so the error trailer also has the warning.
+					assert.Equal(t, "error", trailer["status"])
+					assert.Equal(t, iterErr.Error(), trailer["error"])
+				}
+				assert.Equal(t, []any{"start or end not given, applied a default: start=1970-01-01T01:00:00Z, end=1970-01-01T03:00:00Z"}, trailer["warnings"])
+			})
+		}
 	}
 }
 

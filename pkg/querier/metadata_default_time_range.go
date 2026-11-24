@@ -69,8 +69,8 @@ func NewMetadataDefaultTimeRangeMiddleware(limits *validation.Overrides) middlew
 				return
 			}
 
-			// Prometheus cannot parse the form again after this, because the body is consumed. Thus the error must
-			// be reported here.
+			// Prometheus does not see this error, because after the first call sets r.Form, a second call to
+			// ParseForm returns nil. Thus the error must be reported here.
 			if err := r.ParseForm(); err != nil {
 				writeMetadataDefaultTimeRangeError(w, fmt.Errorf("error parsing form values: %w", err))
 				return
