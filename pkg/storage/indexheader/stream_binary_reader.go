@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -75,11 +75,13 @@ type StreamBinaryReader struct {
 
 	// Direct cache of resolved symbol lookups values;
 	// Much faster than an LRU cache and still provides a reasonable cache hit ratio.
-	valueSymbolsMx sync.Mutex
-	valueSymbols   [valueSymbolsCacheSize]struct {
-		index  uint32
-		symbol string
-	}
+	// Entries are immutable so lookups don't need a lock.
+	valueSymbols [valueSymbolsCacheSize]atomic.Pointer[valueSymbolEntry]
+}
+
+type valueSymbolEntry struct {
+	index  uint32
+	symbol string
 }
 
 // newSetupSpan starts a child span for a setup phase of NewStreamBinaryReader,
@@ -395,24 +397,17 @@ func (r *StreamBinaryReader) LookupSymbol(_ context.Context, o uint32) (string, 
 	}
 
 	cacheIndex := o % valueSymbolsCacheSize
-	r.valueSymbolsMx.Lock()
-	if cached := r.valueSymbols[cacheIndex]; cached.index == o && cached.symbol != "" {
-		v := cached.symbol
-		r.valueSymbolsMx.Unlock()
-		return v, nil
+	slot := &r.valueSymbols[cacheIndex]
+	if cached := slot.Load(); cached != nil && cached.index == o {
+		return cached.symbol, nil
 	}
-	r.valueSymbolsMx.Unlock()
 
 	s, err := r.symbolsTable.Lookup(o)
 	if err != nil {
 		return s, err
 	}
 
-	r.valueSymbolsMx.Lock()
-	r.valueSymbols[cacheIndex].index = o
-	r.valueSymbols[cacheIndex].symbol = s
-	r.valueSymbolsMx.Unlock()
-
+	slot.Store(&valueSymbolEntry{index: o, symbol: s})
 	return s, nil
 }
 

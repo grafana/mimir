@@ -113,6 +113,7 @@
 * [ENHANCEMENT] Query-frontend: Queries using the `info()` function are now shardable. #16255
 * [ENHANCEMENT] Mimirtool: Backfill block verification modules are now shard-aware. #16920
 * [ENHANCEMENT] Store-gateway: Reduce the CPU overhead and latency when reading lazy-loaded index-headers. #17126
+* [ENHANCEMENT] Store-gateway: Reduce lock contention when looking up label value symbols from index-headers. #17491
 * [ENHANCEMENT] Querier: The experimental search API endpoints `/api/v1/search/{metric_names,label_names,label_values}` add a `returned` field to the success trailer. It holds the number of results in the response. #17145
 * [ENHANCEMENT] MQE: Include the temporary copy of each output series' labels made by one-to-one and `group_left`/`group_right` binary operations in the per-query memory consumption estimate, so that queries producing many output series are rejected before they exhaust memory. #17125
 * [ENHANCEMENT] Querier: Queries that read from long-term storage use less CPU when the tenant has many blocks marked for deletion. #17274

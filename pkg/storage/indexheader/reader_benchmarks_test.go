@@ -5,6 +5,7 @@ package indexheader
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math/rand"
 	"path/filepath"
 	"slices"
@@ -121,6 +122,102 @@ func BenchmarkLazyBinaryReader_LookupSymbol(b *testing.B) {
 				})
 			})
 		}
+	}
+}
+
+func BenchmarkStreamBinaryReader_LookupValueSymbol(b *testing.B) {
+	ctx := b.Context()
+
+	bucketDir := b.TempDir()
+	bkt, err := filesystem.NewBucket(filepath.Join(bucketDir, "bkt"))
+	require.NoError(b, err)
+	instrBkt := objstore.WithNoopInstr(bkt)
+	b.Cleanup(func() { require.NoError(b, instrBkt.Close()) })
+
+	const valuesPerSlot = 4
+	valueSymbols := generateSymbols("value", valuesPerSlot*valueSymbolsCacheSize)
+	id, err := block.CreateBlock(ctx, bucketDir, generateLabels([]string{"name"}, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
+	require.NoError(b, err)
+	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, id.String()), nil)
+	require.NoError(b, err)
+	require.NoError(b, WriteBinary(ctx, bkt, id, filepath.Join(bucketDir, id.String()), BinaryFormatV1))
+
+	r, err := NewStreamBinaryReader(ctx, id, instrBkt, bucketDir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: 32}, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, r.Close()) })
+
+	_, symbolByIndex := reverseLookup(b, r, valueSymbols)
+	bySlot := make([][]uint32, valueSymbolsCacheSize)
+	expected := make([]string, slices.Max(slices.Collect(maps.Keys(symbolByIndex)))+1)
+	for idx, sym := range symbolByIndex {
+		expected[idx] = sym
+		bySlot[idx%valueSymbolsCacheSize] = append(bySlot[idx%valueSymbolsCacheSize], idx)
+	}
+	for _, s := range bySlot {
+		require.Len(b, s, valuesPerSlot)
+		slices.Sort(s)
+	}
+
+	// Slot-major order so consecutive lookups of the same slot use different indices.
+	workload := func(perSlot int) []uint32 {
+		var w []uint32
+		for k := 0; k < perSlot; k++ {
+			for _, s := range bySlot {
+				w = append(w, s[k])
+			}
+		}
+		return w
+	}
+
+	// Each lookup picks one of two indices sharing a random slot, so ~50% are hits.
+	random := rand.New(rand.NewSource(1))
+	mixed := make([]uint32, 1<<16)
+	for i := range mixed {
+		mixed[i] = bySlot[random.Intn(valueSymbolsCacheSize)][random.Intn(2)]
+	}
+
+	for _, tc := range []struct {
+		name    string
+		indices []uint32
+	}{
+		{"hit", workload(1)},
+		{"mixed", mixed},
+		{"miss", workload(valuesPerSlot)},
+	} {
+		lookup := func(b *testing.B, i int) {
+			idx := tc.indices[i%len(tc.indices)]
+			s, err := r.LookupSymbol(ctx, idx)
+			if err != nil || s != expected[idx] {
+				require.NoError(b, err)
+				require.Equal(b, expected[idx], s)
+			}
+		}
+
+		b.Run(fmt.Sprintf("cache=%s/mode=serial", tc.name), func(b *testing.B) {
+			for i := range tc.indices {
+				lookup(b, i)
+			}
+			b.ReportAllocs()
+			i := 0
+			for b.Loop() {
+				lookup(b, i)
+				i++
+			}
+		})
+		b.Run(fmt.Sprintf("cache=%s/mode=parallel", tc.name), func(b *testing.B) {
+			for i := range tc.indices {
+				lookup(b, i)
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				i := rand.Int()
+				for pb.Next() {
+					lookup(b, i)
+					i++
+				}
+			})
+		})
 	}
 }
 

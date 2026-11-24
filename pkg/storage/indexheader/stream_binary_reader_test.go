@@ -5,10 +5,13 @@ package indexheader
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -139,6 +142,56 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 			})
 		}
 	}
+}
+
+func TestStreamBinaryReader_LookupSymbolConcurrent(t *testing.T) {
+	ctx := t.Context()
+
+	tmpDir := t.TempDir()
+	ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	require.NoError(t, err)
+	bkt := objstore.WithNoopInstr(ubkt)
+	requireCleanup(t, bkt.Close)
+
+	valueSymbols := generateSymbols("value", 3*valueSymbolsCacheSize)
+	blockID, err := block.CreateBlock(ctx, tmpDir, generateLabels([]string{"name"}, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
+	require.NoError(t, err)
+	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil)
+	require.NoError(t, err)
+
+	r, err := NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: 32}, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+	require.NoError(t, err)
+	requireCleanup(t, r.Close)
+
+	var expected []string
+	for o := uint32(0); ; o++ {
+		s, err := r.symbolsTable.Lookup(o)
+		if errors.Is(err, streamindex.ErrSymbolNotFound) {
+			break
+		}
+		require.NoError(t, err)
+		expected = append(expected, s)
+	}
+	require.Greater(t, len(expected), 2*valueSymbolsCacheSize)
+
+	// Lookups of offsets sharing a cache slot race to hit, miss and overwrite it.
+	var wg sync.WaitGroup
+	for g := range 8 {
+		wg.Go(func() {
+			random := rand.New(rand.NewSource(int64(g)))
+			for range 2000 {
+				o := uint32(random.Intn(len(expected)))
+				s, err := r.LookupSymbol(ctx, o)
+				if !assert.NoError(t, err) || !assert.Equal(t, expected[o], s, "offset %d", o) {
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
+
+	_, err = r.LookupSymbol(ctx, uint32(len(expected)))
+	require.ErrorIs(t, err, streamindex.ErrSymbolNotFound)
 }
 
 func TestStreamBinaryReader_LabelValuesOffsetsHonorsContextCancel(t *testing.T) {
