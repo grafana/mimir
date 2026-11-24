@@ -719,6 +719,15 @@ func TestStringCacheKeys_Values(t *testing.T) {
 			key:      seriesForRefCacheKey(user, uid, 12345),
 			expected: fmt.Sprintf("S:%s:%s:12345", user, uid.String()),
 		},
+		"should keep the label values cache key of a valid label name": {
+			key: labelValuesCacheKey(user, uid, "foo", LabelMatchersKey("foo=bar")),
+			expected: func() string {
+				hash := blake2b.Sum256([]byte("foo=bar"))
+				encodedHash := base64.RawURLEncoding.EncodeToString(hash[0:])
+
+				return fmt.Sprintf("LV2:%s:%s:foo:%s", user, uid.String(), encodedHash)
+			}(),
+		},
 	}
 
 	for testName, testData := range tests {
@@ -727,6 +736,67 @@ func TestStringCacheKeys_Values(t *testing.T) {
 			assert.Equal(t, testData.expected, actual)
 		})
 	}
+}
+
+func TestStringCacheKeys_ShouldBeValidMemcachedKeys(t *testing.T) {
+	t.Parallel()
+
+	uid := ulid.MustNew(1, nil)
+	// The longest tenant ID that dskit allows.
+	longestTenant := strings.Repeat("t", 150)
+	matchersKey := LabelMatchersKey("foo=bar")
+
+	tests := map[string]string{
+		"label values with a trailing space in the label name": labelValuesCacheKey("tenant", uid, "foo ", matchersKey),
+		"label values with a space in the label name":          labelValuesCacheKey("tenant", uid, "foo bar", matchersKey),
+		"label values with a new line in the label name":       labelValuesCacheKey("tenant", uid, "foo\nbar", matchersKey),
+		"label values with a DEL byte in the label name":       labelValuesCacheKey("tenant", uid, "foo\x7f", matchersKey),
+		"label values with a long label name":                  labelValuesCacheKey("tenant", uid, strings.Repeat("a", 300), matchersKey),
+		"label values with the longest tenant ID":              labelValuesCacheKey(longestTenant, uid, strings.Repeat("a", 30), matchersKey),
+		"label names with the longest tenant ID":               labelNamesCacheKey(longestTenant, uid, matchersKey),
+		"postings with spaces in the label":                    postingsCacheKey("tenant", uid.String(), labels.Label{Name: "a b", Value: "c d"}),
+	}
+
+	for testName, key := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Truef(t, isValidMemcachedKey(key), "memcached rejects key %q (%d bytes)", key, len(key))
+		})
+	}
+}
+
+func TestLabelValuesCacheKey_ShouldNotCollideForInvalidLabelNames(t *testing.T) {
+	t.Parallel()
+
+	uid := ulid.MustNew(1, nil)
+
+	// The label name and the matchers key join to the same string in each pair.
+	keys := []string{
+		labelValuesCacheKey("tenant", uid, "a b", LabelMatchersKey("c")),
+		labelValuesCacheKey("tenant", uid, "a ", LabelMatchersKey("bc")),
+		labelValuesCacheKey("tenant", uid, "a b", LabelMatchersKey("d")),
+		labelValuesCacheKey("other", uid, "a b", LabelMatchersKey("c")),
+		labelValuesCacheKey("tenant", ulid.MustNew(2, nil), "a b", LabelMatchersKey("c")),
+	}
+
+	unique := map[string]struct{}{}
+	for _, key := range keys {
+		unique[key] = struct{}{}
+	}
+	assert.Len(t, unique, len(keys))
+}
+
+// isValidMemcachedKey follows the key rule of the memcached text protocol:
+// at most 250 bytes, with no space, control character or DEL byte.
+func isValidMemcachedKey(key string) bool {
+	if len(key) > 250 {
+		return false
+	}
+	for i := 0; i < len(key); i++ {
+		if key[i] <= ' ' || key[i] == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 func TestStringCacheKeys_ShouldGuaranteeReasonablyShortKeysLength(t *testing.T) {
