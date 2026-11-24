@@ -15,6 +15,77 @@ eval instant at 5m sum by () (max by (cluster, namespace) (some_metric)) - sum b
 
 clear
 
+# When some series on the other side don't have a hint label, the matchers also accept series without it.
+# These matchers must not select the input of an operator that removes the label, because every input series
+# can contribute to the output.
+load 1m
+  left_metric 10
+  left_metric{y="a"} 20
+  right_metric{y="a"} 1
+  right_metric{y="b"} 2
+  other_metric{y="b"} 3
+
+# Ungrouped aggregations remove every label.
+eval instant at 0m left_metric / on (y) sum(right_metric)
+  {} 3.3333333333333335
+
+eval instant at 0m left_metric / sum(right_metric)
+  {} 3.3333333333333335
+
+eval instant at 0m sum by (y) (left_metric) / sum(right_metric)
+  {} 3.3333333333333335
+
+eval instant at 0m left_metric / on (y) sum by () (right_metric)
+  {} 3.3333333333333335
+
+eval instant at 0m left_metric / on (y) quantile(0.5, right_metric)
+  {} 6.666666666666667
+
+# The other side has no labels, so the matchers only accept series without the label.
+eval instant at 0m sum(left_metric) / on (y) sum(right_metric)
+  {} 10
+
+# absent and absent_over_time only return a series when there are no input series.
+eval instant at 0m left_metric / on (y) absent(other_metric)
+
+eval instant at 0m left_metric / on (y) absent_over_time(other_metric[5m])
+
+clear
+
+# One-to-one matching keeps only the on labels, or removes the ignored labels.
+load 1m
+  left_metric 10
+  left_metric{y="a"} 20
+  right_metric{y="b", z="1"} 2
+  other_metric{z="1"} 3
+
+eval instant at 0m left_metric / on (y) (right_metric * on (z) other_metric)
+  {} 1.6666666666666667
+
+eval instant at 0m left_metric / on (y) (right_metric * ignoring (y) other_metric)
+  {} 1.6666666666666667
+
+clear
+
+# Histogram functions remove the le label.
+load 1m
+  left_metric 10
+  left_metric{le="0.5"} 20
+  right_bucket{le="0.5"} 1
+  right_bucket{le="1"} 2
+  right_bucket{le="+Inf"} 2
+
+eval instant at 0m left_metric / histogram_quantile(0.5, right_bucket)
+  {} 20
+
+eval instant at 0m left_metric / histogram_fraction(0, 0.5, right_bucket)
+  {} 20
+
+eval instant at 0m left_metric / ignoring (q) histogram_quantiles(right_bucket, "q", 0.5)
+  {} 20
+
+clear
+
 # Without aggregations remove only the listed labels.
 # Runtime matcher filtering also protects this case.
 load 1m
