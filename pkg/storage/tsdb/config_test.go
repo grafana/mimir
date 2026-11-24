@@ -240,3 +240,30 @@ func TestConfig_DurationList(t *testing.T) {
 		})
 	}
 }
+
+func TestBlocksStorageConfig_ReadCompartmentBucketConfig(t *testing.T) {
+	tests := map[string]struct {
+		readCompartment0BucketName string
+		expectedBucketNames        []string
+	}{
+		"without the read compartment 0 bucket name": {
+			expectedBucketNames: []string{"blocks-rc-0", "blocks-rc-1"},
+		},
+		"with the read compartment 0 bucket name": {
+			readCompartment0BucketName: "blocks",
+			expectedBucketNames:        []string{"blocks", "blocks-rc-1"},
+		},
+	}
+
+	for name, testData := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg := BlocksStorageConfig{ReadCompartment0BucketName: testData.readCompartment0BucketName}
+			cfg.Bucket.Backend = bucket.GCS
+			cfg.Bucket.GCS.BucketName = "blocks-rc-<read-compartment-id>"
+
+			for readCompartmentID, expectedBucketName := range testData.expectedBucketNames {
+				assert.Equal(t, expectedBucketName, cfg.ReadCompartmentBucketConfig(readCompartmentID).GCS.BucketName)
+			}
+		})
+	}
+}

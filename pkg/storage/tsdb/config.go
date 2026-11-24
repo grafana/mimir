@@ -119,9 +119,10 @@ var (
 
 // BlocksStorageConfig holds the config information for the blocks storage.
 type BlocksStorageConfig struct {
-	Bucket      bucket.Config     `yaml:",inline"`
-	BucketStore BucketStoreConfig `yaml:"bucket_store" doc:"description=This configures how the querier and store-gateway discover and synchronize blocks stored in the bucket."`
-	TSDB        TSDBConfig        `yaml:"tsdb"`
+	Bucket                     bucket.Config     `yaml:",inline"`
+	ReadCompartment0BucketName string            `yaml:"read_compartment_0_bucket_name" category:"experimental" doc:"hidden"`
+	BucketStore                BucketStoreConfig `yaml:"bucket_store" doc:"description=This configures how the querier and store-gateway discover and synchronize blocks stored in the bucket."`
+	TSDB                       TSDBConfig        `yaml:"tsdb"`
 }
 
 // DurationList is the block ranges for a tsdb
@@ -164,8 +165,17 @@ func (d *DurationList) ToMilliseconds() []int64 {
 // RegisterFlags registers the TSDB flags
 func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("blocks-storage.", "blocks", f)
+	f.StringVar(&cfg.ReadCompartment0BucketName, "blocks-storage.read-compartment-0-bucket-name", "", "The bucket name of read compartment 0. If set, read compartment 0 uses this bucket name instead of the configured bucket name with the read compartment ID placeholder. Only used when compartments are enabled.")
 	cfg.BucketStore.RegisterFlags(f)
 	cfg.TSDB.RegisterFlags(f)
+}
+
+// ReadCompartmentBucketConfig returns the bucket config of the given read compartment.
+func (cfg *BlocksStorageConfig) ReadCompartmentBucketConfig(readCompartmentID int) bucket.Config {
+	if readCompartmentID == 0 && cfg.ReadCompartment0BucketName != "" {
+		return cfg.Bucket.WithBucketName(cfg.ReadCompartment0BucketName)
+	}
+	return cfg.Bucket.ReadCompartmentConfig(readCompartmentID)
 }
 
 // Validate the config.
