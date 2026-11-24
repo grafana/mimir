@@ -483,17 +483,7 @@ func (c Codec) decodeLookbackDelta(reqValues *url.Values) (time.Duration, error)
 }
 
 func (c Codec) parseUseStartTimestamps(header http.Header) (*bool, error) {
-	val := header.Get(requestoptions.UseStartTimestampsHeader)
-	if val == "" {
-		return nil, nil
-	}
-
-	b, err := strconv.ParseBool(val)
-	if err != nil {
-		return nil, apierror.Newf(apierror.TypeBadData, "invalid value %q for %s header: must be a boolean", val, requestoptions.UseStartTimestampsHeader)
-	}
-
-	return &b, nil
+	return requestoptions.ParseUseStartTimestamps(header.Get(requestoptions.UseStartTimestampsHeader))
 }
 
 // DecodeLabelsSeriesQueryRequest decodes a LabelsSeriesQueryRequest from an http request.

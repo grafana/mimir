@@ -713,6 +713,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		t.Extractors,
 		&chunkinfologger.Extractor{},
 		&streamingpromqlcompat.EngineFallbackExtractor{},
+		&requestoptions.StartTimestampsExtractor{},
 
 		// Since we don't use the regular RegisterQueryAPI, we need to register the consistency extractor here too.
 		&querierapi.ConsistencyExtractor{},
