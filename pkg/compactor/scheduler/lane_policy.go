@@ -22,7 +22,7 @@ const (
 	planLane lane = iota
 	compactionLane
 	backfillPhasePlanLane
-	backfillCompactionLane
+	backfillWorkLane
 )
 
 func (l lane) String() string {
@@ -33,8 +33,8 @@ func (l lane) String() string {
 		return "compaction"
 	case backfillPhasePlanLane:
 		return "backfill_phase_plan"
-	case backfillCompactionLane:
-		return "backfill_compaction"
+	case backfillWorkLane:
+		return "backfill_work"
 	}
 	return ""
 }
@@ -118,11 +118,13 @@ func newSimpleLanePolicy() lanePolicy {
 
 func newBackfillLanePolicy() lanePolicy {
 	return newStaticLanePolicy(
-		[]lane{compactionLane, backfillCompactionLane},
+		[]lane{compactionLane, backfillWorkLane},
 		laneAssignment{jobType: compactorschedulerpb.JOB_TYPE_PLANNING, lanes: []lane{planLane}},
 		laneAssignment{jobType: compactorschedulerpb.JOB_TYPE_COMPACTION, lanes: []lane{compactionLane}, plannedBy: compactorschedulerpb.JOB_TYPE_PLANNING},
 		laneAssignment{jobType: compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING, lanes: []lane{backfillPhasePlanLane}},
-		laneAssignment{jobType: compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION, lanes: []lane{backfillCompactionLane}, plannedBy: compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING},
+		laneAssignment{jobType: compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION, lanes: []lane{backfillWorkLane}, plannedBy: compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING},
+		laneAssignment{jobType: compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE, lanes: []lane{backfillWorkLane}, plannedBy: compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING},
+		laneAssignment{jobType: compactorschedulerpb.JOB_TYPE_BACKFILL_COPY, lanes: []lane{backfillWorkLane}, plannedBy: compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING},
 	)
 }
 

@@ -135,8 +135,37 @@ func TestScheduler_PlannedJobs_Rejections(t *testing.T) {
 		},
 		"plan job with unchanged": {
 			req: &compactorschedulerpb.PlannedJobsRequest{
-				Key:       &compactorschedulerpb.JobKey{Id: planJobId},
-				Unchanged: true,
+				Key:      &compactorschedulerpb.JobKey{Id: planJobId},
+				Backfill: &compactorschedulerpb.PlannedBackfillJobs{Unchanged: true},
+			},
+			expectedCode: codes.InvalidArgument,
+		},
+		"plan job with clear": {
+			req: &compactorschedulerpb.PlannedJobsRequest{
+				Key:      &compactorschedulerpb.JobKey{Id: planJobId},
+				Backfill: &compactorschedulerpb.PlannedBackfillJobs{Clear: true},
+			},
+			expectedCode: codes.InvalidArgument,
+		},
+		"backfill phase plan job with unchanged and clear": {
+			req: &compactorschedulerpb.PlannedJobsRequest{
+				Key:      &compactorschedulerpb.JobKey{Id: backfillPhasePlanJobId},
+				Backfill: &compactorschedulerpb.PlannedBackfillJobs{Unchanged: true, Clear: true},
+			},
+			expectedCode: codes.InvalidArgument,
+		},
+		"backfill phase plan job with clear and backfill jobs": {
+			req: &compactorschedulerpb.PlannedJobsRequest{
+				Key:      &compactorschedulerpb.JobKey{Id: backfillPhasePlanJobId},
+				Backfill: &compactorschedulerpb.PlannedBackfillJobs{JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE, BackfillId: backfillID, Clear: true},
+			},
+			expectedCode: codes.InvalidArgument,
+		},
+		"backfill phase plan job with clear and compaction jobs": {
+			req: &compactorschedulerpb.PlannedJobsRequest{
+				Key:      &compactorschedulerpb.JobKey{Id: backfillPhasePlanJobId},
+				Jobs:     []*compactorschedulerpb.PlannedCompactionJob{backfillCompactionJob},
+				Backfill: &compactorschedulerpb.PlannedBackfillJobs{Clear: true},
 			},
 			expectedCode: codes.InvalidArgument,
 		},
@@ -144,6 +173,42 @@ func TestScheduler_PlannedJobs_Rejections(t *testing.T) {
 			req: &compactorschedulerpb.PlannedJobsRequest{
 				Key:      &compactorschedulerpb.JobKey{Id: planJobId},
 				Backfill: &compactorschedulerpb.PlannedBackfillJobs{JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE, BackfillId: backfillID},
+			},
+			expectedCode: codes.InvalidArgument,
+		},
+		"backfill phase plan job with unchanged and backfill jobs": {
+			req: &compactorschedulerpb.PlannedJobsRequest{
+				Key:      &compactorschedulerpb.JobKey{Id: backfillPhasePlanJobId},
+				Backfill: &compactorschedulerpb.PlannedBackfillJobs{JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE, BackfillId: backfillID, Unchanged: true},
+			},
+			expectedCode: codes.InvalidArgument,
+		},
+		"backfill phase plan job with compaction and backfill jobs": {
+			req: &compactorschedulerpb.PlannedJobsRequest{
+				Key:      &compactorschedulerpb.JobKey{Id: backfillPhasePlanJobId},
+				Jobs:     []*compactorschedulerpb.PlannedCompactionJob{backfillCompactionJob},
+				Backfill: &compactorschedulerpb.PlannedBackfillJobs{JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE, BackfillId: backfillID},
+			},
+			expectedCode: codes.InvalidArgument,
+		},
+		"backfill jobs without a backfill ID": {
+			req: &compactorschedulerpb.PlannedJobsRequest{
+				Key:      &compactorschedulerpb.JobKey{Id: backfillPhasePlanJobId},
+				Backfill: &compactorschedulerpb.PlannedBackfillJobs{JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE, BlockIds: [][]byte{testULID(1).Bytes()}},
+			},
+			expectedCode: codes.InvalidArgument,
+		},
+		"backfill jobs of a job type that is not planned as backfill jobs": {
+			req: &compactorschedulerpb.PlannedJobsRequest{
+				Key:      &compactorschedulerpb.JobKey{Id: backfillPhasePlanJobId},
+				Backfill: &compactorschedulerpb.PlannedBackfillJobs{JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION, BackfillId: backfillID, BlockIds: [][]byte{testULID(1).Bytes()}},
+			},
+			expectedCode: codes.InvalidArgument,
+		},
+		"backfill jobs with an invalid block ID": {
+			req: &compactorschedulerpb.PlannedJobsRequest{
+				Key:      &compactorschedulerpb.JobKey{Id: backfillPhasePlanJobId},
+				Backfill: &compactorschedulerpb.PlannedBackfillJobs{JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_COPY, BackfillId: backfillID, BlockIds: [][]byte{[]byte(testULID(1).String())}},
 			},
 			expectedCode: codes.InvalidArgument,
 		},
@@ -173,63 +238,138 @@ func TestScheduler_PlannedJobs_Rejections(t *testing.T) {
 	}
 }
 
-func TestScheduler_BackfillCompactionLifecycle(t *testing.T) {
+func TestScheduler_BackfillLifecycle(t *testing.T) {
+	const tenant = "tenant1"
+	backfillID := []byte(testULID(1000).String())
+	block := testULID(1)
+
+	completeCompactionJob := func(t *testing.T, scheduler *Scheduler, key *compactorschedulerpb.JobKey) {
+		_, err := scheduler.UpdateCompactionJob(t.Context(), &compactorschedulerpb.UpdateCompactionJobRequest{Tenant: tenant, Key: key, Update: compactorschedulerpb.UPDATE_TYPE_COMPLETE})
+		require.NoError(t, err)
+	}
+	completeBackfillJob := func(t *testing.T, scheduler *Scheduler, key *compactorschedulerpb.JobKey) {
+		_, err := scheduler.UpdateBackfillJob(t.Context(), &compactorschedulerpb.UpdateBackfillJobRequest{Tenant: tenant, Key: key, Update: compactorschedulerpb.UPDATE_TYPE_COMPLETE})
+		require.NoError(t, err)
+	}
+
+	tests := map[string]struct {
+		planned      *compactorschedulerpb.PlannedJobsRequest // the key and tenant are filled in
+		expectedID   string
+		expectedSpec *compactorschedulerpb.JobSpec
+		complete     func(t *testing.T, scheduler *Scheduler, key *compactorschedulerpb.JobKey)
+	}{
+		"compaction": {
+			planned: &compactorschedulerpb.PlannedJobsRequest{Jobs: []*compactorschedulerpb.PlannedCompactionJob{
+				{Id: "compaction-job", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{block.Bytes()}, BackfillId: backfillID}},
+			}},
+			expectedID: backfillCompactionJobIDPrefix + "compaction-job",
+			expectedSpec: &compactorschedulerpb.JobSpec{
+				Tenant:  tenant,
+				JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION,
+				Job:     &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{block.Bytes()}, BackfillId: backfillID},
+			},
+			complete: completeCompactionJob,
+		},
+		"validate": {
+			planned: &compactorschedulerpb.PlannedJobsRequest{Backfill: &compactorschedulerpb.PlannedBackfillJobs{
+				JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE, BackfillId: backfillID, BlockIds: [][]byte{block.Bytes()},
+			}},
+			expectedID: backfillValidateJobIDPrefix + block.String(),
+			expectedSpec: &compactorschedulerpb.JobSpec{
+				Tenant:        tenant,
+				JobType:       compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE,
+				BackfillBlock: &compactorschedulerpb.BackfillBlockJob{BackfillId: backfillID, BlockId: block.Bytes()},
+			},
+			complete: completeBackfillJob,
+		},
+		"copy": {
+			planned: &compactorschedulerpb.PlannedJobsRequest{Backfill: &compactorschedulerpb.PlannedBackfillJobs{
+				JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_COPY, BackfillId: backfillID, BlockIds: [][]byte{block.Bytes()},
+			}},
+			expectedID: backfillCopyJobIDPrefix + block.String(),
+			expectedSpec: &compactorschedulerpb.JobSpec{
+				Tenant:        tenant,
+				JobType:       compactorschedulerpb.JOB_TYPE_BACKFILL_COPY,
+				BackfillBlock: &compactorschedulerpb.BackfillBlockJob{BackfillId: backfillID, BlockId: block.Bytes()},
+			},
+			complete: completeBackfillJob,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			bkt := objstore.NewInMemBucket()
+			require.NoError(t, bkt.Upload(t.Context(), backfillPhasesPrefix+tenant+"/backfill", strings.NewReader("")))
+
+			cfg := newTestSchedulerConfig()
+			cfg.DiscoveryPolls = []string{discoveryPollBackfills}
+			cfg.LanePolicy.Policy = lanePolicyBackfill
+			scheduler, _ := startedTestScheduler(t, bkt, cfg)
+
+			// Discover the tenant through the backfills poll, then inject a backfill phase plan job
+			require.NoError(t, scheduler.tenantDiscoverer.discoverTenants(t.Context()))
+			scheduler.rotator.Maintenance(t.Context(), false, true)
+
+			lease := func(jobType compactorschedulerpb.JobType) *compactorschedulerpb.LeaseJobResponse {
+				t.Helper()
+				resp, err := scheduler.LeaseJob(t.Context(), &compactorschedulerpb.LeaseJobRequest{
+					WorkerId:     "worker",
+					LaneRequests: []*compactorschedulerpb.LaneRequest{{JobType: jobType}},
+				})
+				require.NoError(t, err)
+				return resp
+			}
+
+			// Lease the backfill phase plan job and return fake results for it
+			planLease := lease(compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING)
+			require.Equal(t, backfillPhasePlanJobId, planLease.Key.Id)
+			tc.planned.Key = planLease.Key
+			tc.planned.Tenant = tenant
+			_, err := scheduler.PlannedJobs(t.Context(), tc.planned)
+			require.NoError(t, err)
+
+			// Lease the fake results back out and complete them
+			jobType := tc.expectedSpec.JobType
+			planned := lease(jobType)
+			require.Equal(t, tc.expectedID, planned.Key.Id)
+			require.Equal(t, tc.expectedSpec, planned.Spec)
+			tc.complete(t, scheduler, planned.Key)
+			require.Equal(t, 1.0, prom_testutil.ToFloat64(scheduler.metrics.jobsCompleted.WithLabelValues(jobTypeLabel(jobType))))
+
+			// Lease again and expect an empty result
+			planned = lease(jobType)
+			require.Nil(t, planned.Key)
+			require.Nil(t, planned.Spec)
+		})
+	}
+}
+
+func TestScheduler_PlannedJobs_BackfillUnchanged(t *testing.T) {
+	const tenant = "tenant1"
 	bkt := objstore.NewInMemBucket()
-	require.NoError(t, bkt.Upload(t.Context(), backfillPhasesPrefix+"tenant1/backfill", strings.NewReader("")))
+	require.NoError(t, bkt.Upload(t.Context(), backfillPhasesPrefix+tenant+"/backfill", strings.NewReader("")))
 
 	cfg := newTestSchedulerConfig()
 	cfg.DiscoveryPolls = []string{discoveryPollBackfills}
 	cfg.LanePolicy.Policy = lanePolicyBackfill
 	scheduler, _ := startedTestScheduler(t, bkt, cfg)
-
-	// Discover the tenant through the backfills poll, then inject a backfill phase plan job
 	require.NoError(t, scheduler.tenantDiscoverer.discoverTenants(t.Context()))
 	scheduler.rotator.Maintenance(t.Context(), false, true)
 
-	lease := func(jobType compactorschedulerpb.JobType) *compactorschedulerpb.LeaseJobResponse {
-		t.Helper()
-		resp, err := scheduler.LeaseJob(t.Context(), &compactorschedulerpb.LeaseJobRequest{
-			WorkerId:     "worker",
-			LaneRequests: []*compactorschedulerpb.LaneRequest{{JobType: jobType}},
-		})
-		require.NoError(t, err)
-		return resp
-	}
-
-	// Lease the backfill phase plan job
-	planLease := lease(compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING)
+	planLease, err := scheduler.LeaseJob(t.Context(), &compactorschedulerpb.LeaseJobRequest{
+		WorkerId:     "worker",
+		LaneRequests: []*compactorschedulerpb.LaneRequest{{JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING}},
+	})
+	require.NoError(t, err)
 	require.Equal(t, backfillPhasePlanJobId, planLease.Key.Id)
 
-	// Return fake results for it
-	const plannedID = "compaction-job"
-	backfillID := []byte(testULID(1000).String())
-	_, err := scheduler.PlannedJobs(t.Context(), &compactorschedulerpb.PlannedJobsRequest{
-		Key:    planLease.Key,
-		Tenant: planLease.Spec.Tenant,
-		Jobs: []*compactorschedulerpb.PlannedCompactionJob{
-			{Id: plannedID, Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{testULID(1).Bytes(), testULID(2).Bytes()}, BackfillId: backfillID}},
-		},
-	})
+	_, err = scheduler.PlannedJobs(t.Context(), &compactorschedulerpb.PlannedJobsRequest{Key: planLease.Key, Tenant: tenant, Backfill: &compactorschedulerpb.PlannedBackfillJobs{Unchanged: true}})
 	require.NoError(t, err)
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(scheduler.metrics.jobsCompleted.WithLabelValues(jobTypeBackfillPhasePlan)))
 
-	// Lease the fake results back out
-	compactionLease := lease(compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION)
-	require.Equal(t, backfillCompactionJobIDPrefix+plannedID, compactionLease.Key.Id)
-	require.Equal(t, compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION, compactionLease.Spec.JobType)
-	require.Equal(t, backfillID, compactionLease.Spec.Job.BackfillId)
-
-	// Complete the compaction job
-	_, err = scheduler.UpdateCompactionJob(t.Context(), &compactorschedulerpb.UpdateCompactionJobRequest{
-		Tenant: compactionLease.Spec.Tenant,
-		Key:    compactionLease.Key,
-		Update: compactorschedulerpb.UPDATE_TYPE_COMPLETE,
-	})
-	require.NoError(t, err)
-
-	// Lease again and expect an empty result
-	compactionLease = lease(compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION)
-	require.Nil(t, compactionLease.Key)
-	require.Nil(t, compactionLease.Spec)
+	// The plan job is complete, so its lease is gone
+	_, err = scheduler.UpdatePlanJob(t.Context(), &compactorschedulerpb.UpdatePlanJobRequest{Key: planLease.Key, Tenant: tenant, Update: compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS})
+	require.ErrorIs(t, err, errLeaseNotFound)
 }
 
 func TestScheduler_UpdateJob_RejectsKeysOfOtherJobTypes(t *testing.T) {
@@ -252,11 +392,24 @@ func TestScheduler_UpdateJob_RejectsKeysOfOtherJobTypes(t *testing.T) {
 		})
 		return err
 	}
+	updateBackfillJob := func(key string) error {
+		_, err := scheduler.UpdateBackfillJob(t.Context(), &compactorschedulerpb.UpdateBackfillJobRequest{
+			Tenant: "tenant1",
+			Key:    &compactorschedulerpb.JobKey{Id: key},
+			Update: compactorschedulerpb.UPDATE_TYPE_COMPLETE,
+		})
+		return err
+	}
+	validateKey := backfillValidateJobIDPrefix + testULID(1).String()
 
 	tests := map[string]struct {
 		update func(key string) error
 		key    string
 	}{
+		"compaction job update with a backfill validate key":     {update: updateCompactionJob, key: validateKey},
+		"backfill job update with a compaction key":              {update: updateBackfillJob, key: compactionKey},
+		"backfill job update with a backfill compaction key":     {update: updateBackfillJob, key: backfillCompactionJobIDPrefix + compactionKey},
+		"backfill job update with the backfill phase plan key":   {update: updateBackfillJob, key: backfillPhasePlanJobId},
 		"plan job update with a backfill compaction key":         {update: updatePlanJob, key: backfillCompactionJobIDPrefix + compactionKey},
 		"compaction job update with the plan job key":            {update: updateCompactionJob, key: planJobId},
 		"compaction job update with the backfill phase plan key": {update: updateCompactionJob, key: backfillPhasePlanJobId},

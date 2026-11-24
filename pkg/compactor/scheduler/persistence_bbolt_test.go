@@ -370,10 +370,29 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 		require.Equal(t, writtenJob.totalBlockBytes, readJob.totalBlockBytes)
 	}
 
+	verifyBackfillBlockJob := func(t *testing.T, written, read TrackedJob) {
+		writtenJob := written.(*TrackedBackfillBlockJob)
+		readJob, ok := read.(*TrackedBackfillBlockJob)
+		require.True(t, ok)
+		require.Equal(t, writtenJob.jobType, readJob.jobType)
+		require.Equal(t, writtenJob.backfillID, readJob.backfillID)
+		require.Equal(t, writtenJob.block, readJob.block)
+		require.Equal(t, writtenJob.order, readJob.order)
+	}
+	backfillID := []byte(testULID(1000).String())
+
 	tests := map[string]struct {
 		job                  TrackedJob
 		verifySpecificFields func(t *testing.T, written, read TrackedJob)
 	}{
+		"backfill validate job": {
+			job:                  NewTrackedBackfillBlockJob(compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE, backfillID, testULID(1), 2, now),
+			verifySpecificFields: verifyBackfillBlockJob,
+		},
+		"backfill copy job": {
+			job:                  NewTrackedBackfillBlockJob(compactorschedulerpb.JOB_TYPE_BACKFILL_COPY, backfillID, testULID(1), 3, now),
+			verifySpecificFields: verifyBackfillBlockJob,
+		},
 		"compaction job": {
 			job: &TrackedCompactionJob{
 				baseTrackedJob: baseTrackedJob{
@@ -453,25 +472,25 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 			require.NoError(t, err)
 
 			// Helper function since the test reads twice
-			readJobs := func() (compactionJobs []*TrackedCompactionJob, planJob *TrackedPlanJob, backfillPhasePlanJob *TrackedBackfillPhasePlanJob, cleanup *keyCleanup, err error) {
+			readJobs := func() (plannedJobs []TrackedJob, planJob *TrackedPlanJob, backfillPhasePlanJob *TrackedBackfillPhasePlanJob, cleanup *keyCleanup, err error) {
 				err = db.View(func(tx *bbolt.Tx) error {
 					b := tx.Bucket([]byte("tenant"))
 					if b == nil {
 						return errors.New("bucket should not be missing")
 					}
-					compactionJobs, planJob, backfillPhasePlanJob, cleanup = jobsFromTenantBucket(b, recoverEveryJob)
+					plannedJobs, planJob, backfillPhasePlanJob, cleanup = jobsFromTenantBucket(b, recoverEveryJob)
 					return nil
 				})
 				return
 			}
 
-			compactionJobs, planJob, backfillPhasePlanJob, cleanup, err := readJobs()
+			plannedJobs, planJob, backfillPhasePlanJob, cleanup, err := readJobs()
 			require.NoError(t, err)
 			require.Nil(t, cleanup)
 			var readJob TrackedJob
 			switch {
-			case len(compactionJobs) == 1:
-				readJob = compactionJobs[0]
+			case len(plannedJobs) == 1:
+				readJob = plannedJobs[0]
 			case planJob != nil:
 				readJob = planJob
 			default:
@@ -488,10 +507,10 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 
 			err = persister.DeleteJob(tc.job)
 			require.NoError(t, err)
-			compactionJobs, planJob, backfillPhasePlanJob, cleanup, err = readJobs()
+			plannedJobs, planJob, backfillPhasePlanJob, cleanup, err = readJobs()
 			require.NoError(t, err)
 			require.Nil(t, cleanup)
-			require.Empty(t, compactionJobs)
+			require.Empty(t, plannedJobs)
 			require.Nil(t, planJob)
 			require.Nil(t, backfillPhasePlanJob)
 		})

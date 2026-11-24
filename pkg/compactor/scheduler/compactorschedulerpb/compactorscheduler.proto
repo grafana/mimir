@@ -20,10 +20,9 @@ enum JobType {
   JOB_TYPE_COMPACTION = 1;
   JOB_TYPE_PLANNING = 2;
   JOB_TYPE_BACKFILL_PHASE_PLANNING = 3;
-  JOB_TYPE_BACKFILL_CLEANUP = 4;
-  JOB_TYPE_BACKFILL_VALIDATE = 5;
-  JOB_TYPE_BACKFILL_COMPACTION = 6;
-  JOB_TYPE_BACKFILL_COPY = 7;
+  JOB_TYPE_BACKFILL_VALIDATE = 4;
+  JOB_TYPE_BACKFILL_COMPACTION = 5;
+  JOB_TYPE_BACKFILL_COPY = 6;
 }
 
 message JobSpec {
@@ -31,8 +30,7 @@ message JobSpec {
   CompactionJob job = 2;
   JobType job_type = 3;
   BackfillPhasePlanningJob backfill_phase_planning = 4;
-  BackfillCleanupJob backfill_cleanup = 5;
-  BackfillBlockJob backfill_block = 6;
+  BackfillBlockJob backfill_block = 5;
 }
 
 message BackfillBlockJob {
@@ -40,10 +38,8 @@ message BackfillBlockJob {
   bytes block_id = 2;
 }
 
-message BackfillPhasePlanningJob {}
-
-message BackfillCleanupJob {
-  bytes backfill_id = 1;
+message BackfillPhasePlanningJob {
+  bool has_outstanding_jobs = 1;
 }
 
 message CompactionJob {
@@ -84,14 +80,15 @@ message PlannedBackfillJobs {
   JobType job_type = 1;
   bytes backfill_id = 2;
   repeated bytes block_ids = 3;
+  bool unchanged = 4;
+  bool clear = 5;
 }
 
 message PlannedJobsRequest {
   JobKey key = 1;
   string tenant = 2;
   repeated PlannedCompactionJob jobs = 3;
-  bool unchanged = 4;
-  PlannedBackfillJobs backfill = 5;
+  PlannedBackfillJobs backfill = 4;
 }
 
 message PlannedJobsResponse {}
@@ -144,11 +141,6 @@ message StoredCompactionJob {
   StoredJobInfo info = 1;
   CompactionJob job = 2;
   uint32 order = 3;
-}
-
-message StoredBackfillCleanupJob {
-  StoredJobInfo info = 1;
-  bytes backfill_id = 2;
 }
 
 message StoredBackfillBlockJob {
