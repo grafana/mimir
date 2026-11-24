@@ -19,6 +19,10 @@ import (
 type tenantEngine interface {
 	Head() engineHead
 
+	// NewestDataTime returns the latest head or persisted-data time in milliseconds,
+	// or math.MinInt64 if the engine has no data.
+	NewestDataTime() int64
+
 	Querier(mint, maxt int64) (storage.Querier, error)
 	// ChunkQuerier may return overlapping chunks in any order when unordered is true.
 	ChunkQuerier(mint, maxt int64, unordered bool) (storage.ChunkQuerier, error)

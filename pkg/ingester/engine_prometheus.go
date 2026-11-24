@@ -18,6 +18,22 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
+// NewestDataTime returns the max time of the head (in-order and out-of-order) and of the local blocks,
+// or math.MinInt64 if the TSDB has no data.
+//
+// Head().MaxTime() alone is not enough. On open, it is raised to the max time of the newest in-order block,
+// but blocks written from out-of-order data or by CompactSelectedSeries are skipped. After early compaction
+// of non-owned series and a restart, the head can have series without any in-order sample, so its max time is
+// math.MinInt64 while local blocks hold recent data. Block max times are aligned to the block range, so the
+// result can be up to one block range newer than the newest sample.
+func (e prometheusEngine) NewestDataTime() int64 {
+	t := max(e.db.Head().MaxTime(), e.db.Head().MaxOOOTime())
+	for _, b := range e.db.Blocks() {
+		t = max(t, b.Meta().MaxTime)
+	}
+	return t
+}
+
 func (e prometheusEngine) Querier(mint, maxt int64) (storage.Querier, error) {
 	return e.db.Querier(mint, maxt)
 }
