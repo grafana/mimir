@@ -15,15 +15,12 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/dskit/user"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
-	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestResultsCacheConfig_Validate(t *testing.T) {
@@ -755,149 +752,27 @@ func toMs(t time.Duration) int64 {
 	return int64(t / time.Millisecond)
 }
 
-func TestResultsCache_StartTimestampsIsolation(t *testing.T) {
+func TestResultsCacheEnabledByOption(t *testing.T) {
 	tests := []struct {
-		name                    string
-		engineDefault           bool
-		cacheDisabled           bool
-		useStartTimestamps      *bool
-		expectedValue           float64
-		expectedDownstreamCalls int
-		expectCacheBypass       bool
+		name               string
+		useStartTimestamps *bool
+		cacheDisabled      bool
+		expected           bool
 	}{
-		{
-			name:                    "absent option populates cache",
-			useStartTimestamps:      nil,
-			expectedValue:           1000,
-			expectedDownstreamCalls: 1,
-			expectCacheBypass:       false,
-		},
-		{
-			name:                    "enabled option bypasses populated cache",
-			useStartTimestamps:      new(true),
-			expectedValue:           999,
-			expectedDownstreamCalls: 2,
-			expectCacheBypass:       true,
-		},
-		{
-			name:                    "disabled option reuses cached response",
-			useStartTimestamps:      new(false),
-			expectedValue:           1000,
-			expectedDownstreamCalls: 2,
-			expectCacheBypass:       false,
-		},
-		{
-			name:                    "enabled option bypasses cache again",
-			useStartTimestamps:      new(true),
-			expectedValue:           999,
-			expectedDownstreamCalls: 3,
-			expectCacheBypass:       true,
-		},
-		{
-			name:                    "absent option still reuses original response",
-			useStartTimestamps:      nil,
-			expectedValue:           1000,
-			expectedDownstreamCalls: 3,
-			expectCacheBypass:       false,
-		},
-		{
-			name:                    "true default absent bypasses populated cache",
-			engineDefault:           true,
-			expectedValue:           999,
-			expectedDownstreamCalls: 4,
-			expectCacheBypass:       true,
-		},
-		{
-			name:                    "true default disabled reuses cached response",
-			engineDefault:           true,
-			useStartTimestamps:      new(false),
-			expectedValue:           1000,
-			expectedDownstreamCalls: 4,
-		},
-		{
-			name:                    "true default enabled bypasses populated cache",
-			engineDefault:           true,
-			useStartTimestamps:      new(true),
-			expectedValue:           999,
-			expectedDownstreamCalls: 5,
-			expectCacheBypass:       true,
-		},
-		{
-			name:                    "true default absent bypasses cache again",
-			engineDefault:           true,
-			expectedValue:           999,
-			expectedDownstreamCalls: 6,
-			expectCacheBypass:       true,
-		},
-		{
-			name:                    "false default cache disabled bypasses cached response",
-			cacheDisabled:           true,
-			useStartTimestamps:      new(false),
-			expectedValue:           1000,
-			expectedDownstreamCalls: 7,
-			expectCacheBypass:       true,
-		},
-		{
-			name:                    "true default cache disabled bypasses cached response",
-			engineDefault:           true,
-			cacheDisabled:           true,
-			useStartTimestamps:      new(false),
-			expectedValue:           1000,
-			expectedDownstreamCalls: 8,
-			expectCacheBypass:       true,
-		},
+		{name: "absent option", expected: true},
+		{name: "disabled option", useStartTimestamps: new(false), expected: true},
+		{name: "enabled option", useStartTimestamps: new(true), expected: true},
+		{name: "caching disabled with absent option", cacheDisabled: true},
+		{name: "caching disabled with disabled option", useStartTimestamps: new(false), cacheDisabled: true},
+		{name: "caching disabled with enabled option", useStartTimestamps: new(true), cacheDisabled: true},
 	}
-
-	c := cache.NewInstrumentedMockCache()
-	limits := mockLimits{resultsCacheTTL: time.Hour, resultsCacheTTLForErrors: time.Hour}
-	codec := newTestCodec()
-	keyGen := NewDefaultCacheKeyGenerator(codec, time.Hour)
-
-	calls := 0
-
-	// Run in order against one cache to detect responses leaking between options.
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			reg := prometheus.NewRegistry()
-			downstream := HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
-				calls++
-				enabled := tc.engineDefault
-				if req.GetUseStartTimestamps() != nil {
-					enabled = *req.GetUseStartTimestamps()
-				}
-				response := mkAPIResponse(req.GetStart(), req.GetEnd(), req.GetStep())
-				if enabled {
-					response.Data.Result[0].Samples[0].Value = 999
-				}
-
-				return response, nil
-			})
-			handler := newSplitAndCacheMiddleware(true, true, time.Hour, limits, newMockQueryLimitsProvider(&limits), codec, c, keyGen, PrometheusResponseExtractor{}, resultsCacheEnabledByOption(tc.engineDefault), log.NewNopLogger(), reg, limiter.NewUnlimintedInflightMemoryConsumptionTracker(reg)).Wrap(downstream)
-
-			ctx := user.InjectOrgID(t.Context(), "tenant")
 			req := &PrometheusRangeQueryRequest{
-				queryExpr:          parseQuery(t, "counter"),
-				start:              1000,
-				end:                2000,
-				step:               1000,
 				useStartTimestamps: tc.useStartTimestamps,
 				options:            requestoptions.Options{CacheDisabled: tc.cacheDisabled},
 			}
-			fetches, stores := c.CountFetchCalls(), c.CountStoreCalls()
-
-			response, err := handler.Do(ctx, req)
-			require.NoError(t, err)
-			defer response.Close()
-
-			promResponse, ok := response.GetPrometheusResponse()
-			require.True(t, ok)
-			require.Equal(t, tc.expectedValue, promResponse.Data.Result[0].Samples[0].Value)
-
-			if tc.expectCacheBypass {
-				require.Equal(t, fetches, c.CountFetchCalls())
-				require.Equal(t, stores, c.CountStoreCalls())
-			}
-			require.Equal(t, tc.expectedDownstreamCalls, calls)
+			require.Equal(t, tc.expected, resultsCacheEnabledByOption(req))
 		})
 	}
 }

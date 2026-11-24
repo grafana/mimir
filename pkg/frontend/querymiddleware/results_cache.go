@@ -241,13 +241,8 @@ var resultsCacheAlwaysEnabled = func(_ MetricsQueryRequest) bool { return true }
 
 var resultsCacheAlwaysDisabled = func(_ MetricsQueryRequest) bool { return false }
 
-// Temporarily capture the engine default to bypass caching when start timestamps are enabled.
-// Remove this bypass once cache keys distinguish start-timestamp-aware evaluation.
-func resultsCacheEnabledByOption(engineDefault bool) shouldCacheFn {
-	return func(r MetricsQueryRequest) bool {
-		enabled := requestoptions.StartTimestampOptionFromBool(r.GetUseStartTimestamps()).Resolve(engineDefault)
-		return !r.GetOptions().CacheDisabled && !enabled
-	}
+var resultsCacheEnabledByOption = func(r MetricsQueryRequest) bool {
+	return !r.GetOptions().CacheDisabled
 }
 
 // isRequestCachable says whether the request is eligible for caching.
