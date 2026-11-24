@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
@@ -29,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -39,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
+	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
@@ -2043,4 +2046,316 @@ func TestExecuteQueryOnQueryable_ClosesQueryOnError(t *testing.T) {
 			require.GreaterOrEqual(t, engine.totalCloseCalls(), 1, "expected Close to be called at least once on the underlying query")
 		})
 	}
+}
+
+func TestQuerySharding_StartTimestamps(t *testing.T) {
+	queryable := startTimestampTestQueryable(t)
+	opts := promql.EngineOpts{
+		MaxSamples:               100000,
+		Timeout:                  time.Minute,
+		EnableAtModifier:         true,
+		EnableNegativeOffset:     true,
+		NoStepSubqueryIntervalFn: func(int64) int64 { return 10000 },
+		Parser:                   promqlext.NewPromQLParser(),
+	}
+	engine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
+
+	// sum(start_timestamp(counter)) triggers sharding to verify start-timestamp propagation.
+	tests := []struct {
+		name                   string
+		query                  string
+		useStartTimestamps     *bool
+		rangeQuery             bool
+		expectNonEmptyBaseline bool
+		expectedBaselineValue  *float64
+		baselineTolerance      float64
+	}{
+		{
+			name:               "start timestamp instant absent",
+			query:              "sum(start_timestamp(counter))",
+			useStartTimestamps: nil,
+		},
+		{
+			name:               "start timestamp range absent",
+			query:              "sum(start_timestamp(counter))",
+			useStartTimestamps: nil,
+			rangeQuery:         true,
+		},
+		{
+			name:               "start timestamp instant disabled",
+			query:              "sum(start_timestamp(counter))",
+			useStartTimestamps: new(false),
+		},
+		{
+			name:               "start timestamp range disabled",
+			query:              "sum(start_timestamp(counter))",
+			useStartTimestamps: new(false),
+			rangeQuery:         true,
+		},
+		{
+			name:                   "start timestamp instant enabled",
+			query:                  "sum(start_timestamp(counter))",
+			useStartTimestamps:     new(true),
+			expectNonEmptyBaseline: true,
+			expectedBaselineValue:  new(float64(16000)),
+		},
+		{
+			name:                   "start timestamp range enabled",
+			query:                  "sum(start_timestamp(counter))",
+			useStartTimestamps:     new(true),
+			rangeQuery:             true,
+			expectNonEmptyBaseline: true,
+			expectedBaselineValue:  new(float64(16000)),
+		},
+		{
+			name:                  "rate instant absent",
+			query:                 "sum(rate(counter[20m]))",
+			useStartTimestamps:    nil,
+			expectedBaselineValue: new(16 * 705.0 / 1200),
+			baselineTolerance:     1e-12,
+		},
+		{
+			name:                  "rate range absent",
+			query:                 "sum(rate(counter[20m]))",
+			useStartTimestamps:    nil,
+			rangeQuery:            true,
+			expectedBaselineValue: new(16 * 705.0 / 1200),
+			baselineTolerance:     1e-12,
+		},
+		{
+			name:                  "rate instant disabled",
+			query:                 "sum(rate(counter[20m]))",
+			useStartTimestamps:    new(false),
+			expectedBaselineValue: new(16 * 705.0 / 1200),
+			baselineTolerance:     1e-12,
+		},
+		{
+			name:                  "rate range disabled",
+			query:                 "sum(rate(counter[20m]))",
+			useStartTimestamps:    new(false),
+			rangeQuery:            true,
+			expectedBaselineValue: new(16 * 705.0 / 1200),
+			baselineTolerance:     1e-12,
+		},
+		{
+			name:                   "rate instant enabled",
+			query:                  "sum(rate(counter[20m]))",
+			useStartTimestamps:     new(true),
+			expectNonEmptyBaseline: true,
+			expectedBaselineValue:  new(16 * 710.0 / 1200),
+			baselineTolerance:      1e-12,
+		},
+		{
+			name:                   "rate range enabled",
+			query:                  "sum(rate(counter[20m]))",
+			useStartTimestamps:     new(true),
+			rangeQuery:             true,
+			expectNonEmptyBaseline: true,
+			expectedBaselineValue:  new(16 * 710.0 / 1200),
+			baselineTolerance:      1e-12,
+		},
+		{
+			name:               "increase instant absent",
+			query:              "sum(increase(counter[20m]))",
+			useStartTimestamps: nil,
+		},
+		{
+			name:               "increase range absent",
+			query:              "sum(increase(counter[20m]))",
+			useStartTimestamps: nil,
+			rangeQuery:         true,
+		},
+		{
+			name:               "increase instant disabled",
+			query:              "sum(increase(counter[20m]))",
+			useStartTimestamps: new(false),
+		},
+		{
+			name:               "increase range disabled",
+			query:              "sum(increase(counter[20m]))",
+			useStartTimestamps: new(false),
+			rangeQuery:         true,
+		},
+		{
+			name:                   "increase instant enabled",
+			query:                  "sum(increase(counter[20m]))",
+			useStartTimestamps:     new(true),
+			expectNonEmptyBaseline: true,
+		},
+		{
+			name:                   "increase range enabled",
+			query:                  "sum(increase(counter[20m]))",
+			useStartTimestamps:     new(true),
+			rangeQuery:             true,
+			expectNonEmptyBaseline: true,
+		},
+		{
+			name:               "resets instant absent",
+			query:              "sum(resets(counter[20m]))",
+			useStartTimestamps: nil,
+		},
+		{
+			name:               "resets range absent",
+			query:              "sum(resets(counter[20m]))",
+			useStartTimestamps: nil,
+			rangeQuery:         true,
+		},
+		{
+			name:               "resets instant disabled",
+			query:              "sum(resets(counter[20m]))",
+			useStartTimestamps: new(false),
+		},
+		{
+			name:               "resets range disabled",
+			query:              "sum(resets(counter[20m]))",
+			useStartTimestamps: new(false),
+			rangeQuery:         true,
+		},
+		{
+			name:                   "resets instant enabled",
+			query:                  "sum(resets(counter[20m]))",
+			useStartTimestamps:     new(true),
+			expectNonEmptyBaseline: true,
+		},
+		{
+			name:                   "resets range enabled",
+			query:                  "sum(resets(counter[20m]))",
+			useStartTimestamps:     new(true),
+			rangeQuery:             true,
+			expectNonEmptyBaseline: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var req MetricsQueryRequest = &PrometheusInstantQueryRequest{
+				queryExpr:          parseQuery(t, tc.query),
+				time:               1800000,
+				lookbackDelta:      5 * time.Minute,
+				useStartTimestamps: tc.useStartTimestamps,
+			}
+			if tc.rangeQuery {
+				req = &PrometheusRangeQueryRequest{
+					queryExpr:          parseQuery(t, tc.query),
+					start:              1800000,
+					end:                1860000,
+					step:               10000,
+					lookbackDelta:      5 * time.Minute,
+					useStartTimestamps: tc.useStartTimestamps,
+				}
+			}
+			downstream := HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+				query, err := newQuery(ctx, req, engine, queryable)
+				if err != nil {
+					return nil, err
+				}
+				defer query.Close()
+
+				result := query.Exec(ctx)
+				samples, err := promqlResultToSamples(result)
+				if err != nil {
+					return nil, err
+				}
+
+				// Copy the samples before closing the query returns its buffers to the pool.
+				return proto.Clone(&PrometheusResponse{
+					Status: statusSuccess,
+					Data: &PrometheusData{
+						ResultType: string(result.Value.Type()),
+						Result:     samples,
+					},
+				}).(*PrometheusResponse), nil
+			})
+
+			// Evaluate the original query before applying the transformation.
+			ctx := user.InjectOrgID(t.Context(), "tenant")
+			expected, err := downstream.Do(ctx, req)
+			require.NoError(t, err)
+			defer expected.Close()
+
+			want, ok := expected.GetPrometheusResponse()
+			require.True(t, ok)
+			if tc.expectNonEmptyBaseline {
+				require.NotEmpty(t, want.Data.Result)
+			}
+			if tc.expectedBaselineValue != nil {
+				require.NotEmpty(t, want.Data.Result)
+				require.NotEmpty(t, want.Data.Result[0].Samples)
+
+				value := want.Data.Result[0].Samples[0].Value
+				if tc.baselineTolerance == 0 {
+					require.Equal(t, *tc.expectedBaselineValue, value)
+				} else {
+					require.InDelta(t, *tc.expectedBaselineValue, value, tc.baselineTolerance)
+				}
+			}
+
+			// Run the same request through the transformation middleware.
+			reg := prometheus.NewRegistry()
+			limits := mockLimits{totalShards: 2}
+			handler := newQueryShardingMiddleware(log.NewNopLogger(), engine, limits, 0, reg).Wrap(downstream)
+			actual, err := newDurationsMiddleware(log.NewNopLogger()).Wrap(handler).Do(ctx, req)
+			require.NoError(t, err)
+			defer actual.Close()
+
+			got, ok := actual.GetPrometheusResponse()
+			require.True(t, ok)
+
+			// Compare samples and verify that the transformation actually ran.
+			sort.Sort(byLabels(want.Data.Result))
+			sort.Sort(byLabels(got.Data.Result))
+			approximatelyEqualsSamples(t, want, got)
+			families, err := reg.Gather()
+			require.NoError(t, err)
+			found := false
+			for _, family := range families {
+				if family.GetName() == "cortex_frontend_sharded_queries_total" {
+					for _, metric := range family.Metric {
+						found = found || metric.GetCounter().GetValue() > 0
+					}
+				}
+			}
+			require.True(t, found, "query must actually be sharded")
+		})
+	}
+}
+
+func startTimestampTestQueryable(t *testing.T) storage.Queryable {
+	t.Helper()
+	var all []storage.Series
+	for i := 0; i < 16; i++ {
+		c, err := chunkenc.NewEmptyChunk(chunkenc.EncXOR2)
+		require.NoError(t, err)
+		app, err := c.Appender()
+		require.NoError(t, err)
+		for ts := int64(1100000); ts <= 1900000; ts += 10000 {
+			app.Append(1000000, ts, float64(ts-1090000)/1000)
+		}
+		all = append(all, &storage.SeriesEntry{
+			Lset:             labels.FromStrings("__name__", "counter", "instance", fmt.Sprint(i)),
+			SampleIteratorFn: func(reuse chunkenc.Iterator) chunkenc.Iterator { return c.Iterator(reuse) },
+		})
+	}
+	return &storage.MockQueryable{MockQuerier: &storage.MockQuerier{
+		SelectMockFunction: func(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+			shard, filtered, err := sharding.RemoveShardFromMatchers(matchers)
+			if err != nil {
+				return storage.ErrSeriesSet(err)
+			}
+			var selected []storage.Series
+			for _, s := range all {
+				if shard != nil && labels.StableHash(s.Labels())%shard.ShardCount != shard.ShardIndex {
+					continue
+				}
+				matches := true
+				for _, m := range filtered {
+					matches = matches && m.Matches(s.Labels().Get(m.Name))
+				}
+				if matches {
+					selected = append(selected, s)
+				}
+			}
+			return series.NewConcreteSeriesSetFromUnsortedSeries(selected)
+		},
+	}}
 }
