@@ -164,7 +164,7 @@ func (i *Ingester) TenantTSDBHandler(w http.ResponseWriter, req *http.Request) {
 		c.Head.AppendableMinValidTime = formatMillisTime(m)
 	}
 
-	shipped := db.getCachedShippedBlocks()
+	shipped := db.prometheus().getCachedShippedBlocks()
 
 	blocks := db.Blocks()
 	for _, b := range blocks {

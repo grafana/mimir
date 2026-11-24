@@ -7612,7 +7612,7 @@ func TestIngester_shipBlocks(t *testing.T) {
 		m.On("Sync", mock.Anything).Return(0, nil)
 		mocks = append(mocks, m)
 
-		userDB.shipper = m
+		userDB.prometheus().shipper = m
 	}
 
 	// Ship blocks and assert on the mocked shipper
@@ -8210,7 +8210,7 @@ func mockUserShipper(t *testing.T, i *Ingester) *uploaderMock {
 	require.NoError(t, err)
 	require.NotNil(t, userDB)
 
-	userDB.shipper = m
+	userDB.prometheus().shipper = m
 	return m
 }
 
@@ -8744,7 +8744,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 		Version: shipperMetaVersion1,
 		Shipped: map[ulid.ULID]model.Time{oldBlocks[1].Meta().ULID: model.TimeFromUnixNano(time.Now().UnixNano())},
 	}))
-	require.NoError(t, db.updateCachedShippedBlocks())
+	require.NoError(t, db.prometheus().updateCachedShippedBlocks())
 
 	// Add more samples that could trigger another compaction and hence reload of blocks.
 	for j := int64(5); j < 6; j++ {
@@ -8776,7 +8776,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 			newBlocks[1].Meta().ULID: model.TimeFromUnixNano(time.Now().UnixNano()),
 		},
 	}))
-	require.NoError(t, db.updateCachedShippedBlocks())
+	require.NoError(t, db.prometheus().updateCachedShippedBlocks())
 
 	// Add more samples that could trigger another compaction and hence reload of blocks.
 	for j := int64(6); j < 7; j++ {
@@ -8851,7 +8851,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 			oldBlocks[1].Meta().ULID: model.TimeFromUnixNano(time.Now().Add(-30 * time.Minute).UnixNano()),
 		},
 	}))
-	require.NoError(t, db.updateCachedShippedBlocks())
+	require.NoError(t, db.prometheus().updateCachedShippedBlocks())
 
 	// Add more samples that could trigger another compaction and hence reload of blocks.
 	for j := int64(5); j < 6; j++ {
@@ -11146,11 +11146,11 @@ func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 			require.NoError(t, err)
 
 			userTSDB := i.getTSDB(tenant)
-			require.Equal(t, 2, len(userTSDB.shippedBlocks), "there should be two uploaded blocks")
+			require.Equal(t, 2, len(userTSDB.prometheus().getCachedShippedBlocks()), "there should be two uploaded blocks")
 
 			var oooMeta []block.Meta
 			var inOrderMeta []block.Meta
-			for ulid := range userTSDB.shippedBlocks {
+			for ulid := range userTSDB.prometheus().getCachedShippedBlocks() {
 				meta, err := block.DownloadMeta(ctx, log.NewNopLogger(), bucket, ulid)
 				require.NoError(t, err)
 				if meta.Compaction.FromOutOfOrder() {

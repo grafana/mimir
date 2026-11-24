@@ -63,7 +63,11 @@ func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowList) {
 
 		// Get the user's DB. If the user doesn't exist, we skip it.
 		userDB := i.getTSDB(userID)
-		if userDB == nil || userDB.shipper == nil {
+		if userDB == nil {
+			return nil
+		}
+		engine := userDB.engine()
+		if !engine.BlockShippingEnabled() {
 			return nil
 		}
 
@@ -96,23 +100,7 @@ func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowList) {
 		}
 		defer userDB.changeState(activeShipping, active)
 
-		uploaded, err := userDB.shipper.Sync(ctx)
-		if err != nil {
-			level.Warn(i.logger).Log("msg", "shipper failed to synchronize TSDB blocks with the storage", "user", userID, "uploaded", uploaded, "err", err)
-		} else {
-			level.Debug(i.logger).Log("msg", "shipper successfully synchronized TSDB blocks with storage", "user", userID, "uploaded", uploaded)
-		}
-
-		// The shipper meta file could be updated even if the Sync() returned an error,
-		// so it's safer to update it each time at least a block has been uploaded.
-		// Moreover, the shipper meta file could be updated even if no blocks are uploaded
-		// (eg. blocks removed due to retention) but doesn't cause any harm not updating
-		// the cached list of blocks in such case, so we're not handling it.
-		if uploaded > 0 {
-			if err := userDB.updateCachedShippedBlocks(); err != nil {
-				level.Error(i.logger).Log("msg", "failed to update cached shipped blocks after shipper synchronisation", "user", userID, "err", err)
-			}
-		}
+		engine.ShipBlocks(ctx)
 
 		return nil
 	})
