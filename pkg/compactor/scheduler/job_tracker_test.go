@@ -368,8 +368,8 @@ func TestJobTracker_OfferJobs_PlanJobsAreSeparate(t *testing.T) {
 				newCompaction("compaction-shares-backfill-active", 5, 3),
 			},
 			expectedPending: map[lane][]string{
-				compactionLane:         {"compaction-shares-backfill-complete", "compaction-shares-backfill-active"},
-				backfillCompactionLane: {"backfill-pending"},
+				compactionLane:   {"compaction-shares-backfill-complete", "compaction-shares-backfill-active"},
+				backfillWorkLane: {"backfill-pending"},
 			},
 		},
 		"backfill phase plan job offer leaves compaction jobs alone": {
@@ -380,8 +380,8 @@ func TestJobTracker_OfferJobs_PlanJobsAreSeparate(t *testing.T) {
 				newBackfillCompaction("backfill-shares-compaction-active", 2, 3),
 			},
 			expectedPending: map[lane][]string{
-				compactionLane:         {"compaction-pending"},
-				backfillCompactionLane: {"backfill-shares-compaction-complete", "backfill-shares-compaction-active"},
+				compactionLane:   {"compaction-pending"},
+				backfillWorkLane: {"backfill-shares-compaction-complete", "backfill-shares-compaction-active"},
 			},
 		},
 	}
@@ -405,7 +405,7 @@ func TestJobTracker_OfferJobs_PlanJobsAreSeparate(t *testing.T) {
 				planLeases[resp.Key.Id] = resp.Key.Epoch
 			}
 			// Per plan job, complete one job while both are leased so that it is retained for conflict detection, and leave the next one active
-			for _, l := range []lane{compactionLane, backfillCompactionLane} {
+			for _, l := range []lane{compactionLane, backfillWorkLane} {
 				resp, _, err := jt.Lease(l)
 				require.NoError(t, err)
 				removed, _, err := jt.Remove(resp.Key.Id, resp.Key.Epoch, true)
@@ -512,7 +512,7 @@ func TestJobTracker_OfferJobs_Unchanged(t *testing.T) {
 	require.Empty(t, changedLanes)
 	require.NotContains(t, jt.incompleteJobs, backfillPhasePlanJobId)
 	require.Equal(t, at(2, 0), jt.backfillPhasePlan.completeTime)
-	require.Equal(t, []string{validate.ID()}, listToSlice(jt.pending[backfillValidateLane]), "pending jobs are left alone")
+	require.Equal(t, []string{validate.ID()}, listToSlice(jt.pending[backfillWorkLane]), "pending jobs are left alone")
 }
 
 func TestJobTracker_OfferJobs_Clear(t *testing.T) {
@@ -536,7 +536,7 @@ func TestJobTracker_OfferJobs_Clear(t *testing.T) {
 	plannedJobs := []TrackedJob{activeCopy, pendingValidate, activeCompaction}
 	require.NoError(t, persister.WriteAndDeleteJobs(append(plannedJobs, backfillPhasePlan), nil))
 	jt.recoverFrom(plannedJobs, nil, backfillPhasePlan)
-	for _, l := range []lane{backfillCopyLane, compactionLane} {
+	for _, l := range []lane{backfillWorkLane, compactionLane} {
 		_, _, err := jt.Lease(l)
 		require.NoError(t, err)
 	}
@@ -549,7 +549,7 @@ func TestJobTracker_OfferJobs_Clear(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Zero(t, accepted)
-	require.Equal(t, []lane{backfillValidateLane}, changedLanes)
+	require.Equal(t, []lane{backfillWorkLane}, changedLanes)
 	require.Equal(t, at(2, 0), jt.backfillPhasePlan.completeTime)
 
 	// Only the jobs planned by the backfill phase plan job are cleared
