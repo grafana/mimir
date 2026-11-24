@@ -35,6 +35,7 @@
 * [CHANGE] MQE: The experimental PromQL functions `min_of` and `max_of`, in queries and in duration expressions, now return NaN only if both arguments are NaN. This matches the `min` and `max` aggregators. #17276
 * [CHANGE] Distributor: OTLP exponential histograms now use the zero threshold of the OTel data point as the native histogram zero threshold. Previously, the zero threshold was always `1e-128`. A data point with no zero threshold now gets a zero threshold of `0`. After the upgrade, each affected series starts a new chunk at its first sample because the zero threshold changes. #17276
 * [CHANGE] Ruler: Classify rule evaluation failures caused by the tenant request-rate, ingestion-rate or active-series write limits as `user` instead of `operator` in the `reason` label of `prometheus_rule_evaluation_failures_total`, consistent with tenant limits enforced by ingesters. #17306
+* [FEATURE] Querier: Add experimental Prometheus-compatible `/api/v1/query_cost` and `/api/v1/query_range_cost` endpoints to estimate query storage input without evaluating PromQL. Enable with `-querier.experimental-query-cost-api-enabled`. #17078
 * [FEATURE] Server: Add `-server.metrics-cache-duration` to cache `/metrics` responses and reduce repeated collection, encoding, and compression. Disabled by default; cached metrics can lag live values by the configured duration. #16954
 * [FEATURE] Server: Add `-server.tls-curve-preferences` to configure TLS key exchange curve preferences. #16954
 * [CHANGE] Alertmanager: Enforce that SNS receivers provide explicit credentials (access key and secret key) by default. This prevents malicious users from creating a SNS receiver with a custom URL that then receives the Alertmanager's AWS credentials. The existing behaviour can be restored by setting `-alertmanager.require-explicit-sns-credentials=false`. #17315
@@ -124,6 +125,7 @@
 * [ENHANCEMENT] Store-gateway: Reduce the memory usage and garbage collection pressure of loaded sparse index-headers. #16266
 * [ENHANCEMENT] Compactor: Use the last tenant list for blocks cleanup when listing the bucket is slow or fails. #17335
 * [ENHANCEMENT] Mimirtool: `mimirtool runtime-config validate` now accepts Mimir flags after `--`. #17439
+* [ENHANCEMENT] Ruler: Leave the ring before stopping rule evaluation on shutdown, and add the experimental `-ruler.shutdown-handover-period` flag to keep evaluating for a while after leaving the ring, so no evaluation is skipped while other rulers take over the rule groups. Disabled (`0`) by default. #17284
 * [BUGFIX] Ruler: Count write requests rejected by the tenant request-rate, ingestion-rate or active-series limits as `client_error` in `cortex_ruler_write_requests_failed_total`, so they no longer trigger `MimirRulerTooManyFailedPushes`. Ingester overload is still counted as `server_error`. #17302
 * [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
 * [BUGFIX] Store-gateway: Allow cancelling prepare-shutdown when the sync directory does not exist. #16049
@@ -194,6 +196,7 @@
 * [BUGFIX] MQE: Fix an issue where only part of a query that couldn't return results was optimized, resulting in trying to remotely execute an invalid query plan. #17152
 * [BUGFIX] Alertmanager: Fix tenants without a configuration getting no Alertmanager when the fallback configuration (`-alertmanager.configs.fallback`) fails validation. For example, the fallback loads files or has an SNS receiver without explicit credentials. The load-time validation added in #17315 now checks tenant configuration only. #17399
 * [BUGFIX] Admin: Use relative links for the config, runtime config and ingester links in the administration web UI, so that they work when the UI is served behind a reverse proxy that adds a path prefix. #17271
+* [BUGFIX] MQE: Fix `quantile`, `quantile_over_time` and `mad_over_time` returning a value with a rounding error, or `0` for very small values, when the quantile falls between two identical values. MQE now returns that value exactly, the same as the Prometheus engine. #17444
 * [BUGFIX] Query-frontend: Fix retried POST requests to the label names, label values, series, cardinality and active series endpoints being sent without their body. Retries dropped the parameters sent in the body, such as `match[]`, so a retried label names or label values request could return results for all series. #17445
 
 ### Mixin

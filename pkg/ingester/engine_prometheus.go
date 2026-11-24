@@ -10,11 +10,27 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+func (e prometheusEngine) Querier(mint, maxt int64) (storage.Querier, error) {
+	return e.db.Querier(mint, maxt)
+}
+
+func (e prometheusEngine) ChunkQuerier(mint, maxt int64, unordered bool) (storage.ChunkQuerier, error) {
+	if unordered {
+		return e.db.UnorderedChunkQuerier(mint, maxt)
+	}
+	return e.db.ChunkQuerier(mint, maxt)
+}
+
+func (e prometheusEngine) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
+	return e.db.ExemplarQuerier(ctx)
+}
 
 func (e prometheusEngine) Ingest(ctx *ingestContext, timeseries []mimirpb.PreallocTimeseries) error {
 	i, userID, startAppend, stats := ctx.i, ctx.userID, ctx.startAppend, ctx.stats
@@ -66,6 +82,10 @@ func (e prometheusEngine) Ingest(ctx *ingestContext, timeseries []mimirpb.Preall
 	spanlog.DebugLog("event", "complete commit", "commitDuration", commitDuration.String())
 
 	return nil
+}
+
+func (e prometheusEngine) Close() error {
+	return e.db.Close()
 }
 
 func (e prometheusEngine) Compact(ctx context.Context) error {

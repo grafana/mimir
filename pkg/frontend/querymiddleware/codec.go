@@ -364,9 +364,9 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 // DecodeMetricsQueryRequest decodes a MetricsQueryRequest from an http request.
 func (c Codec) DecodeMetricsQueryRequest(_ context.Context, r *http.Request) (MetricsQueryRequest, error) {
 	switch {
-	case IsRangeQuery(r.URL.Path):
+	case IsRangeQuery(r.URL.Path), IsRangeQueryCost(r.URL.Path):
 		return c.decodeRangeQueryRequest(r)
-	case IsInstantQuery(r.URL.Path):
+	case IsInstantQuery(r.URL.Path), IsInstantQueryCost(r.URL.Path):
 		return c.decodeInstantQueryRequest(r)
 	default:
 		return nil, fmt.Errorf("unknown metrics query API endpoint %s", dskitlog.DropUnsafeChars(r.URL.Path))

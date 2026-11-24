@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/promql"
@@ -237,53 +238,62 @@ func NewQuerierHandler(
 		appendMetadata     = false
 	)
 
-	api := v1.NewAPI(
-		engine,
-		// Translate errors to errors expected by API, and add the warning of the metadata default time range.
-		querier.NewMetadataDefaultTimeRangeQueryable(querier.NewErrorTranslateSampleAndChunkQueryable(queryable)),
-		nil, // No remote write support.
-		exemplarQueryable,
-		func(context.Context) v1.ScrapePoolsRetriever { return &querier.DummyTargetRetriever{} },
-		func(context.Context) v1.TargetRetriever { return &querier.DummyTargetRetriever{} },
-		func(context.Context) v1.AlertmanagerRetriever { return &querier.DummyAlertmanagerRetriever{} },
-		func() config.Config { return config.Config{} },
-		map[string]string{}, // TODO: include configuration flags
-		v1.GlobalURLOptions{},
-		func(f http.HandlerFunc) http.HandlerFunc { return f },
-		nil,   // Only needed for admin APIs.
-		"",    // This is for snapshots, which is disabled when admin APIs are disabled. Hence empty.
-		false, // Disable admin APIs.
-		false, // Disable search APIs.
-		0,     // No search result limit.
-		util_log.SlogFromGoKit(logger),
-		func(context.Context) v1.RulesRetriever { return &querier.DummyRulesRetriever{} },
-		0, 0, 0, // Remote read samples and concurrency limit.
-		false, // Not an agent.
-		regexp.MustCompile(".*"),
-		func() (v1.RuntimeInfo, error) { return v1.RuntimeInfo{}, errors.New("not implemented") },
-		&v1.PrometheusVersion{},
-		nil,
-		nil,
-		// This is used for the stats API which we should not support. Or find other ways to.
-		prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) { return nil, nil }),
-		reg,
-		querier.StatsRenderer,
-		remoteWriteEnabled,
-		nil,
-		otlpEnabled,
-		false,
-		false,
-		querierCfg.EngineConfig.LookbackDelta,
-		false,
-		appendMetadata,
-		nil,
-		nil,
-		v1.OpenAPIOptions{},
-		promqlext.NewPromQLParser(),
-		false, // Disable the experimental query cost feature.
-		0,     // Query timeout, only used by the query cost feature.
-		0,     // Disable the default time range for metadata requests that omit start or end. Mimir applies it per tenant with querier.NewMetadataDefaultTimeRangeMiddleware.
-	)
+	newAPI := func(queryEngine promql.QueryEngine, reg prometheus.Registerer, enableQueryCost bool) *v1.API {
+		return v1.NewAPI(
+			queryEngine,
+			// Translate errors to errors expected by API, and add the warning of the metadata default time range.
+			querier.NewMetadataDefaultTimeRangeQueryable(querier.NewErrorTranslateSampleAndChunkQueryable(queryable)),
+			nil, // No remote write support.
+			exemplarQueryable,
+			func(context.Context) v1.ScrapePoolsRetriever { return &querier.DummyTargetRetriever{} },
+			func(context.Context) v1.TargetRetriever { return &querier.DummyTargetRetriever{} },
+			func(context.Context) v1.AlertmanagerRetriever { return &querier.DummyAlertmanagerRetriever{} },
+			func() config.Config {
+				return config.Config{GlobalConfig: config.GlobalConfig{
+					EvaluationInterval: model.Duration(querierCfg.EngineConfig.DefaultEvaluationInterval),
+					ScrapeInterval:     model.Duration(querierCfg.QueryCostEstimatedScrapeInterval),
+				}}
+			},
+			map[string]string{}, // TODO: include configuration flags.
+			v1.GlobalURLOptions{},
+			func(f http.HandlerFunc) http.HandlerFunc { return f },
+			nil,   // Only needed for admin APIs.
+			"",    // This is for snapshots, which is disabled when admin APIs are disabled. Hence empty.
+			false, // Disable admin APIs.
+			false, // Disable search APIs.
+			0,     // No search result limit.
+			util_log.SlogFromGoKit(logger),
+			func(context.Context) v1.RulesRetriever { return &querier.DummyRulesRetriever{} },
+			0, 0, 0, // Remote read samples and concurrency limit.
+			false, // Not an agent.
+			regexp.MustCompile(".*"),
+			func() (v1.RuntimeInfo, error) { return v1.RuntimeInfo{}, errors.New("not implemented") },
+			&v1.PrometheusVersion{},
+			nil,
+			nil,
+			// This is used for the stats API which we should not support. Or find other ways to.
+			prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) { return nil, nil }),
+			reg,
+			querier.StatsRenderer,
+			remoteWriteEnabled,
+			nil,
+			otlpEnabled,
+			false,
+			false,
+			querierCfg.EngineConfig.LookbackDelta,
+			false,
+			appendMetadata,
+			nil,
+			nil,
+			v1.OpenAPIOptions{},
+			promqlext.NewPromQLParser(),
+			enableQueryCost,
+			querierCfg.EngineConfig.Timeout,
+			0, // Disable the default time range for metadata requests that omit start or end. Mimir applies it per tenant with querier.NewMetadataDefaultTimeRangeMiddleware.
+		)
+	}
+
+	api := newAPI(engine, reg, false)
 
 	api.InstallCodec(protobufCodec{})
 
@@ -323,6 +333,21 @@ func NewQuerierHandler(
 	// The middleware must be added here in querier instead of in query-frontend so that the context will be initialized with the memory consumption tracker
 	// to be used in upstream Queryables or Queriers.
 	unlimitedMemoryTrackerMiddleware := limiter.UnlimitedMemoryTrackerMiddleware{}
+
+	if querierCfg.ExperimentalQueryCostAPIEnabled {
+		// Use a separate API instance so estimation does not enable Prometheus-only
+		// execution cost reporting and limits on Mimir's normal query endpoints.
+		// The querier worker bounds concurrent estimates, as it bounds queries. The engine
+		// records each estimate in the activity tracker through promql.QuerySlotAcquirer.
+		costRouter := route.New().WithPrefix(promPrefix)
+		// Remote read metrics are already registered by the main API instance.
+		newAPI(engine, nil, true).Register(costRouter)
+		costHandler := unlimitedMemoryTrackerMiddleware.Wrap(costRouter)
+		for _, endpoint := range []string{"query_cost", "query_range_cost"} {
+			usage := usagestats.NewRequestsMiddleware("querier_" + endpoint + "_requests")
+			router.Path(path.Join(promPrefix, endpoint)).Methods("GET", "POST").Handler(usage.Wrap(costHandler))
+		}
+	}
 
 	metadataDefaultTimeRangeMiddleware := querier.NewMetadataDefaultTimeRangeMiddleware(limits)
 

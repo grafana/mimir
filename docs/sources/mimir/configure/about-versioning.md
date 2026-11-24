@@ -94,6 +94,7 @@ The following features are currently experimental:
   - Debounce ring-change-triggered rule syncs.
     - `-ruler.ring-change-debounce`
     - `-ruler.ring-change-max-debounce`
+  - Keep evaluating rule groups on shutdown after leaving the ring, so other rulers can take them over (`-ruler.shutdown-handover-period`)
   - `-ruler.min-rule-evaluation-interval`
   - Attach headers identifying the rule being evaluated to the queries sent to the query-frontend.
     - `-ruler.query-frontend.enable-rule-detail-headers`
@@ -239,6 +240,9 @@ The following features are currently experimental:
   - Kafka write request timeout overhead
     - `-ingest-storage.kafka.write-timeout-overhead`
 - Querier
+  - [Query cost estimation HTTP endpoints](../../references/http-api/#query-cost) `/api/v1/query_cost` and `/api/v1/query_range_cost`
+    - `-querier.experimental-query-cost-api-enabled`
+    - `-querier.query-cost-estimated-scrape-interval`
   - Streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}` returning NDJSON, mirroring the [Prometheus search API](https://github.com/prometheus/prometheus/pull/18573) (`-querier.experimental-search-api-enabled`).
   - Default time range for series, label names, label values and search requests that do not specify start or end (`-querier.metadata-default-time-range`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)

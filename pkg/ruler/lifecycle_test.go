@@ -9,7 +9,10 @@ import (
 	"cmp"
 	"context"
 	"slices"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/grafana/dskit/kv"
@@ -44,6 +47,92 @@ func TestRulerShutdown(t *testing.T) {
 	test.Poll(t, 100*time.Millisecond, 0, func() interface{} {
 		return numTokens(kvStore, "localhost", RulerRingKey)
 	})
+}
+
+func TestRulerShutdown_ShouldLeaveRingBeforeStoppingRuleEvaluation(t *testing.T) {
+	for name, handoverPeriod := range map[string]time.Duration{
+		"without handover period": 0,
+		"with handover period":    time.Minute,
+	} {
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				cfg := defaultRulerConfig(t)
+				cfg.ShutdownHandoverPeriod = handoverPeriod
+				gated := &gatedKV{Client: cfg.Ring.Common.KVStore.Mock, release: make(chan struct{})}
+				cfg.Ring.Common.KVStore.Mock = gated
+				r := prepareRuler(t, cfg, newMockRuleStore(mockRules))
+
+				var (
+					managerStoppedAt time.Time
+					tokensAtStop     int
+					rulesAtStop      int
+				)
+				managerStopped := make(chan struct{})
+				r.manager = &onStopManager{
+					MultiTenantManager: r.manager,
+					onStop: func() {
+						managerStoppedAt = time.Now()
+						tokensAtStop = numTokens(gated.Client, "localhost", RulerRingKey)
+						rulesAtStop = len(r.manager.GetRules("user1"))
+						close(managerStopped)
+					},
+				}
+
+				require.NoError(t, services.StartAndAwaitRunning(t.Context(), r))
+				var releaseOnce sync.Once
+				release := func() { releaseOnce.Do(func() { close(gated.release) }) }
+				defer release()
+
+				gated.armed.Store(true)
+				r.StopAsync()
+				synctest.Wait()
+				select {
+				case <-managerStopped:
+					release()
+					require.NoError(t, r.AwaitTerminated(t.Context()))
+					t.Fatal("the ruler stopped the rule managers before it left the ring")
+				default:
+				}
+
+				// Keep the leave blocked for a while.
+				// Then the handover period must start when the leave ends, not when the stop starts.
+				// The leave ends when the CAS calls are released, because the fake clock does not move until all goroutines block.
+				time.Sleep(10 * time.Second)
+				leftAt := time.Now()
+				release()
+				require.NoError(t, r.AwaitTerminated(t.Context()))
+				require.False(t, managerStoppedAt.IsZero(), "the rule managers were never stopped")
+				require.Zero(t, tokensAtStop, "the ruler should leave the ring before it stops evaluating rule groups")
+				require.Equal(t, handoverPeriod, managerStoppedAt.Sub(leftAt))
+				require.NotZero(t, rulesAtStop, "the rule managers should still hold rule groups at the end of the handover")
+			})
+		})
+	}
+}
+
+// onStopManager is a MultiTenantManager that calls onStop before stopping the wrapped manager.
+type onStopManager struct {
+	MultiTenantManager
+	onStop func()
+}
+
+func (m *onStopManager) Stop() {
+	m.onStop()
+	m.MultiTenantManager.Stop()
+}
+
+// gatedKV blocks CAS calls while armed, until release is closed.
+type gatedKV struct {
+	kv.Client
+	armed   atomic.Bool
+	release chan struct{}
+}
+
+func (g *gatedKV) CAS(ctx context.Context, key string, f func(in interface{}) (out interface{}, retry bool, err error)) error {
+	if g.armed.Load() {
+		<-g.release
+	}
+	return g.Client.CAS(ctx, key, f)
 }
 
 func TestRuler_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testing.T) {
