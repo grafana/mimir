@@ -22,7 +22,7 @@ func (source) Uint64() uint64 {
 
 // Source initialises a source of pseudo-random data.
 //
-// Use this function to create a [math/rand.Rand] which provides feedback to the Antithesis platform.
+// Use this function to create a [math/rand.Rand] which is steered by the Antithesis platform.
 //
 // The returned source implements [math/rand.Source64].
 func Source() rand.Source {

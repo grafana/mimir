@@ -275,7 +275,8 @@ func antithesisChoose(n int) int {
 	for i := range choices {
 		choices[i] = i
 	}
-	return antithesisrandom.RandomChoice(choices)
+	choice, _ := antithesisrandom.RandomChoice(choices)
+	return choice
 }
 
 // writeAndVerify writes an initial sample of each series of the write half an interval before the
