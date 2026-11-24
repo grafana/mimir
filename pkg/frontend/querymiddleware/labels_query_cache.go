@@ -81,6 +81,18 @@ func (g DefaultCacheKeyGenerator) LabelValues(r *http.Request) (*GenericQueryCac
 		return nil, err
 	}
 
+	// The codec decodes an explicit start or end of 0 to the same value as a missing start or end, but the querier
+	// queries a different range for each. The cache key cannot hold the difference, so the response must not be cached.
+	if labelValuesReq.GetStart() == 0 || labelValuesReq.GetEnd() == 0 {
+		params, err := util.ParseRequestFormWithoutConsumingBody(r)
+		if err != nil {
+			return nil, err
+		}
+		if (labelValuesReq.GetStart() == 0 && params.Get("start") != "") || (labelValuesReq.GetEnd() == 0 && params.Get("end") != "") {
+			return nil, ErrUnsupportedRequest
+		}
+	}
+
 	var cacheKeyPrefix string
 	switch labelValuesReq.(type) {
 	case *PrometheusLabelNamesQueryRequest:
