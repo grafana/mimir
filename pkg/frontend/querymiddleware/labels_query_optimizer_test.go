@@ -321,6 +321,82 @@ func TestLabelsQueryOptimizer_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestLabelsQueryOptimizer_RoundTrip_ZeroStartAndEnd(t *testing.T) {
+	const userID = "user-1"
+
+	for testName, testData := range map[string]struct {
+		reqData                  url.Values
+		expectedDownstreamParams url.Values
+	}{
+		"should keep a start of 0": {
+			reqData:                  url.Values{"start": []string{"0"}, "end": []string{"3600"}},
+			expectedDownstreamParams: url.Values{"start": []string{"0"}, "end": []string{"3600"}},
+		},
+		"should keep an end of 0": {
+			reqData:                  url.Values{"end": []string{"0"}},
+			expectedDownstreamParams: url.Values{"end": []string{"0"}},
+		},
+		"should not add a start or end that the request does not have": {
+			reqData:                  url.Values{},
+			expectedDownstreamParams: url.Values{},
+		},
+	} {
+		t.Run(testName, func(t *testing.T) {
+			for _, reqMethod := range []string{http.MethodGet, http.MethodPost} {
+				t.Run(reqMethod, func(t *testing.T) {
+					limits := multiTenantMockLimits{
+						byTenant: map[string]mockLimits{
+							userID: {labelsQueryOptimizerEnabled: true},
+						},
+					}
+
+					var downstreamReqParams url.Values
+					downstream := RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+						require.NoError(t, req.ParseForm())
+						downstreamReqParams = req.Form
+						return &http.Response{StatusCode: http.StatusOK}, nil
+					})
+
+					reqData := url.Values{"match[]": []string{`{__name__!="", job="prometheus"}`}}
+					for name, values := range testData.reqData {
+						reqData[name] = values
+					}
+
+					var (
+						req *http.Request
+						err error
+					)
+					switch reqMethod {
+					case http.MethodGet:
+						req, err = http.NewRequest(reqMethod, "/api/v1/labels?"+reqData.Encode(), nil)
+						require.NoError(t, err)
+					case http.MethodPost:
+						req, err = http.NewRequest(reqMethod, "/api/v1/labels", strings.NewReader(reqData.Encode()))
+						require.NoError(t, err)
+						req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+					}
+					reqCtx := user.InjectOrgID(t.Context(), userID)
+					req = req.WithContext(reqCtx)
+					require.NoError(t, user.InjectOrgIDIntoHTTPRequest(reqCtx, req))
+
+					reg := prometheus.NewPedanticRegistry()
+					optimizer := newLabelsQueryOptimizer(newTestCodec(), limits, downstream, mimirtest.NewTestingLogger(t), reg)
+					_, err = optimizer.RoundTrip(req)
+					require.NoError(t, err)
+
+					testData.expectedDownstreamParams["match[]"] = []string{`{job="prometheus"}`}
+					require.Equal(t, testData.expectedDownstreamParams, downstreamReqParams)
+					assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+						# HELP cortex_query_frontend_labels_optimizer_queries_rewritten_total Total number of label API requests that have been optimized.
+						# TYPE cortex_query_frontend_labels_optimizer_queries_rewritten_total counter
+						cortex_query_frontend_labels_optimizer_queries_rewritten_total 1
+					`), "cortex_query_frontend_labels_optimizer_queries_rewritten_total"))
+				})
+			}
+		})
+	}
+}
+
 func TestOptimizeLabelsRequestMatchers(t *testing.T) {
 	tests := map[string]struct {
 		inputMatchers     []string
