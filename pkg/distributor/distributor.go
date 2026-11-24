@@ -236,6 +236,9 @@ type Distributor struct {
 
 	// compartmentRouter shards series to read compartments. Nil when compartments are disabled.
 	compartmentRouter *compartments.TopicRouter
+	// maxReadCompartmentTenantMetadataLength is the maximum length of the tenant metadata of a push
+	// when compartments are enabled. It leaves room for the read compartment key-value pair.
+	maxReadCompartmentTenantMetadataLength int
 
 	// usageTrackerClient is the client that should be used to track per-tenant series and
 	// enforce max series limit in the distributor. This field is nil if usage-tracker
@@ -848,6 +851,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			writerKafkaCfg = writerKafkaCfg.WriteCompartmentConfig(cfg.WriteCompartmentID)
 
 			d.compartmentRouter = compartments.NewTopicRouter(cfg.Compartments.Read.NumCompartments, cfg.IngestStorageConfig.KafkaConfig.Topic)
+			d.maxReadCompartmentTenantMetadataLength = compartments.MaxTenantMetadataLength(cfg.Compartments.Read.NumCompartments)
 
 			d.queryIngesterCompartmentsHit = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 				Name: "cortex_querier_compartments_hit_per_query",
@@ -1546,6 +1550,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		userID, md, err := tenant.ExtractWithMetadata(ctx)
 		if err != nil {
 			return err
+		}
+		// Reject the push if we exceed the metadata length limit.
+		if length := len(md.Encode()); d.compartmentRouter != nil && d.usageTrackerClient != nil && length > d.maxReadCompartmentTenantMetadataLength {
+			return newTenantMetadataTooLongError(length, d.maxReadCompartmentTenantMetadataLength)
 		}
 
 		limitsKey := md.WithTenant(userID)
