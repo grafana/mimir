@@ -269,7 +269,7 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			expectedError:           nil,
 		},
 		"closed broker (reworded in newer franz-go versions)": {
-			err:              fmt.Errorf("fetching from kafka: %w", errors.New(chosenBrokerDiedFranzGo1_20_7)),
+			err:              fmt.Errorf("fetching from kafka: %w", errors.New(chosenBrokerDiedSinceFranzGo1_20_7)),
 			lso:              5,
 			rangeErrorPolicy: OnRangeErrorResumeFromStart,
 			fw: fetchWant{
