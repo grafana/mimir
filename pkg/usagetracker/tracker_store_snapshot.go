@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/tsdb/encoding"
+	"github.com/prometheus/prometheus/util/zeropool"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
@@ -206,6 +207,11 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 	firstShard := uint64(shard) & shardMask
 	passes := max(1, uint64(t.numShards)/snapshotNumShards)
 
+	// The refs of a large tenant are the biggest temporary allocation of a load, so the buffer is
+	// reused across the tenants of this snapshot and across snapshot loads.
+	refs := refTimestampPool.Get()
+	defer func() { refTimestampPool.Put(refs) }()
+
 	for i := 0; i < int(tenantsLen); i++ {
 		// We don't check for userID string length here, because we don't require it to be non-empty when we track series.
 		tenantID := snapshot.UvarintStr()
@@ -218,7 +224,10 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 			return fmt.Errorf("failed to read series len: %w", err)
 		}
 
-		refs := make([]refTimestamp, 0, seriesLen)
+		if cap(refs) < seriesLen {
+			refs = make([]refTimestamp, 0, seriesLen)
+		}
+		refs = refs[:0]
 		for i := 0; i < seriesLen; i++ {
 			s := snapshot.Be64()
 			if err := snapshot.Err(); err != nil {
@@ -254,6 +263,8 @@ type refTimestamp struct {
 	Ref       uint64
 	Timestamp clock.Minutes
 }
+
+var refTimestampPool zeropool.Pool[[]refTimestamp]
 
 // loadSnapshotSeries loads the refs that belong to shard, the ones with ref&shardMask == shard,
 // into that shard of tenant. capacity is how many of the refs are expected to belong to it.
