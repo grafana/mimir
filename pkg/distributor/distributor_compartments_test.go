@@ -378,5 +378,7 @@ func prepareCompartmentsTestDistributorWithActivePartitions(t *testing.T, numCom
 }
 
 func compartmentsTestRouter(numCompartments int) *compartments.TopicRouter {
-	return compartments.NewTopicRouter(numCompartments, compartmentsTestTopicFormat)
+	return compartments.NewTopicRouter(numCompartments, func(readCompartmentID int) string {
+		return compartments.ReplaceReadCompartment(compartmentsTestTopicFormat, readCompartmentID)
+	})
 }

@@ -603,7 +603,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			// With compartments enabled the ingester consumes its read compartment's topic from every
 			// write compartment's Kafka cluster. The per-cluster offset files live in the TSDB directory
 			// alongside the ingester's data, one per write compartment.
-			readCompartmentTopic := compartments.ReplaceReadCompartment(kafkaCfg.Topic, cfg.ReadCompartmentID)
+			readCompartmentTopic := kafkaCfg.ReadCompartmentTopic(cfg.ReadCompartmentID)
 			kafkaCfgs := ingest.WriteCompartmentConfigs(kafkaCfg, cfg.Compartments.Write.NumCompartments, readCompartmentTopic)
 			offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset-wc-"+compartments.WriteCompartmentIDPlaceholder+".json")
 

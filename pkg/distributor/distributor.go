@@ -850,7 +850,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			// Resolve the writer's Kafka address and credentials for this distributor's write compartment.
 			writerKafkaCfg = writerKafkaCfg.WriteCompartmentConfig(cfg.WriteCompartmentID)
 
-			d.compartmentRouter = compartments.NewTopicRouter(cfg.Compartments.Read.NumCompartments, cfg.IngestStorageConfig.KafkaConfig.Topic)
+			d.compartmentRouter = compartments.NewTopicRouter(cfg.Compartments.Read.NumCompartments, cfg.IngestStorageConfig.KafkaConfig.ReadCompartmentTopic)
 			d.maxReadCompartmentTenantMetadataLength = compartments.MaxTenantMetadataLength(cfg.Compartments.Read.NumCompartments)
 
 			d.queryIngesterCompartmentsHit = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
