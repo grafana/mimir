@@ -11,13 +11,11 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/prometheus/client_golang/prometheus"
 	promencoding "github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
-	"github.com/grafana/mimir/pkg/util/filepool"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -829,8 +827,7 @@ func runAllBufReaderTypes(tb test.TB, caseName string, bytes []byte, testFn func
 	filePath := path.Join(dir, fileName)
 	require.NoError(tb, os.WriteFile(filePath, bytes, 0700))
 
-	reg := prometheus.WrapRegistererWithPrefix("indexheader_", prometheus.NewPedanticRegistry())
-	diskFactory := NewFilePoolDecbufFactory(filePath, 0, filepool.NewFilePoolMetrics(reg))
+	diskFactory := NewFileDecbufFactory(filePath)
 	tb.Cleanup(func() {
 		_ = diskFactory.Close()
 	})

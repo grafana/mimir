@@ -5,20 +5,18 @@ package encoding
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"os"
 	"path"
 	"testing"
 
-	"github.com/prometheus/client_golang/prometheus"
 	promencoding "github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/grafana/mimir/pkg/util/filepool"
 )
 
 const testContentSize = 4096
@@ -29,7 +27,7 @@ func BenchmarkDecbufFactory_NewDecbufAtUnchecked(b *testing.B) {
 	enc := createTestEncoder(testContentSize)
 	enc.PutHash(crc32.New(table))
 
-	diskFactory, bucketFactory := createDecbufFactoriesWithBytes(b, 1, testContentSize, enc)
+	diskFactory, bucketFactory := createDecbufFactoriesWithBytes(b, testContentSize, enc)
 	factories := map[string]DecbufFactory{
 		"disk":   diskFactory,
 		"bucket": bucketFactory,
@@ -96,33 +94,159 @@ func TestDecbufFactory_NewDecbufAtChecked_HappyPath(t *testing.T) {
 	})
 }
 
-func TestDecbufFactory_NewDecbufAtChecked_MultipleInstances(t *testing.T) {
+func TestFileDecbufFactory_SharesFileAcrossDecbufs(t *testing.T) {
 	enc := createTestEncoder(testContentSize)
 	enc.PutHash(crc32.New(table))
 
-	// Note that we create the factory ourselves instead of using testDecbufFactory because
-	// we only want to test the case where file handles are pooled and hence will be reused
-	// between different Decbuf instances; bucket-based factory is also not tested here.
-	factory, _ := createDecbufFactoriesWithBytes(t, 1, testContentSize, enc)
-	t.Cleanup(func() {
-		_ = factory.Close()
-	})
+	factory, _ := createDecbufFactoriesWithBytes(t, testContentSize, enc)
 
-	d1 := factory.NewDecbufAtChecked(context.Background(), 0, table)
+	d1 := factory.NewDecbufAtChecked(t.Context(), 0, table)
 	require.NoError(t, d1.Err())
+	d2 := factory.NewDecbufAtChecked(t.Context(), 0, table)
+	require.NoError(t, d2.Err())
+
 	fr1, ok := d1.r.(*FileReader)
 	require.True(t, ok, "expected FileReader")
-	fd1 := fr1.file.Fd()
-	require.NoError(t, d1.Close())
-
-	d2 := factory.NewDecbufAtChecked(context.Background(), 0, table)
-	require.NoError(t, d2.Err())
 	fr2, ok := d2.r.(*FileReader)
 	require.True(t, ok, "expected FileReader")
-	fd2 := fr2.file.Fd()
+	require.Same(t, factory.file, fr1.src.r)
+	require.Same(t, factory.file, fr2.src.r)
+
+	require.NoError(t, d1.Close())
+	require.NoError(t, d2.Close())
+}
+
+func TestFileDecbufFactory_ConcurrentReadsAtDifferentOffsets(t *testing.T) {
+	const (
+		contentSize = 64 * 1024
+		readSize    = 64
+		concurrency = 16
+		runs        = 200
+	)
+
+	enc := promencoding.Encbuf{}
+	for i := 0; i < contentSize; i++ {
+		enc.PutByte(byte(i % 251))
+	}
+	enc.PutHash(crc32.New(table))
+	factory, _ := createDecbufFactoriesWithBytes(t, contentSize, enc)
+
+	g, ctx := errgroup.WithContext(t.Context())
+	for w := 0; w < concurrency; w++ {
+		g.Go(func() error {
+			for run := 0; run < runs; run++ {
+				d := factory.NewDecbufAtUnchecked(ctx, 0)
+				off := ((w*runs + run) * 4099) % (contentSize - readSize)
+				d.ResetAt(numLenBytes + off)
+				for i := 0; i < readSize; i++ {
+					b := d.Byte()
+					if err := d.Err(); err != nil {
+						_ = d.Close()
+						return err
+					}
+					if want := byte((off + i) % 251); b != want {
+						_ = d.Close()
+						return fmt.Errorf("offset %d: got byte %d, want %d", off+i, b, want)
+					}
+				}
+				if err := d.Close(); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+	require.NoError(t, g.Wait())
+}
+
+func TestFileDecbufFactory_CloseWithDecbufsInFlight(t *testing.T) {
+	enc := createTestEncoder(testContentSize)
+	enc.PutHash(crc32.New(table))
+	factory, _ := createDecbufFactoriesWithBytes(t, testContentSize, enc)
+
+	d1 := factory.NewDecbufAtChecked(t.Context(), 0, table)
+	require.NoError(t, d1.Err())
+	d2 := factory.NewRawDecbuf(t.Context())
+	require.NoError(t, d2.Err())
+
+	require.NoError(t, factory.Close())
+
+	d3 := factory.NewDecbufAtUnchecked(t.Context(), 0)
+	require.ErrorIs(t, d3.Err(), ErrFileDecbufFactoryClosed)
+	require.NoError(t, d3.Close())
+
+	// Decbufs created before Close keep reading from the still-open file.
+	d1.Skip(testContentSize)
+	require.NoError(t, d1.Err())
+	require.Equal(t, crc32.Size, d1.Len())
+	require.NoError(t, d1.Close())
+	// Closing the same Decbuf twice must not release the file early.
+	require.NoError(t, d1.Close())
+	_, err := factory.file.Stat()
+	require.NoError(t, err, "file should stay open while a Decbuf is in flight")
+
+	d2.ResetAt(numLenBytes)
+	require.Equal(t, byte(0x01), d2.Byte())
+	require.NoError(t, d2.Err())
 	require.NoError(t, d2.Close())
 
-	require.Equal(t, fd1, fd2, "expected Decbuf instances to use the same file descriptor")
+	_, err = factory.file.Stat()
+	require.ErrorIs(t, err, os.ErrClosed, "file should be closed once the last Decbuf is closed")
+	require.NoError(t, factory.Close())
+}
+
+func TestFileDecbufFactory_CloseDuringConcurrentReads(t *testing.T) {
+	enc := createTestEncoder(testContentSize)
+	enc.PutHash(crc32.New(table))
+	factory, _ := createDecbufFactoriesWithBytes(t, testContentSize, enc)
+
+	const concurrency = 16
+	started := make(chan struct{}, concurrency)
+	g, ctx := errgroup.WithContext(t.Context())
+	for w := 0; w < concurrency; w++ {
+		g.Go(func() error {
+			signalled := false
+			for {
+				d := factory.NewDecbufAtChecked(ctx, 0, table)
+				if errors.Is(d.Err(), ErrFileDecbufFactoryClosed) {
+					return d.Close()
+				}
+				if !signalled {
+					started <- struct{}{}
+					signalled = true
+				}
+				if err := d.Err(); err != nil {
+					_ = d.Close()
+					return err
+				}
+				if b := d.Byte(); b != 0x01 {
+					_ = d.Close()
+					return fmt.Errorf("got byte %d, want 1", b)
+				}
+				if err := d.Close(); err != nil {
+					return err
+				}
+			}
+		})
+	}
+
+	for w := 0; w < concurrency; w++ {
+		<-started
+	}
+	require.NoError(t, factory.Close())
+	require.NoError(t, g.Wait())
+
+	_, err := factory.file.Stat()
+	require.ErrorIs(t, err, os.ErrClosed)
+}
+
+func TestFileDecbufFactory_MissingFile(t *testing.T) {
+	factory := NewFileDecbufFactory(path.Join(t.TempDir(), "missing"))
+
+	d := factory.NewRawDecbuf(t.Context())
+	require.ErrorIs(t, d.Err(), os.ErrNotExist)
+	require.NoError(t, d.Close())
+	require.NoError(t, factory.Close())
 }
 
 func TestDecbufFactory_NewDecbufAtChecked_Concurrent(t *testing.T) {
@@ -260,7 +384,7 @@ func TestDecbufFactory_Stop(t *testing.T) {
 			require.NoError(t, d.Close())
 		})
 
-		require.ErrorIs(t, d.Err(), filepool.ErrPoolStopped)
+		require.ErrorIs(t, d.Err(), ErrFileDecbufFactoryClosed)
 	})
 }
 
@@ -273,20 +397,15 @@ func testDecbufFactory(
 	test func(t *testing.T, factory DecbufFactory),
 ) {
 	if testDisk {
-		t.Run("DecbufFactory=Disk-Pooled", func(t *testing.T) {
-			diskFactory, _ := createDecbufFactoriesWithBytes(t, 1, len, enc)
-			test(t, diskFactory)
-		})
-
-		t.Run("DecbufFactory=Disk-NoPool", func(t *testing.T) {
-			diskFactory, _ := createDecbufFactoriesWithBytes(t, 0, len, enc)
+		t.Run("DecbufFactory=Disk", func(t *testing.T) {
+			diskFactory, _ := createDecbufFactoriesWithBytes(t, len, enc)
 			test(t, diskFactory)
 		})
 	}
 
 	if testBucket {
 		t.Run("DecbufFactory=Bucket", func(t *testing.T) {
-			_, bucketFactory := createDecbufFactoriesWithBytes(t, 0, len, enc)
+			_, bucketFactory := createDecbufFactoriesWithBytes(t, len, enc)
 			test(t, bucketFactory)
 		})
 	}
@@ -316,7 +435,7 @@ func createTestEncoder(numBytes int) promencoding.Encbuf {
 	return enc
 }
 
-func createDecbufFactoriesWithBytes(t testing.TB, filePoolSize uint, len int, enc promencoding.Encbuf) (*FilePoolDecbufFactory, *BucketDecbufFactory) {
+func createDecbufFactoriesWithBytes(t testing.TB, len int, enc promencoding.Encbuf) (*FileDecbufFactory, *BucketDecbufFactory) {
 	// Prepend the contents of the buffer with the length of the content portion
 	// which does not include the trailing 4 bytes for a CRC 32.
 	lenBytes := make([]byte, 4)
@@ -328,8 +447,7 @@ func createDecbufFactoriesWithBytes(t testing.TB, filePoolSize uint, len int, en
 	filePath := path.Join(dir, fileName)
 	require.NoError(t, os.WriteFile(filePath, bytes, 0700))
 
-	reg := prometheus.NewPedanticRegistry()
-	diskFactory := NewFilePoolDecbufFactory(filePath, filePoolSize, filepool.NewFilePoolMetrics(reg))
+	diskFactory := NewFileDecbufFactory(filePath)
 	t.Cleanup(func() {
 		_ = diskFactory.Close()
 	})

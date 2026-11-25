@@ -69,7 +69,7 @@ type Reader interface {
 }
 
 type Config struct {
-	MaxIdleFileHandles uint `yaml:"max_idle_file_handles" category:"advanced"`
+	MaxIdleFileHandles uint `yaml:"max_idle_file_handles" category:"deprecated"` // TODO Remove in Mimir 3.5.
 
 	// Controls whether index-header lazy loading is enabled.
 	LazyLoadingEnabled     bool          `yaml:"lazy_loading_enabled" category:"advanced"`
@@ -89,7 +89,7 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.UintVar(&cfg.MaxIdleFileHandles, prefix+"max-idle-file-handles", 1, "Maximum number of idle file handles the store-gateway keeps open for each index-header file.")
+	f.UintVar(&cfg.MaxIdleFileHandles, prefix+"max-idle-file-handles", 1, "Maximum number of idle file handles the store-gateway keeps open for each index-header file. Deprecated: has no effect (the store-gateway keeps a single shared file handle open for each loaded index-header).")
 	f.BoolVar(&cfg.LazyLoadingEnabled, prefix+"lazy-loading-enabled", DefaultIndexHeaderLazyLoadingEnabled, "If enabled, store-gateway will lazy load an index-header only once required by a query.")
 	f.DurationVar(&cfg.LazyLoadingIdleTimeout, prefix+"lazy-loading-idle-timeout", DefaultIndexHeaderLazyLoadingIdleTimeout, "If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.")
 	f.IntVar(&cfg.LazyLoadingConcurrency, prefix+"lazy-loading-concurrency", 4, "Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.")
