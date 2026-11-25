@@ -272,23 +272,43 @@ func TestConfig_Validate(t *testing.T) {
 				require.NoError(t, cfg.KafkaConfig.SASL.Password.Set("supersecret"))
 			},
 		},
-		"should fail if the write compartment 0 SASL username override is configured but the password override is not": {
+		"should fail if only the write compartment 0 SASL username override is configured and the SASL password is not": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
 				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.Overrides.WriteCompartment0SASLUsername = "mimir"
 			},
-			expectedErr: ErrInconsistentWriteCompartment0SASLCredentials,
+			expectedErr: ErrInconsistentSASLCredentials,
 		},
-		"should fail if the write compartment 0 SASL password override is configured but the username override is not": {
+		"should fail if only the write compartment 0 SASL password override is configured and the SASL username is not": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
 				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				require.NoError(t, cfg.KafkaConfig.Overrides.WriteCompartment0SASLPassword.Set("supersecret"))
 			},
-			expectedErr: ErrInconsistentWriteCompartment0SASLCredentials,
+			expectedErr: ErrInconsistentSASLCredentials,
+		},
+		"should pass if only the write compartment 0 SASL username override is configured and the SASL password is": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASL.Username = "mimir-wc-<write-compartment-id>"
+				require.NoError(t, cfg.KafkaConfig.SASL.Password.Set("supersecret"))
+				cfg.KafkaConfig.Overrides.WriteCompartment0SASLUsername = "mimir"
+			},
+		},
+		"should pass if only the write compartment 0 SASL password override is configured and the SASL username is": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASL.Username = "mimir"
+				require.NoError(t, cfg.KafkaConfig.SASL.Password.Set("supersecret-wc-<write-compartment-id>"))
+				require.NoError(t, cfg.KafkaConfig.Overrides.WriteCompartment0SASLPassword.Set("supersecret"))
+			},
 		},
 		"should pass if both write compartment 0 SASL overrides are configured": {
 			setup: func(cfg *Config) {
@@ -649,6 +669,20 @@ func TestKafkaConfig_WriteCompartmentConfig(t *testing.T) {
 		assert.Equal(t, flagext.StringSliceCSV{"kafka-wc-1:9092"}, cfg.Address)
 		assert.Equal(t, "user-wc-1", cfg.SASL.Username)
 		assert.Equal(t, "pass-wc-1", cfg.SASL.Password.String())
+	})
+
+	t.Run("each SASL override replaces only its own value", func(t *testing.T) {
+		withUsernameOverride := base
+		withUsernameOverride.Overrides.WriteCompartment0SASLUsername = "user-override"
+		cfg := withUsernameOverride.WriteCompartmentConfig(0)
+		assert.Equal(t, "user-override", cfg.SASL.Username)
+		assert.Equal(t, "pass-wc-0", cfg.SASL.Password.String())
+
+		withPasswordOverride := base
+		withPasswordOverride.Overrides.WriteCompartment0SASLPassword = flagext.SecretWithValue("pass-override")
+		cfg = withPasswordOverride.WriteCompartmentConfig(0)
+		assert.Equal(t, "user-wc-0", cfg.SASL.Username)
+		assert.Equal(t, "pass-override", cfg.SASL.Password.String())
 	})
 }
 

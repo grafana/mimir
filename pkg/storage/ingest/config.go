@@ -72,8 +72,6 @@ var (
 	ErrSASLMSKIAMBadConfig               = fmt.Errorf("exactly one of static credentials, file path, or HTTP socket path must be configured to enable SASL AWS_MSK_IAM authentication")
 	ErrInvalidSASLMechanism              = fmt.Errorf("the configured SASL mechanism is invalid, must be one of: %s", util.JoinStrings(saslMechanismOptions, ", "))
 
-	ErrInconsistentWriteCompartment0SASLCredentials = fmt.Errorf("the SASL username and password overrides of write compartment 0 must be both configured or both empty")
-
 	ErrInvalidIngestionConcurrencyMax    = errors.New("ingest-storage.kafka.ingestion-concurrency-max must either be set to 0 or to a value greater than 0")
 	ErrInvalidIngestionConcurrencyParams = errors.New("ingest-storage.kafka.ingestion-concurrency-queue-capacity, ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample, ingest-storage.kafka.ingestion-concurrency-batch-size and ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard must be greater than 0")
 	ErrInvalidAutoCreateTopicParams      = errors.New("ingest-storage.kafka.auto-create-topic-default-partitions must be -1 or greater than 0 when ingest-storage.kafka.auto-create-topic-default-partitions=true")
@@ -391,8 +389,11 @@ func (cfg *KafkaConfig) Validate() error {
 	if err := cfg.SASL.Validate(); err != nil {
 		return err
 	}
-	if (cfg.Overrides.WriteCompartment0SASLUsername == "") != (cfg.Overrides.WriteCompartment0SASLPassword.String() == "") {
-		return ErrInconsistentWriteCompartment0SASLCredentials
+	if cfg.Overrides.WriteCompartment0SASLUsername != "" || cfg.Overrides.WriteCompartment0SASLPassword.String() != "" {
+		writeCompartment0SASL := cfg.WriteCompartmentConfig(0).SASL
+		if err := writeCompartment0SASL.Validate(); err != nil {
+			return fmt.Errorf("invalid SASL config of write compartment 0: %w", err)
+		}
 	}
 
 	if cfg.TLSEnabled {
@@ -502,6 +503,8 @@ func (cfg *KafkaConfig) WriteCompartmentConfig(writeCompartmentID int) KafkaConf
 		}
 		if cfg.Overrides.WriteCompartment0SASLUsername != "" {
 			c.SASL.Username = cfg.Overrides.WriteCompartment0SASLUsername
+		}
+		if cfg.Overrides.WriteCompartment0SASLPassword.String() != "" {
 			c.SASL.Password = cfg.Overrides.WriteCompartment0SASLPassword
 		}
 	}
