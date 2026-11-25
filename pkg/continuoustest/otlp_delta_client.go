@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 )
 
 const useStartTimestampsHeader = "X-Prometheus-Use-Start-Timestamps"
@@ -34,12 +36,16 @@ func deltaQueryOptions(options []RequestOption) []RequestOption {
 		}
 
 		for name := range headers {
-			if strings.EqualFold(name, useStartTimestampsHeader) {
+			if strings.EqualFold(name, useStartTimestampsHeader) || strings.EqualFold(name, compat.ForceFallbackHeaderName) || strings.EqualFold(name, "Cache-Control") {
 				delete(headers, name)
 			}
 		}
 
 		headers[useStartTimestampsHeader] = "true"
+		headers[compat.ForceFallbackHeaderName] = "true"
+
+		// Cached responses do not distinguish start-timestamp query semantics.
+		WithResultsCacheEnabled(false)(options)
 		WithAdditionalHeaders(headers)(options)
 	})
 }

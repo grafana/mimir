@@ -413,15 +413,11 @@ func (t *OTLPDeltaTest) runMetric(
 			queryHistory.queryMinTime = queryHistory.queryMinTime.Add(check.history)
 
 			for _, timeRange := range queryRanges {
-				for _, cached := range []bool{true, false} {
-					errs = append(errs, t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], cached, typeLabel, check.query, check.value, check.histogram, &queryHistory))
-				}
+				errs = append(errs, t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], false, typeLabel, check.query, check.value, check.histogram, &queryHistory))
 			}
 
 			for _, ts := range queryInstants {
-				for _, cached := range []bool{true, false} {
-					errs = append(errs, t.runInstantQueryAndVerifyResult(ctx, ts, cached, typeLabel, check.query, check.value, check.histogram, &queryHistory))
-				}
+				errs = append(errs, t.runInstantQueryAndVerifyResult(ctx, ts, false, typeLabel, check.query, check.value, check.histogram, &queryHistory))
 			}
 		}
 	}
