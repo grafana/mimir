@@ -8,6 +8,7 @@ package indexcache
 import (
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"strconv"
 	"sync"
@@ -314,5 +315,31 @@ func (c *RemoteIndexCache) FetchLabelValues(ctx context.Context, userID string, 
 
 func labelValuesCacheKey(userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) string {
 	hash := blake2b.Sum256([]byte(matchersKey))
-	return "LV2:" + userID + ":" + blockID.String() + ":" + labelName + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
+	key := "LV2:" + userID + ":" + blockID.String() + ":" + labelName + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
+	if len(key) <= maxMemcachedKeyLength && !hasInvalidMemcachedKeyByte(labelName) {
+		return key
+	}
+
+	// The memcached client rejects this LV2 key.
+	// Hash the label name together with the matchers key instead.
+	// The length prefix keeps two different splits of the same bytes apart.
+	h, _ := blake2b.New256(nil)
+	h.Write(binary.AppendUvarint(nil, uint64(len(labelName))))
+	h.Write([]byte(labelName))
+	h.Write([]byte(matchersKey))
+	return "LV3:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(h.Sum(nil))
+}
+
+// maxMemcachedKeyLength is the longest key that memcached accepts.
+const maxMemcachedKeyLength = 250
+
+// hasInvalidMemcachedKeyByte reports whether s holds a byte that the memcached client rejects in a key.
+// It follows legalKey in github.com/grafana/gomemcache/memcache: a space, a control character or DEL.
+func hasInvalidMemcachedKeyByte(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] <= ' ' || s[i] == 0x7f {
+			return true
+		}
+	}
+	return false
 }
