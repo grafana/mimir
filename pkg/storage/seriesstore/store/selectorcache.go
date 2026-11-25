@@ -39,11 +39,21 @@ const (
 // for tests.
 var minGeneralBuild = 100 * time.Microsecond
 
+// The bytes of the matchers the selectors keep copies of, in all, at which they are all dropped, and of a selector kept.
+// Variables for tests. info() selects target_info with an alternation of every target of the series it joins, a new one
+// whenever they change: kept by their count alone, a tenant's took GBs.
+var (
+	maxCachedSelectorsBytes = 64 << 20
+	maxCachedSelectorBytes  = 64 << 10
+)
+
 type selectorCache struct {
 	mu        sync.RWMutex
 	selectors map[uint64]*cachedSelector
 	// How many series the selectors hold.
 	refs atomic.Int64
+	// The bytes of the matchers the selectors keep copies of, by matcherBytes.
+	bytes atomic.Int64
 }
 
 // cachedSelector is what one selector matches, by shard.
@@ -63,7 +73,9 @@ func (c *cachedSelector) unshardedParts(matchers []compiledMatcher) []selectorPa
 		return *parts
 	}
 	parts := selectorParts(matchers)
-	c.coldParts.CompareAndSwap(nil, &parts)
+	if c.coldParts.CompareAndSwap(nil, &parts) {
+		c.owner.bytes.Add(int64(matcherBytes(matchers)))
+	}
 	return *c.coldParts.Load()
 }
 
@@ -77,6 +89,7 @@ func (c *cachedSelector) keep(shard int, kept *cachedShard) {
 		c.owner.mu.Lock()
 		c.owner.selectors = map[uint64]*cachedSelector{}
 		c.owner.refs.Store(0)
+		c.owner.bytes.Store(0)
 		c.owner.mu.Unlock()
 	}
 }
@@ -115,13 +128,34 @@ func (c *selectorCache) get(id uint64, matchers []compiledMatcher, shards int) *
 		// hashes makes all but never happen.
 		return &cachedSelector{owner: &selectorCache{}, shards: make([]atomic.Pointer[cachedShard], shards)}
 	}
-	if c.selectors == nil || len(c.selectors) >= maxCachedSelectors {
+	bytes := matcherBytes(matchers)
+	if bytes > maxCachedSelectorBytes {
+		// Looked up afresh each time, as a selector of a kept one's id is.
+		return &cachedSelector{owner: &selectorCache{}, shards: make([]atomic.Pointer[cachedShard], shards)}
+	}
+	if c.selectors == nil || len(c.selectors) >= maxCachedSelectors || c.bytes.Load()+int64(bytes) > int64(maxCachedSelectorsBytes) {
 		c.selectors = map[uint64]*cachedSelector{}
 		c.refs.Store(0)
+		c.bytes.Store(0)
 	}
 	selector = &cachedSelector{owner: c, shards: make([]atomic.Pointer[cachedShard], shards), parts: selectorParts(matchers)}
 	c.selectors[id] = selector
+	c.bytes.Add(int64(bytes))
 	return selector
+}
+
+// matcherBytes is how many bytes the copies selectorParts makes of the matchers take: their names and values.
+func matcherBytes(matchers []compiledMatcher) int {
+	bytes := 0
+	for index := range matchers {
+		m := &matchers[index]
+		value := m.value
+		if m.re != nil {
+			value = m.re.pattern
+		}
+		bytes += len(m.name) + len(value)
+	}
+	return bytes
 }
 
 // generalSelector is xored into the id of a selector without a metric name equality, which is kept apart from the others.
