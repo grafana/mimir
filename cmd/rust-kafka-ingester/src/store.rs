@@ -1972,6 +1972,11 @@ impl Store {
                 let window = limits.out_of_order_time_window_ms;
                 let flush_key = (tenant.clone(), request.source);
                 let shards = tenant_shards.get(&tenant).copied().unwrap_or(1);
+                // All series in a record share this tenant and source. Resolve the
+                // flush array once so only the shard lookup is needed per series.
+                let record_flushes = flushes
+                    .entry(flush_key.clone())
+                    .or_insert_with(|| (0..shards).map(|_| None).collect());
                 let mut series_rules = Vec::with_capacity(request.series.len());
                 for series in &mut request.series {
                     // Mimir's pusher routes each series to a shard by the hash of its labels.
@@ -1988,9 +1993,9 @@ impl Store {
                     // Mimir's fast path: without an out-of-order window, a series whose samples
                     // are all behind the head's min valid time is rejected as a whole, before
                     // the grace period checks.
-                    let min_append = flushes
-                        .get(&flush_key)
-                        .and_then(|flushes| flushes[shard].as_ref())
+                    let flush = &mut record_flushes[shard];
+                    let min_append = flush
+                        .as_ref()
                         .and_then(|flush| flush.rules)
                         .map(|rules| rules.min_valid_time)
                         .or_else(|| {
@@ -2075,17 +2080,14 @@ impl Store {
                     // Like Mimir's ingest pusher, each flush of up to `flush_series` series of a
                     // tenant's shard gets its own head appender, which takes the head's max time
                     // when created, or the first sample's for a head that has none yet.
-                    let flush = flushes
-                        .entry(flush_key.clone())
-                        .or_insert_with(|| (0..shards).map(|_| None).collect())[shard]
-                        .get_or_insert_with(|| {
-                            next_flush += 1;
-                            FlushState {
-                                id: next_flush,
-                                series: 0,
-                                rules: None,
-                            }
-                        });
+                    let flush = flush.get_or_insert_with(|| {
+                        next_flush += 1;
+                        FlushState {
+                            id: next_flush,
+                            series: 0,
+                            rules: None,
+                        }
+                    });
                     if self.flush_series > 0 && flush.series >= self.flush_series {
                         next_flush += 1;
                         *flush = FlushState {
