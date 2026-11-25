@@ -251,6 +251,78 @@ overrides:
 	}
 }
 
+// loadTenantLimitsFromMap loads config with loader.loadFromMap, and returns the error and the tenant limits.
+// The config is unmarshaled on every call, like on every reload by the runtimeconfig.Manager, so the
+// overrides of a tenant that don't change are equal between calls, but not the same map.
+func loadTenantLimitsFromMap(t *testing.T, loader *runtimeConfigLoader, config string) (map[string]*validation.Limits, error) {
+	t.Helper()
+	m := map[string]any{}
+	require.NoError(t, yaml.Unmarshal([]byte(config), &m))
+	cfg, err := loader.loadFromMap(m)
+	if err != nil {
+		return nil, err
+	}
+	return cfg.(*runtimeConfigValues).TenantLimits, nil
+}
+
+// TestRuntimeConfigLoader_LoadFromMap_ReusesLimitsOfUnchangedTenants checks that a reload keeps the decoded
+// limits of a tenant whose overrides didn't change, which is what makes it cheap, and decodes the limits of a
+// tenant whose overrides changed again. That the reloaded limits are right is checked by
+// TestRuntimeConfigLoader_LoadFromMap_ReloadsMatchFreshLoads.
+func TestRuntimeConfigLoader_LoadFromMap_ReusesLimitsOfUnchangedTenants(t *testing.T) {
+	loader := &runtimeConfigLoader{}
+	first, err := loadTenantLimitsFromMap(t, loader, `
+overrides:
+  unchanged:
+    ingestion_rate: 100
+  changed:
+    ingestion_rate: 200
+`)
+	require.NoError(t, err)
+	second, err := loadTenantLimitsFromMap(t, loader, `
+overrides:
+  unchanged:
+    ingestion_rate: 100
+  changed:
+    ingestion_rate: 201
+`)
+	require.NoError(t, err)
+
+	require.Same(t, first["unchanged"], second["unchanged"])
+	require.NotSame(t, first["changed"], second["changed"])
+	require.Equal(t, 201.0, second["changed"].IngestionRate)
+}
+
+// TestRuntimeConfigLoader_LoadFromMap_FailedLoadIsNotReused checks that a load that fails doesn't become the base
+// of the next load: the runtimeconfig.Manager keeps the config of the last successful load then. Validation is
+// the last step that can fail, after decoding the changed tenants.
+func TestRuntimeConfigLoader_LoadFromMap_FailedLoadIsNotReused(t *testing.T) {
+	const config = `
+overrides:
+  tenant:
+    ingestion_rate: 100
+`
+	loader := &runtimeConfigLoader{validate: func(limits *validation.Limits) error {
+		if limits.IngestionRate == 666 {
+			return errors.New("invalid ingestion rate")
+		}
+		return nil
+	}}
+	first, err := loadTenantLimitsFromMap(t, loader, config)
+	require.NoError(t, err)
+	_, err = loadTenantLimitsFromMap(t, loader, `
+overrides:
+  tenant:
+    ingestion_rate: 666
+`)
+	require.ErrorContains(t, err, "invalid ingestion rate")
+
+	// Had the failed load become the base, the tenant's overrides would have changed, and been decoded again.
+	third, err := loadTenantLimitsFromMap(t, loader, config)
+	require.NoError(t, err)
+	require.Same(t, first["tenant"], third["tenant"])
+}
+
 func TestRuntimeConfigLoader_ActiveSeriesCustomTrackersMergingShouldNotInterfereBetweenTenants(t *testing.T) {
 	// Write the runtime config to a temporary file.
 	runtimeConfigFile := filepath.Join(t.TempDir(), "runtime-config")
@@ -399,6 +471,43 @@ func BenchmarkRuntimeConfigLoader_Load(b *testing.B) {
 				if _, err := loader.load(bytes.NewReader(data)); err != nil {
 					b.Fatal(err)
 				}
+			}
+		})
+	}
+}
+
+// BenchmarkRuntimeConfigLoader_LoadFromMap reloads a runtime config in which one tenant's overrides change on
+// every load, as when an automated process updates the limits of a few tenants at a time. A reload without any
+// change isn't measured, because the runtimeconfig.Manager doesn't call the loader then.
+func BenchmarkRuntimeConfigLoader_LoadFromMap(b *testing.B) {
+	for _, tenants := range []int{100, 1000, 5000, 20000} {
+		b.Run(fmt.Sprintf("tenants=%d", tenants), func(b *testing.B) {
+			// The two configs only differ in the overrides of tenant-0, so loading them in turn changes one tenant
+			// on every load. Each is unmarshaled on its own, like on every reload by the Manager, so the two don't
+			// share the maps of the tenants that don't change.
+			var configs [2]map[string]any
+			for c := range configs {
+				overrides := make(map[string]map[string]int, tenants)
+				for i := 0; i < tenants; i++ {
+					overrides[fmt.Sprintf("tenant-%d", i)] = map[string]int{"ingestion_rate": 1000 + i, "max_global_series_per_user": 150000 + i}
+				}
+				overrides["tenant-0"]["ingestion_rate"] += c
+				data, err := yaml.Marshal(map[string]any{"overrides": overrides})
+				require.NoError(b, err)
+				require.NoError(b, yaml.Unmarshal(data, &configs[c]))
+			}
+			loader := &runtimeConfigLoader{}
+			// Load the second config first, so that every measured load is a reload.
+			_, err := loader.loadFromMap(configs[1])
+			require.NoError(b, err)
+
+			b.ReportAllocs()
+			i := 0
+			for b.Loop() {
+				if _, err := loader.loadFromMap(configs[i%2]); err != nil {
+					b.Fatal(err)
+				}
+				i++
 			}
 		})
 	}

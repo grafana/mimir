@@ -10,7 +10,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
+	"reflect"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/kv"
@@ -95,9 +97,15 @@ func (l *runtimeConfigTenantLimits) AllByUserID() map[string]*validation.Limits 
 	return nil
 }
 
-// runtimeConfigLoader loads and validates the per-tenant limits
+// runtimeConfigLoader loads and validates the per-tenant limits.
+// It isn't safe for concurrent use: the runtimeconfig.Manager calls it from one goroutine at a time.
 type runtimeConfigLoader struct {
 	validate func(limits *validation.Limits) error
+
+	// lastRawTenantLimits and lastTenantLimits are the raw and the decoded per-tenant overrides of the last
+	// successful loadFromMap.
+	lastRawTenantLimits map[string]any
+	lastTenantLimits    map[string]*validation.Limits
 }
 
 func (l *runtimeConfigLoader) load(r io.Reader) (interface{}, error) {
@@ -123,16 +131,52 @@ func (l *runtimeConfigLoader) load(r io.Reader) (interface{}, error) {
 	return overrides, nil
 }
 
+// loadFromMap only decodes and validates the tenants whose raw overrides changed since its last successful
+// call, and reuses the limits it decoded then for the others. A reload usually changes the overrides of a few
+// tenants at most, and comparing the raw overrides of a tenant costs far less than decoding its limits.
+// Reusing them assumes that the default limits don't change between calls, and that nothing modifies the
+// decoded limits.
 func (l *runtimeConfigLoader) loadFromMap(m map[string]interface{}) (interface{}, error) {
+	// "overrides" is the key of runtimeConfigValues.TenantLimits. If its value isn't a map of tenants,
+	// every tenant is decoded, which reports any error.
+	rawTenantLimits, _ := m["overrides"].(map[string]any)
+	var reused map[string]*validation.Limits
+	if len(rawTenantLimits) > 0 && len(l.lastTenantLimits) > 0 {
+		reused = make(map[string]*validation.Limits, len(rawTenantLimits))
+		changed := map[string]any{}
+		for tenantID, raw := range rawTenantLimits {
+			lastRaw, hasLastRaw := l.lastRawTenantLimits[tenantID]
+			last, hasLast := l.lastTenantLimits[tenantID]
+			if hasLastRaw && hasLast && reflect.DeepEqual(raw, lastRaw) {
+				reused[tenantID] = last
+			} else {
+				changed[tenantID] = raw
+			}
+		}
+		// Decode the changed tenants together with the rest of the config, without modifying the caller's map.
+		m = maps.Clone(m)
+		m["overrides"] = changed
+	}
+
 	overrides := &runtimeConfigValues{}
 
 	if err := validation.DecodeLimitsMap(m, overrides); err != nil {
 		return nil, err
 	}
 
+	// The reused limits were validated when they were decoded.
 	if err := l.validateAll(overrides); err != nil {
 		return nil, err
 	}
+
+	if reused != nil {
+		// reused is sized for all the tenants, unlike the decoded map of the changed tenants.
+		maps.Copy(reused, overrides.TenantLimits)
+		overrides.TenantLimits = reused
+	}
+	// Only a successful load is the base for the next one: the runtimeconfig.Manager keeps the config of the
+	// last successful load when one fails.
+	l.lastRawTenantLimits, l.lastTenantLimits = rawTenantLimits, overrides.TenantLimits
 
 	return overrides, nil
 }
@@ -256,7 +300,8 @@ func runtimeConfigHandler(runtimeCfgManager *runtimeconfig.Manager, defaultLimit
 // NewRuntimeManager returns a runtimeconfig.Manager, a services.Service that must be explicitly started to perform any work.
 // cfg is initialized as necessary, before being passed to runtimeconfig.New.
 func NewRuntimeManager(cfg *Config, name string, reg prometheus.Registerer, logger log.Logger) (*runtimeconfig.Manager, error) {
-	loader := runtimeConfigLoader{validate: cfg.ValidateLimits}
+	// The loader keeps state between loads, so the Manager must call the methods of a single loader.
+	loader := &runtimeConfigLoader{validate: cfg.ValidateLimits}
 	switch cfg.RuntimeConfig.Loader {
 	case runtimeConfigLoaderMap:
 		cfg.RuntimeConfig.MapLoader = loader.loadFromMap
