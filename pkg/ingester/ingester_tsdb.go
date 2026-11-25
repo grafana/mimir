@@ -633,7 +633,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	// We need to remove these series from series count.
 	i.seriesCount.Sub(int64(userDB.Head().NumSeries()))
 
-	dir := userDB.prometheusDB().Dir()
+	dir := i.cfg.BlocksStorageConfig.TSDB.BlocksDir(userID)
 
 	if err := userDB.Close(); err != nil {
 		level.Error(i.logger).Log("msg", "failed to close idle TSDB", "user", userID, "err", err)
