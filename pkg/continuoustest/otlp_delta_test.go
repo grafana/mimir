@@ -16,10 +16,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 )
 
 func TestClientWriteOTLPMetrics(t *testing.T) {
@@ -145,6 +148,10 @@ func TestClientWriteOTLPMetrics(t *testing.T) {
 func TestDeltaWriterBatchingAndIsolation(t *testing.T) {
 	requests := make(chan pmetricotlp.ExportRequest, 8)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Empty(t, r.Header.Get(useStartTimestampsHeader))
+		assert.Empty(t, r.Header.Get(compat.ForceFallbackHeaderName))
+		assert.Empty(t, r.Header.Get("Cache-Control"))
+
 		if r.URL.Path != "/otlp/v1/metrics" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 			w.WriteHeader(404)
