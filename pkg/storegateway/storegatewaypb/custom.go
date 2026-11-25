@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/grafana/mimir/pkg/storage/cost"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
@@ -31,6 +32,12 @@ func (c *customStoreGatewayClient) Series(ctx context.Context, in *storepb.Serie
 	}
 
 	return newCustomSeriesClient(client), nil
+}
+
+// SampleQueryCost implements StoreGatewayClient.
+func (c *customStoreGatewayClient) SampleQueryCost(ctx context.Context, req *cost.SamplingRequest, opts ...grpc.CallOption) (*cost.SamplingResponse, error) {
+	res, err := c.wrapped.SampleQueryCost(ctx, req, opts...)
+	return res, globalerror.WrapGRPCErrorWithContextError(ctx, err)
 }
 
 // LabelNames implements StoreGatewayClient.
