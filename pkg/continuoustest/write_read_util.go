@@ -4,6 +4,7 @@ package continuoustest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -101,18 +102,18 @@ func writeSamples(ctx context.Context, typeLabel string, timestamp time.Time, se
 	metrics.writesLatency.WithLabelValues(typeLabel).Observe(time.Since(start).Seconds())
 	metrics.writesTotal.WithLabelValues(typeLabel).Inc()
 
-	if statusCode/100 != 2 {
+	if err != nil || statusCode/100 != 2 {
 		metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(statusCode), typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Failed to remote write series", "status_code", statusCode, "err", err)
 	} else {
 		level.Info(logger).Log("msg", "Remote write series succeeded", "timestamp", timestamp)
 	}
 
-	// If the write request failed because of a 4xx error, retrying the request isn't expected to succeed.
+	// A 4xx error or OTLP partial success is not retryable.
 	// The series may have been not written at all or partially written (eg. we hit some limit).
 	// We keep writing the next interval, but we reset the query timestamp because we can't reliably
 	// assert on query results due to possible gaps.
-	if statusCode/100 == 4 {
+	if statusCode/100 == 4 || errors.Is(err, errOTLPPartialSuccess) {
 		records.lastWrittenTimestamp = timestamp
 		records.queryMinTime = time.Time{}
 		records.queryMaxTime = time.Time{}

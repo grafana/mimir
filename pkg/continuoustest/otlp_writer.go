@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,8 @@ import (
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
+
+var errOTLPPartialSuccess = errors.New("OTLP partial success")
 
 type otlpHTTPWriter struct {
 	httpClient        *http.Client
@@ -93,7 +96,7 @@ func (pw *otlpHTTPWriter) sendOTLPRequest(ctx context.Context, endpoint string, 
 		}
 		partial := response.PartialSuccess()
 		if partial.RejectedDataPoints() > 0 || partial.ErrorMessage() != "" {
-			return httpResp.StatusCode, fmt.Errorf("OTLP partial success: rejected %d data points: %s", partial.RejectedDataPoints(), partial.ErrorMessage())
+			return httpResp.StatusCode, fmt.Errorf("%w: rejected %d data points: %s", errOTLPPartialSuccess, partial.RejectedDataPoints(), partial.ErrorMessage())
 		}
 	}
 	return httpResp.StatusCode, nil
