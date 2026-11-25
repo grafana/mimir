@@ -357,6 +357,8 @@ type Ingester struct {
 
 	// Snapshots the seriesstore engine's heads while ingesting; nil unless it runs.
 	seriesstoreSnapshotService services.Service
+	// By tenant, the oldest offset of the last checkpoint the snapshots wrote, which only their goroutine uses.
+	seriesstoreCheckpointOffsets map[string]int64
 
 	// Index lookup planning
 	lookupPlanMetrics lookupplan.Metrics

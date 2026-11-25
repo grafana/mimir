@@ -3,10 +3,12 @@
 package ingester
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
@@ -643,18 +646,64 @@ const (
 	snapshotOutcomeFailure = "failure"
 )
 
-// seriesstoreSnapshotsRunning snapshots the head of every seriesstore tenant each interval, one tenant at a time.
+// seriesstoreSnapshotIntervalWhileStarting bounds the interval between rounds of head snapshots while the ingester
+// catches up on its partition: a start replays from the oldest of its tenants' checkpoints, so a catch-up that runs out
+// of memory before a round would start over from where the last start did.
+const seriesstoreSnapshotIntervalWhileStarting = 5 * time.Minute
+
+// seriesstoreSnapshotInterval is how long after a round of head snapshots starts the next one does, in the ingester's
+// state.
+func seriesstoreSnapshotInterval(state services.State, interval time.Duration) time.Duration {
+	if state == services.Starting {
+		return min(interval, seriesstoreSnapshotIntervalWhileStarting)
+	}
+	return interval
+}
+
+// seriesstoreSnapshotsRunning snapshots the head of every seriesstore tenant each interval, one tenant at a time, and
+// more often while the ingester starts.
 func (i *Ingester) seriesstoreSnapshotsRunning(ctx context.Context) error {
-	ticker := time.NewTicker(i.cfg.BlocksStorageConfig.TSDB.SeriesstoreSnapshotInterval)
-	defer ticker.Stop()
+	interval := i.cfg.BlocksStorageConfig.TSDB.SeriesstoreSnapshotInterval
+	timer := time.NewTimer(seriesstoreSnapshotInterval(i.State(), interval))
+	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-ticker.C:
+		case <-timer.C:
+			started := time.Now()
 			i.snapshotSeriesstoreHeads(ctx)
+			// From the round's start, as a ticker's: a round takes minutes.
+			timer.Reset(max(0, seriesstoreSnapshotInterval(i.State(), interval)-time.Since(started)))
 		}
 	}
+}
+
+// checkpointOffset is the oldest of a checkpoint's Kafka offsets, which a start replays from, and false for a checkpoint
+// without any.
+func checkpointOffset(checkpoint []byte) (int64, bool) {
+	var offsets map[string]int64
+	if json.Unmarshal(checkpoint, &offsets) != nil || len(offsets) == 0 {
+		return 0, false
+	}
+	return slices.Min(slices.Collect(maps.Values(offsets))), true
+}
+
+// orderByCheckpointAge orders the tenants the oldest checkpoint first, by the offsets, and before them the tenants
+// without one: a start replays from the oldest of its tenants' checkpoints, and from the retention period for a tenant
+// without one, so a round cut short, as by running out of memory while catching up, still moves the start on.
+func orderByCheckpointAge(userIDs []string, offsets map[string]int64) {
+	slices.SortStableFunc(userIDs, func(a, b string) int {
+		offsetA, checkpointedA := offsets[a]
+		offsetB, checkpointedB := offsets[b]
+		if checkpointedA != checkpointedB {
+			if !checkpointedA {
+				return -1
+			}
+			return 1
+		}
+		return cmp.Compare(offsetA, offsetB)
+	})
 }
 
 // snapshotSeriesstoreHeads checkpoints each tenant's head with the Kafka offsets committed before it started: the
@@ -662,7 +711,22 @@ func (i *Ingester) seriesstoreSnapshotsRunning(ctx context.Context) error {
 func (i *Ingester) snapshotSeriesstoreHeads(ctx context.Context) {
 	started := time.Now()
 	snapshots, failures := 0, 0
-	for _, userID := range i.getTSDBUsers() {
+	if i.seriesstoreCheckpointOffsets == nil {
+		i.seriesstoreCheckpointOffsets = map[string]int64{}
+	}
+	userIDs := i.getTSDBUsers()
+	offsets := make(map[string]int64, len(userIDs))
+	for _, userID := range userIDs {
+		if offset, ok := i.seriesstoreCheckpointOffsets[userID]; ok {
+			offsets[userID] = offset
+		} else if db := i.getTSDB(userID); db != nil {
+			if offset, ok := checkpointOffset(restoredCheckpoint(db.db)); ok {
+				offsets[userID] = offset
+			}
+		}
+	}
+	orderByCheckpointAge(userIDs, offsets)
+	for _, userID := range userIDs {
 		if ctx.Err() != nil {
 			return
 		}
@@ -685,6 +749,9 @@ func (i *Ingester) snapshotSeriesstoreHeads(ctx context.Context) {
 				level.Warn(i.logger).Log("msg", "failed to snapshot the head", "user", userID, "err", err)
 			}
 			continue
+		}
+		if offset, ok := checkpointOffset(checkpoint); ok {
+			i.seriesstoreCheckpointOffsets[userID] = offset
 		}
 		snapshots++
 		i.metrics.seriesstoreSnapshots.WithLabelValues(snapshotOutcomeSuccess).Inc()
