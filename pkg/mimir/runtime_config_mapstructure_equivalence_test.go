@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"maps"
 	"math/rand"
 	"reflect"
 	"testing"
@@ -70,6 +71,74 @@ func TestRuntimeConfigLoader_YAMLAndMapLoadersAreEquivalent(t *testing.T) {
 				tenants[fmt.Sprintf("tenant-%d", i)] = roundTrip(limitstest.GenerateLimits(r, base))
 			}
 			args[0] = reflect.ValueOf(map[string]any{"overrides": tenants})
+		},
+	}
+	require.NoError(t, quick.Check(f, cfg))
+}
+
+// TestRuntimeConfigLoader_LoadFromMap_ReloadsMatchFreshLoads checks that reloading a sequence of runtime configs
+// through one loader, which reuses the limits of the tenants whose overrides didn't change, yields the same
+// configs as loading each of them with a new loader. Between configs, the overrides of random tenants change, and
+// tenants are removed and added.
+func TestRuntimeConfigLoader_LoadFromMap_ReloadsMatchFreshLoads(t *testing.T) {
+	t.Cleanup(func() { validation.SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits()) })
+	// Reusing limits assumes that the default limits don't change between loads.
+	validation.SetDefaultLimitsForYAMLUnmarshalling(newDefaultLimitsForEquivalence(t))
+
+	// roundTrip unmarshals a config anew for every load, like every reload by the runtimeconfig.Manager, so the
+	// overrides of a tenant that doesn't change are equal between loads, but not the same map.
+	roundTrip := func(m map[string]any) map[string]any {
+		out := map[string]any{}
+		require.NoError(t, yaml.Unmarshal(mustMarshalYAML(t, m), &out))
+		return out
+	}
+
+	base := newDefaultLimitsForEquivalence(t)
+
+	f := func(configs []map[string]any) bool {
+		loader := &runtimeConfigLoader{}
+		for i, config := range configs {
+			// The generated limits are valid, so every load must succeed.
+			reloaded, err := loader.loadFromMap(roundTrip(config))
+			require.NoErrorf(t, err, "reload %d failed.\ninput:\n%s", i, mustMarshalYAML(t, config))
+			fresh, err := (&runtimeConfigLoader{}).loadFromMap(roundTrip(config))
+			require.NoErrorf(t, err, "fresh load %d failed.\ninput:\n%s", i, mustMarshalYAML(t, config))
+
+			// Compare the marshaled forms so we don't depend on unexported fields.
+			require.Equalf(t, string(mustMarshalYAML(t, fresh)), string(mustMarshalYAML(t, reloaded)), "reload %d produced a different config than a fresh load.\ninput:\n%s", i, mustMarshalYAML(t, config))
+		}
+		return true
+	}
+
+	cfg := &quick.Config{
+		MaxCount: 50,
+		Values: func(args []reflect.Value, r *rand.Rand) {
+			tenants := map[string]any{}
+			nextTenant := 0
+			addTenant := func() {
+				tenants[fmt.Sprintf("tenant-%d", nextTenant)] = limitstest.GenerateLimits(r, base)
+				nextTenant++
+			}
+			for range 2 + r.Intn(5) {
+				addTenant()
+			}
+
+			var configs []map[string]any
+			for range 2 + r.Intn(4) {
+				configs = append(configs, map[string]any{"overrides": maps.Clone(tenants)})
+				for tenantID := range tenants {
+					switch r.Intn(6) {
+					case 0:
+						tenants[tenantID] = limitstest.GenerateLimits(r, base)
+					case 1:
+						delete(tenants, tenantID)
+					}
+				}
+				if r.Intn(2) == 0 {
+					addTenant()
+				}
+			}
+			args[0] = reflect.ValueOf(configs)
 		},
 	}
 	require.NoError(t, quick.Check(f, cfg))

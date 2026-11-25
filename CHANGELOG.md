@@ -130,6 +130,7 @@
 * [ENHANCEMENT] Mimirtool: `mimirtool runtime-config validate` now accepts Mimir flags after `--`. #17439
 * [ENHANCEMENT] Ruler: Leave the ring before stopping rule evaluation on shutdown, and add the experimental `-ruler.shutdown-handover-period` flag to keep evaluating for a while after leaving the ring, so no evaluation is skipped while other rulers take over the rule groups. Disabled (`0`) by default. #17284
 * [ENHANCEMENT] Ingester: Add the experimental `-ingester.log-series-with-floats-and-histograms` flag. When enabled, the ingester logs at info level the tenant and labels of series in write requests that have both float samples and native histograms, sampled according to `-ingester.error-sample-rate`. #17504
+* [ENHANCEMENT] Runtime config: With `-runtime-config.loader=map`, a reload only decodes and validates the overrides of the tenants whose overrides changed, and reuses the limits of the other tenants. #17505
 * [BUGFIX] Ruler: Count write requests rejected by the tenant request-rate, ingestion-rate or active-series limits as `client_error` in `cortex_ruler_write_requests_failed_total`, so they no longer trigger `MimirRulerTooManyFailedPushes`. Ingester overload is still counted as `server_error`. #17302
 * [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
 * [BUGFIX] Store-gateway: Allow cancelling prepare-shutdown when the sync directory does not exist. #16049
