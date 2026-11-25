@@ -561,11 +561,7 @@ func newMultitenantCompactor(
 
 // cacheBucketID returns the metadata-cache bucket ID used to scope the cache keys.
 func (c *MultitenantCompactor) cacheBucketID() string {
-	// The logic must match the store-gateway's one.
-	if !c.compactorCfg.Compartments.Enabled {
-		return ""
-	}
-	return compartments.WithReadCompartmentSuffix("blocks", c.compactorCfg.ReadCompartmentID)
+	return c.compactorCfg.Compartments.BlocksCacheBucketID(c.compactorCfg.ReadCompartmentID)
 }
 
 // ringBasedCleanupDisabled reports whether this compactor skips the ring-sharded background blocks
@@ -646,8 +642,8 @@ func (c *MultitenantCompactor) startRing(ctx context.Context) error {
 	// With compartments enabled the compactor registers into its read compartment's own ring.
 	name, key := ringName, ringKey
 	if c.compactorCfg.Compartments.Enabled {
-		name = compartments.WithReadCompartmentSuffix(ringName, c.compactorCfg.ReadCompartmentID)
-		key = compartments.WithReadCompartmentSuffix(ringKey, c.compactorCfg.ReadCompartmentID)
+		name = c.compactorCfg.Compartments.ReadCompartmentName(ringName, c.compactorCfg.ReadCompartmentID)
+		key = c.compactorCfg.Compartments.ReadCompartmentName(ringKey, c.compactorCfg.ReadCompartmentID)
 	}
 	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.compactorCfg.ShardingRing, name, key, c.logger, c.registerer)
 	if err != nil {

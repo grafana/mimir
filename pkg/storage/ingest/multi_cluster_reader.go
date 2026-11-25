@@ -5,6 +5,7 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -50,10 +51,9 @@ type MultiClusterPartitionReader struct {
 // from every configured Kafka cluster. clusterConfigs holds one KafkaConfig per Kafka cluster, already
 // resolved with that cluster's topic, address, and SASL credentials.
 //
-// offsetFilePath is the path of each cluster's offset file and must contain the
-// compartments.WriteCompartmentIDPlaceholder, which is replaced with the Kafka cluster ID so each cluster
-// tracks offsets in its own file. instanceID is the base for each reader's consumer group, suffixed per
-// Kafka cluster so each cluster tracks offsets independently.
+// offsetFilePath is the base path of the offset files, and instanceID is the base of the consumer groups.
+// Both get the write compartment name of each Kafka cluster (see compartments.Config.WriteCompartmentName),
+// so each cluster tracks offsets independently.
 //
 // When orderedCfg.Enabled is set, records from every cluster are consumed in best-effort Kafka-record-timestamp
 // order before being pushed; otherwise each cluster pushes independently, so there's no cross-cluster
@@ -64,15 +64,13 @@ func NewMultiClusterPartitionReader(
 	partitionID int32,
 	instanceID string,
 	offsetFilePath string,
+	compartmentsCfg compartments.Config,
 	pusher Pusher,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*MultiClusterPartitionReader, error) {
 	if len(clusterConfigs) < 1 {
 		return nil, fmt.Errorf("at least one Kafka cluster must be configured, got %d", len(clusterConfigs))
-	}
-	if !strings.Contains(offsetFilePath, compartments.WriteCompartmentIDPlaceholder) {
-		return nil, fmt.Errorf("the offset file path %q must contain the %q placeholder", offsetFilePath, compartments.WriteCompartmentIDPlaceholder)
 	}
 
 	// When ordered consumption is enabled, all clusters feed a shared HeapMerger whose downstream consumer
@@ -101,9 +99,10 @@ func NewMultiClusterPartitionReader(
 	// There is one Kafka cluster per write compartment, so the Kafka cluster ID is also the write
 	// compartment ID. The offset file name, consumer group suffix, and metric label keep the
 	// "write compartment" naming because that's the operator-facing concept.
+	offsetFileExt := filepath.Ext(offsetFilePath)
 	for kafkaClusterID, clusterCfg := range clusterConfigs {
-		clusterOffsetFilePath := compartments.ReplaceWriteCompartment(offsetFilePath, kafkaClusterID)
-		readerInstanceID := fmt.Sprintf("%s-wc-%d", instanceID, kafkaClusterID)
+		clusterOffsetFilePath := compartmentsCfg.WriteCompartmentName(strings.TrimSuffix(offsetFilePath, offsetFileExt), kafkaClusterID) + offsetFileExt
+		readerInstanceID := compartmentsCfg.WriteCompartmentName(instanceID, kafkaClusterID)
 		clusterReg := prometheus.WrapRegistererWith(prometheus.Labels{"write_compartment": strconv.Itoa(kafkaClusterID)}, reg)
 		clusterLogger := log.With(logger, "write_compartment", kafkaClusterID)
 

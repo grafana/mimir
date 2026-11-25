@@ -198,8 +198,8 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 	// With compartments enabled the store-gateway registers into its read compartment's own ring.
 	ringName, ringKey := RingNameForServer, RingKey
 	if gatewayCfg.Compartments.Enabled {
-		ringName = compartments.WithReadCompartmentSuffix(RingNameForServer, gatewayCfg.ReadCompartmentID)
-		ringKey = compartments.WithReadCompartmentSuffix(RingKey, gatewayCfg.ReadCompartmentID)
+		ringName = gatewayCfg.Compartments.ReadCompartmentName(RingNameForServer, gatewayCfg.ReadCompartmentID)
+		ringKey = gatewayCfg.Compartments.ReadCompartmentName(RingKey, gatewayCfg.ReadCompartmentID)
 	}
 
 	// Define lifecycler delegates in reverse order (last to be called defined first because they're
@@ -248,10 +248,7 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 	// unique ID. With compartments enabled the store-gateways of different read compartments read different
 	// buckets at identical object paths through a shared cache, so each is scoped to its read compartment or
 	// they collide.
-	cacheBucketID := ""
-	if gatewayCfg.Compartments.Enabled {
-		cacheBucketID = compartments.WithReadCompartmentSuffix("blocks", gatewayCfg.ReadCompartmentID)
-	}
+	cacheBucketID := gatewayCfg.Compartments.BlocksCacheBucketID(gatewayCfg.ReadCompartmentID)
 
 	g.stores, err = NewBucketStores(storageCfg, cacheBucketID, shardingStrategy, bucketClient, allowedTenants, limits, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
 	if err != nil {

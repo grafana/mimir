@@ -73,7 +73,7 @@ func TestMultiClusterPartitionReader_ConsumesFromAllWriteCompartments(t *testing
 			})
 
 			reg := prometheus.NewPedanticRegistry()
-			reader, err := NewMultiClusterPartitionReader(clusterConfigs, tc.orderedCfg, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), pusher, log.NewNopLogger(), reg)
+			reader, err := NewMultiClusterPartitionReader(clusterConfigs, tc.orderedCfg, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), compartments.Config{}, pusher, log.NewNopLogger(), reg)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 			t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, reader)) })
@@ -118,7 +118,7 @@ func TestMultiClusterPartitionReader_SingleClusterSkipsMerging(t *testing.T) {
 	clusterConfigs := []KafkaConfig{createTestKafkaConfig(clusterAddr, readTopic)}
 	noopPusher := pusherFunc(func(context.Context, *mimirpb.WriteRequest) error { return nil })
 
-	reader, err := NewMultiClusterPartitionReader(clusterConfigs, mergerCfg, 0, "ingester-0", multiClusterTestOffsetFilePath(t), noopPusher, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	reader, err := NewMultiClusterPartitionReader(clusterConfigs, mergerCfg, 0, "ingester-0", multiClusterTestOffsetFilePath(t), compartments.Config{}, noopPusher, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 	assert.Nil(t, reader.merger)
 }
@@ -143,7 +143,7 @@ func TestMultiClusterPartitionReader_FailsToStartIfAnyClusterReaderFailsToStart(
 	brokenCfg.MaxReplayPeriod = 0
 	brokenCfg.ConsumeFromPositionAtStartup = consumeFromLastOffset
 
-	reader, err := NewMultiClusterPartitionReader([]KafkaConfig{healthyCfg, brokenCfg}, OrderedConsumptionConfig{}, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), pusherFunc(func(context.Context, *mimirpb.WriteRequest) error { return nil }), log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	reader, err := NewMultiClusterPartitionReader([]KafkaConfig{healthyCfg, brokenCfg}, OrderedConsumptionConfig{}, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), compartments.Config{}, pusherFunc(func(context.Context, *mimirpb.WriteRequest) error { return nil }), log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 
 	// Starting must fail: an ingester must not start if it cannot consume from every write compartment.
@@ -158,26 +158,51 @@ func TestNewMultiClusterPartitionReader(t *testing.T) {
 	noopPusher := pusherFunc(func(context.Context, *mimirpb.WriteRequest) error { return nil })
 
 	t.Run("rejects empty cluster configs", func(t *testing.T) {
-		_, err := NewMultiClusterPartitionReader(nil, OrderedConsumptionConfig{}, 0, "ingester-0", multiClusterTestOffsetFilePath(t), noopPusher, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		_, err := NewMultiClusterPartitionReader(nil, OrderedConsumptionConfig{}, 0, "ingester-0", multiClusterTestOffsetFilePath(t), compartments.Config{}, noopPusher, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 		require.Error(t, err)
 	})
 
-	t.Run("rejects offset file path without the write compartment placeholder", func(t *testing.T) {
-		_, clusterAddr := testkafka.CreateCluster(t, 1, "ingest-rc-0")
-		clusterConfigs := []KafkaConfig{createTestKafkaConfig(clusterAddr, "ingest-rc-0")}
+	t.Run("names the offset file and consumer group of each write compartment", func(t *testing.T) {
+		_, clusterAddr0 := testkafka.CreateCluster(t, 1, "ingest-rc-0")
+		_, clusterAddr1 := testkafka.CreateCluster(t, 1, "ingest-rc-0")
+		clusterConfigs := []KafkaConfig{createTestKafkaConfig(clusterAddr0, "ingest-rc-0"), createTestKafkaConfig(clusterAddr1, "ingest-rc-0")}
+		offsetFileDir := t.TempDir()
 
-		// The offset file path is missing the write compartment placeholder, so the per-cluster offset
-		// files would collide.
-		offsetFilePath := filepath.Join(t.TempDir(), "kafka-offset.json")
-		_, err := NewMultiClusterPartitionReader(clusterConfigs, OrderedConsumptionConfig{}, 0, "ingester-0", offsetFilePath, noopPusher, log.NewNopLogger(), prometheus.NewPedanticRegistry())
-		require.ErrorContains(t, err, "must contain")
+		tests := map[string]struct {
+			compartment0WithoutSuffix bool
+			expectedOffsetFiles       []string
+			expectedConsumerGroups    []string
+		}{
+			"with suffix": {
+				expectedOffsetFiles:    []string{"kafka-offset-wc-0.json", "kafka-offset-wc-1.json"},
+				expectedConsumerGroups: []string{"ingester-0-wc-0", "ingester-0-wc-1"},
+			},
+			"compartment 0 without suffix": {
+				compartment0WithoutSuffix: true,
+				expectedOffsetFiles:       []string{"kafka-offset.json", "kafka-offset-wc-1.json"},
+				expectedConsumerGroups:    []string{"ingester-0", "ingester-0-wc-1"},
+			},
+		}
+
+		for name, tc := range tests {
+			t.Run(name, func(t *testing.T) {
+				compartmentsCfg := compartments.Config{Enabled: true, Compartment0WithoutSuffix: tc.compartment0WithoutSuffix}
+				reader, err := NewMultiClusterPartitionReader(clusterConfigs, OrderedConsumptionConfig{}, 0, "ingester-0", filepath.Join(offsetFileDir, "kafka-offset.json"), compartmentsCfg, noopPusher, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+				require.NoError(t, err)
+				require.Len(t, reader.readers, 2)
+
+				for writeCompartmentID, clusterReader := range reader.readers {
+					assert.Equal(t, filepath.Join(offsetFileDir, tc.expectedOffsetFiles[writeCompartmentID]), clusterReader.offsetFile.filePath)
+					assert.Equal(t, tc.expectedConsumerGroups[writeCompartmentID], clusterReader.consumerGroup)
+				}
+			})
+		}
 	})
 }
 
-// multiClusterTestOffsetFilePath returns an offset file path template containing the write compartment
-// placeholder, as required by NewMultiClusterPartitionReader.
+// multiClusterTestOffsetFilePath returns the base offset file path passed to NewMultiClusterPartitionReader.
 func multiClusterTestOffsetFilePath(t *testing.T) string {
-	return filepath.Join(t.TempDir(), "kafka-offset-wc-"+compartments.WriteCompartmentIDPlaceholder+".json")
+	return filepath.Join(t.TempDir(), "kafka-offset.json")
 }
 
 func TestMultiClusterPartitionReader_WaitReadConsistencyUntilOffsets_RejectsKafkaClusterCountMismatch(t *testing.T) {
@@ -191,7 +216,7 @@ func TestMultiClusterPartitionReader_WaitReadConsistencyUntilOffsets_RejectsKafk
 	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, readTopic)
 	clusterConfigs := []KafkaConfig{createTestKafkaConfig(clusterAddr, readTopic), createTestKafkaConfig(clusterAddr, readTopic)}
 
-	reader, err := NewMultiClusterPartitionReader(clusterConfigs, OrderedConsumptionConfig{}, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), pusherFunc(func(context.Context, *mimirpb.WriteRequest) error { return nil }), log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	reader, err := NewMultiClusterPartitionReader(clusterConfigs, OrderedConsumptionConfig{}, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), compartments.Config{}, pusherFunc(func(context.Context, *mimirpb.WriteRequest) error { return nil }), log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 
 	// Fewer offsets than Kafka clusters is an invariant violation.
@@ -231,7 +256,7 @@ func TestMultiClusterPartitionReader_WaitReadConsistencyUntilOffsets_RoutesOffse
 	require.NoError(t, writer1.WriteSync(ctx, readTopic, partitionID, tenantID, writeReq("c1_0")))
 
 	pusher := pusherFunc(func(context.Context, *mimirpb.WriteRequest) error { return nil })
-	reader, err := NewMultiClusterPartitionReader([]KafkaConfig{cfg0, cfg1}, OrderedConsumptionConfig{}, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), pusher, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	reader, err := NewMultiClusterPartitionReader([]KafkaConfig{cfg0, cfg1}, OrderedConsumptionConfig{}, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), compartments.Config{}, pusher, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, reader)) })

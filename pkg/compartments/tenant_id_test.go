@@ -18,6 +18,19 @@ func TestTenantIDWithReadCompartment(t *testing.T) {
 	assert.Equal(t, "user:rc=1", TenantIDWithReadCompartment("user", tenant.NewMetadata(":rc=7"), 1), "existing rc key must be replaced")
 }
 
+func TestConfig_ReadCompartmentTenantID(t *testing.T) {
+	metadata := tenant.NewMetadata(":a=b")
+
+	withSuffix := Config{Enabled: true}
+	assert.Equal(t, "user:a=b:rc=0", withSuffix.ReadCompartmentTenantID("user", metadata, 0))
+	assert.Equal(t, "user:a=b:rc=1", withSuffix.ReadCompartmentTenantID("user", metadata, 1))
+
+	compartment0WithoutSuffix := Config{Enabled: true, Compartment0WithoutSuffix: true}
+	assert.Equal(t, "user:a=b", compartment0WithoutSuffix.ReadCompartmentTenantID("user", metadata, 0))
+	assert.Equal(t, "user", compartment0WithoutSuffix.ReadCompartmentTenantID("user", tenant.Metadata{}, 0))
+	assert.Equal(t, "user:a=b:rc=1", compartment0WithoutSuffix.ReadCompartmentTenantID("user", metadata, 1))
+}
+
 func TestMaxTenantMetadataLength(t *testing.T) {
 	assert.Equal(t, 59, MaxTenantMetadataLength(1))
 	assert.Equal(t, 59, MaxTenantMetadataLength(10))

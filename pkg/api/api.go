@@ -421,12 +421,12 @@ func (a *API) RegisterIngesterRing(r http.Handler) {
 // RegisterIngesterPartitionRings registers the ring UI page(s) for the ingester partition ring(s).
 // When compartments are disabled it registers a single page. When enabled it registers an index page
 // linking to one page per read compartment.
-func (a *API) RegisterIngesterPartitionRings(compartmentsEnabled bool, partitionRings *ring.PartitionRingWatchers, ringKey string, kvClient kv.Client) {
+func (a *API) RegisterIngesterPartitionRings(compartmentsCfg compartments.Config, partitionRings *ring.PartitionRingWatchers, ringKey string, kvClient kv.Client) {
 	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
 		{Desc: "Partition ring status", Path: "ingester/partition-ring"},
 	})
 
-	if !compartmentsEnabled {
+	if !compartmentsCfg.Enabled {
 		handler := ring.NewPartitionRingPageHandler(partitionRings.Watcher(0), ring.NewPartitionRingEditor(ringKey, kvClient))
 		a.RegisterRoute("/ingester/partition-ring", handler, false, true, "GET", "POST")
 		return
@@ -436,7 +436,7 @@ func (a *API) RegisterIngesterPartitionRings(compartmentsEnabled bool, partition
 	a.RegisterRoute("/ingester/partition-ring", index, false, true, "GET")
 
 	for compartmentID, partitionRing := range partitionRings.All() {
-		key := compartments.WithReadCompartmentSuffix(ringKey, compartmentID)
+		key := compartmentsCfg.ReadCompartmentName(ringKey, compartmentID)
 		handler := ring.NewPartitionRingPageHandler(partitionRing, ring.NewPartitionRingEditor(key, kvClient))
 		a.RegisterRoute(fmt.Sprintf("/ingester/partition-ring/compartment-%d", compartmentID), handler, false, true, "GET", "POST")
 	}

@@ -13,28 +13,28 @@ import (
 )
 
 // NewPartitionRingWatchers creates a ring.PartitionRingWatchers watching the ingester partition
-// ring(s). When compartmentsEnabled is false it watches a single ring under the plain ringName/ringKey,
-// behaving exactly as before compartments existed (numCompartments is ignored). When compartmentsEnabled
-// is true it watches numCompartments rings, each keyed for its read compartment via
-// compartments.WithReadCompartmentSuffix. Watchers are indexed by read compartment ID.
+// ring(s). When compartments are disabled it watches a single ring under the plain ringName/ringKey,
+// behaving exactly as before compartments existed. When compartments are enabled it watches one ring per
+// read compartment, each named and keyed for its read compartment via
+// compartments.Config.ReadCompartmentName. Watchers are indexed by read compartment ID.
 // tokenGenerator resolves the tokens of partitions that use derived tokens.
-func NewPartitionRingWatchers(compartmentsEnabled bool, numCompartments int, ringName, ringKey string, kvClient kv.Client, tokenGenerator ring.PartitionTokenGenerator, logger log.Logger, reg prometheus.Registerer) (*ring.PartitionRingWatchers, error) {
+func NewPartitionRingWatchers(compartmentsCfg compartments.Config, ringName, ringKey string, kvClient kv.Client, tokenGenerator ring.PartitionTokenGenerator, logger log.Logger, reg prometheus.Registerer) (*ring.PartitionRingWatchers, error) {
 	opts := ring.DefaultPartitionRingOptions()
 	opts.TokenGenerator = tokenGenerator
 
 	var watchers []*ring.PartitionRingWatcher
-	if !compartmentsEnabled {
+	if !compartmentsCfg.Enabled {
 		watchers = []*ring.PartitionRingWatcher{
 			ring.NewPartitionRingWatcherWithOptions(ringName, ringKey, kvClient, opts, logger, reg),
 		}
 	} else {
-		if numCompartments < 1 {
-			return nil, errors.Errorf("the number of compartments must be at least 1, got %d", numCompartments)
+		if compartmentsCfg.Read.NumCompartments < 1 {
+			return nil, errors.Errorf("the number of compartments must be at least 1, got %d", compartmentsCfg.Read.NumCompartments)
 		}
-		watchers = make([]*ring.PartitionRingWatcher, numCompartments)
+		watchers = make([]*ring.PartitionRingWatcher, compartmentsCfg.Read.NumCompartments)
 		for c := range watchers {
-			name := compartments.WithReadCompartmentSuffix(ringName, c)
-			key := compartments.WithReadCompartmentSuffix(ringKey, c)
+			name := compartmentsCfg.ReadCompartmentName(ringName, c)
+			key := compartmentsCfg.ReadCompartmentName(ringKey, c)
 
 			watchers[c] = ring.NewPartitionRingWatcherWithOptions(name, key, kvClient, opts, logger, reg)
 		}
