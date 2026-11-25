@@ -5,6 +5,7 @@ package usagetracker
 import (
 	"cmp"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"maps"
 	"math"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
@@ -20,6 +22,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
+	"github.com/grafana/mimir/pkg/usagetracker/hll"
 	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 )
 
@@ -66,6 +69,10 @@ type trackerStore struct {
 	enableVerboseSeriesMetrics          bool
 	minTimeBetweenShardsCleanup         time.Duration
 
+	// receivedSeries estimates the number of distinct series received from each tenant, including the rejected ones.
+	// It's nil when the estimation is disabled. It's set right after newTrackerStore, and never changes after that.
+	receivedSeries *receivedSeriesEstimation
+
 	// metrics, exposed through the trackerStore collector.
 	shardCleanupDuration prometheus.Histogram
 
@@ -77,6 +84,7 @@ type trackerStore struct {
 type limiter interface {
 	localSeriesLimit(userID string) uint64
 	zonesCount() uint64
+	receivedSeriesEstimationEnabled(userID string) bool
 }
 
 // events provides an abstraction to publish usage-tracker events.
@@ -110,6 +118,51 @@ func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThresh
 	return t
 }
 
+// receivedSeriesEstimation holds the configuration of the received series estimation: an HLL-timeline per tenant,
+// with a sketch per minute of the idle timeout, of all the series that trackSeries gets, whether it rejects them or not.
+// The estimate is never used for limiting.
+type receivedSeriesEstimation struct {
+	precision uint8
+	salt      uint64
+	minutes   int
+	// now is the time of the estimates in Collect: time.Now, except in tests.
+	now func() time.Time
+
+	// sketches are the sketches of the series of one trackSeries call. They are empty in the pool.
+	sketches zeropool.Pool[hll.Sketch]
+}
+
+func newReceivedSeriesEstimation(precision uint8, salt uint64, idleTimeout time.Duration) *receivedSeriesEstimation {
+	return &receivedSeriesEstimation{
+		precision: precision,
+		salt:      salt,
+		minutes:   int(math.Ceil(idleTimeout.Minutes())),
+		now:       time.Now,
+		sketches:  zeropool.New(func() hll.Sketch { return hll.NewSketch(precision) }),
+	}
+}
+
+// track adds series to the sketch of the current minute of timeline.
+// It builds a sketch of the series first, so it locks the timeline once, for a merge of 2^p registers.
+func (e *receivedSeriesEstimation) track(timeline *hll.Timeline, series []uint64, now time.Time) {
+	sketch := e.sketches.Get()
+	sketch.InsertAll(series, e.salt)
+	minute := unixMinute(now)
+	timeline.Merge(minute, minute, sketch)
+	clear(sketch)
+	e.sketches.Put(sketch)
+}
+
+// saltFingerprint identifies the salt in snapshots: sketches built with another salt must not be merged,
+// because the same series would be counted once per salt. It is a hash, because the salt is a secret.
+func (e *receivedSeriesEstimation) saltFingerprint() uint32 {
+	return uint32(xxhash.Sum64(binary.LittleEndian.AppendUint64(nil, e.salt)))
+}
+
+func unixMinute(t time.Time) int64 {
+	return t.Unix() / 60
+}
+
 // trackSeries is used in tests so we can provide custom time.Now() value.
 // trackSeries will modify and reuse the input series slice.
 func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series []uint64, timeNow time.Time) (rejectedRefs []uint64, err error) {
@@ -139,6 +192,10 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 			m.Unlock()
 			i0 = i
 		}
+	}
+
+	if timeline := tenant.receivedSeries.Load(); timeline != nil {
+		t.receivedSeries.track(timeline, series, timeNow)
 	}
 
 	if t.enableVerboseSeriesMetrics && len(createdRefs) > 0 {
@@ -250,6 +307,9 @@ func (t *trackerStore) getOrCreateTenant(tenantID string) *trackedTenant {
 	for i := range tenant.shards {
 		tenant.shards[i] = t.newShard.New(uint32(capacity))
 	}
+	if t.receivedSeries != nil && t.limiter.receivedSeriesEstimationEnabled(tenantID) {
+		tenant.receivedSeries.Store(hll.NewTimeline(t.receivedSeries.minutes))
+	}
 
 	t.tenants[tenantID] = tenant
 	i, found := slices.BinarySearch(t.sortedTenants, tenantID)
@@ -281,6 +341,11 @@ func (t *trackerStore) cleanup(now time.Time) {
 	totalTenants = len(tenantsClone)
 	if totalTenants == 0 {
 		return
+	}
+
+	// Do this before the shards, which wait between them: the timelines are cleaned up for the time of now.
+	if t.receivedSeries != nil {
+		t.cleanupReceivedSeries(tenantsClone, now)
 	}
 
 	// Cleanup by shards instead of by tenants, to avoid holding the mutex for a single tenant for too long.
@@ -325,8 +390,12 @@ func (t *trackerStore) cleanup(now time.Time) {
 
 	// Check all tenants and see if any of them are now empty.
 	// We don't need to take the mutex for this check, and in most situations we won't find any candidates.
+	empty := func(tenant *trackedTenant) bool {
+		timeline := tenant.receivedSeries.Load()
+		return tenant.series.Load() == 0 && (timeline == nil || timeline.Empty(unixMinute(now)))
+	}
 	for tenantID, tenant := range tenantsClone {
-		if tenant.series.Load() == 0 {
+		if empty(tenant) {
 			deletionCandidates = append(deletionCandidates, tenantID)
 		}
 	}
@@ -344,7 +413,7 @@ func (t *trackerStore) cleanup(now time.Time) {
 		// Make sure nobody is appending.
 		// Since we have the t.mtx, we know that nobody can also get this tenant.
 		tenant.Lock()
-		if tenant.series.Load() == 0 {
+		if empty(tenant) {
 			delete(t.tenants, tenantID)
 			index, found := slices.BinarySearch(t.sortedTenants, tenantID)
 			if !found {
@@ -356,6 +425,28 @@ func (t *trackerStore) cleanup(now time.Time) {
 		tenant.Unlock()
 	}
 	t.mtx.Unlock()
+}
+
+// cleanupReceivedSeries prunes the received-series timelines at now.
+// It also creates or drops the timelines of the tenants whose limit changed.
+func (t *trackerStore) cleanupReceivedSeries(tenants map[string]*trackedTenant, now time.Time) {
+	minute := unixMinute(now)
+	for tenantID, tenant := range tenants {
+		// Only getOrCreateTenant, before the tenant is visible, and this function set the timeline, so Load and Store don't race.
+		timeline := tenant.receivedSeries.Load()
+		enabled := t.limiter.receivedSeriesEstimationEnabled(tenantID)
+		switch {
+		case !enabled:
+			if timeline != nil {
+				tenant.receivedSeries.Store(nil)
+			}
+			continue
+		case timeline == nil:
+			timeline = hll.NewTimeline(t.receivedSeries.minutes)
+			tenant.receivedSeries.Store(timeline)
+		}
+		timeline.Cleanup(minute)
+	}
 }
 
 func (t *trackerStore) updateLimits() {
@@ -452,6 +543,10 @@ type trackedTenant struct {
 
 	seriesCreated *atomic.Uint64
 	seriesRemoved *atomic.Uint64
+
+	// receivedSeries is the HLL-timeline of the series received from the tenant, including the rejected ones.
+	// It's nil if the received series estimation is disabled for the tenant.
+	receivedSeries atomic.Pointer[hll.Timeline]
 }
 
 func zeroAsNoLimit(v uint64) uint64 {
