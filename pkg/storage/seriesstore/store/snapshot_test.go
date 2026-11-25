@@ -116,3 +116,57 @@ func TestSnapshotLabelsWriteEachNameOnce(t *testing.T) {
 	_, err := r.labels()
 	require.EqualError(t, err, "head snapshot labels have an unknown name")
 }
+
+// Bytes bigger than the writer's buffer, as the engine's state after a long replay is, go out in their place and in the
+// checksum as any others, without growing the buffer for the rest of the snapshot.
+func TestSnapshotWriterWritesBytesBiggerThanItsBuffer(t *testing.T) {
+	writeAll := func(w *snapshotWriter, big []byte) uint32 {
+		require.NoError(t, errors.Join(w.u8(1), w.optionalBytes(big), w.u8(2)))
+		checksum := w.checksum()
+		require.NoError(t, w.flush())
+		return checksum
+	}
+	var file bytes.Buffer
+	w := newSnapshotWriter(&file)
+	bufferCap := cap(w.buf)
+	big := bytes.Repeat([]byte{7}, 2*bufferCap+1)
+	checksum := writeAll(w, big)
+	require.Equal(t, bufferCap, cap(w.buf))
+
+	// The same, through a buffer big enough for all of it.
+	var expected bytes.Buffer
+	roomy := newSnapshotWriter(&expected)
+	roomy.buf = make([]byte, 0, 4*bufferCap)
+	require.Equal(t, writeAll(roomy, big), checksum)
+	require.Equal(t, expected.Bytes(), file.Bytes())
+}
+
+// A field is read at its size, nil apart from empty, and a length past the snapshot's end is rejected before it
+// allocates.
+func TestSnapshotReaderOptionalBytes(t *testing.T) {
+	reader := func(file []byte) *snapshotReader {
+		return &snapshotReader{r: bufio.NewReader(bytes.NewReader(file)), hasher: crc32.NewIEEE(), version: 8, size: int64(len(file))}
+	}
+	var file bytes.Buffer
+	w := newSnapshotWriter(&file)
+	require.NoError(t, errors.Join(w.optionalBytes([]byte("state")), w.optionalBytes([]byte{}), w.optionalBytes(nil)))
+	require.NoError(t, w.flush())
+	r := reader(file.Bytes())
+	read, err := r.optionalBytes()
+	require.NoError(t, err)
+	require.Equal(t, []byte("state"), read)
+	require.Equal(t, len(read), cap(read), "read at its size")
+	read, err = r.optionalBytes()
+	require.NoError(t, err)
+	require.Equal(t, []byte{}, read, "present but empty stays non-nil")
+	read, err = r.optionalBytes()
+	require.NoError(t, err)
+	require.Nil(t, read)
+
+	var corrupt bytes.Buffer
+	w = newSnapshotWriter(&corrupt)
+	require.NoError(t, errors.Join(w.u8(1), w.length(1<<30)))
+	require.NoError(t, w.flush())
+	_, err = reader(corrupt.Bytes()).optionalBytes()
+	require.ErrorContains(t, err, "exceeds the snapshot's")
+}
