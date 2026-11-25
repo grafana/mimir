@@ -721,15 +721,7 @@ local filename = 'mimir-writes.json';
       $._config.autoscaling.ingester.enabled,
       $.row('Ingester – autoscaling')
       .addPanel(
-        $.autoScalingActualReplicas('ingester') + { title: 'Replicas (HPA + ReplicaTemplate)' } +
-        $.panelDescription(
-          'Replicas (HPA + ReplicaTemplate)',
-          |||
-            The minimum, maximum, and current number of replicas reported by the HPA for the ReplicaTemplate object.
-            If available, also the spec and status replicas fields for the ReplicaTemplate object itself.
-            Rollout-operator will keep ingester replicas updated based on the ReplicaTemplate spec field, and then update the template's status field once the ingester count changes.
-          |||
-        )
+        $.autoScalingActualReplicas('ingester')
       )
       .addPanel(
         $.timeseriesPanel('Replicas (Ingesters)') +
@@ -753,14 +745,10 @@ local filename = 'mimir-writes.json';
         ),
       )
       .addPanel(
-        $.autoScalingDesiredReplicasPanel('ingester') + {
-          title: 'Desired replicas (ReplicaTemplate)',
-        }
+        $.autoScalingDesiredReplicasPanel('ingester')
       )
       .addPanel(
-        $.autoScalingFailuresPanel('ingester') + {
-          title: 'Autoscaler failures rate (ReplicaTemplate)',
-        }
+        $.autoScalingFailuresPanel('ingester')
       ),
     )
     .addRow(

@@ -34,8 +34,12 @@ local dblib = import 'grafana-databases-lib/main.libsonnet';
       ],
     };
 
-    dblib.new()
-    + dblib.withConfigMixin({
+    // Retitles a panel, and optionally replaces its description in the style of $.panelDescription.
+    local retitle(title, description='') = {
+      spec+: { title: title } + (if description != '' then { description: $.panelDescription(title, description).description } else {}),
+    };
+
+    dblib.new({
       selector: $.namespaceMatcher(),
       clusterLabel: $._config.per_cluster_label,
       namespaceLabel: $._config.per_namespace_label,
@@ -57,5 +61,19 @@ local dblib = import 'grafana-databases-lib/main.libsonnet';
         }
         for name in std.objectFields($._config.autoscaling)
       },
-    }),
+    })
+    // Only the store-gateway's leader zone has an HPA; the other zones follow it.
+    + dblib.autoscaling.withPanelMixin('store_gateway', 'replicas', retitle('Replicas (leader zone)', |||
+      The minimum, maximum, and current number of replicas for the leader zone of store-gateways.
+      Other zones scale to follow this zone (with delay for downscale).
+    |||))
+    + dblib.autoscaling.withPanelMixin('store_gateway', 'desiredReplicas', retitle('Desired replicas (leader zone)'))
+    // The ingester's HPA scales a ReplicaTemplate, which rollout-operator follows.
+    + dblib.autoscaling.withPanelMixin('ingester', 'replicas', retitle('Replicas (HPA + ReplicaTemplate)', |||
+      The minimum, maximum, and current number of replicas reported by the HPA for the ReplicaTemplate object.
+      If available, also the spec and status replicas fields for the ReplicaTemplate object itself.
+      Rollout-operator will keep ingester replicas updated based on the ReplicaTemplate spec field, and then update the template's status field once the ingester count changes.
+    |||))
+    + dblib.autoscaling.withPanelMixin('ingester', 'desiredReplicas', retitle('Desired replicas (ReplicaTemplate)'))
+    + dblib.autoscaling.withPanelMixin('ingester', 'failures', retitle('Autoscaler failures rate (ReplicaTemplate)')),
 }

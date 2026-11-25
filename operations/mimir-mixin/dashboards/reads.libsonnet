@@ -144,14 +144,7 @@ local filename = 'mimir-reads.json';
       $._config.autoscaling.store_gateway.enabled,
       $.row('Store-gateway – autoscaling')
       .addPanel(
-        $.autoScalingActualReplicas('store_gateway') + { title: 'Replicas (leader zone)' } +
-        $.panelDescription(
-          'Replicas (leader zone)',
-          |||
-            The minimum, maximum, and current number of replicas for the leader zone of store-gateways.
-            Other zones scale to follow this zone (with delay for downscale).
-          |||
-        )
+        $.autoScalingActualReplicas('store_gateway')
       )
       .addPanel(
         $.timeseriesPanel('Replicas') +
@@ -166,10 +159,10 @@ local filename = 'mimir-reads.json';
         ),
       )
       .addPanel(
-        $.autoScalingDesiredReplicasPanel('store_gateway') + { title: 'Desired replicas (leader zone)' }
+        $.autoScalingDesiredReplicasPanel('store_gateway')
       )
       .addPanel(
-        $.autoScalingFailuresPanel('store_gateway') + { title: 'Autoscaler failures rate' }
+        $.autoScalingFailuresPanel('store_gateway')
       ),
     )
     .addRow(
