@@ -134,8 +134,18 @@
     )
   ),
 
-  query_frontend_args+:: if !$._config.ingest_storage_enabled then {} else
-    $.ingest_storage_query_frontend_args,
+  query_frontend_args+:: if !$._config.ingest_storage_enabled then {} else (
+    $.ingest_storage_query_frontend_args +
+    // Query-frontends stop sending the offset of an inactive partition once it's older than the longest
+    // -querier.query-ingesters-within + -ingest-storage.query.include-inactive-partitions-offset-duration. This must
+    // match what queriers and ingesters use, otherwise queriers can receive offsets for partitions that
+    // ingesters have already deleted from the ring.
+    (
+      if 'querier.query-ingesters-within' in $.querier_args then
+        { 'querier.query-ingesters-within': $.querier_args['querier.query-ingesters-within'] }
+      else {}
+    )
+  ),
 
   ingest_storage_distributor_args+:: {
     // Apply per-component overrides to Kafka client ID.
