@@ -27,6 +27,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -144,8 +145,9 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 
 	streamingSeries := make([]storage.Series, 0, len(results.StreamingSeries))
 	streamingChunkSeriesConfig := &streamingChunkSeriesContext{
-		queryMetrics: q.queryMetrics,
-		queryStats:   stats.FromContext(ctx),
+		queryMetrics:           q.queryMetrics,
+		queryStats:             stats.FromContext(ctx),
+		collectStartTimestamps: requestoptions.CollectStartTimestampsFromContext(ctx),
 	}
 
 	for i, s := range results.StreamingSeries {

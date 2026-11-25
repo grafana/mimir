@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,6 +26,8 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestSubquerySpinOff_Correctness(t *testing.T) {
@@ -509,6 +512,148 @@ func TestSubquerySpinOffChildTimeRange(t *testing.T) {
 			require.Zero(t, start%stepMS, "start must be step-aligned")
 			require.Greater(t, start, lower, "start must be strictly after queryTime-offset-range")
 			require.LessOrEqual(t, start-stepMS, lower, "start must be the first step after that bound")
+		})
+	}
+}
+
+func TestSubquerySpinOff_StartTimestamps(t *testing.T) {
+	queryable := startTimestampTestQueryable(t)
+	opts := promql.EngineOpts{
+		MaxSamples:               100000,
+		Timeout:                  time.Minute,
+		EnableAtModifier:         true,
+		EnableNegativeOffset:     true,
+		NoStepSubqueryIntervalFn: func(int64) int64 { return 10000 },
+		Parser:                   promqlext.NewPromQLParser(),
+	}
+	engine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
+
+	tests := []struct {
+		name               string
+		query              string
+		useStartTimestamps *bool
+	}{
+		{
+			name:               "rate subquery instant absent",
+			query:              "max_over_time(sum(rate(counter[5m]))[1h:10s])",
+			useStartTimestamps: nil,
+		},
+		{
+			name:               "rate subquery instant disabled",
+			query:              "max_over_time(sum(rate(counter[5m]))[1h:10s])",
+			useStartTimestamps: new(false),
+		},
+		{
+			name:               "rate subquery instant enabled",
+			query:              "max_over_time(sum(rate(counter[5m]))[1h:10s])",
+			useStartTimestamps: new(true),
+		},
+		{
+			name:               "start timestamp subquery instant absent",
+			query:              "max_over_time(sum(start_timestamp(counter))[1h:10s])",
+			useStartTimestamps: nil,
+		},
+		{
+			name:               "start timestamp subquery instant disabled",
+			query:              "max_over_time(sum(start_timestamp(counter))[1h:10s])",
+			useStartTimestamps: new(false),
+		},
+		{
+			name:               "start timestamp subquery instant enabled",
+			query:              "max_over_time(sum(start_timestamp(counter))[1h:10s])",
+			useStartTimestamps: new(true),
+		},
+		{
+			name:               "increase over subquery instant absent",
+			query:              "increase(sum(counter)[1h:10s])",
+			useStartTimestamps: nil,
+		},
+		{
+			name:               "increase over subquery instant disabled",
+			query:              "increase(sum(counter)[1h:10s])",
+			useStartTimestamps: new(false),
+		},
+		{
+			name:               "increase over subquery instant enabled",
+			query:              "increase(sum(counter)[1h:10s])",
+			useStartTimestamps: new(true),
+		},
+		{
+			name:               "nested rate subquery instant absent",
+			query:              "max_over_time(sum(max_over_time(sum(rate(counter[5m]))[5m:10s]))[1h:10s])",
+			useStartTimestamps: nil,
+		},
+		{
+			name:               "nested rate subquery instant disabled",
+			query:              "max_over_time(sum(max_over_time(sum(rate(counter[5m]))[5m:10s]))[1h:10s])",
+			useStartTimestamps: new(false),
+		},
+		{
+			name:               "nested rate subquery instant enabled",
+			query:              "max_over_time(sum(max_over_time(sum(rate(counter[5m]))[5m:10s]))[1h:10s])",
+			useStartTimestamps: new(true),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var req MetricsQueryRequest = &PrometheusInstantQueryRequest{
+				queryExpr:          parseQuery(t, tc.query),
+				time:               1800000,
+				lookbackDelta:      5 * time.Minute,
+				useStartTimestamps: tc.useStartTimestamps,
+			}
+			downstream := HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+				query, err := newQuery(ctx, req, engine, queryable)
+				if err != nil {
+					return nil, err
+				}
+				defer query.Close()
+
+				result := query.Exec(ctx)
+				samples, err := promqlResultToSamples(result)
+				if err != nil {
+					return nil, err
+				}
+
+				// Copy the samples before closing the query returns its buffers to the pool.
+				return proto.Clone(&PrometheusResponse{
+					Status: statusSuccess,
+					Data: &PrometheusData{
+						ResultType: string(result.Value.Type()),
+						Result:     samples,
+					},
+				}).(*PrometheusResponse), nil
+			})
+
+			// Evaluate the original query before applying the transformation.
+			ctx := user.InjectOrgID(t.Context(), "tenant")
+			expected, err := downstream.Do(ctx, req)
+			require.NoError(t, err)
+			defer expected.Close()
+
+			want, ok := expected.GetPrometheusResponse()
+			require.True(t, ok)
+			if tc.useStartTimestamps != nil && *tc.useStartTimestamps {
+				require.NotEmpty(t, want.Data.Result)
+			}
+
+			// Run the same request through the transformation middleware.
+			reg := prometheus.NewRegistry()
+			limits := mockLimits{subquerySpinOffEnabled: true}
+			handler := newSpinOffSubqueriesMiddleware(limits, log.NewNopLogger(), engine, reg, nil, opts.NoStepSubqueryIntervalFn, subqueryspinoff.Options{}).Wrap(downstream)
+			actual, err := newDurationsMiddleware(log.NewNopLogger()).Wrap(handler).Do(ctx, req)
+			require.NoError(t, err)
+			defer actual.Close()
+
+			got, ok := actual.GetPrometheusResponse()
+			require.True(t, ok)
+
+			// Compare samples and verify that the transformation actually ran.
+			sort.Sort(byLabels(want.Data.Result))
+			sort.Sort(byLabels(got.Data.Result))
+			approximatelyEqualsSamples(t, want, got)
+			require.Equal(t, float64(1), testutil.ToFloat64(handler.(*spinOffSubqueriesMiddleware).metrics.SpinOffSuccesses))
 		})
 	}
 }

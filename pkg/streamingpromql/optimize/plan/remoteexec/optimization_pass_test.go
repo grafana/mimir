@@ -817,7 +817,7 @@ func TestOptimizationPass(t *testing.T) {
 			timeRange = types.NewRangeQueryTimeRange(timeNow.Add(-48*time.Hour), timeNow.Add(-time.Hour), time.Minute)
 		}
 
-		p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, nil, observer)
+		p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, nil, false, nil, observer)
 		require.NoError(t, err)
 		actual := p.String()
 		require.Equal(t, testutils.TrimIndent(expected), actual)
@@ -898,6 +898,7 @@ func TestOptimizationPass_KeepsUnsupportedNodesLocal(t *testing.T) {
 				"left_metric + fill_right(0) right_metric",
 				types.NewInstantQueryTimeRange(time.Now()),
 				streamingpromql.DefaultLookbackDelta,
+				nil,
 				false,
 				nil,
 				streamingpromql.NoopPlanningObserver{},
@@ -920,6 +921,7 @@ func TestOptimizationPass_EagerLoadsCompatibleDescendantsInUnsupportedShardedLeg
 		"sum(source_metric)",
 		types.NewInstantQueryTimeRange(time.Now()),
 		streamingpromql.DefaultLookbackDelta,
+		nil,
 		false,
 		nil,
 		streamingpromql.NoopPlanningObserver{},
@@ -946,6 +948,7 @@ func TestOptimizationPass_EagerLoadsCompatibleDescendantsInUnsupportedShardedLeg
 			"left_metric + fill_right(0) right_metric",
 			plan.Parameters.TimeRange,
 			streamingpromql.DefaultLookbackDelta,
+			nil,
 			false,
 			nil,
 			streamingpromql.NoopPlanningObserver{},
@@ -995,6 +998,7 @@ func TestOptimizationPass_UsesAdjustedRangeForEvaluationRoots(t *testing.T) {
 		"max_over_time((__vector_evaluation_root__(source_metric))[2h:1m])",
 		types.NewInstantQueryTimeRange(time.Now()),
 		streamingpromql.DefaultLookbackDelta,
+		nil,
 		false,
 		nil,
 		streamingpromql.NoopPlanningObserver{},
@@ -1020,6 +1024,7 @@ func TestOptimizationPass_UsesAdjustedRangeForEvaluationRoots(t *testing.T) {
 		"source_metric[5m]",
 		plan.Parameters.TimeRange,
 		streamingpromql.DefaultLookbackDelta,
+		nil,
 		false,
 		nil,
 		streamingpromql.NoopPlanningObserver{},
@@ -1320,7 +1325,7 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 			planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(true, 24*time.Hour, true, opts.Limits, opts.CommonOpts.Reg, opts.Logger))
 			planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 
-			p, err := planner.NewQueryPlan(ctx, testCase.expr, instantQueryTimeRange, streamingpromql.DefaultLookbackDelta, false, nil, streamingpromql.NoopPlanningObserver{})
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, instantQueryTimeRange, streamingpromql.DefaultLookbackDelta, nil, false, nil, streamingpromql.NoopPlanningObserver{})
 			require.NoError(t, err)
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), p.String())
 		})

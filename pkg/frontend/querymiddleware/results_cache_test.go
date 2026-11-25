@@ -751,3 +751,28 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 func toMs(t time.Duration) int64 {
 	return int64(t / time.Millisecond)
 }
+
+func TestResultsCacheEnabledByOption(t *testing.T) {
+	tests := []struct {
+		name               string
+		useStartTimestamps *bool
+		cacheDisabled      bool
+		expected           bool
+	}{
+		{name: "absent option", expected: true},
+		{name: "disabled option", useStartTimestamps: new(false), expected: true},
+		{name: "enabled option", useStartTimestamps: new(true), expected: true},
+		{name: "caching disabled with absent option", cacheDisabled: true},
+		{name: "caching disabled with disabled option", useStartTimestamps: new(false), cacheDisabled: true},
+		{name: "caching disabled with enabled option", useStartTimestamps: new(true), cacheDisabled: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &PrometheusRangeQueryRequest{
+				useStartTimestamps: tc.useStartTimestamps,
+				options:            requestoptions.Options{CacheDisabled: tc.cacheDisabled},
+			}
+			require.Equal(t, tc.expected, resultsCacheEnabledByOption(req))
+		})
+	}
+}

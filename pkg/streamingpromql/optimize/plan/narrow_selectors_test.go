@@ -751,7 +751,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			require.NoError(t, err)
 			planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
 
-			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, nil, observer)
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, nil, false, nil, observer)
 			require.NoError(t, err)
 			actual := p.String()
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)

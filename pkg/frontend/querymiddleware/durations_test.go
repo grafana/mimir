@@ -66,6 +66,7 @@ func TestDurationMiddleware(t *testing.T) {
 						nil,
 						1000,
 						0,
+						nil,
 						expr,
 						requestoptions.Options{},
 						nil,
@@ -80,6 +81,7 @@ func TestDurationMiddleware(t *testing.T) {
 						3000,
 						60000,
 						0,
+						nil,
 						expr,
 						requestoptions.Options{},
 						nil,
@@ -158,7 +160,7 @@ func TestDurationsMiddleware_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
 	handler := middleware.Wrap(capture)
 
 	// Create a request with a nil queryExpr to simulate a failed parse.
-	req := NewPrometheusInstantQueryRequest("", nil, 1000, 0, nil, requestoptions.Options{}, nil, "", nil)
+	req := NewPrometheusInstantQueryRequest("", nil, 1000, 0, nil, nil, requestoptions.Options{}, nil, "", nil)
 
 	// This should not panic, should pass through to the next handler.
 	require.NotPanics(t, func() {

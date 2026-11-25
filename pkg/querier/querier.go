@@ -209,7 +209,7 @@ func New(
 
 	switch cfg.QueryEngine {
 	case PrometheusEngine:
-		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.PrometheusEngineOpts()))
+		eng = engine.NewPrometheusEngine(opts.PrometheusEngineOpts())
 	case MimirEngine:
 		var err error
 		streamingEngine, err = streamingpromql.NewEngine(opts, queryMetrics, planner)
@@ -218,7 +218,7 @@ func New(
 		}
 
 		if cfg.EnableQueryEngineFallback {
-			prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.PrometheusEngineOpts()))
+			prometheusEngine := engine.NewPrometheusEngine(opts.PrometheusEngineOpts())
 			eng = compat.NewEngineWithFallback(streamingEngine, prometheusEngine, reg, logger)
 		} else {
 			eng = streamingEngine

@@ -311,6 +311,10 @@ func (r *remoteReadQueryRequest) GetLookbackDelta() time.Duration {
 	return 0
 }
 
+func (r *remoteReadQueryRequest) GetUseStartTimestamps() *bool {
+	return nil
+}
+
 func (r *remoteReadQueryRequest) GetStats() string {
 	return ""
 }

@@ -62,10 +62,11 @@ type PrometheusRangeQueryRequest struct {
 	end     int64
 	step    int64
 	// lookback is set at query engine level rather than per request, but required to know minT and maxT
-	lookbackDelta time.Duration
-	queryExpr     parser.Expr
-	minT          int64
-	maxT          int64
+	lookbackDelta      time.Duration
+	useStartTimestamps *bool
+	queryExpr          parser.Expr
+	minT               int64
+	maxT               int64
 
 	// ID of the request used to correlate downstream requests and responses.
 	id      int64
@@ -84,6 +85,7 @@ func NewPrometheusRangeQueryRequest(
 	headers []*PrometheusHeader,
 	start, end, step int64,
 	lookbackDelta time.Duration,
+	useStartTimestamps *bool,
 	queryExpr parser.Expr,
 	options requestoptions.Options,
 	hints *Hints,
@@ -91,19 +93,20 @@ func NewPrometheusRangeQueryRequest(
 	explain []string,
 ) *PrometheusRangeQueryRequest {
 	r := &PrometheusRangeQueryRequest{
-		path:          urlPath,
-		headers:       headers,
-		start:         start,
-		end:           end,
-		step:          step,
-		lookbackDelta: lookbackDelta,
-		queryExpr:     queryExpr,
-		minT:          start,
-		maxT:          end,
-		options:       options,
-		hints:         hints,
-		stats:         stats,
-		explain:       explain,
+		path:               urlPath,
+		headers:            headers,
+		start:              start,
+		end:                end,
+		step:               step,
+		lookbackDelta:      lookbackDelta,
+		useStartTimestamps: useStartTimestamps,
+		queryExpr:          queryExpr,
+		minT:               start,
+		maxT:               end,
+		options:            options,
+		hints:              hints,
+		stats:              stats,
+		explain:            explain,
 	}
 	return r.updateMinMaxT()
 }
@@ -193,6 +196,10 @@ func (r *PrometheusRangeQueryRequest) GetLookbackDelta() time.Duration {
 	return r.lookbackDelta
 }
 
+func (r *PrometheusRangeQueryRequest) GetUseStartTimestamps() *bool {
+	return r.useStartTimestamps
+}
+
 func (r *PrometheusRangeQueryRequest) GetStats() string {
 	return r.stats
 }
@@ -202,7 +209,7 @@ func (r *PrometheusRangeQueryRequest) GetExplain() []string {
 }
 
 func (r *PrometheusRangeQueryRequest) GetQueryOpts() (promql.QueryOpts, error) {
-	return createQueryOpts(r.stats, r.lookbackDelta, r.explain)
+	return createQueryOpts(r.stats, r.lookbackDelta, r.useStartTimestamps, r.explain)
 }
 
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
@@ -310,10 +317,11 @@ type PrometheusInstantQueryRequest struct {
 	headers []*PrometheusHeader
 	time    int64
 	// lookback is set at query engine level rather than per request, but required to know minT and maxT
-	lookbackDelta time.Duration
-	queryExpr     parser.Expr
-	minT          int64
-	maxT          int64
+	lookbackDelta      time.Duration
+	useStartTimestamps *bool
+	queryExpr          parser.Expr
+	minT               int64
+	maxT               int64
 
 	// ID of the request used to correlate downstream requests and responses.
 	id      int64
@@ -332,6 +340,7 @@ func NewPrometheusInstantQueryRequest(
 	headers []*PrometheusHeader,
 	time int64,
 	lookbackDelta time.Duration,
+	useStartTimestamps *bool,
 	queryExpr parser.Expr,
 	options requestoptions.Options,
 	hints *Hints,
@@ -339,17 +348,18 @@ func NewPrometheusInstantQueryRequest(
 	explain []string,
 ) *PrometheusInstantQueryRequest {
 	r := &PrometheusInstantQueryRequest{
-		path:          urlPath,
-		headers:       headers,
-		time:          time,
-		lookbackDelta: lookbackDelta,
-		queryExpr:     queryExpr,
-		minT:          time,
-		maxT:          time,
-		options:       options,
-		hints:         hints,
-		stats:         stats,
-		explain:       explain,
+		path:               urlPath,
+		headers:            headers,
+		time:               time,
+		lookbackDelta:      lookbackDelta,
+		useStartTimestamps: useStartTimestamps,
+		queryExpr:          queryExpr,
+		minT:               time,
+		maxT:               time,
+		options:            options,
+		hints:              hints,
+		stats:              stats,
+		explain:            explain,
 	}
 	return r.updateMinMaxT()
 }
@@ -443,6 +453,10 @@ func (r *PrometheusInstantQueryRequest) GetLookbackDelta() time.Duration {
 	return r.lookbackDelta
 }
 
+func (r *PrometheusInstantQueryRequest) GetUseStartTimestamps() *bool {
+	return r.useStartTimestamps
+}
+
 func (r *PrometheusInstantQueryRequest) GetStats() string {
 	return r.stats
 }
@@ -452,7 +466,7 @@ func (r *PrometheusInstantQueryRequest) GetExplain() []string {
 }
 
 func (r *PrometheusInstantQueryRequest) GetQueryOpts() (promql.QueryOpts, error) {
-	return createQueryOpts(r.stats, r.lookbackDelta, r.explain)
+	return createQueryOpts(r.stats, r.lookbackDelta, r.useStartTimestamps, r.explain)
 }
 
 func (r *PrometheusInstantQueryRequest) WithID(id int64) (MetricsQueryRequest, error) {
@@ -1170,6 +1184,6 @@ func cloneHeaders(headers []*PrometheusHeader) []*PrometheusHeader {
 	return cp
 }
 
-func createQueryOpts(stats string, lookbackDelta time.Duration, explain []string) (promql.QueryOpts, error) {
-	return types.NewMimirQueryOpts(stats == "all", lookbackDelta, nil, types.ParseExplainValues(explain)), nil
+func createQueryOpts(stats string, lookbackDelta time.Duration, useStartTimestamps *bool, explain []string) (promql.QueryOpts, error) {
+	return types.NewMimirQueryOpts(stats == "all", lookbackDelta, useStartTimestamps, types.ParseExplainValues(explain)), nil
 }

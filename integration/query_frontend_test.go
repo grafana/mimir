@@ -33,7 +33,9 @@ import (
 
 	"github.com/grafana/mimir/integration/ca"
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/integration/e2emimir/rw2/rc3"
 	mimirquerier "github.com/grafana/mimir/pkg/querier"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 )
 
 type queryFrontendTestConfig struct {
@@ -1293,4 +1295,219 @@ func TestQueryFrontendCardinalityEstimation(t *testing.T) {
 	makeRequest()
 	expectedQuerierRequestsSoFar += 2
 	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(float64(expectedQuerierRequestsSoFar)), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount, withQueryRoutes), "querier should have received one request per shard for the original and subsequent requests")
+}
+
+func TestQueryFrontendStartTimestamps(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, blocksBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
+		"-querier.query-engine":                                                    "prometheus",
+		"-query-frontend.query-engine":                                             "prometheus",
+		"-query-frontend.enable-remote-execution":                                  "false",
+		"-query-frontend.use-mimir-query-engine-for-sharding":                      "false",
+		"-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results": "false",
+		"-query-frontend.queue-reservation-enabled":                                "false",
+		"-query-frontend.enabled-promql-experimental-functions":                    "start_timestamp",
+		"-query-frontend.parallelize-shardable-queries":                            "true",
+		"-query-frontend.query-sharding-total-shards":                              "2",
+		"-query-frontend.split-queries-by-interval":                                "30s",
+		// These requests alternate evaluation modes, so they must not share cached results.
+		"-query-frontend.cache-results":             "false",
+		"-query-frontend.cache-errors":              "false",
+		"-ingester.start-timestamp-strategy":        "store",
+		"-blocks-storage.tsdb.float-chunk-encoding": "xor2",
+		// Keep data in the head until the ingester assertions have finished.
+		"-blocks-storage.tsdb.block-ranges-period":      "24h",
+		"-blocks-storage.tsdb.head-compaction-interval": "15m",
+		"-blocks-storage.tsdb.retention-period":         "24h",
+		"-blocks-storage.tsdb.ship-interval":            "1s",
+	})
+
+	scheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
+	require.NoError(t, s.StartAndWaitReady(scheduler))
+	flags["-query-frontend.scheduler-address"] = scheduler.NetworkGRPCEndpoint()
+	flags["-querier.scheduler-address"] = scheduler.NetworkGRPCEndpoint()
+
+	frontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	querier := e2emimir.NewQuerier("querier-ingester", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{
+		"-querier.query-store-after":      "24h",
+		"-querier.query-ingesters-within": "0",
+	}))
+	require.NoError(t, s.Start(frontend))
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
+	require.NoError(t, s.WaitReady(frontend))
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(513), "cortex_ring_tokens_total"))
+	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+
+	// The write path accepts the series-level created timestamp from Remote Write 2 rc3.
+	queryTime := time.Now().Truncate(time.Hour).Add(-2 * time.Hour)
+	startTime := queryTime.Add(-100 * time.Second)
+	writeRequest := &rc3.Request{
+		Symbols: []string{"", "__name__", "counter", "instance"},
+	}
+	for i := 0; i < 16; i++ {
+		writeRequest.Symbols = append(writeRequest.Symbols, strconv.Itoa(i))
+		writeRequest.Timeseries = append(writeRequest.Timeseries, rc3.TimeSeries{
+			LabelsRefs: []uint32{1, 2, 3, uint32(len(writeRequest.Symbols) - 1)},
+			Samples: []rc3.Sample{{
+				Timestamp: queryTime.UnixMilli(),
+				Value:     42,
+			}},
+			CreatedTimestamp: startTime.UnixMilli(),
+			Metadata:         rc3.Metadata{Type: rc3.Metadata_METRIC_TYPE_COUNTER},
+		})
+	}
+	writer, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "tenant")
+	require.NoError(t, err)
+	response, err := writer.PushRW2rc3(writeRequest)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, response.StatusCode)
+
+	t.Run("ingester", func(t *testing.T) {
+		testQueryFrontendStartTimestampRequests(t, frontend, queryTime, startTime)
+	})
+
+	// Upload the same data, then exclude ingesters from all subsequent queries.
+	flushIngesterBlocks(t, ingester)
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_shipper_uploads_total"))
+	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
+	store := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(compactor, store))
+	require.NoError(t, store.WaitSumMetrics(e2e.Equals(1), "cortex_bucket_store_blocks_loaded"))
+	require.NoError(t, s.Stop(querier))
+
+	storeQuerier := e2emimir.NewQuerier("querier-store", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{
+		"-querier.query-store-after":      "0",
+		"-querier.query-ingesters-within": "1h",
+	}))
+	require.NoError(t, s.StartAndWaitReady(storeQuerier))
+	require.NoError(t, s.WaitReady(frontend))
+
+	t.Run("store gateway", func(t *testing.T) {
+		testQueryFrontendStartTimestampRequests(t, frontend, queryTime, startTime)
+	})
+	require.Greater(t, storeGatewaySeriesRequests(t, store), float64(0))
+	require.NoError(t, frontend.WaitSumMetrics(e2e.Greater(0), "cortex_frontend_sharded_queries_total"))
+	require.NoError(t, frontend.WaitSumMetrics(e2e.Greater(1), "cortex_frontend_split_queries_total"))
+}
+
+func testQueryFrontendStartTimestampRequests(t *testing.T, frontend *e2emimir.MimirService, queryTime, startTime time.Time) {
+	t.Helper()
+
+	value := model.SampleValue(16 * startTime.Unix())
+	expectedInstant := model.Vector{{
+		Metric:    model.Metric{},
+		Timestamp: model.Time(queryTime.UnixMilli()),
+		Value:     value,
+	}}
+	expectedRange := model.Matrix{{
+		Metric: model.Metric{},
+		Values: []model.SamplePair{
+			{Timestamp: model.Time(queryTime.Add(0 * time.Second).UnixMilli()), Value: value},
+			{Timestamp: model.Time(queryTime.Add(10 * time.Second).UnixMilli()), Value: value},
+			{Timestamp: model.Time(queryTime.Add(20 * time.Second).UnixMilli()), Value: value},
+			{Timestamp: model.Time(queryTime.Add(30 * time.Second).UnixMilli()), Value: value},
+			{Timestamp: model.Time(queryTime.Add(40 * time.Second).UnixMilli()), Value: value},
+			{Timestamp: model.Time(queryTime.Add(50 * time.Second).UnixMilli()), Value: value},
+			{Timestamp: model.Time(queryTime.Add(60 * time.Second).UnixMilli()), Value: value},
+		},
+	}}
+
+	tests := []struct {
+		name       string
+		header     string
+		rangeQuery bool
+		expected   model.Value
+	}{
+		{
+			name:       "instant absent before enabled",
+			header:     "",
+			rangeQuery: false,
+			expected:   model.Vector{},
+		},
+		{
+			name:       "instant enabled",
+			header:     "true",
+			rangeQuery: false,
+			expected:   expectedInstant,
+		},
+		{
+			name:       "instant disabled",
+			header:     "false",
+			rangeQuery: false,
+			expected:   model.Vector{},
+		},
+		{
+			name:       "instant enabled again",
+			header:     "true",
+			rangeQuery: false,
+			expected:   expectedInstant,
+		},
+		{
+			name:       "instant absent after enabled",
+			header:     "",
+			rangeQuery: false,
+			expected:   model.Vector{},
+		},
+		{
+			name:       "range absent before enabled",
+			header:     "",
+			rangeQuery: true,
+			expected:   model.Matrix{},
+		},
+		{
+			name:       "range enabled",
+			header:     "true",
+			rangeQuery: true,
+			expected:   expectedRange,
+		},
+		{
+			name:       "range disabled",
+			header:     "false",
+			rangeQuery: true,
+			expected:   model.Matrix{},
+		},
+		{
+			name:       "range enabled again",
+			header:     "true",
+			rangeQuery: true,
+			expected:   expectedRange,
+		},
+		{
+			name:       "range absent after enabled",
+			header:     "",
+			rangeQuery: true,
+			expected:   model.Matrix{},
+		},
+	}
+
+	// Preserve the header sequence for each storage path with caching disabled.
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var clientOptions []e2emimir.ClientOption
+			if tc.header != "" {
+				clientOptions = append(clientOptions, e2emimir.WithAddHeader(requestoptions.UseStartTimestampsHeader, tc.header))
+			}
+			client, err := e2emimir.NewClient("", frontend.HTTPEndpoint(), "", "", "tenant", clientOptions...)
+			require.NoError(t, err)
+
+			var result model.Value
+			if tc.rangeQuery {
+				result, _, _, err = client.QueryRange("sum(start_timestamp(counter))", queryTime, queryTime.Add(time.Minute), 10*time.Second)
+			} else {
+				result, _, _, err = client.Query("sum(start_timestamp(counter))", queryTime)
+			}
+			require.NoError(t, err)
+
+			require.Equal(t, tc.expected, result)
+		})
+	}
 }

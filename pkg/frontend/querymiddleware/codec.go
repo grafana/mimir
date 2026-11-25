@@ -59,7 +59,7 @@ var (
 
 	// List of HTTP headers to propagate when a Prometheus request is encoded into a HTTP request.
 	// Read consistency level and max delay headers are propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
-	codecPropagateHeadersMetrics = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader, api.ReadConsistencyOffsetsHeader}
+	codecPropagateHeadersMetrics = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader, api.ReadConsistencyOffsetsHeader, requestoptions.UseStartTimestampsHeader}
 	// Read consistency level and max delay headers are propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
 	codecPropagateHeadersLabels = []string{api.ReadConsistencyOffsetsHeader}
 )
@@ -123,6 +123,8 @@ type MetricsQueryRequest interface {
 	GetHints() *Hints
 	// GetLookbackDelta returns the lookback delta for the request.
 	GetLookbackDelta() time.Duration
+	// GetUseStartTimestamps returns the X-Prometheus-Use-Start-Timestamps override, or nil if unset.
+	GetUseStartTimestamps() *bool
 	// GetStats returns the stats parameter for the request.
 	// See WithStats() comment for more details.
 	GetStats() string
@@ -389,6 +391,11 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 		return nil, err
 	}
 
+	useStartTimestamps, err := c.parseUseStartTimestamps(r.Header)
+	if err != nil {
+		return nil, err
+	}
+
 	query := reqValues.Get("query")
 	queryExpr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	if err != nil {
@@ -401,7 +408,7 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 	explain := reqValues["explain"]
 
 	req := NewPrometheusRangeQueryRequest(
-		r.URL.Path, httpHeadersToProm(r.Header), start, end, step, lookbackDelta, queryExpr, options, nil, stats, explain,
+		r.URL.Path, httpHeadersToProm(r.Header), start, end, step, lookbackDelta, useStartTimestamps, queryExpr, options, nil, stats, explain,
 	)
 	return req, nil
 }
@@ -422,6 +429,11 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 		return nil, err
 	}
 
+	useStartTimestamps, err := c.parseUseStartTimestamps(r.Header)
+	if err != nil {
+		return nil, err
+	}
+
 	query := reqValues.Get("query")
 	queryExpr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	if err != nil {
@@ -434,7 +446,7 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 	explain := reqValues["explain"]
 
 	req := NewPrometheusInstantQueryRequest(
-		r.URL.Path, httpHeadersToProm(r.Header), time, lookbackDelta, queryExpr, options, nil, stats, explain,
+		r.URL.Path, httpHeadersToProm(r.Header), time, lookbackDelta, useStartTimestamps, queryExpr, options, nil, stats, explain,
 	)
 	return req, nil
 }
@@ -468,6 +480,10 @@ func (c Codec) decodeLookbackDelta(reqValues *url.Values) (time.Duration, error)
 	}
 
 	return time.Duration(lookbackDelta) * time.Millisecond, nil
+}
+
+func (c Codec) parseUseStartTimestamps(header http.Header) (*bool, error) {
+	return requestoptions.ParseUseStartTimestamps(header.Get(requestoptions.UseStartTimestampsHeader))
 }
 
 // DecodeLabelsSeriesQueryRequest decodes a LabelsSeriesQueryRequest from an http request.
@@ -803,6 +819,10 @@ func (c Codec) AddHeadersForMetricQueryRequest(ctx context.Context, r MetricsQue
 
 	// Propagate allowed HTTP headers.
 	for _, h := range r.GetHeaders() {
+		// Encode the typed start-timestamp override below, ignoring stale or duplicate headers.
+		if strings.EqualFold(h.Name, requestoptions.UseStartTimestampsHeader) {
+			continue
+		}
 		if !slices.Contains(c.propagateHeadersMetrics, h.Name) {
 			continue
 		}
@@ -810,6 +830,10 @@ func (c Codec) AddHeadersForMetricQueryRequest(ctx context.Context, r MetricsQue
 		for _, v := range h.Values {
 			headers.Add(h.Name, v)
 		}
+	}
+
+	if override := r.GetUseStartTimestamps(); override != nil {
+		headers.SetAll(requestoptions.UseStartTimestampsHeader, []string{strconv.FormatBool(*override)})
 	}
 
 	return nil

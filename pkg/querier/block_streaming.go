@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -32,8 +33,9 @@ import (
 
 // Implementation of storage.SeriesSet, based on individual responses from store client.
 type blockStreamingQuerierSeriesSet struct {
-	series       []labels.Labels
-	streamReader chunkStreamReader
+	collectStartTimestamps bool
+	series                 []labels.Labels
+	streamReader           chunkStreamReader
 
 	// next response to process
 	nextSeriesIndex int
@@ -67,7 +69,10 @@ func (bqss *blockStreamingQuerierSeriesSet) Next() bool {
 		bqss.nextSeriesIndex++
 	}
 
-	bqss.currSeries = newBlockStreamingQuerierSeries(currLabels, seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.remoteAddress)
+	currSeries := newBlockStreamingQuerierSeries(currLabels, seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.remoteAddress)
+
+	currSeries.collectStartTimestamps = bqss.collectStartTimestamps
+	bqss.currSeries = currSeries
 
 	// Clear any labels we no longer need, to allow them to be garbage collected when they're no longer needed elsewhere.
 	clear(bqss.series[seriesIdxStart : bqss.nextSeriesIndex-1])
@@ -101,6 +106,7 @@ func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesId
 }
 
 type blockStreamingQuerierSeries struct {
+	collectStartTimestamps       bool
 	labels                       labels.Labels
 	seriesIdxStart, seriesIdxEnd int
 	streamReader                 chunkStreamReader
@@ -141,7 +147,7 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 		return cmp.Compare(a.MinTime, b.MinTime)
 	})
 
-	return newBlockQuerierSeriesIterator(reuse, bqs.Labels(), allChunks)
+	return newBlockQuerierSeriesIterator(reuse, bqs.Labels(), allChunks, batch.IteratorOptions{CollectStartTimestamps: bqs.collectStartTimestamps})
 }
 
 // storeGatewayStreamReader is responsible for managing the streaming of chunks from a storegateway and buffering

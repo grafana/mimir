@@ -42,7 +42,7 @@ func convertMatchersToLabelMatcher(matchers []*labels.Matcher) []storepb.LabelMa
 	return converted
 }
 
-func newBlockQuerierSeriesIterator(reuse chunkenc.Iterator, lbls labels.Labels, chunks []storepb.AggrChunk) chunkenc.Iterator {
+func newBlockQuerierSeriesIterator(reuse chunkenc.Iterator, lbls labels.Labels, chunks []storepb.AggrChunk, options batch.IteratorOptions) chunkenc.Iterator {
 	adapted := make([]chunk.Chunk, 0, len(chunks))
 
 	for _, c := range chunks {
@@ -63,5 +63,5 @@ func newBlockQuerierSeriesIterator(reuse chunkenc.Iterator, lbls labels.Labels, 
 		adapted = append(adapted, chunk.NewChunk(lbls, encoded, model.Time(c.MinTime), model.Time(c.MaxTime)))
 	}
 
-	return batch.NewChunkMergeIterator(reuse, lbls, adapted, batch.IteratorOptions{})
+	return batch.NewChunkMergeIterator(reuse, lbls, adapted, options)
 }

@@ -49,6 +49,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -1213,10 +1214,11 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 						seriesSets = append(seriesSets, series.NewConcreteSeriesSetFromSortedSeries(noChunkSeries))
 					} else {
 						seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{
-							series:        myStreamingSeriesLabels,
-							streamReader:  streamReader,
-							chunkInfo:     chunkInfo,
-							remoteAddress: c.RemoteAddress(),
+							series:                 myStreamingSeriesLabels,
+							collectStartTimestamps: requestoptions.CollectStartTimestampsFromContext(ctx),
+							streamReader:           streamReader,
+							chunkInfo:              chunkInfo,
+							remoteAddress:          c.RemoteAddress(),
 						})
 						streamReaders = append(streamReaders, streamReader)
 					}

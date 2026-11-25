@@ -33,7 +33,7 @@ type MimirQueryOpts struct {
 	enablePerStepStats bool
 	// Lookback delta duration for this query.
 	lookbackDelta time.Duration
-	// Enables start timestamp usage in functions such as rate().
+	// Enables start timestamp usage in functions such as rate(). NOTE: Not yet implemented by the streaming engine.
 	useStartTimestamps *bool
 	// Include extra diagnostic information in the query response.
 	explain []ExplainValue

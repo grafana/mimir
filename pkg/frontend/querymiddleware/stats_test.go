@@ -113,6 +113,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 					nil,
 					start.Truncate(time.Millisecond).UnixMilli(),
 					5*time.Minute,
+					nil,
 					parseQuery(t, `sum(metric{app="test",namespace=~"short"})`),
 					requestoptions.Options{},
 					nil,
