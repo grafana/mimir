@@ -15,7 +15,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ring"
-	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -135,9 +134,6 @@ type userTSDB struct {
 	// for statistics
 	ingestedAPISamples  *util_math.EwmaRate
 	ingestedRuleSamples *util_math.EwmaRate
-
-	// Block min retention
-	blockMinRetention time.Duration
 
 	useOwnedSeriesForLimits bool
 
@@ -440,39 +436,6 @@ func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) 
 	// Instead, we recompute owned series after each compaction.
 
 	u.activeSeries.PostDeletion(metrics)
-}
-
-// blocksToDelete filters the input blocks and returns the blocks which are safe to be deleted from the ingester.
-func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
-	if u.db == nil {
-		return nil
-	}
-
-	deletable := tsdb.DefaultBlocksToDelete(u.prometheusDB())(blocks)
-	result := map[ulid.ULID]struct{}{}
-	deadline := time.Now().Add(-u.blockMinRetention)
-
-	// The shipper enabled case goes first because its common in the way we run the ingesters
-	if u.prometheus().shipper != nil {
-		shippedBlocks := u.prometheus().getCachedShippedBlocks()
-
-		for blockID := range deletable {
-			shippedBlockTime, ok := shippedBlocks[blockID]
-			if ok && shippedBlockTime.Before(deadline) {
-				result[blockID] = struct{}{}
-			}
-		}
-		return result
-	}
-
-	for blockID := range deletable {
-		blockCreationTime := time.UnixMilli(int64(blockID.Time()))
-		if blockCreationTime.Before(deadline) {
-			result[blockID] = struct{}{}
-		}
-	}
-
-	return result
 }
 
 // getOldestUnshippedBlockTime returns the unix timestamp with milliseconds precision of the oldest

@@ -19,6 +19,7 @@ import (
 	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -28,6 +29,9 @@ import (
 type prometheusEngine struct {
 	db            *tsdb.DB
 	blockDuration int64
+
+	blockMinRetention  time.Duration
+	blockDeletionReady atomic.Bool
 
 	shippingLogger log.Logger
 	shipper        BlocksUploader
@@ -237,6 +241,39 @@ func (e *prometheusEngine) Configure(settings engineSettings) error {
 			},
 		},
 	})
+}
+
+// blocksToDelete filters the input blocks and returns the blocks which are safe to be deleted from the ingester.
+func (e *prometheusEngine) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
+	if !e.blockDeletionReady.Load() {
+		return nil
+	}
+
+	deletable := tsdb.DefaultBlocksToDelete(e.db)(blocks)
+	result := map[ulid.ULID]struct{}{}
+	deadline := time.Now().Add(-e.blockMinRetention)
+
+	// The shipper enabled case goes first because its common in the way we run the ingesters
+	if e.BlockShippingEnabled() {
+		shippedBlocks := e.getCachedShippedBlocks()
+
+		for blockID := range deletable {
+			shippedBlockTime, ok := shippedBlocks[blockID]
+			if ok && shippedBlockTime.Before(deadline) {
+				result[blockID] = struct{}{}
+			}
+		}
+		return result
+	}
+
+	for blockID := range deletable {
+		blockCreationTime := time.UnixMilli(int64(blockID.Time()))
+		if blockCreationTime.Before(deadline) {
+			result[blockID] = struct{}{}
+		}
+	}
+
+	return result
 }
 
 func (e *prometheusEngine) BlockShippingEnabled() bool {
