@@ -899,6 +899,10 @@ func TestRemoveStaticallyEmptyExpressions_DoesNotCollapseFilledBinop(t *testing.
 		`(vector(0) == 1) < fill_left(0) real_metric`,
 		`real_metric >= fill_right(0) (vector(0) == 1)`,
 		`(vector(0) == 1) <= fill_left(0) real_metric`,
+		`real_metric + on(series) group_left fill_right(3) (vector(0) == 1)`,
+		`(vector(0) == 1) + on(series) group_right fill_left(3) real_metric`,
+		`real_metric + on(series) group_right fill_right(3) (vector(0) == 1)`,
+		`(vector(0) == 1) + on(series) group_left fill_left(3) real_metric`,
 	}
 
 	ctx := context.Background()
