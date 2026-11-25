@@ -4,7 +4,6 @@ package store
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -99,6 +98,13 @@ func (w *snapshotWriter) write(bytes []byte) error {
 		if err := w.flush(); err != nil {
 			return err
 		}
+	}
+	// Bytes bigger than the buffer, as the engine's state is, go straight out: appended, they grew the buffer to their
+	// size for the rest of the snapshot, hundreds of MB for each tenant after a long replay.
+	if len(bytes) > cap(w.buf) {
+		w.crc = crc32.Update(w.crc, crc32.IEEETable, bytes)
+		_, err := w.out.Write(bytes)
+		return err
 	}
 	w.buf = append(w.buf, bytes...)
 	return nil
@@ -575,6 +581,8 @@ type snapshotReader struct {
 	version int
 	// The names of the ids the snapshot's labels use, by the ids of the process that wrote it.
 	names []string
+	// The snapshot's size, which no field's can exceed.
+	size int64
 }
 
 func (r *snapshotReader) ReadByte() (byte, error) {
@@ -669,16 +677,17 @@ func (r *snapshotReader) optionalBytes() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Grown as it is read, so a corrupt length runs out of snapshot before it allocates that much.
-	var buf bytes.Buffer
-	if _, err := io.CopyN(&buf, r, int64(n)); err != nil {
+	// A corrupt length past the snapshot's end is rejected before it allocates. Grown as it was read, the buffer took up to
+	// twice the engine's state.
+	if int64(n) > r.size {
+		return nil, fmt.Errorf("head snapshot field of %d bytes exceeds the snapshot's %d", n, r.size)
+	}
+	// Present but empty stays non-nil.
+	buf := make([]byte, n)
+	if _, err := io.ReadFull(r, buf); err != nil {
 		return nil, err
 	}
-	if buf.Len() == 0 {
-		// Present but empty stays non-nil.
-		return []byte{}, nil
-	}
-	return buf.Bytes(), nil
+	return buf, nil
 }
 
 func (r *snapshotReader) str() (string, error) {
@@ -818,7 +827,11 @@ func readSnapshot(file *os.File, chunkDir, tenantID string) (restored *Restored,
 			restored, err = nil, fmt.Errorf("corrupt head snapshot: %v", recovered)
 		}
 	}()
-	r := &snapshotReader{r: bufio.NewReaderSize(file, 1<<20), hasher: crc32.NewIEEE()}
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	r := &snapshotReader{r: bufio.NewReaderSize(file, 1<<20), hasher: crc32.NewIEEE(), size: info.Size()}
 	var magic [8]byte
 	if _, err := io.ReadFull(r.r, magic[:]); err != nil {
 		return nil, err
