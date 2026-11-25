@@ -79,6 +79,7 @@ const (
 	rulerSyncReasonPeriodic   rulesSyncReason = "periodic"
 	rulerSyncReasonRingChange rulesSyncReason = "ring-change"
 	rulerSyncReasonAPIChange  rulesSyncReason = "api-change"
+	rulerSyncReasonFirstRun   rulesSyncReason = "first-run"
 
 	// rulerPeriodicSyncJitter is the jitter applied to the interval used by the periodic sync.
 	rulerPeriodicSyncJitter = 0.1
@@ -100,6 +101,7 @@ var (
 		rulerSyncReasonPeriodic,
 		rulerSyncReasonRingChange,
 		rulerSyncReasonAPIChange,
+		rulerSyncReasonFirstRun,
 	}
 )
 
@@ -385,6 +387,10 @@ type Ruler struct {
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
 
+	// ringBeforeInitialSync is the ring at start-up, as the initial sync uses it.
+	// run() compares it with the ring at its own start.
+	ringBeforeInitialSync ring.ReplicationSet
+
 	// Pool of clients used to connect to other ruler replicas.
 	clientsPool ClientsPool
 
@@ -519,6 +525,12 @@ func (r *Ruler) starting(ctx context.Context) (err error) {
 	}
 	level.Info(r.logger).Log("msg", "ruler is JOINING in the ring")
 
+	// The ring can change during r.initialSync() or before run() starts, so record the state now
+	// so we can compare when we reach run() and trigger a fresh sync if required to start newly owned rule groups
+	// and stop newly disowned ones asap.
+	// On error, the replication set is empty, and run() then syncs again.
+	r.ringBeforeInitialSync, _ = r.ring.GetAllHealthy(RuleSyncRingOp)
+
 	// Here during joining, we can download rules from object storage and sync them to the local rule manager
 	if err := r.initialSync(ctx); err != nil {
 		return errors.Wrap(err, "unable to do initial sync")
@@ -625,6 +637,17 @@ func (r *Ruler) run(ctx context.Context) error {
 	// ringChangeFirstPendingAt is when the current run of ring changes started being debounced.
 	// It's used to cap how long continuous ring churn can keep postponing the sync, via RingChangeMaxDebounce.
 	var ringChangeFirstPendingAt time.Time
+
+	// Check whether the ring changed during starting().
+	// The ring checks below can't see such a change, because ringLastState already includes it.
+	// Ignore instance states, so this ruler's own change from JOINING to ACTIVE doesn't count.
+	// If the ring changed, start a sync now to start newly owned rule groups and stop newly disowned ones.
+	// During this sync, the ruler continues to evaluate its initial rule groups, reducing missed evaluations.
+	if currRingState, _ := r.ring.GetAllHealthy(RuleSyncRingOp); ring.HasReplicationSetChangedWithoutState(r.ringBeforeInitialSync, currRingState) {
+		if err := r.syncRules(ctx, nil, rulerSyncReasonFirstRun, true); err != nil {
+			level.Error(r.logger).Log("msg", "unable to sync rules", "err", err)
+		}
+	}
 
 	for {
 		var syncErr error

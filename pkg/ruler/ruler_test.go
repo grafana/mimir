@@ -2063,13 +2063,24 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 	)
 
 	testCases := map[string]struct {
-		otherRulerAtStart bool
+		otherRulerAtStart     bool
+		otherRulerChanges     bool
+		expectedFirstRunSyncs float64
 	}{
 		"another ruler joins after the initial sync": {
-			otherRulerAtStart: false,
+			otherRulerAtStart:     false,
+			otherRulerChanges:     true,
+			expectedFirstRunSyncs: 1,
 		},
 		"another ruler leaves after the initial sync": {
-			otherRulerAtStart: true,
+			otherRulerAtStart:     true,
+			otherRulerChanges:     true,
+			expectedFirstRunSyncs: 1,
+		},
+		"no ring change after the initial sync": {
+			otherRulerAtStart:     true,
+			otherRulerChanges:     false,
+			expectedFirstRunSyncs: 0,
 		},
 	}
 
@@ -2117,6 +2128,9 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 					MultiTenantManager: r.manager,
 					afterFirstFullSync: func(ruleGroupsByUser map[string]rulespb.RuleGroupList) {
 						initialSyncGroups = len(ruleGroupsByUser[userID])
+						if !tc.otherRulerChanges {
+							return
+						}
 						// The hook runs on the ruler goroutine.
 						// Thus it must not call t.FailNow.
 						assert.NoError(t, setOtherRuler(!tc.otherRulerAtStart))
@@ -2142,8 +2156,11 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 				for _, g := range r.manager.GetRules(userID) {
 					actual = append(actual, g.Name())
 				}
-				require.NotEqual(t, initialSyncGroups, len(expected), "the ring change moves at least one rule group")
+				if tc.otherRulerChanges {
+					require.NotEqual(t, initialSyncGroups, len(expected), "the ring change moves at least one rule group")
+				}
 				require.ElementsMatch(t, expected, actual)
+				require.Equal(t, tc.expectedFirstRunSyncs, prom_testutil.ToFloat64(r.metrics.rulerSync.WithLabelValues(string(rulerSyncReasonFirstRun))))
 			})
 		})
 	}
@@ -2304,6 +2321,7 @@ func verifySyncRulesMetrics(t *testing.T, reg prometheus.Gatherer, initialCount,
 			cortex_ruler_sync_rules_total{reason="api-change"} %d
 			cortex_ruler_sync_rules_total{reason="periodic"} 0
 			cortex_ruler_sync_rules_total{reason="ring-change"} 0
+			cortex_ruler_sync_rules_total{reason="first-run"} 0
 		`, initialCount, apiChangeCount)), "cortex_ruler_sync_rules_total")
 	})
 	test.Poll(t, time.Second, nil, func() interface{} {
