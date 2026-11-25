@@ -28,20 +28,20 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// requestLayout is how a test request spreads the samples of one series over TimeSeries entries.
+// requestLayout is how a test request spreads the samples of one series over TimeSeries.
 type requestLayout string
 
 const (
-	// entryPerSample puts each sample in its own TimeSeries entry, all with the same labels.
-	entryPerSample requestLayout = "entry per sample"
-	// singleEntry puts all samples of the series in one TimeSeries entry.
-	singleEntry requestLayout = "single entry"
+	// multipleTimeseries puts each sample in its own TimeSeries, all with the same labels.
+	multipleTimeseries requestLayout = "multiple timeseries"
+	// singleTimeseries puts all samples of the series in one TimeSeries.
+	singleTimeseries requestLayout = "single timeseries"
 )
 
 // writeRequestForSeries builds a WriteRequest with the samples of the series lbls, laid out as layout.
 func writeRequestForSeries(layout requestLayout, lbls labels.Labels, samples []mimirpb.Sample) *mimirpb.WriteRequest {
 	req := &mimirpb.WriteRequest{Source: mimirpb.API}
-	if layout == singleEntry {
+	if layout == singleTimeseries {
 		req.Timeseries = []mimirpb.PreallocTimeseries{{TimeSeries: &mimirpb.TimeSeries{
 			Labels:  mimirpb.FromLabelsToLabelAdapters(lbls),
 			Samples: slices.Clone(samples),
@@ -181,7 +181,7 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 
 		// Exact duplicate across two requests.
 		"exact duplicate across two requests is discarded as same-value-for-timestamp": {
-			layouts: []requestLayout{entryPerSample},
+			layouts: []requestLayout{multipleTimeseries},
 			reqSamples: [][]mimirpb.Sample{
 				{{TimestampMs: 100, Value: 1}},
 				{{TimestampMs: 100, Value: 1}},
@@ -206,7 +206,7 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 
 		// Conflicting value across two requests: rejected at Append time with a soft error.
 		"conflicting value across two requests is surfaced as a soft error": {
-			layouts: []requestLayout{entryPerSample},
+			layouts: []requestLayout{multipleTimeseries},
 			reqSamples: [][]mimirpb.Sample{
 				{{TimestampMs: 100, Value: 1}},
 				{{TimestampMs: 100, Value: 2}},
@@ -235,7 +235,7 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			layouts := testData.layouts
 			if layouts == nil {
-				layouts = []requestLayout{entryPerSample, singleEntry}
+				layouts = []requestLayout{multipleTimeseries, singleTimeseries}
 			}
 			for _, layout := range layouts {
 				t.Run(string(layout), func(t *testing.T) {
@@ -307,7 +307,7 @@ func histogramWriteRequestForSeries(layout requestLayout, lbls labels.Labels, po
 	}
 
 	req := &mimirpb.WriteRequest{Source: mimirpb.API}
-	if layout == singleEntry {
+	if layout == singleTimeseries {
 		req.Timeseries = []mimirpb.PreallocTimeseries{{TimeSeries: &mimirpb.TimeSeries{
 			Labels:     mimirpb.FromLabelsToLabelAdapters(lbls),
 			Histograms: histograms,
@@ -385,7 +385,7 @@ func TestIngester_Push_DuplicateTimestampHistograms(t *testing.T) {
 
 		// Exact duplicate histogram across two requests: accepted at Append, dropped at commit.
 		"exact duplicate histogram across two requests is discarded as same-value-for-timestamp": {
-			layouts:   []requestLayout{entryPerSample},
+			layouts:   []requestLayout{multipleTimeseries},
 			reqPoints: [][]histogramPoint{{{ts: 100, idx: 1}}, {{ts: 100, idx: 1}}},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
@@ -403,7 +403,7 @@ func TestIngester_Push_DuplicateTimestampHistograms(t *testing.T) {
 
 		// Conflicting histogram across two requests: rejected at Append time with a soft error.
 		"conflicting histogram across two requests is surfaced as a soft error": {
-			layouts:            []requestLayout{entryPerSample},
+			layouts:            []requestLayout{multipleTimeseries},
 			reqPoints:          [][]histogramPoint{{{ts: 100, idx: 1}}, {{ts: 100, idx: 2}}},
 			expectedLastReqErr: newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(storage.ErrDuplicateSampleForTimestamp.Error(), model.Time(100), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID), codes.InvalidArgument),
 			expectedMetrics: `
@@ -425,7 +425,7 @@ func TestIngester_Push_DuplicateTimestampHistograms(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			layouts := testData.layouts
 			if layouts == nil {
-				layouts = []requestLayout{entryPerSample, singleEntry}
+				layouts = []requestLayout{multipleTimeseries, singleTimeseries}
 			}
 			for _, layout := range layouts {
 				t.Run(string(layout), func(t *testing.T) {
@@ -474,7 +474,7 @@ func TestIngester_Push_DuplicateTimestampCostAttribution(t *testing.T) {
 	fooLabels := labels.FromStrings(model.MetricNameLabel, "test", "team", "foo")
 	barLabels := labels.FromStrings(model.MetricNameLabel, "test", "team", "bar")
 
-	for _, layout := range []requestLayout{entryPerSample, singleEntry} {
+	for _, layout := range []requestLayout{multipleTimeseries, singleTimeseries} {
 		t.Run(string(layout), func(t *testing.T) {
 			limits := defaultLimitsTestConfig()
 			limits.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
@@ -550,7 +550,7 @@ func TestIngester_Push_DuplicateTimestampOutOfOrder(t *testing.T) {
 		"cortex_discarded_samples_total",
 	}
 
-	for _, layout := range []requestLayout{entryPerSample, singleEntry} {
+	for _, layout := range []requestLayout{multipleTimeseries, singleTimeseries} {
 		t.Run(string(layout), func(t *testing.T) {
 			registry := prometheus.NewRegistry()
 			cfg := defaultIngesterTestConfig(t)
@@ -635,7 +635,7 @@ func TestIngester_Push_DuplicateTimestampStillCountsTowardIngestionRate(t *testi
 
 	// Both tenants send three samples. One of the duplicates tenant's samples is an exact duplicate.
 	duplicatesCtx := user.InjectOrgID(t.Context(), duplicatesUserID)
-	_, err = i.Push(duplicatesCtx, writeRequestForSeries(entryPerSample, metricLabels, []mimirpb.Sample{
+	_, err = i.Push(duplicatesCtx, writeRequestForSeries(multipleTimeseries, metricLabels, []mimirpb.Sample{
 		{TimestampMs: 100, Value: 1},
 		{TimestampMs: 100, Value: 1},
 		{TimestampMs: 101, Value: 2},
@@ -643,7 +643,7 @@ func TestIngester_Push_DuplicateTimestampStillCountsTowardIngestionRate(t *testi
 	require.NoError(t, err)
 
 	controlCtx := user.InjectOrgID(t.Context(), controlUserID)
-	_, err = i.Push(controlCtx, writeRequestForSeries(entryPerSample, metricLabels, []mimirpb.Sample{
+	_, err = i.Push(controlCtx, writeRequestForSeries(multipleTimeseries, metricLabels, []mimirpb.Sample{
 		{TimestampMs: 100, Value: 1},
 		{TimestampMs: 101, Value: 2},
 		{TimestampMs: 102, Value: 3},
@@ -698,7 +698,7 @@ func TestIngester_Push_DuplicateTimestampStillCountsTowardInstanceAndRuleIngesti
 	i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), nil, dataDir, nil)
 	require.NoError(t, err)
 	startAndWaitHealthy(t, i, r)
-	_, err = i.Push(ctx, writeRequestForSeries(singleEntry, metricLabels, stored))
+	_, err = i.Push(ctx, writeRequestForSeries(singleTimeseries, metricLabels, stored))
 	require.NoError(t, err)
 	require.NoError(t, services.StopAndAwaitTerminated(t.Context(), i))
 
@@ -707,7 +707,7 @@ func TestIngester_Push_DuplicateTimestampStillCountsTowardInstanceAndRuleIngesti
 	require.NoError(t, err)
 	startAndWaitHealthy(t, i, r)
 
-	req := writeRequestForSeries(entryPerSample, metricLabels, []mimirpb.Sample{stored[0], stored[0], stored[0]})
+	req := writeRequestForSeries(multipleTimeseries, metricLabels, []mimirpb.Sample{stored[0], stored[0], stored[0]})
 	req.Source = mimirpb.RULE
 	_, err = i.Push(ctx, req)
 	require.NoError(t, err)
