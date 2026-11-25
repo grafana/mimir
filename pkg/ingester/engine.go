@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -144,7 +145,9 @@ func (i *Ingester) openTenantEngine(dir, userID string, logger *slog.Logger, reg
 		onResourceLimited := func(limit store.ResourceLimit) {
 			i.metrics.discardedResourcesPerLimit[limit].WithLabelValues(userID).Inc()
 		}
-		return openSeriesstoreEngine(dir, userID, reg, opts, seriesstoreShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)), checkpoints, i.cfg.ActiveSeriesMetrics.IdleTimeout, i.limits.NativeResourcesIndexedAttributes(userID), coalesced.Inc, onResourceLimited)
+		// The ingester catches up on its partition while it starts.
+		replaying := func() bool { return i.State() == services.Starting }
+		return openSeriesstoreEngine(dir, userID, reg, opts, seriesstoreShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)), checkpoints, i.cfg.ActiveSeriesMetrics.IdleTimeout, i.limits.NativeResourcesIndexedAttributes(userID), coalesced.Inc, onResourceLimited, replaying)
 	}
 	return openPrometheusEngine(dir, logger, reg, opts)
 }

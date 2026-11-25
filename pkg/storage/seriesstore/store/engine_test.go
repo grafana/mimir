@@ -1151,6 +1151,62 @@ func TestEngineRetentionCountsFromBlockCreation(t *testing.T) {
 	}
 }
 
+// A replay of a backlog longer than the retention, as an ingester's of its partition while it starts, keeps none of
+// it past the retention: a head block written while replaying counts as written a range after its data's end at the
+// latest, when the head would have written it had the samples come in on time. Outside a replay, retention still
+// counts from the writing, as TestEngineRetentionCountsFromBlockCreation has it.
+func TestEngineRetentionOfBlocksWrittenWhileReplaying(t *testing.T) {
+	retention := time.Hour.Milliseconds()
+	for name, c := range map[string]struct {
+		replaying bool
+		// How long before now the sample is, which its block, written now, ends just after.
+		sampleAgeMs int64
+		kept        bool
+	}{
+		"a replayed sample older than the retention goes": {replaying: true, sampleAgeMs: 3 * retention, kept: false},
+		"a recent replayed sample stays":                  {replaying: true, sampleAgeMs: time.Minute.Milliseconds(), kept: true},
+		"the old sample stays when not replayed":          {replaying: false, sampleAgeMs: 3 * retention, kept: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e, err := OpenEngine(t.TempDir(), "user", EngineOptions{Shards: 2, TimelyCompaction: true, RetentionMs: retention, Replaying: func() bool { return c.replaying }})
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, e.Close()) })
+			ts := time.Now().UnixMilli() - c.sampleAgeMs
+			lset := promlabels.FromStrings("__name__", "m")
+			app := e.Appender(t.Context())
+			_, err = app.Append(0, lset, 0, ts, 1, nil, nil, storage.AppendV2Options{})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// Like the ingester's compactions while it replays, then its retention.
+			require.NoError(t, e.CompactHead(ts, ts))
+			require.NoError(t, e.Compact(t.Context()))
+
+			q, err := e.ChunkQuerier(math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			defer q.Close()
+			set := q.Select(t.Context(), true, nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "m"))
+			var got []int64
+			for set.Next() {
+				chunkIt := set.At().Iterator(nil)
+				for chunkIt.Next() {
+					it := chunkIt.At().Chunk.Iterator(nil)
+					for it.Next() == chunkenc.ValFloat {
+						sampleTs, _ := it.At()
+						got = append(got, sampleTs)
+					}
+				}
+			}
+			require.NoError(t, set.Err())
+			if c.kept {
+				require.Equal(t, []int64{ts}, got)
+			} else {
+				require.Empty(t, got)
+			}
+		})
+	}
+}
+
 func TestColdLabelLookupsMatchTheHead(t *testing.T) {
 	engine := openEngine(t, t.TempDir(), differentialOptions{}, nil)
 	t.Cleanup(func() { _ = engine.Close() })
