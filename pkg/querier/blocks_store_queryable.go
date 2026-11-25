@@ -332,7 +332,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 			// Each read compartment has its own bucket and store-gateway ring within this single process.
 			// The finder's metrics are scoped by bucket, so all compartments share one "component"; the ring
 			// name/key have no such scope and are suffixed instead.
-			bucketCfg = storageCfg.Bucket.ReadCompartmentConfig(idx)
+			bucketCfg = storageCfg.ReadCompartmentBucketConfig(idx)
 			cacheBucketID = compartments.WithReadCompartmentSuffix("blocks", idx)
 			ringName = compartments.WithReadCompartmentSuffix(ringName, idx)
 			ringKey = compartments.WithReadCompartmentSuffix(ringKey, idx)

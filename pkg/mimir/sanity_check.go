@@ -158,7 +158,7 @@ func checkBlocksStorageConfig(ctx context.Context, cfg Config, logger log.Logger
 
 	errs := multierror.New()
 	for c := 0; c < cfg.Compartments.Read.NumCompartments; c++ {
-		errs.Add(errors.Wrapf(checkObjectStoreConfig(ctx, bucketCfg.ReadCompartmentConfig(c), logger), "read compartment %d", c))
+		errs.Add(errors.Wrapf(checkObjectStoreConfig(ctx, cfg.BlocksStorage.ReadCompartmentBucketConfig(c), logger), "read compartment %d", c))
 	}
 	return errs.Err()
 }

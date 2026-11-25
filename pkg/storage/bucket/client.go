@@ -178,23 +178,29 @@ func (cfg *Config) BucketName() string {
 	return ""
 }
 
-// ReadCompartmentConfig returns a copy of cfg with the read-compartment-id placeholder resolved to the
-// given read compartment ID in the active backend's bucket name. It is a no-op when the placeholder is
-// absent. It must enumerate the same backends as BucketName so the two stay consistent.
-func (cfg Config) ReadCompartmentConfig(readCompartmentID int) Config {
+// WithBucketName returns a copy of cfg with the bucket name of the active backend set to name. It must
+// enumerate the same backends as BucketName so the two stay consistent.
+func (cfg Config) WithBucketName(name string) Config {
 	switch cfg.Backend {
 	case S3:
-		cfg.S3.BucketName = compartments.ReplaceReadCompartment(cfg.S3.BucketName, readCompartmentID)
+		cfg.S3.BucketName = name
 	case GCS:
-		cfg.GCS.BucketName = compartments.ReplaceReadCompartment(cfg.GCS.BucketName, readCompartmentID)
+		cfg.GCS.BucketName = name
 	case Azure:
-		cfg.Azure.ContainerName = compartments.ReplaceReadCompartment(cfg.Azure.ContainerName, readCompartmentID)
+		cfg.Azure.ContainerName = name
 	case Swift:
-		cfg.Swift.ContainerName = compartments.ReplaceReadCompartment(cfg.Swift.ContainerName, readCompartmentID)
+		cfg.Swift.ContainerName = name
 	case Filesystem:
-		cfg.Filesystem.Directory = compartments.ReplaceReadCompartment(cfg.Filesystem.Directory, readCompartmentID)
+		cfg.Filesystem.Directory = name
 	}
 	return cfg
+}
+
+// ReadCompartmentConfig returns a copy of cfg with the read-compartment-id placeholder resolved to the
+// given read compartment ID in the active backend's bucket name. It is a no-op when the placeholder is
+// absent.
+func (cfg Config) ReadCompartmentConfig(readCompartmentID int) Config {
+	return cfg.WithBucketName(compartments.ReplaceReadCompartment(cfg.BucketName(), readCompartmentID))
 }
 
 // NewClient creates a new bucket client based on the configured backend
