@@ -570,15 +570,6 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     )
     .addRowIf(
       $._config.autoscaling.compactor.enabled,
-      $.row('Compactor – autoscaling')
-      .addPanel(
-        $.autoScalingActualReplicas('compactor')
-      )
-      .addPanel(
-        $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel('compactor', scalingMetricName='', scalingMetricID='')
-      )
-      .addPanel(
-        $.autoScalingFailuresPanel('compactor')
-      )
+      $.autoScalingRow('Compactor – autoscaling', 'compactor'),
     ),
 }

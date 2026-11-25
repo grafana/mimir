@@ -138,133 +138,7 @@ local filename = 'mimir-reads.json';
     )
     .addRowIf(
       $._config.autoscaling.querier.enabled,
-      $.row('Querier – autoscaling')
-      .addPanel(
-        local title = 'Replicas';
-        $.timeseriesPanel(title) +
-        $.queryPanel(
-          [
-            |||
-              max by (scaletargetref_name) (
-                kube_horizontalpodautoscaler_spec_max_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-                # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
-                * on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-                  group by (%(cluster_labels)s, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"})
-              )
-            ||| % {
-              namespace_matcher: $.namespaceMatcher(),
-              cluster_labels: std.join(', ', $._config.cluster_labels),
-              hpa_name: $._config.autoscaling.querier.hpa_name,
-            },
-            |||
-              max by (scaletargetref_name) (
-                kube_horizontalpodautoscaler_status_current_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-                # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
-                * on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-                  group by (%(cluster_labels)s, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"})
-              )
-            ||| % {
-              namespace_matcher: $.namespaceMatcher(),
-              cluster_labels: std.join(', ', $._config.cluster_labels),
-              hpa_name: $._config.autoscaling.querier.hpa_name,
-            },
-            |||
-              max by (scaletargetref_name) (
-                kube_horizontalpodautoscaler_spec_min_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-                # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
-                * on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-                  group by (%(cluster_labels)s, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"})
-              )
-            ||| % {
-              namespace_matcher: $.namespaceMatcher(),
-              cluster_labels: std.join(', ', $._config.cluster_labels),
-              hpa_name: $._config.autoscaling.querier.hpa_name,
-            },
-          ],
-          [
-            'Max {{ scaletargetref_name }}',
-            'Current {{ scaletargetref_name }}',
-            'Min {{ scaletargetref_name }}',
-          ],
-        ) +
-        $.panelDescription(
-          title,
-          |||
-            The maximum, and current number of querier replicas.
-          |||
-        ) +
-        {
-          fieldConfig+: {
-            overrides: [
-              $.overrideField('byRegexp', '/Max .+/', [
-                $.overrideProperty('custom.fillOpacity', 0),
-                $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
-              ]),
-              $.overrideField('byRegexp', '/Current .+/', [
-                $.overrideProperty('custom.fillOpacity', 0),
-              ]),
-              $.overrideField('byRegexp', '/Min .+/', [
-                $.overrideProperty('custom.fillOpacity', 0),
-                $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
-              ]),
-            ],
-          },
-        },
-      )
-      .addPanel(
-        local title = 'Scaling metric (desired replicas)';
-        $.timeseriesPanel(title) +
-        $.queryPanel(
-          [
-            |||
-              sum by (scaler) (
-                label_replace(
-                  keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace"},
-                  "namespace", "$1", "exported_namespace", "(.*)"
-                )
-                /
-                on(%(aggregation_labels)s, scaledObject, metric) group_left
-                max by (%(aggregation_labels)s, scaledObject, metric) (
-                  label_replace(label_replace(
-                      kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
-                      "metric", "$1", "metric_name", "(.+)"
-                  ), "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)")
-                )
-              )
-            ||| % {
-              aggregation_labels: $._config.alert_aggregation_labels,
-              cluster_label: $._config.per_cluster_label,
-              hpa_prefix: $._config.autoscaling_hpa_prefix,
-              hpa_name: $._config.autoscaling.querier.hpa_name,
-              namespace: $.namespaceMatcher(),
-            },
-          ], [
-            '{{ scaler }}',
-          ]
-        ) +
-        $.panelDescription(
-          title,
-          |||
-            This panel shows the result scaling metric exposed by KEDA divided by the target/threshold used.
-            It should represent the desired number of replicas, ignoring the min/max constraints which are applied later.
-          |||
-        )
-      )
-      .addPanel(
-        local title = 'Autoscaler failures rate';
-        $.timeseriesPanel(title) +
-        $.queryPanel(
-          $.filterKedaScalerErrorsByHPA($._config.autoscaling.querier.hpa_name),
-          '{{scaler}} failures'
-        ) +
-        $.panelDescription(
-          title,
-          |||
-            The rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom
-            metrics server is unable to query the scaling metric from Prometheus so the autoscaler wouldn't work properly.
-          |||
-        ),
-      )
+      $.autoScalingRow('Querier – autoscaling', 'querier'),
     )
     .addRowIf(
       $._config.autoscaling.store_gateway.enabled,
@@ -292,7 +166,7 @@ local filename = 'mimir-reads.json';
         ),
       )
       .addPanel(
-        $.autoScalingDesiredReplicasByValueScalingMetricPanel('store_gateway', '', '') + { title: 'Desired replicas (leader zone)' }
+        $.autoScalingDesiredReplicasPanel('store_gateway') + { title: 'Desired replicas (leader zone)' }
       )
       .addPanel(
         $.autoScalingFailuresPanel('store_gateway') + { title: 'Autoscaler failures rate' }

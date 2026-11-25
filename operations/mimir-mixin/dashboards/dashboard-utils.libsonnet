@@ -1,6 +1,7 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
-(import 'grafana-builder/grafana.libsonnet') {
+(import 'grafana-builder/grafana.libsonnet') +
+(import 'databases.libsonnet') + {
   _colors:: {
     resourceRequest: '#FFC000',
     resourceLimit: '#E02F44',
@@ -761,222 +762,39 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.ncLatencyPanel('cortex_kv_request_duration_seconds', '%s, kv_name=~"%s"' % [$.jobMatcher($._config.job_names[jobName]), kvName])
     ),
 
-  // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
-  autoScalingActualReplicas(componentName, addlQueries=[], addlLegends=[])::
-    local title = 'Replicas';
-    local componentTitle = std.strReplace(componentName, '_', '-');
-
-    $.timeseriesPanel(title) +
-    $.queryPanel(
-      [
-        |||
-          max by (scaletargetref_name) (
-            kube_horizontalpodautoscaler_spec_max_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-            # Add the scaletargetref_name label for readability
-            * on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-              group by (%(cluster_labels)s, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"})
-          )
-        ||| % {
-          namespace_matcher: $.namespaceMatcher(),
-          hpa_name: $._config.autoscaling[componentName].hpa_name,
-          cluster_labels: std.join(', ', $._config.cluster_labels),
-        },
-        |||
-          max by (scaletargetref_name) (
-            kube_horizontalpodautoscaler_status_current_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-            # Add the scaletargetref_name label for readability
-            * on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-              group by (%(cluster_labels)s, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"})
-          )
-        ||| % {
-          namespace_matcher: $.namespaceMatcher(),
-          hpa_name: $._config.autoscaling[componentName].hpa_name,
-          cluster_labels: std.join(', ', $._config.cluster_labels),
-        },
-        |||
-          max by (scaletargetref_name) (
-            kube_horizontalpodautoscaler_spec_min_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-            # Add the scaletargetref_name label for readability
-            * on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-              group by (%(cluster_labels)s, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"})
-          )
-        ||| % {
-          namespace_matcher: $.namespaceMatcher(),
-          hpa_name: $._config.autoscaling[componentName].hpa_name,
-          cluster_labels: std.join(', ', $._config.cluster_labels),
-        },
-      ] + addlQueries,
-      [
-        'Max {{ scaletargetref_name }}',
-        'Current {{ scaletargetref_name }}',
-        'Min {{ scaletargetref_name }}',
-      ] + addlLegends,
-    ) +
-    $.panelDescription(
-      title,
-      |||
-        The minimum, maximum, and current number of %s replicas.
-      ||| % [componentTitle]
-    ) +
-    {
-      fieldConfig+: {
-        overrides: [
-          $.overrideField('byRegexp', '/Max .+/', [
-            $.overrideProperty('custom.fillOpacity', 0),
-            $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
-          ]),
-          $.overrideField('byRegexp', '/Current .+/', [
-            $.overrideProperty('custom.fillOpacity', 0),
-          ]),
-          $.overrideField('byRegexp', '/Min .+/', [
-            $.overrideProperty('custom.fillOpacity', 0),
-            $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
-          ]),
-        ],
-      },
-    },
+  // Autoscaling panels and rows come from the shared grafana-databases-lib instance in
+  // databases.libsonnet. They are dashboard v2 panels and rows, so these grafana-builder
+  // dashboards add them through the library's legacy helpers, which convert them to classic panels.
+  local legacy = (import 'grafana-databases-lib/main.libsonnet').legacy,
+  local legacyPanel = legacy.panel,
 
   // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
-  autoScalingDesiredReplicasByAverageValueScalingMetricPanel(componentName, scalingMetricName, scalingMetricID)::
-    local title = if scalingMetricName != '' then 'Scaling metric (%s): Desired replicas' % scalingMetricName else 'Desired replicas';
-    local scalerSelector = if scalingMetricID != '' then ('.*%s.*' % scalingMetricID) else '.+';
-
-    $.timeseriesPanel(title) +
-    $.queryPanel(
-      [
-        |||
-          sum by (scaler) (
-            # Using `max by ()` so that series churn doesn't break the promQL join
-            max by (%(aggregation_labels)s, scaledObject, metric, scaler) (
-              label_replace(
-                keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~"%(scaler_selector)s"},
-                "namespace", "$1", "exported_namespace", "(.*)"
-              )
-            )
-            /
-            on(%(aggregation_labels)s, scaledObject, metric) group_left
-              # Using `max by ()` so that series churn doesn't break the promQL join
-              max by (%(aggregation_labels)s, scaledObject, metric) (
-                label_replace(
-                  label_replace(
-                    kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
-                    "metric", "$1", "metric_name", "(.+)"
-                  ),
-                  "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)"
-                )
-              )
-          )
-        ||| % {
-          aggregation_labels: $._config.alert_aggregation_labels,
-          cluster_label: $._config.per_cluster_label,
-          hpa_prefix: $._config.autoscaling_hpa_prefix,
-          hpa_name: $._config.autoscaling[componentName].hpa_name,
-          namespace: $.namespaceMatcher(),
-          scaler_selector: scalerSelector,
-        },
-      ], [
-        '{{ scaler }}',
-      ]
-    ) +
-    $.panelDescription(
-      title,
-      |||
-        This panel shows the scaling metric exposed by KEDA divided by the target/threshold used.
-        It should represent the desired number of replicas, ignoring the min/max constraints applied later.
-      |||
-    ),
+  autoScalingActualReplicas(componentName)::
+    legacyPanel($._databases.autoscaling.panels[componentName].replicas),
 
   // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
-  autoScalingDesiredReplicasByValueScalingMetricPanel(componentName, scalingMetricName, scalingMetricID)::
-    local title = if scalingMetricName != '' then 'Scaling metric (%s): Desired replicas' % scalingMetricName else 'Desired replicas';
-    local scalerSelector = if scalingMetricID != '' then ('.*%s.*' % scalingMetricID) else '.+';
-
-    $.timeseriesPanel(title) +
-    $.queryPanel(
-      [
-        |||
-          sum by (scaler) (
-            # Using `max by ()` so that series churn doesn't break the promQL join
-            max by (%(aggregation_labels)s, scaledObject, metric, scaler) (
-              label_replace(
-                keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~"%(scaler_selector)s"},
-                "namespace", "$1", "exported_namespace", "(.*)"
-              )
-            )
-            /
-            on(%(aggregation_labels)s, scaledObject, metric) group_left
-              # Using `max by ()` so that series churn doesn't break the promQL join
-              max by (%(aggregation_labels)s, scaledObject, metric) (
-                label_replace(
-                  label_replace(
-                    kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
-                    "metric", "$1", "metric_name", "(.+)"
-                  ),
-                  "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)"
-                )
-              )
-            *
-            on(%(aggregation_labels)s, scaledObject) group_left
-              # Using `max by ()` so that series churn doesn't break the promQL join
-              max by (%(aggregation_labels)s, scaledObject) (
-                label_replace(
-                  kube_horizontalpodautoscaler_status_current_replicas{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
-                  "scaledObject", "$1", "horizontalpodautoscaler", "keda-hpa-(.*)"
-                )
-              )
-          )
-        ||| % {
-          aggregation_labels: $._config.alert_aggregation_labels,
-          cluster_label: $._config.per_cluster_label,
-          hpa_prefix: $._config.autoscaling_hpa_prefix,
-          hpa_name: $._config.autoscaling[componentName].hpa_name,
-          namespace: $.namespaceMatcher(),
-          scaler_selector: scalerSelector,
-        },
-      ], [
-        '{{ scaler }}',
-      ]
-    ) +
-    $.panelDescription(
-      title,
-      |||
-        This panel shows the scaling metric exposed by KEDA divided by the target/threshold and multiplied by the current number of replicas.
-        It should represent the desired number of replicas, ignoring the min/max constraints applied later.
-      |||
-    ),
+  // scaler optionally picks the desired replicas of one of the component's KEDA scalers (see databases.libsonnet).
+  autoScalingDesiredReplicasPanel(componentName, scaler='')::
+    local panels = $._databases.autoscaling.panels[componentName];
+    legacyPanel(if scaler == '' then panels.desiredReplicas else panels.desiredReplicasByScaler[scaler]),
 
   // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
   autoScalingFailuresPanel(componentName)::
-    local title = 'Autoscaler failures rate';
+    legacyPanel($._databases.autoscaling.panels[componentName].failures),
 
-    $.timeseriesPanel(title) +
-    $.queryPanel(
-      $.filterKedaScalerErrorsByHPA($._config.autoscaling[componentName].hpa_name),
-      '{{scaler}} failures'
-    ) +
-    $.panelDescription(
-      title,
-      |||
-        The rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom
-        metrics server is unable to query the scaling metric from Prometheus so the autoscaler wouldn't work properly.
-      |||
+  // autoScalingRow builds a row titled `title` holding the standard autoscaling panels of one of
+  // the components defined in $._config.autoscaling: replicas, desired replicas (per scaler for
+  // components scaled on CPU and memory) and failures.
+  autoScalingRow(title, componentName)::
+    std.foldl(
+      function(row, panel) row.addPanel(panel),
+      legacy.rowPanels($._databases.autoscaling.rows[componentName]),
+      $.row(title),
     ),
 
   cpuAndMemoryBasedAutoScalingRow(componentTitle)::
     local componentName = std.strReplace(std.asciiLower(componentTitle), '-', '_');
-    super.row('%s – autoscaling' % [componentTitle])
-    .addPanel(
-      $.autoScalingActualReplicas(componentName)
-    )
-    .addPanel(
-      $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel(componentName, 'CPU', 'cpu')
-    )
-    .addPanel(
-      $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel(componentName, 'memory', 'memory')
-    )
-    .addPanel(
-      $.autoScalingFailuresPanel(componentName)
-    ),
+    $.autoScalingRow('%s – autoscaling' % [componentTitle], componentName),
 
   // ncSumCountRateStatPanel builds a stat panel that shows the summed rate of a histogram counter.
   ncSumCountRateStatPanel(metric, selectors, thresholds=[], unit='reqps', instant=true)::
@@ -1534,33 +1352,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       nodeLabel: $._config.per_node_label,
       namespaceMatcher: $.namespaceMatcher(),
       nodeBootDiskDeviceRegex: $._config.node_boot_disk_device_regex,
-    },
-
-  filterKedaScalerErrorsByHPA(hpa_name)::
-    |||
-      sum by(%(aggregation_labels)s, metric, scaledObject, scaler) (
-        label_replace(
-          # Prefer the modern counter, with a fallback for KEDA versions before 2.14.
-          (rate(keda_scaler_detail_errors_total[$__rate_interval]) or rate(keda_scaler_errors[$__rate_interval])),
-          "namespace", "$1", "exported_namespace", "(.+)"
-        )
-      ) +
-      on(%(aggregation_labels)s, metric, scaledObject) group_left
-        # Using `max by ()` so that series churn doesn't break the promQL join
-        max by (%(aggregation_labels)s, metric, scaledObject) (
-          label_replace(
-            label_replace(
-                kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"} * 0,
-                "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)"
-            ),
-            "metric", "$1", "metric_name", "(.+)"
-          )
-        )
-    ||| % {
-      hpa_name: hpa_name,
-      hpa_prefix: $._config.autoscaling_hpa_prefix,
-      namespace: $.namespaceMatcher(),
-      aggregation_labels: $._config.alert_aggregation_labels,
     },
 
   // panelAxisPlacement allows to place a series on the right axis.

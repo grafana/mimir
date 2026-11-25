@@ -256,16 +256,7 @@ local filename = 'mimir-block-builder.json';
     )
     .addRowIf(
       $._config.autoscaling.block_builder.enabled,
-      $.row('Block builder - autoscaling')
-      .addPanel(
-        $.autoScalingActualReplicas('block_builder')
-      )
-      .addPanel(
-        $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel('block_builder', scalingMetricName='', scalingMetricID='')
-      )
-      .addPanel(
-        $.autoScalingFailuresPanel('block_builder')
-      )
+      $.autoScalingRow('Block builder - autoscaling', 'block_builder'),
     )
     .addRow(
       $.row('Block-builder-scheduler resources')

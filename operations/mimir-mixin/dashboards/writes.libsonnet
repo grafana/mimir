@@ -721,23 +721,7 @@ local filename = 'mimir-writes.json';
       $._config.autoscaling.ingester.enabled,
       $.row('Ingester – autoscaling')
       .addPanel(
-        local replicaTemplateQueries = [
-          'max(kube_customresource_replicatemplate_spec_replicas{%(namespace_matcher)s, name=~"%(replica_template_name)s"})' % {
-            namespace_matcher: $.namespaceMatcher(),
-            replica_template_name: $._config.autoscaling.ingester.replica_template_name,
-          },
-          'max(kube_customresource_replicatemplate_status_replicas{%(namespace_matcher)s, name=~"%(replica_template_name)s"})' % {
-            namespace_matcher: $.namespaceMatcher(),
-            replica_template_name: $._config.autoscaling.ingester.replica_template_name,
-          },
-        ];
-
-        local replicaTemplateLegends = [
-          'Template spec replicas',
-          'Template status replicas',
-        ];
-
-        $.autoScalingActualReplicas('ingester', replicaTemplateQueries, replicaTemplateLegends) + { title: 'Replicas (HPA + ReplicaTemplate)' } +
+        $.autoScalingActualReplicas('ingester') + { title: 'Replicas (HPA + ReplicaTemplate)' } +
         $.panelDescription(
           'Replicas (HPA + ReplicaTemplate)',
           |||
@@ -769,7 +753,7 @@ local filename = 'mimir-writes.json';
         ),
       )
       .addPanel(
-        $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel('ingester', '', '') + {
+        $.autoScalingDesiredReplicasPanel('ingester') + {
           title: 'Desired replicas (ReplicaTemplate)',
           description: std.strReplace(super.description, '### Desired replicas\n', '### %s\n' % self.title),
         }

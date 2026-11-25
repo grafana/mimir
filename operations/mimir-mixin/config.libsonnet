@@ -752,6 +752,8 @@
     autoscaling_hpa_prefix: 'keda-hpa-(?:mimir-)?',
 
     // The configured hpa_name can be a regexp to support multiple deployments (e.g. multi-zone deployments).
+    // A component can also set `scalers` (name -> { title, match (default '.*<name>.*') }) for one desired
+    // replicas panel per KEDA scaler; see dashboards/databases.libsonnet.
     autoscaling: {
       query_frontend: {
         enabled: false,
