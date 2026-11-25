@@ -118,10 +118,17 @@ func (f *Frontend) queueReservationForRequest(ctx context.Context, userID string
 }
 
 // newQueueReservation starts the reservation of min(groups, maxParallelism) slots in the
-// background. It returns nil when the reservation has no slots or no query-scheduler supports
-// queue reservation, so that the sub-requests use the plain path. It must not block, because it
-// runs with the lock of the scope held.
+// background. It returns nil when the evaluation has one group, the reservation has no slots or
+// no query-scheduler supports queue reservation, so that the sub-requests use the plain path. It
+// must not block, because it runs with the lock of the scope held.
 func (f *Frontend) newQueueReservation(ctx context.Context, userID string, groups, maxParallelism int) querymiddleware.RemoteExecutionReservation {
+	// A plain ENQUEUE has the same admission check as a RESERVE of one slot, and it skips the
+	// RESERVE round trip. Unlike a reservation, the plain path does not retry a 429 on another
+	// query-scheduler.
+	if groups == 1 {
+		return nil
+	}
+
 	slots := min(groups, maxParallelism)
 	if slots <= 0 {
 		return nil

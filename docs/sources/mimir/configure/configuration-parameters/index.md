@@ -2476,7 +2476,9 @@ The `frontend` block configures the query-frontend.
 # (experimental) Reserve query-scheduler queue slots for the remote execution
 # sub-requests of a query evaluation, before the query-frontend sends them. A
 # reservation holds the smaller of -querier.max-query-parallelism and the number
-# of sub-requests. Requires -query-frontend.enable-remote-execution and
+# of sub-requests. An evaluation with one sub-request does not reserve, and its
+# sub-request uses the plain enqueue. Requires
+# -query-frontend.enable-remote-execution and
 # -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results, and
 # -query-frontend.use-mimir-query-engine-for-sharding when sharding is enabled.
 # A sub-request that waits for -querier.max-query-parallelism can fail the query
