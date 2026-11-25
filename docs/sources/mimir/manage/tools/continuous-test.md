@@ -60,54 +60,6 @@ Continuous-test requires the endpoints of the backend Grafana Mimir clusters and
 You can run `mimir -help` to list all available configuration options. All configuration options for continuous-test begin with `tests`.
 {{< /admonition >}}
 
-## Test native OTLP delta ingestion
-
-The experimental OTLP delta test checks that delta counters and exponential histograms retain their values and interval boundaries through ingestion and querying.
-It is disabled by default and requires native delta ingestion and start-timestamp storage.
-Enable `otel_created_timestamp_zero_ingestion_enabled: true` in the tenant limits, or set `-distributor.otel-created-timestamp-zero-ingestion-enabled=true` on Mimir.
-Despite its name, this setting also controls whether OTLP start timestamps reach storage.
-Use it with `start_timestamp_strategy: store`, `float_chunk_encoding: xor2`, and `histogram_chunk_encoding: histogram_st` to preserve the interval boundaries.
-Mimir must support the `X-Prometheus-Use-Start-Timestamps` query header, introduced in [PR #17314](https://github.com/grafana/mimir/pull/17314), and allow the experimental `start_timestamp()` function.
-The test uses the Prometheus query engine. If Mimir uses MQE by default, enable fallback to the Prometheus engine.
-
-The following example enables the delta test alongside the standard write/read series test and sends delta metrics directly to Mimir:
-
-```bash
-mimir -target=continuous-test \
-  -tests.write-endpoint=http://mimir-gateway \
-  -tests.read-endpoint=http://mimir-gateway/prometheus \
-  -tests.tenant-id=mimir-delta-integration \
-  -tests.write-read-series-test.histogram-samples-enabled=true \
-  -tests.otlp-delta-test.enabled=true
-```
-
-The delta test uses the common `-tests.write-endpoint` and appends `/otlp/v1/metrics` to the base URL.
-It always writes OTLP, regardless of `-tests.write-protocol`, and uses the common tenant and authentication settings.
-
-The delta test uses the `-tests.write-read-series-test` settings for series count, float and histogram selection, maximum query age, and query fan-out.
-It generates positive sine-wave increments for monotonic delta sums and integer bucket counts for exponential delta histograms.
-Each metric has a distinct, stable name, and each sample represents a 20-second interval ending at its sample timestamp.
-
-Like the standard write/read test, the delta test fills in samples between runs and recovers previously written history after a restart.
-Recovery checks raw values so that missing start timestamps do not cause the test to discard history that should be checked.
-On a fresh start, it writes two samples per series so that smoke-test mode can also check `irate()`.
-
-For every instant and range query, including recovery, the delta test automatically sends `X-Prometheus-Use-Start-Timestamps: true` and `X-Mimir-Force-Prometheus-Engine: true`.
-These headers enable start-timestamp evaluation and select the Prometheus engine; they do not enable start-timestamp storage.
-
-The test queries recent and historical data with `Cache-Control: no-store` to bypass caching.
-This bypass is temporary because cache keys do not yet distinguish queries that use start timestamps.
-The standard write/read series test continues to exercise both cache modes.
-The delta queries check:
-
-- Raw values, sample presence, and histogram buckets.
-- Start timestamps against the expected interval boundaries. Absolute errors are summed across series so that errors cannot cancel out.
-- `irate()` against each interval's value divided by 20 seconds. Rates are calculated before aggregating series.
-
-Query windows follow the standard write/read test's selection, although sample age alone does not guarantee a store-gateway read.
-Query failures are reported immediately, and the exported metrics identify the delta test with `test="otlp-delta"`.
-Coverage does not yet include broader `rate()` or `increase()` windows, irregular or overlapping intervals, or signed up/down counters.
-
 ## How it works
 
 Continuous-test periodically runs a suite of tests, writes data to Mimir, queries that data back, and checks if the query results match what is expected.
