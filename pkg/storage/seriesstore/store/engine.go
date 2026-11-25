@@ -66,6 +66,11 @@ type EngineOptions struct {
 	IndexedResourceAttributes []string
 	// Called for each change of a series' resource over one of the limits, if set.
 	OnResourceLimited func(ResourceLimit)
+	// Replaying reports, if set, whether the engine is given a backlog to catch up on, as the ingester's partition is
+	// while it starts. A head block written then counts as written when the head would have written it, had its samples
+	// come in on time: a backlog longer than the retention would otherwise stay in memory for the retention after the
+	// replay, where the TSDB keeps its blocks on disk, and the queriers read ingesters for less than the retention.
+	Replaying func() bool
 }
 
 // Engine is one tenant's series behind the per-tenant TSDB interface Mimir's ingester uses:

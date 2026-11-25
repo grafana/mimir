@@ -36,7 +36,8 @@ type emulatedBlock struct {
 	// Its series' label hashes, sorted: a block holds label sets, whichever series ref wrote them.
 	series []uint64
 	// When it was written: Mimir's ingesters without shipping delete a block once it was written
-	// longer than the retention period ago, whatever its samples' times.
+	// longer than the retention period ago, whatever its samples' times. A head block written
+	// while replaying a backlog is dated by its data instead, as EngineOptions.Replaying says.
 	createdMs int64
 }
 
@@ -143,6 +144,10 @@ func (e *Engine) recordBlock(minTime, maxTime, dataEnd int64, kind byte, hashes 
 	}
 	slices.Sort(hashes)
 	block := emulatedBlock{minTime: minTime, maxTime: maxTime, dataEnd: min(dataEnd, maxTime), outOfOrder: kind == blockOutOfOrder, idleEvicted: kind == blockIdleEvicted, selected: kind == blockSelected, series: slices.Compact(hashes), createdMs: nowMs()}
+	// With samples on time, the head writes a range's block within a range of the range's end.
+	if kind == blockInOrder && e.opts.Replaying != nil && e.opts.Replaying() {
+		block.createdMs = min(block.createdMs, maxTime+(maxTime-minTime))
+	}
 	home, t := e.home()
 	home.Lock()
 	defer home.Unlock()
