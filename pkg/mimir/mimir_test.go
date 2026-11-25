@@ -864,33 +864,6 @@ func TestConfigValidation(t *testing.T) {
 			expectAnyError: false,
 		},
 		{
-			name: "should fail if a blocks bucket name mapping points at the bucket of another read compartment",
-			getTestConfig: func() *Config {
-				cfg := validCompartmentsConfig()
-				cfg.BlocksStorage.BucketNameMappings = flagext.StringSliceCSV{"/data/blocks-rc-0:/data/blocks-rc-1"}
-				return cfg
-			},
-			expectAnyError: true,
-		},
-		{
-			name: "should fail if two blocks bucket name mappings point at the same bucket",
-			getTestConfig: func() *Config {
-				cfg := validCompartmentsConfig()
-				cfg.BlocksStorage.BucketNameMappings = flagext.StringSliceCSV{"/data/blocks-rc-0:/data/blocks", "/data/blocks-rc-1:/data/blocks"}
-				return cfg
-			},
-			expectAnyError: true,
-		},
-		{
-			name: "should pass if two read compartments swap their blocks buckets",
-			getTestConfig: func() *Config {
-				cfg := validCompartmentsConfig()
-				cfg.BlocksStorage.BucketNameMappings = flagext.StringSliceCSV{"/data/blocks-rc-0:/data/blocks-rc-1", "/data/blocks-rc-1:/data/blocks-rc-0"}
-				return cfg
-			},
-			expectAnyError: false,
-		},
-		{
 			name: "should pass if only the store-gateway is enabled and the blocks bucket name is explicit",
 			getTestConfig: func() *Config {
 				cfg := validCompartmentsConfig()

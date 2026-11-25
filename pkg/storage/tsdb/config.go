@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -120,6 +121,8 @@ var (
 	errInvalidIgnoreDeletionMarksDelayConfig        = fmt.Errorf("value for -%s must be less than -%s", ignoreDeletionMarksWhileQueryingDelayFlag, ignoreDeletionMarksInStoreGatewayDelayFlag)
 	errIgnoreDeletionMarksDelayTooShort             = fmt.Errorf("value for -%s must be greater than %v× -%s to ensure that newly compacted blocks are queried before old blocks are ignored", ignoreDeletionMarksWhileQueryingDelayFlag, NewBlockDiscoveryDelayMultiplier, syncIntervalFlag)
 	errInvalidBucketNameMapping                     = fmt.Errorf("invalid -%s entry: each entry must have the format <generated-name>:<name>, and each generated name must appear only once", BucketNameMappingsFlag)
+	errBucketNameMappingsRequireCompartments        = fmt.Errorf("-%s requires compartments to be enabled", BucketNameMappingsFlag)
+	errReadCompartmentsShareBucket                  = fmt.Errorf("each read compartment must use a different blocks storage bucket, check -%s", BucketNameMappingsFlag)
 )
 
 // BlocksStorageConfig holds the config information for the blocks storage.
@@ -187,11 +190,14 @@ func (cfg *BlocksStorageConfig) ReadCompartmentBucketConfig(readCompartmentID in
 }
 
 // Validate the config.
-func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config) error {
+func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config, compartmentsCfg compartments.Config) error {
 	if err := cfg.Bucket.Validate(); err != nil {
 		return err
 	}
 
+	if len(cfg.BucketNameMappings) > 0 && !compartmentsCfg.Enabled {
+		return errBucketNameMappingsRequireCompartments
+	}
 	generatedNames := make(map[string]struct{}, len(cfg.BucketNameMappings))
 	for _, mapping := range cfg.BucketNameMappings {
 		generatedName, name, found := strings.Cut(mapping, ":")
@@ -199,6 +205,18 @@ func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config) er
 			return fmt.Errorf("%w: %q", errInvalidBucketNameMapping, mapping)
 		}
 		generatedNames[generatedName] = struct{}{}
+	}
+	// A bucket name without the read compartment ID placeholder is for a component that serves only one read compartment.
+	if compartmentsCfg.Enabled && strings.Contains(cfg.Bucket.BucketName(), compartments.ReadCompartmentIDPlaceholder) {
+		readCompartmentIDsByBucketName := make(map[string]int, compartmentsCfg.Read.NumCompartments)
+		for readCompartmentID := range compartmentsCfg.Read.NumCompartments {
+			bucketCfg := cfg.ReadCompartmentBucketConfig(readCompartmentID)
+			bucketName := bucketCfg.BucketName()
+			if otherReadCompartmentID, duplicate := readCompartmentIDsByBucketName[bucketName]; duplicate {
+				return fmt.Errorf("%w: read compartments %d and %d use %q", errReadCompartmentsShareBucket, otherReadCompartmentID, readCompartmentID, bucketName)
+			}
+			readCompartmentIDsByBucketName[bucketName] = readCompartmentID
+		}
 	}
 
 	if err := cfg.TSDB.Validate(activeSeriesCfg); err != nil {

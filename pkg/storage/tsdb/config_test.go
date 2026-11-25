@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
@@ -21,9 +22,16 @@ import (
 func TestConfig_Validate(t *testing.T) {
 	t.Parallel()
 
+	enabledCompartments := compartments.Config{
+		Enabled: true,
+		Read:    compartments.ReadConfig{NumCompartments: 2},
+		Write:   compartments.WriteConfig{NumCompartments: 1},
+	}
+
 	tests := map[string]struct {
-		setup       func(*BlocksStorageConfig, *activeseries.Config)
-		expectedErr error
+		setup        func(*BlocksStorageConfig, *activeseries.Config)
+		compartments compartments.Config
+		expectedErr  error
 	}{
 		"should pass on S3 backend": {
 			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
@@ -179,33 +187,82 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		"should pass on valid bucket name mappings": {
 			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.Bucket.Backend = bucket.GCS
+				cfg.Bucket.GCS.BucketName = "blocks-rc-<read-compartment-id>"
 				cfg.BucketNameMappings = flagext.StringSliceCSV{"blocks-rc-0:blocks", "blocks-rc-1:other-blocks"}
 			},
-			expectedErr: nil,
+			compartments: enabledCompartments,
+			expectedErr:  nil,
+		},
+		"should fail on bucket name mappings when compartments are disabled": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.BucketNameMappings = flagext.StringSliceCSV{"blocks-rc-0:blocks"}
+			},
+			expectedErr: errBucketNameMappingsRequireCompartments,
 		},
 		"should fail on a bucket name mapping without a separator": {
 			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
 				cfg.BucketNameMappings = flagext.StringSliceCSV{"blocks-rc-0"}
 			},
-			expectedErr: fmt.Errorf("%w: %q", errInvalidBucketNameMapping, "blocks-rc-0"),
+			compartments: enabledCompartments,
+			expectedErr:  fmt.Errorf("%w: %q", errInvalidBucketNameMapping, "blocks-rc-0"),
 		},
 		"should fail on a bucket name mapping with an empty generated name": {
 			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
 				cfg.BucketNameMappings = flagext.StringSliceCSV{":blocks"}
 			},
-			expectedErr: fmt.Errorf("%w: %q", errInvalidBucketNameMapping, ":blocks"),
+			compartments: enabledCompartments,
+			expectedErr:  fmt.Errorf("%w: %q", errInvalidBucketNameMapping, ":blocks"),
 		},
 		"should fail on a bucket name mapping with an empty name": {
 			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
 				cfg.BucketNameMappings = flagext.StringSliceCSV{"blocks-rc-0:"}
 			},
-			expectedErr: fmt.Errorf("%w: %q", errInvalidBucketNameMapping, "blocks-rc-0:"),
+			compartments: enabledCompartments,
+			expectedErr:  fmt.Errorf("%w: %q", errInvalidBucketNameMapping, "blocks-rc-0:"),
 		},
 		"should fail on bucket name mappings with the same generated name twice": {
 			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
 				cfg.BucketNameMappings = flagext.StringSliceCSV{"blocks-rc-0:blocks", "blocks-rc-0:other-blocks"}
 			},
-			expectedErr: fmt.Errorf("%w: %q", errInvalidBucketNameMapping, "blocks-rc-0:other-blocks"),
+			compartments: enabledCompartments,
+			expectedErr:  fmt.Errorf("%w: %q", errInvalidBucketNameMapping, "blocks-rc-0:other-blocks"),
+		},
+		"should fail on a bucket name mapping that points at the bucket of another read compartment": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.Bucket.Backend = bucket.GCS
+				cfg.Bucket.GCS.BucketName = "blocks-rc-<read-compartment-id>"
+				cfg.BucketNameMappings = flagext.StringSliceCSV{"blocks-rc-0:blocks-rc-1"}
+			},
+			compartments: enabledCompartments,
+			expectedErr:  fmt.Errorf("%w: read compartments %d and %d use %q", errReadCompartmentsShareBucket, 0, 1, "blocks-rc-1"),
+		},
+		"should fail on two bucket name mappings that point at the same bucket": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.Bucket.Backend = bucket.GCS
+				cfg.Bucket.GCS.BucketName = "blocks-rc-<read-compartment-id>"
+				cfg.BucketNameMappings = flagext.StringSliceCSV{"blocks-rc-0:blocks", "blocks-rc-1:blocks"}
+			},
+			compartments: enabledCompartments,
+			expectedErr:  fmt.Errorf("%w: read compartments %d and %d use %q", errReadCompartmentsShareBucket, 0, 1, "blocks"),
+		},
+		"should pass on bucket name mappings that swap the buckets of two read compartments": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.Bucket.Backend = bucket.GCS
+				cfg.Bucket.GCS.BucketName = "blocks-rc-<read-compartment-id>"
+				cfg.BucketNameMappings = flagext.StringSliceCSV{"blocks-rc-0:blocks-rc-1", "blocks-rc-1:blocks-rc-0"}
+			},
+			compartments: enabledCompartments,
+			expectedErr:  nil,
+		},
+		"should pass on a bucket name mapping with an explicit bucket name": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.Bucket.Backend = bucket.GCS
+				cfg.Bucket.GCS.BucketName = "blocks-rc-0"
+				cfg.BucketNameMappings = flagext.StringSliceCSV{"blocks-rc-0:blocks"}
+			},
+			compartments: enabledCompartments,
+			expectedErr:  nil,
 		},
 	}
 
@@ -218,7 +275,7 @@ func TestConfig_Validate(t *testing.T) {
 			flagext.DefaultValues(activeSeriesCfg)
 			testData.setup(storageCfg, activeSeriesCfg)
 
-			actualErr := storageCfg.Validate(*activeSeriesCfg)
+			actualErr := storageCfg.Validate(*activeSeriesCfg, testData.compartments)
 			assert.Equal(t, testData.expectedErr, actualErr)
 		})
 	}
