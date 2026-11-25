@@ -743,6 +743,16 @@ func TestConfigValidation(t *testing.T) {
 			expectAnyError: true,
 		},
 		{
+			name: "should fail if Kafka compartment overrides are set when compartments are disabled",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				cfg.Compartments.Enabled = false
+				cfg.IngestStorage.KafkaConfig.Overrides.ReadCompartment0Topic = "ingest"
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
 			name: "should pass with a valid compartments configuration",
 			getTestConfig: func() *Config {
 				return validCompartmentsConfig()

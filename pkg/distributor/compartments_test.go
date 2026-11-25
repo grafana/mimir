@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
 )
@@ -43,10 +42,6 @@ func TestCompartmentTokens_WriteRequestIndexes(t *testing.T) {
 func TestGetCompartmentTokensForWriteRequest(t *testing.T) {
 	userID := "user-1"
 
-	newTestCompartmentRouter := func(numCompartments int) *compartments.TopicRouter {
-		return compartments.NewTopicRouter(numCompartments, "comp-<read-compartment-id>")
-	}
-
 	req := &mimirpb.WriteRequest{
 		Timeseries: []mimirpb.PreallocTimeseries{
 			makeTimeseries([]string{model.MetricNameLabel, "metric_a"}, makeSamples(1000, 1), nil, nil),
@@ -60,7 +55,7 @@ func TestGetCompartmentTokensForWriteRequest(t *testing.T) {
 	}
 
 	t.Run("groups items by compartment, keeping series+metadata of a metric together", func(t *testing.T) {
-		router := newTestCompartmentRouter(3)
+		router := compartmentsTestRouter(3)
 
 		cts, initialMetadataIndex := getCompartmentTokensForWriteRequest(router, userID, req)
 		assert.Equal(t, 3, initialMetadataIndex)
@@ -94,7 +89,7 @@ func TestGetCompartmentTokensForWriteRequest(t *testing.T) {
 			},
 		}
 
-		cts, _ := getCompartmentTokensForWriteRequest(newTestCompartmentRouter(3), userID, noNameReq)
+		cts, _ := getCompartmentTokensForWriteRequest(compartmentsTestRouter(3), userID, noNameReq)
 
 		total := 0
 		for _, ct := range cts {
@@ -110,7 +105,7 @@ func TestGroupSeriesHashesByReadCompartment(t *testing.T) {
 		numCompartments = 5
 	)
 	metadata := tenant.NewMetadata(":source=test")
-	router := compartments.NewTopicRouter(numCompartments, "comp-<read-compartment-id>")
+	router := compartmentsTestRouter(numCompartments)
 
 	metricNames := []string{"metric_a", "metric_b", "metric_a", "metric_c", "metric_d", "metric_b"}
 	timeseries := make([]mimirpb.PreallocTimeseries, 0, len(metricNames))
