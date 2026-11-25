@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 func TestBinaryExpression_Describe(t *testing.T) {
@@ -654,6 +655,61 @@ func TestBinaryExpression_MergeHints(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, testCase.expected, first.Hints)
 			}
+		})
+	}
+}
+
+func TestBinaryExpression_MinimumRequiredPlanVersion(t *testing.T) {
+	testCases := map[string]struct {
+		card            parser.VectorMatchCardinality
+		fill            VectorMatchFillValues
+		expectedVersion planning.QueryPlanVersion
+	}{
+		"no fill": {
+			card: parser.CardOneToOne,
+		},
+		"no fill with group_left": {
+			card: parser.CardManyToOne,
+		},
+		"one-to-one fill_left": {
+			card:            parser.CardOneToOne,
+			fill:            VectorMatchFillValues{LhsSet: true},
+			expectedVersion: planning.QueryPlanV20,
+		},
+		"one-to-one fill_right": {
+			card:            parser.CardOneToOne,
+			fill:            VectorMatchFillValues{RhsSet: true},
+			expectedVersion: planning.QueryPlanV20,
+		},
+		"group_right fill_left": {
+			card:            parser.CardOneToMany,
+			fill:            VectorMatchFillValues{LhsSet: true},
+			expectedVersion: planning.QueryPlanV22,
+		},
+		"group_left fill_right": {
+			card:            parser.CardManyToOne,
+			fill:            VectorMatchFillValues{RhsSet: true},
+			expectedVersion: planning.QueryPlanV22,
+		},
+		"group_left fill": {
+			card:            parser.CardManyToOne,
+			fill:            VectorMatchFillValues{LhsSet: true, RhsSet: true},
+			expectedVersion: planning.QueryPlanV22,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			expression := &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:             BINARY_ADD,
+					VectorMatching: &VectorMatching{Card: testCase.card, FillValues: testCase.fill},
+				},
+			}
+
+			version, err := expression.MinimumRequiredPlanVersion(types.QueryTimeRange{})
+			require.NoError(t, err)
+			require.Equal(t, testCase.expectedVersion, version)
 		})
 	}
 }
