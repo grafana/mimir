@@ -539,7 +539,7 @@ func (i *Ingester) getOldestUnshippedBlockMetric() float64 {
 
 	oldest := uint64(0)
 	for _, db := range i.tsdbs {
-		if ts := db.getOldestUnshippedBlockTime(); oldest == 0 || ts < oldest {
+		if ts := db.engine().OldestUnshippedBlockTime(); oldest == 0 || ts < oldest {
 			oldest = ts
 		}
 	}

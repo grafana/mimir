@@ -806,3 +806,7 @@ func BenchmarkUserTSDB_takePendingNonOwnedRefs(b *testing.B) {
 		})
 	}
 }
+
+func (u *userTSDB) Blocks() []*tsdb.Block {
+	return u.prometheusDB().Blocks()
+}
