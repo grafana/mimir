@@ -640,27 +640,40 @@ impl ColdBlock {
         &bytes[at + 4..at + 4 + count * 4]
     }
 
-    fn union_postings(&self, tenant: &str, name: &str, values: &[Box<str>]) -> Vec<u32> {
-        let lists: SmallVec<[&[u8]; 8]> = values
-            .iter()
-            .map(|value| self.posting_bytes(tenant, name, value))
-            .filter(|list| !list.is_empty())
-            .collect();
+    fn union_postings(
+        &self,
+        tenant: &str,
+        name: &str,
+        values: &[Box<str>],
+        max_postings: usize,
+    ) -> Option<Vec<u32>> {
+        let mut lists = SmallVec::<[&[u8]; 8]>::new();
+        let mut postings_count = 0;
+        for value in values {
+            let list = self.posting_bytes(tenant, name, value);
+            if list.is_empty() {
+                continue;
+            }
+            postings_count += list.len() / 4;
+            if postings_count > max_postings {
+                return None;
+            }
+            lists.push(list);
+        }
         match lists.as_slice() {
-            [] => return Vec::new(),
+            [] => return Some(Vec::new()),
             [list] => {
                 let mut ids: Vec<_> = posting_ids(list).collect();
                 ids.dedup();
-                return ids;
+                return Some(ids);
             }
             _ => {}
         }
 
         let series_count = self.series_count(tenant);
-        let postings_count = lists.iter().map(|list| list.len() / 4).sum::<usize>();
         // For dense unions, a bitset avoids sorting interleaved IDs. Skip it when
         // scanning the whole ID space would cost more than sorting a short list.
-        if postings_count >= series_count.div_ceil(8) {
+        Some(if postings_count >= series_count.div_ceil(8) {
             let mut bits = vec![0_u64; series_count.div_ceil(64)];
             for id in lists.iter().flat_map(|list| posting_ids(list)) {
                 bits[id as usize / 64] |= 1 << (id % 64);
@@ -679,7 +692,7 @@ impl ColdBlock {
             ids.sort_unstable();
             ids.dedup();
             ids
-        }
+        })
     }
 
     fn value_index(
@@ -830,17 +843,33 @@ impl ColdBlock {
     /// rejects the empty value, or every series. Callers still check the matchers.
     pub fn candidates(&self, tenant: &str, matchers: &[CompiledMatcher]) -> Vec<u32> {
         let mut best: Option<Vec<u32>> = None;
-        for matcher in matchers {
+        // Start with equality postings so broad regex unions can use the smaller
+        // candidate set and verify the regex when checking the actual labels.
+        let is_equality =
+            |matcher: &&CompiledMatcher| matches!(matcher, CompiledMatcher::Equal(..));
+        let equalities = matchers.iter().filter(is_equality);
+        let others = matchers.iter().filter(|matcher| !is_equality(matcher));
+        for matcher in equalities.chain(others) {
+            let max_postings = best
+                .as_ref()
+                .map_or(usize::MAX, |best| best.len().saturating_mul(4));
             let list = match matcher {
                 CompiledMatcher::Equal(name, value) if !value.is_empty() => {
-                    self.posting(tenant, name, value)
+                    let bytes = self.posting_bytes(tenant, name, value);
+                    if bytes.len() / 4 > max_postings {
+                        continue;
+                    }
+                    posting_ids(bytes).collect()
                 }
                 // A regex that accepts few values, not the empty one, takes their postings.
                 CompiledMatcher::Regex(name, regex) if !regex.is_match("") => {
                     let Some(values) = regex.values() else {
                         continue;
                     };
-                    self.union_postings(tenant, name, values)
+                    let Some(ids) = self.union_postings(tenant, name, values, max_postings) else {
+                        continue;
+                    };
+                    ids
                 }
                 _ => continue,
             };
@@ -1044,14 +1073,47 @@ mod tests {
             let mut values: Vec<Box<str>> =
                 (0..count).map(|id| format!("pod-{id:02}").into()).collect();
             assert_eq!(
-                block.union_postings("a", "pod", &values),
+                block
+                    .union_postings("a", "pod", &values, usize::MAX)
+                    .unwrap(),
                 (0..256).filter(|id| id % 64 < count).collect::<Vec<_>>()
             );
             values.extend(["absent".into(), "pod-00".into()]);
             assert_eq!(
-                block.union_postings("a", "pod", &values),
+                block
+                    .union_postings("a", "pod", &values, usize::MAX)
+                    .unwrap(),
                 (0..256).filter(|id| id % 64 < count).collect::<Vec<_>>()
             );
+        }
+    }
+
+    #[test]
+    fn selective_equality_can_bound_a_regex_union() {
+        let entries = (0..128)
+            .map(|id| {
+                let instance = format!("{id:03}");
+                let pod = format!("pod-{:02}", id % 8);
+                frozen("a", &[("instance", &instance), ("pod", &pod)], &[(1, 2)])
+            })
+            .collect();
+        let block = ColdBlock::build(None, 0, entries).unwrap();
+        for (pattern, expected_candidates, expected_matches) in [
+            ("pod-0[02]", &[10][..], &[10][..]),
+            ("pod-0[01]", &[10][..], &[][..]),
+            ("pod-0[89]", &[][..], &[][..]),
+        ] {
+            let matchers = [
+                CompiledMatcher::Regex("pod".into(), anchored_regex(pattern).unwrap()),
+                CompiledMatcher::Equal("instance".into(), "010".into()),
+            ];
+            let candidates = block.candidates("a", &matchers);
+            assert_eq!(candidates, expected_candidates);
+            let found: Vec<_> = candidates
+                .into_iter()
+                .filter(|&id| matches(&block.series("a", id as usize), &matchers))
+                .collect();
+            assert_eq!(found, expected_matches);
         }
     }
 
