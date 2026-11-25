@@ -355,6 +355,18 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
 	}
+	// The querier opens one bucket client for each read compartment. Two read compartments must not use the same bucket.
+	if c.Compartments.Enabled && c.isQuerierEnabled() {
+		readCompartmentIDsByBucketName := make(map[string]int, c.Compartments.Read.NumCompartments)
+		for readCompartmentID := range c.Compartments.Read.NumCompartments {
+			bucketCfg := c.BlocksStorage.ReadCompartmentBucketConfig(readCompartmentID)
+			bucketName := bucketCfg.BucketName()
+			if otherReadCompartmentID, duplicate := readCompartmentIDsByBucketName[bucketName]; duplicate {
+				return fmt.Errorf("read compartments %d and %d use the same blocks storage bucket %q, check -%s", otherReadCompartmentID, readCompartmentID, bucketName, tsdb.BucketNameMappingsFlag)
+			}
+			readCompartmentIDsByBucketName[bucketName] = readCompartmentID
+		}
+	}
 	if err := c.Distributor.Validate(c.LimitsConfig, c.Compartments); err != nil {
 		return errors.Wrap(err, "invalid distributor config")
 	}
