@@ -82,7 +82,10 @@ ruler_storage:
 ```
 
 {{< admonition type="note" >}}
-Don't prefix the endpoint value with your bucket name. For example, if your bucket is named "my-storage-bucket", you cannot name the endpoint "my-storage-bucket.s3.amazonaws.com".
+Set `endpoint` to the S3 service endpoint and specify the bucket separately in `bucket_name`.
+Mimir rejects the configuration at startup if the first dot-separated component of `endpoint` exactly matches `bucket_name`.
+For example, if `bucket_name` is `example-metrics`, change the rejected endpoint `example-metrics.s3.us-east-2.amazonaws.com` to `s3.us-east-2.amazonaws.com` and keep `bucket_name` set to `example-metrics`.
+The same check applies to custom S3-compatible endpoints. Use the service endpoint provided by your storage provider.
 {{< /admonition >}}
 
 ### GCS
