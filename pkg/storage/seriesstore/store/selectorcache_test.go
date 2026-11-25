@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	promlabels "github.com/prometheus/prometheus/model/labels"
@@ -49,6 +50,53 @@ func TestSelectorCacheTellsApartSelectorsOfTheSameID(t *testing.T) {
 	require.NotSame(t, kept, other)
 	require.Nil(t, other.shards[0].Load())
 	require.Same(t, kept, cache.get(42, first, 1), "the kept one stays")
+}
+
+// A selector whose matchers are longer than a kept one's may be, like info()'s alternation of every target it joins, is
+// looked up afresh each time, and takes none of the cache's bytes.
+func TestSelectorCacheDoesNotKeepSelectorsOverItsBound(t *testing.T) {
+	compile := func(matchers ...LabelMatcher) []compiledMatcher {
+		compiled, err := compileMatchers(matchers)
+		require.NoError(t, err)
+		return compiled
+	}
+	var cache selectorCache
+	small := compile(matcher(0, "__name__", "target_info"), matcher(0, "instance", "a"))
+	kept := cache.get(1, small, 1)
+	require.Same(t, kept, cache.get(1, small, 1))
+	keptBytes := cache.bytes.Load()
+	require.Positive(t, keptBytes)
+
+	large := compile(matcher(0, "__name__", "target_info"), matcher(0, "instance", strings.Repeat("a", maxCachedSelectorBytes)))
+	require.NotSame(t, cache.get(2, large, 1), cache.get(2, large, 1))
+	require.Equal(t, keptBytes, cache.bytes.Load())
+	require.Len(t, cache.selectors, 1)
+}
+
+// Selectors that each fit, but don't all together, are kept up to the bound on their bytes, past which what is kept is
+// dropped for the next ones.
+func TestSelectorCacheKeepsAtMostItsBytesOfSelectors(t *testing.T) {
+	defer func(bytes int) { maxCachedSelectorsBytes = bytes }(maxCachedSelectorsBytes)
+	compile := func(matchers ...LabelMatcher) []compiledMatcher {
+		compiled, err := compileMatchers(matchers)
+		require.NoError(t, err)
+		return compiled
+	}
+	// Alike in size: each takes the first one's bytes.
+	selectorOf := func(n int) []compiledMatcher {
+		return compile(matcher(0, "__name__", "metric"), matcher(0, "job", fmt.Sprintf("job-%02d", n)))
+	}
+	var cache selectorCache
+	cache.get(0, selectorOf(0), 1)
+	maxCachedSelectorsBytes = int(3 * cache.bytes.Load())
+	dropped := false
+	for n := 1; n < 10; n++ {
+		kept := cache.get(uint64(n), selectorOf(n), 1)
+		require.LessOrEqual(t, cache.bytes.Load(), int64(maxCachedSelectorsBytes))
+		require.Same(t, kept, cache.get(uint64(n), selectorOf(n), 1), "the newest is kept")
+		dropped = dropped || len(cache.selectors) == 1
+	}
+	require.True(t, dropped, "the bound was reached")
 }
 
 // The shards of a query keep their own series of a selector, which together are the unsharded query's, as they were
