@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	util_test "github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
@@ -133,7 +134,7 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 		t.Parallel()
 
 		cfg := defaultIngesterTestConfig(t)
-		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, nil, nil, nil, util_test.NewTestingLogger(t))
+		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, validation.MockDefaultOverrides(), nil, nil, util_test.NewTestingLogger(t))
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingester))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ingester))

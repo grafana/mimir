@@ -635,7 +635,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		}
 
 		i.ingestPartitionLifecycler, err = ring.NewPartitionInstanceLifecycler(
-			i.cfg.IngesterPartitionRing.ToLifecyclerConfig(i.ingestPartitionID, cfg.IngesterRing.InstanceID),
+			i.cfg.IngesterPartitionRing.ToLifecyclerConfig(i.ingestPartitionID, cfg.IngesterRing.InstanceID, limits, ingestCfg.Query.IncludeInactivePartitionsOffsetDuration),
 			partitionRingName,
 			partitionRingKey,
 			partitionRingKV,

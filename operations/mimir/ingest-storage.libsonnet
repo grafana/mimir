@@ -111,31 +111,22 @@
     $.ingest_storage_kafka_producer_args +
     $.ingest_storage_ruler_args,
 
-  local get_duration_arg_or_default(args, argName) =
-    if argName in args then
-      if args[argName] == 0 || args[argName] == '0' then 0
-      else $.util.parseDuration(args[argName])
-    else
-      $.util.getFlagDefaultSeconds(argName),
-
-  local query_ingesters_within = get_duration_arg_or_default($.querier_args, 'querier.query-ingesters-within'),
-  local include_inactive_partitions_offset = get_duration_arg_or_default($.query_frontend_args, 'ingest-storage.query.include-inactive-partitions-offset-duration'),
-
   ingester_args+:: if !$._config.ingest_storage_enabled then {} else (
     $.ingest_storage_kafka_ingestion_args +
     $.ingest_storage_ingester_args +
-    {
-      // How long to wait before deleting an inactive partition, that doesn't have an owner.
-      'ingester.partition-ring.delete-inactive-partition-after':
-        // Disable deletion when ingesters are always queried or inactive offsets are retained indefinitely.
-        if query_ingesters_within == 0 || include_inactive_partitions_offset < 0 then 0
-        else
-          $.util.formatDuration(
-            query_ingesters_within +
-            include_inactive_partitions_offset +
-            $.util.parseDuration('10m')  // Only remove partitions once they're no longer being included in strong-consistency partition offset headers.
-          ),
-    } + (
+    // Ingesters decide when to delete inactive partitions: they wait for the longest -querier.query-ingesters-within
+    // (across the default and all tenant overrides) + -ingest-storage.query.include-inactive-partitions-offset-duration
+    // + -ingester.partition-ring.delete-inactive-partition-after. The first two values must match what queriers and
+    // query-frontends use, so pass them to ingesters too. Tenant-specific overrides come from the runtime config.
+    (
+      if 'querier.query-ingesters-within' in $.querier_args then
+        { 'querier.query-ingesters-within': $.querier_args['querier.query-ingesters-within'] }
+      else {}
+    ) + (
+      if 'ingest-storage.query.include-inactive-partitions-offset-duration' in $.query_frontend_args then
+        { 'ingest-storage.query.include-inactive-partitions-offset-duration': $.query_frontend_args['ingest-storage.query.include-inactive-partitions-offset-duration'] }
+      else {}
+    ) + (
       if $._config.ingest_storage_ingester_ring_tokens_enabled then {} else {
         'ingester.ring.num-tokens': 0,
         'ingester.ring.tokens-file-path': null,
