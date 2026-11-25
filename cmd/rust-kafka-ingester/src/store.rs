@@ -2198,7 +2198,9 @@ impl Store {
             let mut guard = self.shards[shard].write().expect("store lock poisoned");
             let State { tenants, disk, .. } = &mut *guard;
             let mut outcome = ShardOutcome::default();
-            let mut committed = CommittedHeads::default();
+            // Each series can need its own snapshot of the pre-flush head.
+            let mut committed =
+                CommittedHeads::with_capacity_and_hasher(bucket.len(), Default::default());
             // A record's series are consecutive, so the tenant rarely changes.
             let mut current: Option<(usize, &mut Tenant)> = None;
             for BatchSeries {
