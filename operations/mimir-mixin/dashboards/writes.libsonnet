@@ -755,13 +755,11 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.autoScalingDesiredReplicasPanel('ingester') + {
           title: 'Desired replicas (ReplicaTemplate)',
-          description: std.strReplace(super.description, '### Desired replicas\n', '### %s\n' % self.title),
         }
       )
       .addPanel(
         $.autoScalingFailuresPanel('ingester') + {
           title: 'Autoscaler failures rate (ReplicaTemplate)',
-          description: std.strReplace(super.description, '### Autoscaler failures rate\n', '### %s\n' % self.title),
         }
       ),
     )
