@@ -256,7 +256,9 @@ The following features are currently experimental:
   - Query-frontend health check grace period (`-querier.frontend-client.health-check-grace-period`)
   - Store-gateway health check grace period (`-querier.store-gateway-client.health-check-grace-period`)
   - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)
+  - Rejecting strongly consistent requests that include offsets for a partition unknown to the querier (`-ingest-storage.query.reject-unknown-partitions-in-strong-consistency-offsets`)
 - Query-frontend
+  - Time after which the offset of an inactive ingest storage partition is no longer sent for strong read consistency (`-ingest-storage.query.include-inactive-partitions-offset-duration`)
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-time-window` from ingesters)
   - Length-delimited framed format for active series responses between queriers and query-frontends (`-query-frontend.active-series-framed-responses`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)

@@ -110,6 +110,8 @@ const (
 // limit is unset, or holds a value this version does not support.
 const DefaultFloatChunkEncodingValue = promcfg.FloatChunkEncodingXOR
 
+const DefaultQueryIngestersWithin = 13 * time.Hour
+
 // floatChunkEncodings maps every value the -blocks-storage.tsdb.float-chunk-encoding limit accepts to the chunk
 // encoding it selects.
 var floatChunkEncodings = map[string]chunkenc.Encoding{
@@ -536,7 +538,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.QueryShardingMaxShardedQueries, "query-frontend.query-sharding-max-sharded-queries", 128, "The maximum number of sharded queries that can be run for a given received query or spun-off subquery. 0 to disable limit. When splitting and caching inside MQE is enabled, this value applies per time-split interval (including split intervals for spun-off subqueries). When it is disabled, this value applies to the entire time range (or entire spun-off subquery).")
 	f.IntVar(&l.QueryShardingMaxRegexpSizeBytes, "query-frontend.query-sharding-max-regexp-size-bytes", 4096, "Disable query sharding for any query containing a regular expression matcher longer than the configured number of bytes. 0 to disable the limit.")
 	f.IntVar(&l.CardinalityShardingMaxShardedQueries, "query-frontend.cardinality-sharding-max-sharded-queries", 0, "The max number of sharded queries that can be run for a cardinality (active series and active native histogram metrics) request. 0 to fall back to -query-frontend.query-sharding-max-sharded-queries.")
-	_ = l.QueryIngestersWithin.Set("13h")
+	l.QueryIngestersWithin = model.Duration(DefaultQueryIngestersWithin)
 	f.Var(&l.QueryIngestersWithin, QueryIngestersWithinFlag, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
 	f.BoolVar(&l.EnableDelayedNameRemoval, EnableDelayedNameRemovalFlag, false, "Enable the experimental Prometheus feature for delayed name removal within MQE, which only works if remote execution and running sharding within MQE is enabled.")
 
@@ -1984,6 +1986,40 @@ func (o *Overrides) NameValidationScheme(limitsKey string) model.ValidationSchem
 // can be returned in a single cardinality API request.
 func (o *Overrides) CardinalityAnalysisMaxResults(userID string) int {
 	return o.getOverridesForUser(userID).CardinalityAnalysisMaxResults
+}
+
+// MaxDurationAcrossAllTenants returns the maximum duration, as returned by f, across the default limits and the
+// limits of every tenant that currently has overrides. The default limits are always considered, as they apply to
+// all tenants without overrides, including those not known yet.
+func (o *Overrides) MaxDurationAcrossAllTenants(f func(*Limits) time.Duration) time.Duration {
+	result := f(o.defaultLimits)
+
+	if o.tenantLimits == nil {
+		return result
+	}
+
+	for _, limits := range o.tenantLimits.AllByUserID() {
+		if limits == nil {
+			continue
+		}
+		result = max(result, f(limits))
+	}
+
+	return result
+}
+
+// MaxQueryIngestersWithinAcrossAllTenants returns the longest query-ingesters-within across the default limits and
+// the limits of every tenant that currently has overrides. It returns false if query-ingesters-within is disabled
+// for the default or any tenant, in which case ingesters are always queried and there is no maximum.
+func (o *Overrides) MaxQueryIngestersWithinAcrossAllTenants() (time.Duration, bool) {
+	result := o.MaxDurationAcrossAllTenants(func(l *Limits) time.Duration {
+		if l.QueryIngestersWithin <= 0 {
+			return math.MaxInt64
+		}
+		return time.Duration(l.QueryIngestersWithin)
+	})
+
+	return result, result != math.MaxInt64
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {

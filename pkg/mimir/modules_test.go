@@ -27,11 +27,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/vault"
 )
 
@@ -575,4 +577,101 @@ func TestMimir_CreateQueryFrontendPromQLEngineOptions_CardinalityEstimationUsesC
 
 	assert.Contains(t, mimir.QueryFrontendCardinalityCacheClient.(*cache.MockCache).GetItems(), "key")
 	assert.Empty(t, mimir.QueryFrontendCacheClient.(*cache.MockCache).GetItems())
+}
+
+func TestPartitionIDsForReadConsistencyOffsets(t *testing.T) {
+	now := time.Now()
+
+	desc := ring.NewPartitionRingDesc()
+	desc.AddPartition(0, ring.PartitionActive, now.Add(-24*time.Hour))
+	desc.AddPartition(1, ring.PartitionPending, now.Add(-time.Minute))
+	desc.AddPartition(2, ring.PartitionInactive, now.Add(-time.Hour))
+	desc.AddPartition(3, ring.PartitionInactive, now.Add(-12*time.Hour))
+	desc.AddPartition(4, ring.PartitionInactive, now.Add(-48*time.Hour))
+	partitionRing, err := ring.NewPartitionRing(*desc)
+	require.NoError(t, err)
+
+	tests := map[string]struct {
+		maxInactiveAge time.Duration
+		expected       []int32
+	}{
+		"no limit includes all inactive partitions": {
+			maxInactiveAge: 0,
+			expected:       []int32{0, 1, 2, 3, 4},
+		},
+		"inactive partitions older than the max age are excluded": {
+			maxInactiveAge: 13 * time.Hour,
+			expected:       []int32{0, 1, 2, 3},
+		},
+		"only recently inactive partitions are included": {
+			maxInactiveAge: 2 * time.Hour,
+			expected:       []int32{0, 1, 2},
+		},
+		"active and pending partitions are always included": {
+			maxInactiveAge: time.Minute,
+			expected:       []int32{0, 1},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, testData.expected, partitionIDsForReadConsistencyOffsets(partitionRing, now, testData.maxInactiveAge))
+		})
+	}
+}
+
+func TestMaxInactivePartitionAgeForReadConsistencyOffsets(t *testing.T) {
+	tests := map[string]struct {
+		defaultWithin time.Duration
+		tenantWithin  map[string]time.Duration
+		extra         time.Duration
+		expected      time.Duration
+	}{
+		"default only": {
+			defaultWithin: 13 * time.Hour,
+			extra:         10 * time.Minute,
+			expected:      13*time.Hour + 10*time.Minute,
+		},
+		"tenant override larger than default": {
+			defaultWithin: 13 * time.Hour,
+			tenantWithin:  map[string]time.Duration{"a": 24 * time.Hour, "b": time.Hour},
+			extra:         10 * time.Minute,
+			expected:      24*time.Hour + 10*time.Minute,
+		},
+		"tenant override smaller than default": {
+			defaultWithin: 13 * time.Hour,
+			tenantWithin:  map[string]time.Duration{"a": time.Hour},
+			expected:      13 * time.Hour,
+		},
+		"negative extra duration means no limit": {
+			defaultWithin: 13 * time.Hour,
+			extra:         -time.Second,
+			expected:      0,
+		},
+		"default disabled means no limit": {
+			defaultWithin: 0,
+			tenantWithin:  map[string]time.Duration{"a": time.Hour},
+			extra:         10 * time.Minute,
+			expected:      0,
+		},
+		"tenant override disabled means no limit": {
+			defaultWithin: 13 * time.Hour,
+			tenantWithin:  map[string]time.Duration{"a": 0},
+			extra:         10 * time.Minute,
+			expected:      0,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			overrides := validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				defaults.QueryIngestersWithin = model.Duration(testData.defaultWithin)
+				for id, d := range testData.tenantWithin {
+					tenantLimits[id] = &validation.Limits{QueryIngestersWithin: model.Duration(d)}
+				}
+			})
+
+			assert.Equal(t, testData.expected, maxInactivePartitionAgeForReadConsistencyOffsets(overrides, testData.extra))
+		})
+	}
 }

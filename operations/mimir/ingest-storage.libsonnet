@@ -114,13 +114,19 @@
   ingester_args+:: if !$._config.ingest_storage_enabled then {} else (
     $.ingest_storage_kafka_ingestion_args +
     $.ingest_storage_ingester_args +
-    {
-      // How long to wait before deleting an inactive partition, that doesn't have an owner.
-      'ingester.partition-ring.delete-inactive-partition-after': if 'querier.query-ingesters-within' in $.querier_args then
-        $.querier_args['querier.query-ingesters-within']
-      else
-        '13h',  // The default -querier.query-ingesters-within in Mimir is 13 hours.
-    } + (
+    // Ingesters decide when to delete inactive partitions: they wait for the longest -querier.query-ingesters-within
+    // (across the default and all tenant overrides) + -ingest-storage.query.include-inactive-partitions-offset-duration
+    // + -ingester.partition-ring.delete-inactive-partition-after. The first two values must match what queriers and
+    // query-frontends use, so pass them to ingesters too. Tenant-specific overrides come from the runtime config.
+    (
+      if 'querier.query-ingesters-within' in $.querier_args then
+        { 'querier.query-ingesters-within': $.querier_args['querier.query-ingesters-within'] }
+      else {}
+    ) + (
+      if 'ingest-storage.query.include-inactive-partitions-offset-duration' in $.query_frontend_args then
+        { 'ingest-storage.query.include-inactive-partitions-offset-duration': $.query_frontend_args['ingest-storage.query.include-inactive-partitions-offset-duration'] }
+      else {}
+    ) + (
       if $._config.ingest_storage_ingester_ring_tokens_enabled then {} else {
         'ingester.ring.num-tokens': 0,
         'ingester.ring.tokens-file-path': null,
@@ -128,8 +134,18 @@
     )
   ),
 
-  query_frontend_args+:: if !$._config.ingest_storage_enabled then {} else
-    $.ingest_storage_query_frontend_args,
+  query_frontend_args+:: if !$._config.ingest_storage_enabled then {} else (
+    $.ingest_storage_query_frontend_args +
+    // Query-frontends stop sending the offset of an inactive partition once it's older than the longest
+    // -querier.query-ingesters-within + -ingest-storage.query.include-inactive-partitions-offset-duration. This must
+    // match what queriers and ingesters use, otherwise queriers can receive offsets for partitions that
+    // ingesters have already deleted from the ring.
+    (
+      if 'querier.query-ingesters-within' in $.querier_args then
+        { 'querier.query-ingesters-within': $.querier_args['querier.query-ingesters-within'] }
+      else {}
+    )
+  ),
 
   ingest_storage_distributor_args+:: {
     // Apply per-component overrides to Kafka client ID.

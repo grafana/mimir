@@ -899,9 +899,18 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 	// We include all partition states because ACTIVE and INACTIVE partitions must be queried, and PENDING
 	// partitions may switch to ACTIVE between when the query-frontend fetches the offsets and the querier
 	// builds the replica set of partitions to query.
+	//
+	// INACTIVE partitions are only included until they're too old to be queried, with a small grace period
+	// after this: queriers stop querying a partition that has been inactive for longer than the tenant's
+	// query-ingesters-within, so there's no point in fetching (and sending) its offset. This also ensures
+	// there's no race between when a querier observes that an inactive partition is removed entirely and
+	// when the query-frontend observes the same transition: if a querier receives an offset for a partition
+	// that no longer exists in the ring, it will fail the request (as otherwise it's possible this means
+	// that the querier hasn't observed a partition from becoming active).
 	getPartitionIDs := func(readCompartmentID int) ingest.GetPartitionIDsFunc {
 		return func(_ context.Context) ([]int32, error) {
-			return t.IngesterPartitionRingWatchers.Watcher(readCompartmentID).PartitionRing().PartitionIDs(), nil
+			maxInactivePartitionAge := maxInactivePartitionAgeForReadConsistencyOffsets(t.Overrides, t.Cfg.IngestStorage.Query.IncludeInactivePartitionsOffsetDuration)
+			return partitionIDsForReadConsistencyOffsets(t.IngesterPartitionRingWatchers.Watcher(readCompartmentID).PartitionRing(), time.Now(), maxInactivePartitionAge), nil
 		}
 	}
 
@@ -942,6 +951,47 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 	t.QueryFrontendOffsetsReader = reader
 
 	return reader, nil
+}
+
+// maxInactivePartitionAgeForReadConsistencyOffsets returns how long after becoming inactive a partition's offset
+// should still be included in the strong read consistency offsets. It returns 0 if there is no limit, which is
+// the case if extraDuration is negative, or if any tenant (or the default) has query-ingesters-within disabled.
+func maxInactivePartitionAgeForReadConsistencyOffsets(overrides *validation.Overrides, extraDuration time.Duration) time.Duration {
+	if extraDuration < 0 {
+		return 0
+	}
+
+	queryIngestersWithin, ok := overrides.MaxQueryIngestersWithinAcrossAllTenants()
+	if !ok {
+		return 0
+	}
+
+	return queryIngestersWithin + extraDuration
+}
+
+// partitionIDsForReadConsistencyOffsets returns the sorted IDs of the partitions in the ring whose offsets
+// should be included in the strong read consistency offsets: all PENDING and ACTIVE partitions, and the
+// INACTIVE ones that became inactive less than maxInactiveAge ago. If maxInactiveAge is 0, all INACTIVE
+// partitions are included.
+func partitionIDsForReadConsistencyOffsets(partitionRing *ring.PartitionRing, now time.Time, maxInactiveAge time.Duration) []int32 {
+	if maxInactiveAge <= 0 {
+		return partitionRing.PartitionIDs()
+	}
+
+	oldestInactiveSince := now.Add(-maxInactiveAge)
+
+	ids := partitionRing.ActivePartitionIDs()
+	ids = append(ids, partitionRing.PendingPartitionIDs()...)
+
+	for _, p := range partitionRing.InactivePartitions() {
+		if p.GetStateTimestamp() < oldestInactiveSince.Unix() {
+			continue
+		}
+		ids = append(ids, p.Id)
+	}
+
+	slices.Sort(ids)
+	return ids
 }
 
 func (t *Mimir) initCacheKeyGenerator() (services.Service, error) {
@@ -1831,7 +1881,7 @@ func (t *Mimir) setupModuleManager() error {
 		QuerierQueryPlanner:              {API, Overrides, CacheKeyGenerator},
 		QuerierRing:                      {API, RuntimeConfig, MemberlistKV, Vault},
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
-		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
+		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing, Overrides},
 		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QuerierRing, QueryFrontendCacheClient, CacheKeyGenerator},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
 		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QuerierQueryPlanner, QuerierIntermediateCacheClient},

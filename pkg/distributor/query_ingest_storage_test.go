@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -24,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -771,4 +774,132 @@ func countMockIngestersCalls(ingesters []*mockIngester, name string) int {
 		count += i.countCalls(name)
 	}
 	return count
+}
+
+func TestDistributor_getIngesterReplicationSetsForQuery_StrongReadConsistencyUnknownPartitions(t *testing.T) {
+	const tenantID = "user"
+
+	tests := map[string]struct {
+		level               string // Empty means not set in the context, so the tenant's default is used.
+		tenantDefaultStrong bool   // Sets the tenant's default read consistency to strong.
+		offsets             api.EncodedOffsets
+		expectedErr         error
+
+		disableRejection bool // Disables -ingest-storage.query.reject-unknown-partitions-in-strong-consistency-offsets.
+	}{
+		"strong consistency, offsets only for known partitions": {
+			level:       api.ReadConsistencyStrong,
+			offsets:     api.EncodeOffsetsV1(map[int32]int64{0: 10, 1: -1}),
+			expectedErr: nil,
+		},
+		"strong consistency, offsets include a partition unknown to the querier": {
+			level:       api.ReadConsistencyStrong,
+			offsets:     api.EncodeOffsetsV1(map[int32]int64{0: 10, 1: 20, 2: 30}),
+			expectedErr: errUnknownPartitionForStrongReadConsistency,
+		},
+		"strong consistency, offsets include a partition unknown to the querier, rejection disabled": {
+			level:            api.ReadConsistencyStrong,
+			offsets:          api.EncodeOffsetsV1(map[int32]int64{0: 10, 1: 20, 2: 30}),
+			expectedErr:      nil,
+			disableRejection: true,
+		},
+		"strong consistency, no offsets in the context": {
+			level:       api.ReadConsistencyStrong,
+			expectedErr: nil,
+		},
+		"eventual consistency, offsets include a partition unknown to the querier": {
+			level:       api.ReadConsistencyEventual,
+			offsets:     api.EncodeOffsetsV1(map[int32]int64{0: 10, 1: 20, 2: 30}),
+			expectedErr: nil,
+		},
+		"no level in the context and tenant default is eventual, offsets include an unknown partition": {
+			offsets:     api.EncodeOffsetsV1(map[int32]int64{0: 10, 1: 20, 2: 30}),
+			expectedErr: nil,
+		},
+		"no level in the context and tenant default is strong, offsets include an unknown partition": {
+			tenantDefaultStrong: true,
+			offsets:             api.EncodeOffsetsV1(map[int32]int64{0: 10, 1: 20, 2: 30}),
+			expectedErr:         errUnknownPartitionForStrongReadConsistency,
+		},
+		"no level in the context and tenant default is strong, offsets only for known partitions": {
+			tenantDefaultStrong: true,
+			offsets:             api.EncodeOffsetsV1(map[int32]int64{0: 10, 1: -1}),
+			expectedErr:         nil,
+		},
+		"eventual consistency in the context overrides tenant default of strong, offsets include an unknown partition": {
+			level:               api.ReadConsistencyEventual,
+			tenantDefaultStrong: true,
+			offsets:             api.EncodeOffsetsV1(map[int32]int64{0: 10, 1: 20, 2: 30}),
+			expectedErr:         nil,
+		},
+	}
+
+	for _, compartmentsEnabled := range []bool{false, true} {
+		for testName, testData := range tests {
+			t.Run(fmt.Sprintf("compartments enabled: %t, %s", compartmentsEnabled, testName), func(t *testing.T) {
+				limits := prepareDefaultLimits()
+				if testData.tenantDefaultStrong {
+					limits.IngestStorageReadConsistency = api.ReadConsistencyStrong
+				}
+
+				cfg := prepConfig{
+					numDistributors:         1,
+					ingestStorageEnabled:    true,
+					ingestStoragePartitions: 2,
+					ingesterStateByZone: map[string]ingesterZoneState{
+						"zone-a": {states: []ingesterState{ingesterStateHappy, ingesterStateHappy}},
+					},
+					replicationFactor: 1,
+					limits:            limits,
+				}
+				cfg.configure = func(config *Config) {
+					config.IngestStorageConfig.Query.RejectUnknownPartitionsInStrongConsistencyOffsets = !testData.disableRejection
+					if compartmentsEnabled {
+						config.Compartments.Enabled = true
+						config.Compartments.Read.NumCompartments = 1
+						config.IngestStorageConfig.KafkaConfig.Topic = compartmentsTestTopicFormat
+					}
+				}
+				if compartmentsEnabled {
+					cfg.numCompartments = 1
+					cfg.compartmentActivePartitions = map[int][]int32{0: {0, 1}}
+				}
+
+				distributors, _, regs, _ := prepare(t, cfg)
+				require.Len(t, distributors, 1)
+				d := distributors[0]
+
+				test.Poll(t, 5*time.Second, 2, func() any {
+					return d.partitionInstanceRings.Get(0).PartitionRing().PartitionsCount()
+				})
+
+				ctx := user.InjectOrgID(t.Context(), tenantID)
+				if testData.level != "" {
+					ctx = api.ContextWithReadConsistencyLevel(ctx, testData.level)
+				}
+				if testData.offsets != "" {
+					ctx = api.ContextWithReadConsistencyEncodedOffsets(ctx, testData.offsets)
+				}
+
+				_, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
+				expectedRequestsWithUnknownPartitions := 0
+				if testData.expectedErr == nil {
+					require.NoError(t, err)
+				} else {
+					require.ErrorIs(t, err, testData.expectedErr)
+					expectedRequestsWithUnknownPartitions = 1
+				}
+				if testData.disableRejection {
+					// Requests are still counted when they're not rejected.
+					expectedRequestsWithUnknownPartitions = 1
+				}
+
+				require.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_distributor_query_strong_read_consistency_unknown_partition_requests_total Total number of strongly consistent requests received with an offset for a partition that the querier has not observed in the partition ring.
+					# TYPE cortex_distributor_query_strong_read_consistency_unknown_partition_requests_total counter
+					cortex_distributor_query_strong_read_consistency_unknown_partition_requests_total %d
+				`, expectedRequestsWithUnknownPartitions)), "cortex_distributor_query_strong_read_consistency_unknown_partition_requests_total"))
+			})
+		}
+	}
 }
