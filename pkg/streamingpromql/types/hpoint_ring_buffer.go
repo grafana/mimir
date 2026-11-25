@@ -27,10 +27,39 @@ type HPointRingBuffer struct {
 	firstIndex               int // Index into 'points' of first point in this buffer.
 	size                     int // Number of points in this buffer.
 	generation               int // Incremented when views of this buffer are invalidated.
+
+	// startTimestamps stores each point's start timestamp at the corresponding index in points.
+	// A value of 0 means unknown. The slice stays nil until the first non-zero start timestamp is appended.
+	// Once allocated, it has the same length as points.
+	startTimestamps []int64
 }
 
 func NewHPointRingBuffer(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *HPointRingBuffer {
 	return &HPointRingBuffer{memoryConsumptionTracker: memoryConsumptionTracker}
+}
+
+// allocateStartTimestamps creates the start timestamp slice for this buffer, with a start timestamp of 0 (unknown)
+// for every point already in the buffer.
+func (b *HPointRingBuffer) allocateStartTimestamps() error {
+	startTimestamps, err := getStartTimestampSliceForRingBuffer(len(b.points), b.memoryConsumptionTracker)
+	if err != nil {
+		return err
+	}
+
+	b.startTimestamps = startTimestamps[:len(b.points)]
+	clear(b.startTimestamps)
+
+	return nil
+}
+
+// releaseStartTimestamps returns this buffer's start timestamp slice to the pool, if it has one.
+func (b *HPointRingBuffer) releaseStartTimestamps() {
+	if b.startTimestamps == nil {
+		return
+	}
+
+	putStartTimestampSliceForRingBuffer(&b.startTimestamps, b.memoryConsumptionTracker)
+	b.startTimestamps = nil
 }
 
 // DiscardPointsAtOrBefore discards all points in this buffer with timestamp less than or equal to t.
@@ -67,6 +96,22 @@ func (b *HPointRingBuffer) RemoveFirst() {
 // timestamp of the last point in the buffer.
 func (b *HPointRingBuffer) Append(p promql.HPoint) error {
 	hPoint, err := b.NextPoint()
+	if err != nil {
+		return err
+	}
+	hPoint.T = p.T
+	hPoint.H = p.H
+	return nil
+}
+
+// AppendWithStartTimestamp adds p to this buffer with start timestamp st, expanding it if required.
+// A start timestamp of 0 means unknown.
+//
+// The buffer starts storing start timestamps on the first non-zero value, so series without them use no extra memory.
+//
+// The caller must ensure that appending p preserves the buffer's chronological order.
+func (b *HPointRingBuffer) AppendWithStartTimestamp(p promql.HPoint, st int64) error {
+	hPoint, err := b.NextPointWithStartTimestamp(st)
 	if err != nil {
 		return err
 	}
@@ -193,6 +238,16 @@ func (b *HPointRingBuffer) PointAt(position int) promql.HPoint {
 	return b.points[(b.firstIndex+position)&b.pointsIndexMask]
 }
 
+// StartTimestampAt returns the start timestamp of the point at position, or 0 if it is unknown.
+// The caller must check that position is within the buffer's bounds.
+func (b *HPointRingBuffer) StartTimestampAt(position int) int64 {
+	if b.startTimestamps == nil {
+		return 0
+	}
+
+	return b.startTimestamps[(b.firstIndex+position)&b.pointsIndexMask]
+}
+
 // Last returns the last point in the buffer.
 // Note that it is the caller's responsibility to have checked that the buffer size is not empty.
 func (b *HPointRingBuffer) Last() promql.HPoint {
@@ -212,6 +267,8 @@ func (b *HPointRingBuffer) Count() int {
 //
 // This method allows reusing an existing HPoint in this buffer where possible,
 // reducing the number of FloatHistograms allocated.
+//
+// The returned point's start timestamp is unknown (0). Use NextPointWithStartTimestamp to store a start timestamp.
 func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 	if b.size == len(b.points) {
 		// Create a new slice, copy the elements from the current slice.
@@ -232,9 +289,31 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 		}
 
 		newSlice = newSlice[:cap(newSlice)]
+
+		var newStartTimestamps []int64
+		if b.startTimestamps != nil {
+			newStartTimestamps, err = getStartTimestampSliceForRingBuffer(len(newSlice), b.memoryConsumptionTracker)
+			if err != nil {
+				// Only let a copy of the slice header escape on error, so successful resizes don't allocate one.
+				sliceToRelease := newSlice
+				putHPointSliceForRingBuffer(&sliceToRelease, b.memoryConsumptionTracker)
+				return nil, err
+			}
+
+			newStartTimestamps = newStartTimestamps[:len(newSlice)]
+		}
+
 		pointsAtEnd := b.size - b.firstIndex
 		copy(newSlice, b.points[b.firstIndex:])
 		copy(newSlice[pointsAtEnd:], b.points[:b.firstIndex])
+
+		if newStartTimestamps != nil {
+			copy(newStartTimestamps, b.startTimestamps[b.firstIndex:])
+			copy(newStartTimestamps[pointsAtEnd:], b.startTimestamps[:b.firstIndex])
+
+			putStartTimestampSliceForRingBuffer(&b.startTimestamps, b.memoryConsumptionTracker)
+			b.startTimestamps = newStartTimestamps
+		}
 
 		// We must clear b.points before returning it to the pool, as the current query could continue using the
 		// FloatHistogram instances it contains a reference to, but a later user of b.points may otherwise reuse
@@ -249,13 +328,49 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 	}
 
 	nextIndex := (b.firstIndex + b.size) & b.pointsIndexMask
+
+	if b.startTimestamps != nil {
+		// This point's start timestamp is unknown. Clear the start timestamp of the point that was previously at this index.
+		b.startTimestamps[nextIndex] = 0
+	}
+
 	b.size++
 
 	return &b.points[nextIndex], nil
 }
 
+// NextPointWithStartTimestamp is like NextPoint, but also stores st as the returned point's start timestamp.
+// A start timestamp of 0 means unknown.
+//
+// The buffer starts storing start timestamps on the first non-zero value, so series without them use no extra memory.
+//
+// If the returned point is then removed with RemoveLastPoint, its start timestamp is removed with it.
+func (b *HPointRingBuffer) NextPointWithStartTimestamp(st int64) (*promql.HPoint, error) {
+	// NextPoint expands the start timestamp slice along with the points, and sets the new point's start timestamp to 0.
+	hPoint, err := b.NextPoint()
+	if err != nil {
+		return nil, err
+	}
+
+	if st == 0 {
+		return hPoint, nil
+	}
+
+	if b.startTimestamps == nil {
+		if err := b.allocateStartTimestamps(); err != nil {
+			// The caller won't populate the point NextPoint returned, so remove it.
+			b.RemoveLastPoint()
+			return nil, err
+		}
+	}
+
+	b.startTimestamps[(b.firstIndex+b.size-1)&b.pointsIndexMask] = st
+
+	return hPoint, nil
+}
+
 // RemoveLastPoint removes the last point that was allocated.
-// This is used for when NextPoint allocates a point that is then unused and
+// This is used for when NextPoint or NextPointWithStartTimestamp allocates a point that is then unused and
 // needs to be returned to the ring buffer.
 // This occurs when a histogram point has a stale marker.
 // It panics if the buffer is empty.
@@ -302,19 +417,20 @@ func (b *HPointRingBuffer) CountBetween(minT, maxT int64) int {
 	return countToMaxT - countAtOrBeforeMinT
 }
 
-// Reset clears the contents of this buffer, but retains the underlying point slice for future reuse.
+// Reset clears the contents of this buffer, but retains the underlying point and start timestamp slices for future reuse.
 func (b *HPointRingBuffer) Reset() {
 	b.generation++
 	b.firstIndex = 0
 	b.size = 0
 }
 
-// Release clears the contents of this buffer and releases the underlying point slice.
-// The buffer can be used again and will acquire a new slice when required.
+// Release clears the contents of this buffer and releases the underlying point and start timestamp slices.
+// The buffer can be used again and will acquire new slices when required.
 func (b *HPointRingBuffer) Release() {
 	b.Reset()
 	putHPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 	b.points = nil
+	b.releaseStartTimestamps()
 }
 
 // Use replaces the contents of this buffer with s.
@@ -323,6 +439,7 @@ func (b *HPointRingBuffer) Release() {
 // s will be returned to the pool when Close is called, Use is called again, or the buffer needs to expand, so callers
 // should not return s to the pool themselves.
 // s must have a capacity that is a power of two.
+// The points in s have no start timestamps, so Use releases any start timestamps this buffer has.
 func (b *HPointRingBuffer) Use(s []promql.HPoint) error {
 	if !pool.IsPowerOfTwo(cap(s)) {
 		// We rely on the capacity being a power of two for the pointsIndexMask optimisation below.
@@ -330,6 +447,7 @@ func (b *HPointRingBuffer) Use(s []promql.HPoint) error {
 	}
 
 	putHPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
+	b.releaseStartTimestamps()
 
 	b.generation++
 	b.points = s[:cap(s)]
@@ -343,6 +461,7 @@ func (b *HPointRingBuffer) Use(s []promql.HPoint) error {
 func (b *HPointRingBuffer) Close() {
 	putHPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 	b.points = nil
+	b.releaseStartTimestamps()
 }
 
 type HPointRingBufferView struct {
@@ -406,6 +525,43 @@ func (v *HPointRingBufferView) UnsafePointsInIndexRange(first, last int) (head [
 	// structure as any other view, so delegate to UnsafePoints to keep that logic in one place.
 	sub := HPointRingBufferView{buffer: v.buffer, offset: v.offset + first, size: last - first + 1}
 	return sub.UnsafePoints()
+}
+
+// HasStartTimestamps returns true if this view's buffer stores start timestamps.
+//
+// Storage is allocated when the first non-zero start timestamp is appended.
+// If this returns false, every point in the view has an unknown start timestamp (0).
+// If this returns true, some or all start timestamps may still be 0.
+func (v *HPointRingBufferView) HasStartTimestamps() bool {
+	return v.buffer != nil && v.buffer.startTimestamps != nil
+}
+
+// UnsafeStartTimestamps returns start timestamp slices for the points in this view.
+// The head and tail slices match the corresponding slices from UnsafePoints, with one start timestamp per point.
+// A value of 0 means unknown. Both slices are nil if HasStartTimestamps returns false.
+//
+// As with UnsafePoints, callers must not modify the returned slices or return them to a pool.
+// The slices become invalid when the buffer is modified.
+func (v *HPointRingBufferView) UnsafeStartTimestamps() (head []int64, tail []int64) {
+	// This repeats UnsafePoints' indexing to keep both sets of slices aligned. A shared helper made
+	// UnsafePoints too expensive to inline.
+	// Check the size before accessing v.buffer, since an empty view may have no buffer.
+	if v.size == 0 || v.buffer.startTimestamps == nil {
+		return nil, nil
+	}
+
+	startTimestamps := v.buffer.startTimestamps
+	startIndex := (v.buffer.firstIndex + v.offset) & v.buffer.pointsIndexMask
+	endOfHeadSegment := startIndex + v.size
+
+	if endOfHeadSegment > len(startTimestamps) {
+		// Need to wrap around.
+		endOfTailSegment := endOfHeadSegment - len(startTimestamps)
+		endOfHeadSegment = len(startTimestamps)
+		return startTimestamps[startIndex:endOfHeadSegment], startTimestamps[0:endOfTailSegment]
+	}
+
+	return startTimestamps[startIndex:endOfHeadSegment], nil
 }
 
 // CopyPoints returns a single slice of the points in this buffer view.
@@ -549,9 +705,21 @@ func (v *HPointRingBufferView) PointAt(i int) promql.HPoint {
 	return v.buffer.PointAt(v.offset + i)
 }
 
+// StartTimestampAt returns the start timestamp of the point at index i in this ring buffer view, or 0 if it is unknown.
+// It panics if the index is outside the range of points in this view.
+func (v *HPointRingBufferView) StartTimestampAt(i int) int64 {
+	if i >= v.size {
+		panic("HPointRingBufferView.StartTimestampAt(): index out of range")
+	}
+
+	return v.buffer.StartTimestampAt(v.offset + i)
+}
+
 // Clone returns a clone of this view and its underlying ring buffer.
 // All histogram.FloatHistogram instances in the underlying buffer are cloned.
 // The caller is responsible for closing the returned ring buffer when it is no longer needed.
+// The clone preserves this view's start timestamps. Its buffer only allocates start timestamp storage
+// if the original buffer has it.
 func (v *HPointRingBufferView) Clone() (*HPointRingBufferView, *HPointRingBuffer, error) {
 	if v.size == 0 {
 		return &HPointRingBufferView{}, nil, nil
@@ -565,6 +733,18 @@ func (v *HPointRingBufferView) Clone() (*HPointRingBufferView, *HPointRingBuffer
 	buffer := NewHPointRingBuffer(v.buffer.memoryConsumptionTracker)
 	if err := buffer.Use(points); err != nil {
 		return nil, nil, err
+	}
+
+	if v.HasStartTimestamps() {
+		if err := buffer.allocateStartTimestamps(); err != nil {
+			buffer.Close()
+			return nil, nil, err
+		}
+
+		// Use put the points at index 0 onwards, so copy the start timestamps to the same indices.
+		head, tail := v.UnsafeStartTimestamps()
+		n := copy(buffer.startTimestamps, head)
+		copy(buffer.startTimestamps[n:], tail)
 	}
 
 	// Ensure that the newly created buffer (and hence view) has the same generation
