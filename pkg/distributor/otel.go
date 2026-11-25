@@ -747,7 +747,8 @@ type otlpMimirConverter struct {
 	converter *prometheusremotewrite.PrometheusConverter
 	// err holds OTLP parse errors
 	err error
-	// droppedByWarning counts metrics dropped individually, which the translator reports as warnings rather than errors.
+	// droppedByWarning counts metrics dropped for an unsupported temporality, which the translator reports as warnings rather than errors.
+	// Metrics sharing a name count once, because annotations are keyed by message.
 	droppedByWarning int
 }
 
@@ -765,10 +766,20 @@ func (c *otlpMimirConverter) ToSeriesAndMetadata(ctx context.Context, md pmetric
 
 	var annots annotations.Annotations
 	annots, c.err = c.converter.FromMetrics(ctx, md, settings)
+	// Count only invalid-temporality warnings, since that's the only warning category known to discard samples.
+	// The other categories either keep the data or, for empty data points, drop a metric that has no samples.
 	c.droppedByWarning = prometheusremotewrite.CountWarningsByCategory(annots)[prometheusremotewrite.WarningCategoryInvalidTemporality]
 	if c.droppedByWarning > 0 {
-		warnings, _ := annots.AsStrings("", 5, 0)
-		level.Warn(logger).Log("msg", "dropped OTLP metrics with unsupported temporality", "count", c.droppedByWarning, "warnings", strings.Join(warnings, "; "))
+		var dropped []string
+		for msg, err := range annots {
+			if prometheusremotewrite.WarningCategoryOf(err) == prometheusremotewrite.WarningCategoryInvalidTemporality {
+				dropped = append(dropped, msg)
+				if len(dropped) == 5 {
+					break
+				}
+			}
+		}
+		level.Warn(logger).Log("msg", "dropped OTLP metrics with unsupported temporality", "count", c.droppedByWarning, "warnings", strings.Join(dropped, "; "))
 	}
 
 	timeseries, metadata := c.appender.GetResult()
