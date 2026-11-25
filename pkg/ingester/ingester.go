@@ -202,6 +202,8 @@ type Config struct {
 
 	LabelChurnEnabled bool `yaml:"label_churn_enabled" category:"experimental"`
 
+	LogSeriesWithFloatsAndHistograms bool `yaml:"log_series_with_floats_and_histograms" category:"experimental"`
+
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
 	// ReadCompartmentID is the read compartment this ingester serves. It selects which partition ring
@@ -246,6 +248,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.ComputeWorkers, "ingester.compute-workers", 0, "Number of worker goroutines in the ingester's shared tenant-fair compute worker pool, used to parallelize CPU-bound work (currently label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.")
 	cfg.LabelValuesCount.RegisterFlags(f)
 	f.BoolVar(&cfg.LabelChurnEnabled, "ingester.label-churn-enabled", false, "Enable label churn detection. The ingester records the newest series reference of each tenant every minute, and returns a score for each label name that shows how many new series the new values of the label create.")
+	f.BoolVar(&cfg.LogSeriesWithFloatsAndHistograms, "ingester.log-series-with-floats-and-histograms", false, "When enabled, the ingester logs the tenant and labels of series in write requests that have both float samples and native histograms. Logs are sampled according to -ingester.error-sample-rate.")
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
 	f.IntVar(&cfg.ReadCompartmentID, "ingester.read-compartment-id", 0, "The read compartment this ingester serves. Only used when compartments are enabled.")
 

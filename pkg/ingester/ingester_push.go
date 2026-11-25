@@ -525,6 +525,9 @@ func (i *Ingester) pushSamplesToAppender(
 	for _, ts := range timeseries {
 		if len(ts.Samples) > 0 && len(ts.Histograms) > 0 {
 			stats.seriesWithFloatsAndHistogramsCount++
+			if sampler := i.errorSamplers.seriesWithFloatsAndHistograms; i.cfg.LogSeriesWithFloatsAndHistograms && (sampler == nil || sampler.Sample()) {
+				level.Info(i.logger).Log("msg", "series has both float samples and histograms", "user", userID, "series", mimirpb.FromLabelAdaptersToString(ts.Labels))
+			}
 		}
 
 		// Fast path in case we only have samples and they are all out of bound

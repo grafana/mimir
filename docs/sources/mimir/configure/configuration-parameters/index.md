@@ -1903,6 +1903,12 @@ label_values_count:
 # label name that shows how many new series the new values of the label create.
 # CLI flag: -ingester.label-churn-enabled
 [label_churn_enabled: <boolean> | default = false]
+
+# (experimental) When enabled, the ingester logs the tenant and labels of series
+# in write requests that have both float samples and native histograms. Logs are
+# sampled according to -ingester.error-sample-rate.
+# CLI flag: -ingester.log-series-with-floats-and-histograms
+[log_series_with_floats_and_histograms: <boolean> | default = false]
 ```
 
 ### querier

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv"
@@ -565,6 +566,9 @@ func TestIngester_Push(t *testing.T) {
 		allowOOO                  bool
 		ignoreOOOExemplars        bool
 		pastGracePeriod           time.Duration
+		logMixedSeries            bool
+		errorSampleRate           int64
+		expectedLogs              []string
 	}{
 		"should succeed on valid series and metadata": {
 			reqs: []*mimirpb.WriteRequest{
@@ -2874,6 +2878,12 @@ func TestIngester_Push(t *testing.T) {
 		},
 		"should count series that have both float samples and histograms": {
 			nativeHistograms: true,
+			logMixedSeries:   true,
+			errorSampleRate:  2,
+			// Only the first of the two series with both float samples and histograms is logged due to sampling.
+			expectedLogs: []string{
+				`level=info msg="series has both float samples and histograms" user=test series=test_1`,
+			},
 			reqs: []*mimirpb.WriteRequest{
 				{
 					Timeseries: []mimirpb.PreallocTimeseries{
@@ -4616,6 +4626,10 @@ func TestIngester_Push(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
 			cfg.IngesterRing.ReplicationFactor = 1
 			cfg.ActiveSeriesMetrics.Enabled = !testData.disableActiveSeries
+			cfg.LogSeriesWithFloatsAndHistograms = testData.logMixedSeries
+			if testData.errorSampleRate != 0 {
+				cfg.ErrorSampleRate = testData.errorSampleRate
+			}
 			limits := defaultLimitsTestConfig()
 			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
 			limits.MaxGlobalMetricsWithMetadataPerUser = testData.maxMetadataPerUser
@@ -4631,6 +4645,8 @@ func TestIngester_Push(t *testing.T) {
 
 			i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, "", registry)
 			require.NoError(t, err)
+			logs := &concurrency.SyncBuffer{}
+			i.logger = util_log.MakeLeveledLogger(logs, "info")
 			startAndWaitHealthy(t, i, r)
 
 			ctx := user.InjectOrgID(context.Background(), userID)
@@ -4674,6 +4690,14 @@ func TestIngester_Push(t *testing.T) {
 				res = nil
 			}
 			require.Equal(t, testData.expectedIngested, res)
+
+			var mixedSeriesLogs []string
+			for _, line := range strings.Split(logs.String(), "\n") {
+				if strings.Contains(line, "series has both float samples and histograms") {
+					mixedSeriesLogs = append(mixedSeriesLogs, line)
+				}
+			}
+			require.Equal(t, testData.expectedLogs, mixedSeriesLogs)
 
 			// Read back samples to see what has been really ingested
 			exemplarRes, err := i.QueryExemplars(ctx, &client.ExemplarQueryRequest{

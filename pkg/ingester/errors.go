@@ -577,10 +577,12 @@ type ingesterErrSamplers struct {
 	maxMetadataPerUserLimitExceeded   *log.Sampler
 	nativeHistogramValidationError    *log.Sampler
 	labelsNotSorted                   *log.Sampler
+	seriesWithFloatsAndHistograms     *log.Sampler
 }
 
 func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
 	return ingesterErrSamplers{
+		log.NewSampler(freq),
 		log.NewSampler(freq),
 		log.NewSampler(freq),
 		log.NewSampler(freq),
