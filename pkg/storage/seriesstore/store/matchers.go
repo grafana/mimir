@@ -16,6 +16,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/DmitriyVTitov/size"
 	"github.com/cespare/xxhash/v2"
 	prometheuslabels "github.com/prometheus/prometheus/model/labels"
 
@@ -385,13 +386,47 @@ func productRunes(prefixes []string, runes []rune) ([]string, bool) {
 }
 
 // Queriers send the same few patterns with every request: like Go's matcher cache, compiled
-// regexes are kept, up to a bound so arbitrary queries can't grow it.
+// regexes are kept, up to bounds on how many and how big so arbitrary queries can't grow it.
+// Most are a few KB. info() selects target_info with an alternation of every target of the
+// series it joins, which is MBs compiled and changes with the targets: kept by their count
+// alone, a few thousand of them filled an ingester's heap. One bigger than maxCachedRegexBytes
+// is compiled for its query alone.
 const cachedRegexes = 4096
+
+// The bytes of compiled regexes kept in all, and of each. Variables for tests.
+var (
+	maxCachedRegexesBytes = 128 << 20
+	maxCachedRegexBytes   = 2 << 20
+)
+
+// A pattern longer than this isn't sized to be kept: an alternation of literals compiles to about
+// 40 times its length, more than maxCachedRegexBytes, and sizing one took a fifth of compiling it.
+const maxSizedRegexPattern = 64 << 10
 
 var regexCache = struct {
 	sync.Mutex
 	byPattern map[string]*compiledRegex
+	// The bytes of the regexes byPattern has, by regexBytes.
+	bytes int
 }{byPattern: map[string]*compiledRegex{}}
+
+// regexBytes is how big a compiled regex is to keep, and whether it's small enough: its matcher, sized as Prometheus's
+// cache of them sizes them, and the strings it adds. size.Of can't size a whole compiledRegex, as its memo has an
+// unsafe.Pointer.
+func regexBytes(re *compiledRegex, pattern string) (int, bool) {
+	if len(pattern) > maxSizedRegexPattern {
+		return 0, false
+	}
+	matcher := size.Of(re.matcher)
+	if matcher < 0 {
+		return 0, false
+	}
+	bytes := matcher + len(re.pattern) + len(re.prefix)
+	for _, value := range re.values {
+		bytes += len(value)
+	}
+	return bytes, bytes <= maxCachedRegexBytes
+}
 
 // anchoredRegex compiles a matcher's regex, anchored like Prometheus's.
 func anchoredRegex(pattern string) (*compiledRegex, error) {
@@ -410,13 +445,20 @@ func anchoredRegex(pattern string) (*compiledRegex, error) {
 	}
 	values, finite := acceptedValues(pattern)
 	compiled := &compiledRegex{matcher: matcher, pattern: "^(?:" + pattern + ")$", values: values, finite: finite, prefix: literalPrefix(pattern)}
+	bytes, keep := regexBytes(compiled, pattern)
+	if !keep {
+		// Its verdicts would be its query's alone, and a slow regex's memo, which the list of slow ones holds until the
+		// cache is cleared, would keep it.
+		compiled.verdicts.state.Store(regexMemoFast)
+		return compiled, nil
+	}
 	regexCache.Lock()
 	defer regexCache.Unlock()
 	// The query shards of a query compile its regexes at once: they share the one kept first, and with it its verdicts.
 	if cached, ok := regexCache.byPattern[pattern]; ok {
 		return cached, nil
 	}
-	if len(regexCache.byPattern) >= cachedRegexes {
+	if len(regexCache.byPattern) >= cachedRegexes || regexCache.bytes+bytes > maxCachedRegexesBytes {
 		regexMemos.Lock()
 		for _, memo := range regexMemos.slow {
 			memo.reset()
@@ -424,8 +466,10 @@ func anchoredRegex(pattern string) (*compiledRegex, error) {
 		regexMemos.slow = nil
 		regexMemos.Unlock()
 		clear(regexCache.byPattern)
+		regexCache.bytes = 0
 	}
 	regexCache.byPattern[pattern] = compiled
+	regexCache.bytes += bytes
 	return compiled, nil
 }
 
