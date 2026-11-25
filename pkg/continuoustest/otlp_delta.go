@@ -68,7 +68,7 @@ func NewOTLPDeltaTest(cfg OTLPDeltaTestConfig, seriesCfg WriteReadSeriesTestConf
 	test := &OTLPDeltaTest{
 		enabled: cfg.Enabled,
 		cfg:     seriesCfg,
-		client:  &deltaClient,
+		client:  &otlpDeltaClient{MimirClient: &deltaClient},
 		logger:  log.With(logger, "test", "otlp-delta"),
 		metrics: NewTestMetrics("otlp-delta", reg),
 	}
