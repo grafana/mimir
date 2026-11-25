@@ -370,6 +370,14 @@ local filename = 'mimir-reads.json';
     )
     .addRow(
       $.thanosMemcachedCache(
+        'Memcached – index header cache (store-gateway accesses)',
+        $._config.job_names.store_gateway,
+        'store-gateway',
+        'index-header-cache'
+      )
+    )
+    .addRow(
+      $.thanosMemcachedCache(
         'Memcached – chunks cache (store-gateway accesses)',
         $._config.job_names.store_gateway,
         'store-gateway',
