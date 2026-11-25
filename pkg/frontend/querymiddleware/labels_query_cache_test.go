@@ -123,8 +123,19 @@ func TestLabelsQueryCache_MetadataDefaultTimeRange(t *testing.T) {
 			},
 			expectedDownstreamCalls: 2,
 		},
-		// Without the limit, these requests have the same cache key, because the key keeps start at MinTime and
-		// rounds both ends up to 04:00. With the limit, they query different ranges and blocks.
+		// The next two cases send the same two requests with only end.
+		// The cache key keeps start at MinTime and rounds both ends up to the 04:00 block boundary,
+		// so both requests have the same key.
+		// Without the limit, the querier queries from MinTime to each end, and both ranges touch the same blocks.
+		// With the limit, the querier queries 01:30 to 02:30 and 02:30 to 03:30, which touch different blocks.
+		"limit disabled, only end at two times that round to the same block boundary": {
+			requests: []request{
+				{method: http.MethodGet, path: labelValuesPath, params: url.Values{"end": []string{"2023-07-05T02:30:00Z"}}},
+				{method: http.MethodGet, path: labelValuesPath, params: url.Values{"end": []string{"2023-07-05T03:30:00Z"}}},
+			},
+			expectedDownstreamCalls: 1,
+			expectedCached:          true,
+		},
 		"limit enabled, only end at two times that round to the same block boundary": {
 			metadataDefaultTimeRange: time.Hour,
 			requests: []request{
