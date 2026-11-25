@@ -2043,6 +2043,112 @@ func TestRuler_RunRingChangeMaxDebounce(t *testing.T) {
 	})
 }
 
+// syncHookManager calls afterFirstFullSync once, after the first full sync.
+// The first full sync is the initial sync.
+type syncHookManager struct {
+	MultiTenantManager
+	once               sync.Once
+	afterFirstFullSync func(ruleGroupsByUser map[string]rulespb.RuleGroupList)
+}
+
+func (m *syncHookManager) SyncFullRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList) {
+	m.MultiTenantManager.SyncFullRuleGroups(ctx, ruleGroupsByUser)
+	m.once.Do(func() { m.afterFirstFullSync(ruleGroupsByUser) })
+}
+
+func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
+	const (
+		ringCheckPeriod = 20 * time.Millisecond
+		userID          = "user-1"
+	)
+
+	testCases := map[string]struct {
+		otherRulerAtStart bool
+	}{
+		"another ruler joins after the initial sync": {
+			otherRulerAtStart: false,
+		},
+		"another ruler leaves after the initial sync": {
+			otherRulerAtStart: true,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var groups rulespb.RuleGroupList
+				for i := range 20 {
+					groups = append(groups, createRuleGroup(fmt.Sprintf("group-%d", i), userID, createRecordingRule("UP_RULE", "up")))
+				}
+				storage := newMockRuleStore(map[string]rulespb.RuleGroupList{userID: groups})
+
+				cfg := defaultRulerConfig(t)
+				cfg.Ring.NumTokens = 128
+				cfg.PollInterval = time.Hour // Isolate ring-change syncing from periodic syncing.
+				cfg.RingCheckPeriod = ringCheckPeriod
+
+				setOtherRuler := func(inRing bool) error {
+					return cfg.Ring.Common.KVStore.Mock.CAS(t.Context(), RulerRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+						d, _ := in.(*ring.Desc)
+						if d == nil {
+							d = ring.NewDesc()
+						}
+						if !inRing {
+							d.RemoveIngester("other")
+							return d, true, nil
+						}
+						tokens := make([]uint32, 128)
+						for i := range tokens {
+							tokens[i] = uint32(i) << 25
+						}
+						d.AddIngester("other", "other", "", tokens, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
+						return d, true, nil
+					})
+				}
+				if tc.otherRulerAtStart {
+					require.NoError(t, setOtherRuler(true))
+				}
+
+				r := prepareRuler(t, cfg, storage)
+
+				// The other ruler joins or leaves after the initial sync and before the ruler becomes ACTIVE.
+				var initialSyncGroups int
+				r.manager = &syncHookManager{
+					MultiTenantManager: r.manager,
+					afterFirstFullSync: func(ruleGroupsByUser map[string]rulespb.RuleGroupList) {
+						initialSyncGroups = len(ruleGroupsByUser[userID])
+						// The hook runs on the ruler goroutine.
+						// Thus it must not call t.FailNow.
+						assert.NoError(t, setOtherRuler(!tc.otherRulerAtStart))
+					},
+				}
+
+				require.NoError(t, services.StartAndAwaitRunning(t.Context(), r))
+				t.Cleanup(func() {
+					require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r))
+				})
+
+				time.Sleep(2 * ringCheckPeriod)
+				synctest.Wait()
+
+				var expected, actual []string
+				for _, g := range groups {
+					owned, err := instanceOwnsRuleGroup(r.ring, g, r.lifecycler.GetInstanceAddr(), rulerSyncReasonRingChange)
+					require.NoError(t, err)
+					if owned {
+						expected = append(expected, g.Name)
+					}
+				}
+				for _, g := range r.manager.GetRules(userID) {
+					actual = append(actual, g.Name())
+				}
+				require.NotEqual(t, initialSyncGroups, len(expected), "the ring change moves at least one rule group")
+				require.ElementsMatch(t, expected, actual)
+			})
+		})
+	}
+}
+
 // User shuffle shard token.
 func userToken(user string, skip int) uint32 {
 	r := rand.New(rand.NewSource(util.ShuffleShardSeed(user, "")))
