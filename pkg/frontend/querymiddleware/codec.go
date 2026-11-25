@@ -819,6 +819,10 @@ func (c Codec) AddHeadersForMetricQueryRequest(ctx context.Context, r MetricsQue
 
 	// Propagate allowed HTTP headers.
 	for _, h := range r.GetHeaders() {
+		// Encode the typed start-timestamp override below, ignoring stale or duplicate headers.
+		if strings.EqualFold(h.Name, requestoptions.UseStartTimestampsHeader) {
+			continue
+		}
 		if !slices.Contains(c.propagateHeadersMetrics, h.Name) {
 			continue
 		}
@@ -826,6 +830,10 @@ func (c Codec) AddHeadersForMetricQueryRequest(ctx context.Context, r MetricsQue
 		for _, v := range h.Values {
 			headers.Add(h.Name, v)
 		}
+	}
+
+	if override := r.GetUseStartTimestamps(); override != nil {
+		headers.SetAll(requestoptions.UseStartTimestampsHeader, []string{strconv.FormatBool(*override)})
 	}
 
 	return nil

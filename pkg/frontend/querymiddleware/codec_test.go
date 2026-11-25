@@ -2012,6 +2012,241 @@ func TestCodec_DecodeEncode_Metrics(t *testing.T) {
 	}
 }
 
+func TestCodec_StartTimestampsConstructorRoundTrip(t *testing.T) {
+	tests := []struct {
+		name           string
+		rangeQuery     bool
+		override       *bool
+		headers        []*PrometheusHeader
+		expectedHeader []string
+	}{
+		{
+			name:           "instant unset with nil headers",
+			rangeQuery:     false,
+			override:       nil,
+			headers:        nil,
+			expectedHeader: nil,
+		},
+		{
+			name:           "instant enabled with nil headers",
+			rangeQuery:     false,
+			override:       new(true),
+			headers:        nil,
+			expectedHeader: []string{"true"},
+		},
+		{
+			name:           "instant disabled with nil headers",
+			rangeQuery:     false,
+			override:       new(false),
+			headers:        nil,
+			expectedHeader: []string{"false"},
+		},
+		{
+			name:       "instant enabled with duplicate headers",
+			rangeQuery: false,
+			override:   new(true),
+			headers: []*PrometheusHeader{
+				{
+					Name:   requestoptions.UseStartTimestampsHeader,
+					Values: []string{"true", "true"},
+				},
+			},
+			expectedHeader: []string{"true"},
+		},
+		{
+			name:       "instant disabled with duplicate headers",
+			rangeQuery: false,
+			override:   new(false),
+			headers: []*PrometheusHeader{
+				{
+					Name:   requestoptions.UseStartTimestampsHeader,
+					Values: []string{"false", "false"},
+				},
+			},
+			expectedHeader: []string{"false"},
+		},
+		{
+			name:       "instant enabled overrides conflicting headers",
+			rangeQuery: false,
+			override:   new(true),
+			headers: []*PrometheusHeader{
+				{
+					Name:   requestoptions.UseStartTimestampsHeader,
+					Values: []string{"false"},
+				},
+				{
+					Name:   "x-prometheus-use-start-timestamps",
+					Values: []string{"false"},
+				},
+			},
+			expectedHeader: []string{"true"},
+		},
+		{
+			name:       "instant disabled overrides conflicting headers",
+			rangeQuery: false,
+			override:   new(false),
+			headers: []*PrometheusHeader{
+				{
+					Name:   requestoptions.UseStartTimestampsHeader,
+					Values: []string{"true"},
+				},
+			},
+			expectedHeader: []string{"false"},
+		},
+		{
+			name:       "instant unset overrides stale headers",
+			rangeQuery: false,
+			override:   nil,
+			headers: []*PrometheusHeader{
+				{
+					Name:   requestoptions.UseStartTimestampsHeader,
+					Values: []string{"true", "false"},
+				},
+			},
+			expectedHeader: nil,
+		},
+		{
+			name:       "instant unset overrides invalid header",
+			rangeQuery: false,
+			override:   nil,
+			headers: []*PrometheusHeader{
+				{
+					Name:   requestoptions.UseStartTimestampsHeader,
+					Values: []string{"invalid"},
+				},
+			},
+			expectedHeader: nil,
+		},
+		{
+			name:           "range unset with nil headers",
+			rangeQuery:     true,
+			override:       nil,
+			headers:        nil,
+			expectedHeader: nil,
+		},
+		{
+			name:           "range enabled with nil headers",
+			rangeQuery:     true,
+			override:       new(true),
+			headers:        nil,
+			expectedHeader: []string{"true"},
+		},
+		{
+			name:           "range disabled with nil headers",
+			rangeQuery:     true,
+			override:       new(false),
+			headers:        nil,
+			expectedHeader: []string{"false"},
+		},
+		{
+			name:       "range enabled with duplicate headers",
+			rangeQuery: true,
+			override:   new(true),
+			headers: []*PrometheusHeader{
+				{
+					Name:   requestoptions.UseStartTimestampsHeader,
+					Values: []string{"true", "true"},
+				},
+			},
+			expectedHeader: []string{"true"},
+		},
+		{
+			name:       "range disabled with duplicate headers",
+			rangeQuery: true,
+			override:   new(false),
+			headers: []*PrometheusHeader{
+				{
+					Name:   requestoptions.UseStartTimestampsHeader,
+					Values: []string{"false", "false"},
+				},
+			},
+			expectedHeader: []string{"false"},
+		},
+		{
+			name:       "range enabled overrides conflicting headers",
+			rangeQuery: true,
+			override:   new(true),
+			headers: []*PrometheusHeader{
+				{
+					Name:   requestoptions.UseStartTimestampsHeader,
+					Values: []string{"false"},
+				},
+				{
+					Name:   "x-prometheus-use-start-timestamps",
+					Values: []string{"false"},
+				},
+			},
+			expectedHeader: []string{"true"},
+		},
+		{
+			name:       "range disabled overrides conflicting headers",
+			rangeQuery: true,
+			override:   new(false),
+			headers: []*PrometheusHeader{
+				{
+					Name:   requestoptions.UseStartTimestampsHeader,
+					Values: []string{"true"},
+				},
+			},
+			expectedHeader: []string{"false"},
+		},
+		{
+			name:       "range unset overrides stale headers",
+			rangeQuery: true,
+			override:   nil,
+			headers: []*PrometheusHeader{
+				{
+					Name:   requestoptions.UseStartTimestampsHeader,
+					Values: []string{"true", "false"},
+				},
+			},
+			expectedHeader: nil,
+		},
+		{
+			name:       "range unset overrides invalid header",
+			rangeQuery: true,
+			override:   nil,
+			headers: []*PrometheusHeader{
+				{
+					Name:   requestoptions.UseStartTimestampsHeader,
+					Values: []string{"invalid"},
+				},
+			},
+			expectedHeader: nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			codec := newTestCodec()
+			ctx := user.InjectOrgID(t.Context(), "tenant")
+			expr := parseQuery(t, "counter")
+
+			// Construct requests directly, without decoding an incoming HTTP request.
+			var request MetricsQueryRequest
+			if tc.rangeQuery {
+				request = NewPrometheusRangeQueryRequest("/api/v1/query_range", tc.headers, 1000, 2000, 1000, 5*time.Minute, tc.override, expr, requestoptions.Options{}, nil, "", nil)
+			} else {
+				request = NewPrometheusInstantQueryRequest("/api/v1/query", tc.headers, 1000, 5*time.Minute, tc.override, expr, requestoptions.Options{}, nil, "", nil)
+			}
+
+			encoded, err := codec.EncodeMetricsQueryRequest(ctx, request)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedHeader, encoded.Header.Values(requestoptions.UseStartTimestampsHeader))
+
+			// Decoding must preserve the typed override, including explicit false and unset.
+			decoded, err := codec.DecodeMetricsQueryRequest(ctx, encoded)
+			require.NoError(t, err)
+			require.Equal(t, tc.override, decoded.GetUseStartTimestamps())
+
+			// Re-encoding must neither duplicate the header nor change the request.
+			reencoded, err := codec.EncodeMetricsQueryRequest(ctx, decoded)
+			require.NoError(t, err)
+			require.Equal(t, encoded.Header, reencoded.Header)
+			require.Equal(t, encoded.URL, reencoded.URL)
+		})
+	}
+}
+
 // TestCodec_DecodeEncodeMultipleTimes_Labels tests that decoding and re-encoding a
 // labels query request multiple times does not lose relevant information about the original request.
 func TestCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
