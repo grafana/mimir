@@ -311,6 +311,28 @@ func (e *prometheusEngine) ShipBlocks(ctx context.Context) {
 	}
 }
 
+func (e *prometheusEngine) OldestUnshippedBlockTime() uint64 {
+	// When shipping is disabled, always return 0 because the concept of "unshipped" doesn't apply.
+	if !e.BlockShippingEnabled() {
+		return 0
+	}
+
+	shippedBlocks := e.getCachedShippedBlocks()
+	oldestTs := uint64(0)
+
+	for _, b := range e.db.Blocks() {
+		if _, ok := shippedBlocks[b.Meta().ULID]; ok {
+			continue
+		}
+
+		if oldestTs == 0 || b.Meta().ULID.Time() < oldestTs {
+			oldestTs = b.Meta().ULID.Time()
+		}
+	}
+
+	return oldestTs
+}
+
 // updateCachedShippedBlocks reads the shipper meta file and updates the cached shipped blocks.
 func (e *prometheusEngine) updateCachedShippedBlocks() error {
 	shippedBlocks, err := readShippedBlocks(e.db.Dir())

@@ -233,10 +233,6 @@ func (u *userTSDB) Head() engineHead {
 	return u.db.Head()
 }
 
-func (u *userTSDB) Blocks() []*tsdb.Block {
-	return u.prometheusDB().Blocks()
-}
-
 func (u *userTSDB) Close() error {
 	return u.engine().Close()
 }
@@ -434,30 +430,6 @@ func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) 
 	u.activeSeries.PostDeletion(metrics)
 }
 
-// getOldestUnshippedBlockTime returns the unix timestamp with milliseconds precision of the oldest
-// TSDB block not shipped to the storage yet, or 0 if all blocks have been shipped.
-func (u *userTSDB) getOldestUnshippedBlockTime() uint64 {
-	// When shipping is disabled, always return 0 because the concept of "unshipped" doesn't apply.
-	if u.prometheus().shipper == nil {
-		return 0
-	}
-
-	shippedBlocks := u.prometheus().getCachedShippedBlocks()
-	oldestTs := uint64(0)
-
-	for _, b := range u.Blocks() {
-		if _, ok := shippedBlocks[b.Meta().ULID]; ok {
-			continue
-		}
-
-		if oldestTs == 0 || b.Meta().ULID.Time() < oldestTs {
-			oldestTs = b.Meta().ULID.Time()
-		}
-	}
-
-	return oldestTs
-}
-
 func (u *userTSDB) isIdle(now time.Time, idle time.Duration) bool {
 	return u.getLastUpdate().Add(idle).Before(now)
 }
@@ -486,7 +458,7 @@ func (u *userTSDB) shouldCloseTSDB(idleTimeout time.Duration) tsdbCloseCheckResu
 	}
 
 	// Ensure that all blocks have been shipped.
-	if oldest := u.getOldestUnshippedBlockTime(); oldest > 0 {
+	if oldest := u.engine().OldestUnshippedBlockTime(); oldest > 0 {
 		return tsdbNotShipped
 	}
 
