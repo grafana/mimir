@@ -311,77 +311,93 @@ func newVectorVectorBinaryOperationEvaluator(
 
 }
 
-// missingLeftMode selects what computeResult does at a timestep where only the right side has a
-// sample. When e.fillLeft is set, computeResult synthesises a left operand from the fill value.
-// When e.fillLeft is nil, computeResult drops the timestep regardless of this mode.
-type missingLeftMode int
+// missingSideMode selects how computeResult handles a missing-side timestep.
+type missingSideMode int
 
 const (
-	// missingLeftInResult adds a kept fill-left point to result, next to every other kept point. It
-	// is the default mode. Every caller that does not split a match group needs it.
-	missingLeftInResult missingLeftMode = iota
+	// missingInResult adds each kept fill point to the main result.
+	missingInResult missingSideMode = iota
 
-	// missingLeftSeparate adds a kept fill-left point to fillLeftResult instead of result. This lets
-	// the caller give the fill-left points labels that differ from the labels of the other points.
-	//
-	// Upstream Prometheus builds the missing left operand from the right series' match labels only
-	// and drops __name__. A kept fill-left timestep for a name-retaining operator therefore has no
-	// metric name. Only the one-to-one operator asks for this mode. It asks only for a matched
-	// group, and only when the operator retains __name__ and fillLeft is set. See
-	// OneToOneVectorVectorBinaryOperation.computeOutputSeries.
-	//
-	// Example expression: `a > ignoring(foo) fill_left(0) b`
-	// A comparison operator without `bool` retains __name__, and `ignoring(...)` (not `on(...)`)
-	// matching is used, so a fill-left timestep on a matched group produces two output series: one
-	// with __name__ (from the right series' match labels) and one without.
+	// missingLeftSeparate adds kept missing-left points to the separate result.
 	missingLeftSeparate
 
-	// missingLeftSkip evaluates no fill-left timestep at all. computeResult then produces neither a
-	// point nor an annotation for such a timestep.
-	missingLeftSkip
+	// missingSkip evaluates no fill timestep and produces no annotation.
+	missingSkip
 )
 
-// fillLeftOptions controls the fill-left branch of computeResult.
-//
-// The zero value (mode == missingLeftInResult, leftSidePresence == nil) keeps every fill-left point
-// in result. A nil leftSidePresence means "evaluate every fill-left timestep"; an empty non-nil
-// slice means "no timestep has a left sample", which is a different value. Every caller that does
-// not split a match group uses the zero value.
-type fillLeftOptions struct {
-	// mode selects what computeResult does at a timestep where only the right side has a sample.
-	mode missingLeftMode
+// missingSideOptions controls one missing-side branch.
+// Its zero value evaluates every eligible timestep and adds kept points to the main result.
+type missingSideOptions struct {
+	mode missingSideMode
 
-	// leftSidePresence holds one entry per step of the query time range. Each entry is the index of
-	// the left series with a sample at that step. The entry is -1 when no left series has a sample at
-	// that step. computeResult skips every fill-left timestep whose entry is not -1.
-	//
-	// A nil leftSidePresence means that computeResult evaluates every fill-left timestep. Only the
-	// missingLeftSeparate mode uses this field.
-	//
-	// The one-to-one operator passes the presence of the whole match group here. That keeps the
-	// evaluator from raising an annotation for a step where the operator emits no point.
-	leftSidePresence []int
+	// groupPresence records one series index per present step and uses -1 for absent steps.
+	// A nil slice evaluates every eligible timestep.
+	groupPresence []int
 }
 
-// evaluatesStepAt reports whether computeResult evaluates the fill-left timestep at timestamp t.
-func (o fillLeftOptions) evaluatesStepAt(t int64, timeRange *types.QueryTimeRange) bool {
+// validate checks the mode and presence length for one side.
+func (o missingSideOptions) validate(side string, stepCount int) error {
 	switch o.mode {
-	case missingLeftSkip:
-		return false
+	case missingInResult, missingSkip:
 	case missingLeftSeparate:
-		return o.leftSidePresence == nil || o.leftSidePresence[timeRange.PointIndex(t)] == -1
+		if side == "right" {
+			return fmt.Errorf("mode %d cannot produce separate missing-right output", o.mode)
+		}
 	default:
-		return true
+		return fmt.Errorf("unknown missing-%s mode %d", side, o.mode)
+	}
+
+	if o.groupPresence != nil && len(o.groupPresence) != stepCount {
+		return fmt.Errorf("missing-%s presence has length %d, expected %d", side, len(o.groupPresence), stepCount)
+	}
+
+	return nil
+}
+
+// evaluatesStepAt reports whether computeResult evaluates the fill timestep at timestamp t.
+func (o missingSideOptions) evaluatesStepAt(t int64, timeRange *types.QueryTimeRange) (bool, error) {
+	switch o.mode {
+	case missingSkip:
+		return false, nil
+	default:
+		if o.groupPresence == nil {
+			return true, nil
+		}
+
+		stepIndex := timeRange.PointIndex(t)
+		if stepIndex < 0 || stepIndex >= int64(len(o.groupPresence)) {
+			indexErr := fmt.Errorf("step index %d is outside presence length %d", stepIndex, len(o.groupPresence))
+			return false, fmt.Errorf("look up group presence at timestamp %d: %w", t, indexErr)
+		}
+
+		return o.groupPresence[stepIndex] == -1, nil
 	}
 }
 
-// computeResult evaluates the binary operation over the two operands and returns the result.
-//
-// fillLeft controls the fill-left branch. That branch handles a timestep where only the right side
-// has a sample. The evaluator must also have a fill value for the left operand. The zero value of
-// fillLeft adds every kept point to result and leaves fillLeftResult as the zero value. See
-// fillLeftOptions for the other modes.
-func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantVectorSeriesData, right types.InstantVectorSeriesData, takeOwnershipOfLeft bool, takeOwnershipOfRight bool, fillLeft fillLeftOptions) (result types.InstantVectorSeriesData, fillLeftResult types.InstantVectorSeriesData, err error) {
+// computeResultOptions controls timesteps with one missing operand.
+// Its zero value evaluates every eligible fill timestep.
+type computeResultOptions struct {
+	missingLeft  missingSideOptions
+	missingRight missingSideOptions
+}
+
+// validate checks both missing-side options before evaluation.
+func (o computeResultOptions) validate(stepCount int) error {
+	if err := o.missingLeft.validate("left", stepCount); err != nil {
+		return fmt.Errorf("validate missing-left options: %w", err)
+	}
+	if err := o.missingRight.validate("right", stepCount); err != nil {
+		return fmt.Errorf("validate missing-right options: %w", err)
+	}
+	return nil
+}
+
+// computeResult evaluates the binary operation over both operands.
+func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantVectorSeriesData, right types.InstantVectorSeriesData, takeOwnershipOfLeft bool, takeOwnershipOfRight bool, options computeResultOptions) (result types.InstantVectorSeriesData, fillLeftResult types.InstantVectorSeriesData, err error) {
+	if err := options.validate(e.timeRange.StepCount); err != nil {
+		return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, fmt.Errorf("validate compute result options: %w", err)
+	}
+
 	var fPoints []promql.FPoint
 	var hPoints []promql.HPoint
 
@@ -631,8 +647,14 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 		case lOk && (!rOk || lT < rT):
 			// Only the left side has a sample; fill the right operand if a fill value is set.
 			if e.fillRight != nil {
-				if err := appendNextSample(lT, lF, *e.fillRight, lH, nil, false); err != nil {
-					return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, err
+				evaluate, err := options.missingRight.evaluatesStepAt(lT, &e.timeRange)
+				if err != nil {
+					return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, fmt.Errorf("evaluate missing-right timestep: %w", err)
+				}
+				if evaluate {
+					if err := appendNextSample(lT, lF, *e.fillRight, lH, nil, false); err != nil {
+						return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, err
+					}
 				}
 			}
 		default:
@@ -643,11 +665,16 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 			// group at once, so it only evaluates a fill-left timestep for the one output series that
 			// owns the group's fill-left points. Earlier output series in the group never see that
 			// timestep at all, so they raise no annotation for it either.
-			if e.fillLeft != nil && fillLeft.evaluatesStepAt(rT, &e.timeRange) {
-				// In the missingLeftSeparate mode, appendNextSample adds this kept point to the fill-left
-				// output stream so the caller can give it name-dropped labels.
-				if err := appendNextSample(rT, *e.fillLeft, rF, nil, rH, fillLeft.mode == missingLeftSeparate); err != nil {
-					return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, err
+			if e.fillLeft != nil {
+				evaluate, err := options.missingLeft.evaluatesStepAt(rT, &e.timeRange)
+				if err != nil {
+					return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, fmt.Errorf("evaluate missing-left timestep: %w", err)
+				}
+				if evaluate {
+					// missingLeftSeparate sends this point to the separate output.
+					if err := appendNextSample(rT, *e.fillLeft, rF, nil, rH, options.missingLeft.mode == missingLeftSeparate); err != nil {
+						return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, err
+					}
 				}
 			}
 		}
