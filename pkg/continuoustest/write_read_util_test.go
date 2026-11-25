@@ -19,11 +19,16 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 )
 
-func TestWriteSamplesOTLPFailures(t *testing.T) {
+func TestWriteSamplesOTLPResponses(t *testing.T) {
 	partial := pmetricotlp.NewExportResponse()
 	partial.PartialSuccess().SetRejectedDataPoints(1)
 	partial.PartialSuccess().SetErrorMessage("series limit")
 	partialBody, err := partial.MarshalProto()
+	require.NoError(t, err)
+
+	warning := pmetricotlp.NewExportResponse()
+	warning.PartialSuccess().SetErrorMessage("consider reducing batch size")
+	warningBody, err := warning.MarshalProto()
 	require.NoError(t, err)
 
 	for _, delta := range []bool{false, true} {
@@ -31,9 +36,11 @@ func TestWriteSamplesOTLPFailures(t *testing.T) {
 			name      string
 			status    int
 			body      []byte
+			accepted  bool
 			retry     bool
 			wantError string
 		}{
+			{name: "warning only", status: 200, body: warningBody, accepted: true},
 			{name: "partial rejection", status: 200, body: partialBody},
 			{name: "client rejection", status: 400, body: []byte("invalid series")},
 			{name: "invalid response", status: 200, body: []byte("invalid protobuf"), retry: true, wantError: "decode OTLP response"},
@@ -77,11 +84,16 @@ func TestWriteSamplesOTLPFailures(t *testing.T) {
 				var logs bytes.Buffer
 				logger := log.NewLogfmtLogger(&logs)
 
-				// Persistent rejection must not pin subsequent runs to the same interval.
+				// Repeated responses must preserve the same progress and history semantics.
 				for attempt := 0; attempt < 2; attempt++ {
 					ts := history.lastWrittenTimestamp.Add(writeInterval)
 					err := writeSamples(t.Context(), floatTypeLabel, ts, generateSineWaveSeries(otlpDeltaCounter, ts, 1), nil, &history, client, metrics, logger)
-					if tc.retry {
+					if tc.accepted {
+						require.NoError(t, err)
+						require.Equal(t, ts, history.lastWrittenTimestamp)
+						require.Equal(t, previous, history.queryMinTime)
+						require.Equal(t, ts, history.queryMaxTime)
+					} else if tc.retry {
 						require.ErrorContains(t, err, tc.wantError)
 						require.Equal(t, original, history)
 					} else {
@@ -92,22 +104,30 @@ func TestWriteSamplesOTLPFailures(t *testing.T) {
 					}
 				}
 
+				failures := float64(2)
+				if tc.accepted {
+					failures = 0
+					require.Contains(t, logs.String(), "Remote write series succeeded")
+					require.NotContains(t, logs.String(), "Failed to remote write series")
+				} else {
+					require.NotContains(t, logs.String(), "Remote write series succeeded")
+					require.Contains(t, logs.String(), "Failed to remote write series")
+				}
+
 				require.Equal(t, float64(2), testutil.ToFloat64(metrics.writesTotal.WithLabelValues(floatTypeLabel)))
-				require.Equal(t, float64(2), testutil.ToFloat64(metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(tc.status), floatTypeLabel)))
-				require.NotContains(t, logs.String(), "Remote write series succeeded")
-				require.Contains(t, logs.String(), "Failed to remote write series")
+				require.Equal(t, failures, testutil.ToFloat64(metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(tc.status), floatTypeLabel)))
 
 				ts := history.lastWrittenTimestamp.Add(writeInterval)
 				require.NoError(t, writeSamples(t.Context(), floatTypeLabel, ts, generateSineWaveSeries(otlpDeltaCounter, ts, 1), nil, &history, client, metrics, logger))
 				require.Equal(t, ts, history.lastWrittenTimestamp)
 				require.Equal(t, ts, history.queryMaxTime)
-				if tc.retry {
+				if tc.retry || tc.accepted {
 					require.Equal(t, previous, history.queryMinTime)
 				} else {
 					require.Equal(t, ts, history.queryMinTime)
 				}
 				require.Equal(t, float64(3), testutil.ToFloat64(metrics.writesTotal.WithLabelValues(floatTypeLabel)))
-				require.Equal(t, float64(2), testutil.ToFloat64(metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(tc.status), floatTypeLabel)))
+				require.Equal(t, failures, testutil.ToFloat64(metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(tc.status), floatTypeLabel)))
 			})
 		}
 	}

@@ -95,7 +95,8 @@ func (pw *otlpHTTPWriter) sendOTLPRequest(ctx context.Context, endpoint string, 
 			return httpResp.StatusCode, fmt.Errorf("decode OTLP response: %w", err)
 		}
 		partial := response.PartialSuccess()
-		if partial.RejectedDataPoints() > 0 || partial.ErrorMessage() != "" {
+		// With no rejected data points, the message is only a warning.
+		if partial.RejectedDataPoints() > 0 {
 			return httpResp.StatusCode, fmt.Errorf("%w: rejected %d data points: %s", errOTLPPartialSuccess, partial.RejectedDataPoints(), partial.ErrorMessage())
 		}
 	}
