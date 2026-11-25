@@ -6,13 +6,16 @@
 package tsdb
 
 import (
+	"errors"
 	"flag"
 	"testing"
 	"time"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
@@ -20,9 +23,16 @@ import (
 func TestConfig_Validate(t *testing.T) {
 	t.Parallel()
 
+	compartmentsEnabledWithFourReadCompartments := compartments.Config{
+		Enabled: true,
+		Read:    compartments.ReadConfig{NumCompartments: 4},
+		Write:   compartments.WriteConfig{NumCompartments: 1},
+	}
+
 	tests := map[string]struct {
-		setup       func(*BlocksStorageConfig, *activeseries.Config)
-		expectedErr error
+		setup           func(*BlocksStorageConfig, *activeseries.Config)
+		compartmentsCfg compartments.Config
+		expectedErr     error
 	}{
 		"should pass on S3 backend": {
 			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
@@ -176,6 +186,85 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: errIgnoreDeletionMarksDelayTooShort,
 		},
+		"should pass with additional read buckets": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.AdditionalReadBuckets.BucketNames = []string{"old-blocks", "older-blocks"}
+			},
+			expectedErr: nil,
+		},
+		"should fail on an empty additional read bucket name": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.AdditionalReadBuckets.BucketNames = []string{"old-blocks", ""}
+			},
+			expectedErr: errEmptyAdditionalReadBucketName,
+		},
+		"should fail on an additional read bucket name with the read compartment ID placeholder": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.AdditionalReadBuckets.BucketNames = []string{"old-blocks-<read-compartment-id>"}
+			},
+			expectedErr: errors.New(`the name of the additional read bucket "old-blocks-<read-compartment-id>" must not contain <read-compartment-id>`),
+		},
+		"should fail on a duplicate additional read bucket": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.AdditionalReadBuckets.BucketNames = []string{"old-blocks", "older-blocks", "old-blocks"}
+			},
+			expectedErr: errors.New(`the additional read bucket "old-blocks" is in the list more than once`),
+		},
+		"should fail on an additional read bucket with a read compartment ID when compartments are disabled": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.AdditionalReadBuckets.BucketNames = []string{"0:old-blocks"}
+			},
+			expectedErr: errors.New(`the additional read bucket "0:old-blocks" must not have a read compartment ID when compartments are disabled`),
+		},
+		"should pass with additional read buckets of different read compartments": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.AdditionalReadBuckets.BucketNames = []string{"0:old-blocks-0", "3:old-blocks-3", "0:older-blocks-0"}
+			},
+			compartmentsCfg: compartmentsEnabledWithFourReadCompartments,
+			expectedErr:     nil,
+		},
+		"should fail on an additional read bucket without a read compartment ID when compartments are enabled": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.AdditionalReadBuckets.BucketNames = []string{"0:old-blocks-0", "old-blocks"}
+			},
+			compartmentsCfg: compartmentsEnabledWithFourReadCompartments,
+			expectedErr:     errors.New(`the additional read bucket "old-blocks" must have the format <read-compartment-id>:<bucket-name> when compartments are enabled`),
+		},
+		"should fail on an additional read bucket with a read compartment ID that is not an integer": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.AdditionalReadBuckets.BucketNames = []string{"a:old-blocks"}
+			},
+			compartmentsCfg: compartmentsEnabledWithFourReadCompartments,
+			expectedErr:     errors.New(`the read compartment ID of the additional read bucket "a:old-blocks" must be an integer`),
+		},
+		"should fail on an additional read bucket with a read compartment ID that is too high": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.AdditionalReadBuckets.BucketNames = []string{"4:old-blocks"}
+			},
+			compartmentsCfg: compartmentsEnabledWithFourReadCompartments,
+			expectedErr:     errors.New(`the read compartment ID of the additional read bucket "4:old-blocks" must be between 0 and 3`),
+		},
+		"should fail on an additional read bucket with a negative read compartment ID": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.AdditionalReadBuckets.BucketNames = []string{"-1:old-blocks"}
+			},
+			compartmentsCfg: compartmentsEnabledWithFourReadCompartments,
+			expectedErr:     errors.New(`the read compartment ID of the additional read bucket "-1:old-blocks" must be between 0 and 3`),
+		},
+		"should fail on an additional read bucket with a read compartment ID and an empty name": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.AdditionalReadBuckets.BucketNames = []string{"1:"}
+			},
+			compartmentsCfg: compartmentsEnabledWithFourReadCompartments,
+			expectedErr:     errEmptyAdditionalReadBucketName,
+		},
+		"should fail on an additional read bucket in more than one read compartment": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.AdditionalReadBuckets.BucketNames = []string{"0:old-blocks", "1:old-blocks"}
+			},
+			compartmentsCfg: compartmentsEnabledWithFourReadCompartments,
+			expectedErr:     errors.New(`the additional read bucket "old-blocks" is in the list more than once`),
+		},
 	}
 
 	for testName, testData := range tests {
@@ -187,8 +276,66 @@ func TestConfig_Validate(t *testing.T) {
 			flagext.DefaultValues(activeSeriesCfg)
 			testData.setup(storageCfg, activeSeriesCfg)
 
-			actualErr := storageCfg.Validate(*activeSeriesCfg)
+			actualErr := storageCfg.Validate(*activeSeriesCfg, testData.compartmentsCfg)
 			assert.Equal(t, testData.expectedErr, actualErr)
+		})
+	}
+}
+
+func TestBlocksStorageConfig_AdditionalReadBucketConfigs(t *testing.T) {
+	newConfig := func(additionalReadBuckets ...string) *BlocksStorageConfig {
+		cfg := &BlocksStorageConfig{}
+		flagext.DefaultValues(cfg)
+		cfg.Bucket.Backend = bucket.GCS
+		cfg.Bucket.GCS.BucketName = "new-blocks"
+		cfg.Bucket.StoragePrefix = "prefix"
+		cfg.AdditionalReadBuckets.BucketNames = additionalReadBuckets
+		return cfg
+	}
+
+	tests := map[string]struct {
+		additionalReadBuckets []string
+		readCompartmentID     int
+		expectedBucketNames   []string
+	}{
+		"no additional read buckets": {
+			readCompartmentID: 0,
+		},
+		"compartments disabled": {
+			additionalReadBuckets: []string{"old-blocks", "older-blocks"},
+			readCompartmentID:     0,
+			expectedBucketNames:   []string{"old-blocks", "older-blocks"},
+		},
+		"compartments enabled, read compartment with additional read buckets": {
+			additionalReadBuckets: []string{"0:old-blocks-0", "3:old-blocks-3", "0:older-blocks-0"},
+			readCompartmentID:     0,
+			expectedBucketNames:   []string{"old-blocks-0", "older-blocks-0"},
+		},
+		"compartments enabled, other read compartment with additional read buckets": {
+			additionalReadBuckets: []string{"0:old-blocks-0", "3:old-blocks-3", "0:older-blocks-0"},
+			readCompartmentID:     3,
+			expectedBucketNames:   []string{"old-blocks-3"},
+		},
+		"compartments enabled, read compartment without additional read buckets": {
+			additionalReadBuckets: []string{"0:old-blocks-0", "3:old-blocks-3"},
+			readCompartmentID:     1,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := newConfig(testData.additionalReadBuckets...)
+
+			additionalReadCfgs, err := cfg.AdditionalReadBucketConfigs(testData.readCompartmentID)
+			require.NoError(t, err)
+
+			require.Len(t, additionalReadCfgs, len(testData.expectedBucketNames))
+			for i, expectedName := range testData.expectedBucketNames {
+				assert.Equal(t, expectedName, additionalReadCfgs[i].BucketName())
+				assert.Equal(t, bucket.GCS, additionalReadCfgs[i].Backend)
+				assert.Equal(t, "prefix", additionalReadCfgs[i].StoragePrefix)
+			}
+			assert.Equal(t, "new-blocks", cfg.Bucket.BucketName())
 		})
 	}
 }
