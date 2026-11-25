@@ -597,11 +597,15 @@ impl ColdBlock {
         })
     }
 
-    /// The series with `name="value"`, or None when the name never appears here, so nothing does.
+    /// The series with `name="value"`, in series order.
     fn posting(&self, tenant: &str, name: &str, value: &str) -> Vec<u32> {
+        posting_ids(self.posting_bytes(tenant, name, value)).collect()
+    }
+
+    fn posting_bytes(&self, tenant: &str, name: &str, value: &str) -> &[u8] {
         let (Some(table), Some(local)) = (self.tenants.get(tenant), self.local_ids.get(name))
         else {
-            return Vec::new();
+            return &[];
         };
         let bytes = self.bytes();
         let entry = |index: usize| {
@@ -624,21 +628,58 @@ impl ColdBlock {
             }
         }
         if low == table.postings_count {
-            return Vec::new();
+            return &[];
         }
         let (name, hash, offset) = entry(low);
         if (name, hash) != key {
-            return Vec::new();
+            return &[];
         }
         let lists = table.postings_table + table.postings_count * 16;
         let at = lists + offset as usize;
         let count = u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
-        (0..count)
-            .map(|index| {
-                let at = at + 4 + index * 4;
-                u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap())
-            })
-            .collect()
+        &bytes[at + 4..at + 4 + count * 4]
+    }
+
+    fn union_postings(&self, tenant: &str, name: &str, values: &[Box<str>]) -> Vec<u32> {
+        let lists: SmallVec<[&[u8]; 8]> = values
+            .iter()
+            .map(|value| self.posting_bytes(tenant, name, value))
+            .filter(|list| !list.is_empty())
+            .collect();
+        match lists.as_slice() {
+            [] => return Vec::new(),
+            [list] => {
+                let mut ids: Vec<_> = posting_ids(list).collect();
+                ids.dedup();
+                return ids;
+            }
+            _ => {}
+        }
+
+        let series_count = self.series_count(tenant);
+        let postings_count = lists.iter().map(|list| list.len() / 4).sum::<usize>();
+        // For dense unions, a bitset avoids sorting interleaved IDs. Skip it when
+        // scanning the whole ID space would cost more than sorting a short list.
+        if postings_count >= series_count.div_ceil(8) {
+            let mut bits = vec![0_u64; series_count.div_ceil(64)];
+            for id in lists.iter().flat_map(|list| posting_ids(list)) {
+                bits[id as usize / 64] |= 1 << (id % 64);
+            }
+            let mut ids = Vec::with_capacity(postings_count.min(series_count));
+            for (word, mut bits) in bits.into_iter().enumerate() {
+                while bits != 0 {
+                    ids.push(word as u32 * 64 + bits.trailing_zeros());
+                    bits &= bits - 1;
+                }
+            }
+            ids
+        } else {
+            let mut ids = Vec::with_capacity(postings_count);
+            ids.extend(lists.iter().flat_map(|list| posting_ids(list)));
+            ids.sort_unstable();
+            ids.dedup();
+            ids
+        }
     }
 
     fn value_index(
@@ -799,13 +840,7 @@ impl ColdBlock {
                     let Some(values) = regex.values() else {
                         continue;
                     };
-                    let mut list = values
-                        .iter()
-                        .flat_map(|value| self.posting(tenant, name, value))
-                        .collect::<Vec<_>>();
-                    list.sort_unstable();
-                    list.dedup();
-                    list
+                    self.union_postings(tenant, name, values)
                 }
                 _ => continue,
             };
@@ -852,6 +887,15 @@ impl ColdBlock {
         }
         best.unwrap_or_else(|| (0..self.series_count(tenant) as u32).collect())
     }
+}
+
+fn posting_ids(bytes: &[u8]) -> impl ExactSizeIterator<Item = u32> {
+    bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .copied()
+        .map(u32::from_le_bytes)
 }
 
 fn intersect_postings(mut left: Vec<u32>, right: &[u32]) -> Vec<u32> {
@@ -983,6 +1027,31 @@ mod tests {
             ),
             native_histogram: false,
             idle_evicted: false,
+        }
+    }
+
+    #[test]
+    fn regex_posting_union_returns_sorted_unique_ids() {
+        let entries = (0..256)
+            .map(|id| {
+                let instance = format!("{id:03}");
+                let pod = format!("pod-{:02}", id % 64);
+                frozen("a", &[("instance", &instance), ("pod", &pod)], &[(1, 2)])
+            })
+            .collect();
+        let block = ColdBlock::build(None, 0, entries).unwrap();
+        for count in [1, 2, 8, 9, 64] {
+            let mut values: Vec<Box<str>> =
+                (0..count).map(|id| format!("pod-{id:02}").into()).collect();
+            assert_eq!(
+                block.union_postings("a", "pod", &values),
+                (0..256).filter(|id| id % 64 < count).collect::<Vec<_>>()
+            );
+            values.extend(["absent".into(), "pod-00".into()]);
+            assert_eq!(
+                block.union_postings("a", "pod", &values),
+                (0..256).filter(|id| id % 64 < count).collect::<Vec<_>>()
+            );
         }
     }
 
