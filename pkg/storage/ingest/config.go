@@ -122,6 +122,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.WriteLogsFsyncBeforeKafkaCommitConcurrency, "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency", 4, "Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed, must be at least 1.")
 
 	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka.", f)
+	cfg.KafkaConfig.Overrides.RegisterFlagsWithPrefix("ingest-storage.kafka.overrides.", f)
 	cfg.Migration.RegisterFlagsWithPrefix("ingest-storage.migration.", f)
 	cfg.OrderedConsumption.RegisterFlagsWithPrefix("ingest-storage.ordered-consumption.", f)
 	cfg.Query.RegisterFlagsWithPrefix("ingest-storage.query.", f)
@@ -196,6 +197,8 @@ type KafkaConfig struct {
 	SASL       KafkaAuthConfig `yaml:",inline"`
 	TLSEnabled bool            `yaml:"tls_enabled"`
 	TLS        TLSClientConfig `yaml:",inline"`
+
+	Overrides KafkaCompartmentOverridesConfig `yaml:"overrides" category:"experimental" doc:"hidden"`
 
 	ConsumerGroup                         string        `yaml:"consumer_group"`
 	ConsumerGroupOffsetCommitInterval     time.Duration `yaml:"consumer_group_offset_commit_interval"`
@@ -409,6 +412,12 @@ func (cfg *KafkaConfig) Validate() error {
 	if err := cfg.SASL.Validate(); err != nil {
 		return err
 	}
+	if cfg.Overrides.WriteCompartment0SASLUsername != "" || cfg.Overrides.WriteCompartment0SASLPassword.String() != "" {
+		writeCompartment0SASL := cfg.WriteCompartmentConfig(0).SASL
+		if err := writeCompartment0SASL.Validate(); err != nil {
+			return fmt.Errorf("invalid SASL config of write compartment 0: %w", err)
+		}
+	}
 
 	if cfg.TLSEnabled {
 		if _, err := cfg.TLS.GetTLSConfig(); err != nil {
@@ -497,8 +506,8 @@ func (cfg *KafkaConfig) GetConsumerGroup(instanceID string, partitionID int32) s
 
 // WriteCompartmentConfig returns a copy of cfg targeting the given write compartment's Kafka cluster:
 // the compartments.WriteCompartmentIDPlaceholder in the Kafka address and SASL username/password is
-// replaced with the write compartment ID. The topic is left unchanged (it is templated by read
-// compartment, not by write compartment).
+// replaced with the write compartment ID. For write compartment 0, the overrides that are set are used
+// instead. The topic is left unchanged (it is templated by read compartment, not by write compartment).
 func (cfg *KafkaConfig) WriteCompartmentConfig(writeCompartmentID int) KafkaConfig {
 	c := *cfg
 
@@ -511,7 +520,48 @@ func (cfg *KafkaConfig) WriteCompartmentConfig(writeCompartmentID int) KafkaConf
 	c.SASL.Username = compartments.ReplaceWriteCompartment(cfg.SASL.Username, writeCompartmentID)
 	c.SASL.Password = flagext.SecretWithValue(compartments.ReplaceWriteCompartment(cfg.SASL.Password.String(), writeCompartmentID))
 
+	if writeCompartmentID == 0 {
+		if len(cfg.Overrides.WriteCompartment0Address) > 0 {
+			c.Address = slices.Clone(cfg.Overrides.WriteCompartment0Address)
+		}
+		if cfg.Overrides.WriteCompartment0SASLUsername != "" {
+			c.SASL.Username = cfg.Overrides.WriteCompartment0SASLUsername
+		}
+		if cfg.Overrides.WriteCompartment0SASLPassword.String() != "" {
+			c.SASL.Password = cfg.Overrides.WriteCompartment0SASLPassword
+		}
+	}
+
 	return c
+}
+
+// ReadCompartmentTopic returns the Kafka topic of the given read compartment.
+func (cfg *KafkaConfig) ReadCompartmentTopic(readCompartmentID int) string {
+	if readCompartmentID == 0 && cfg.Overrides.ReadCompartment0Topic != "" {
+		return cfg.Overrides.ReadCompartment0Topic
+	}
+	return compartments.ReplaceReadCompartment(cfg.Topic, readCompartmentID)
+}
+
+// KafkaCompartmentOverridesConfig holds Kafka settings of compartment 0 that are used instead of the
+// settings that are generated from the compartment ID placeholders.
+type KafkaCompartmentOverridesConfig struct {
+	WriteCompartment0Address      flagext.StringSliceCSV `yaml:"wc_0_address"`
+	WriteCompartment0SASLUsername string                 `yaml:"wc_0_sasl_username"`
+	WriteCompartment0SASLPassword flagext.Secret         `yaml:"wc_0_sasl_password"`
+	ReadCompartment0Topic         string                 `yaml:"rc_0_topic"`
+}
+
+func (cfg *KafkaCompartmentOverridesConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.Var(&cfg.WriteCompartment0Address, prefix+"wc-0.address", "Comma-separated list of Kafka seed brokers of write compartment 0. If set, it is used instead of the address that is generated from the write compartment ID placeholder. Requires compartments to be enabled.")
+	f.StringVar(&cfg.WriteCompartment0SASLUsername, prefix+"wc-0.sasl-username", "", "The SASL username of write compartment 0. If set, it is used instead of the username that is generated from the write compartment ID placeholder. Requires compartments to be enabled.")
+	f.Var(&cfg.WriteCompartment0SASLPassword, prefix+"wc-0.sasl-password", "The SASL password of write compartment 0. If set, it is used instead of the password that is generated from the write compartment ID placeholder. Requires compartments to be enabled.")
+	f.StringVar(&cfg.ReadCompartment0Topic, prefix+"rc-0.topic", "", "The Kafka topic of read compartment 0. If set, it is used instead of the topic that is generated from the read compartment ID placeholder. Requires compartments to be enabled.")
+}
+
+// Configured returns whether any override is set.
+func (cfg *KafkaCompartmentOverridesConfig) Configured() bool {
+	return len(cfg.WriteCompartment0Address) > 0 || cfg.WriteCompartment0SASLUsername != "" || cfg.WriteCompartment0SASLPassword.String() != "" || cfg.ReadCompartment0Topic != ""
 }
 
 // WriteCompartmentConfigs returns one KafkaConfig per write compartment, each targeting

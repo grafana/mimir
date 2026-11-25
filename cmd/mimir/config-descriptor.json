@@ -5667,6 +5667,17 @@
           "fieldFlag": "ingester.label-churn-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "log_series_with_floats_and_histograms",
+          "required": false,
+          "desc": "When enabled, the ingester logs the tenant and labels of series in write requests that have both float samples and native histograms. Logs are sampled according to -ingester.error-sample-rate.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.log-series-with-floats-and-histograms",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -13243,12 +13254,12 @@
                   "kind": "field",
                   "name": "max_idle_file_handles",
                   "required": false,
-                  "desc": "Maximum number of idle file handles the store-gateway keeps open for each index-header file.",
+                  "desc": "Maximum number of idle file handles the store-gateway keeps open for each index-header file. Deprecated: has no effect (the store-gateway keeps a single shared file handle open for each loaded index-header).",
                   "fieldValue": null,
                   "fieldDefaultValue": 1,
                   "fieldFlag": "blocks-storage.bucket-store.index-header.max-idle-file-handles",
                   "fieldType": "int",
-                  "fieldCategory": "advanced"
+                  "fieldCategory": "deprecated"
                 },
                 {
                   "kind": "field",

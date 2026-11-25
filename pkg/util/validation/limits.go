@@ -32,7 +32,6 @@ import (
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/time/rate"
 
-	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -274,6 +273,8 @@ type Limits struct {
 	ActiveSeriesAdditionalCustomTrackersConfig asmodel.CustomTrackersConfig                  `yaml:"active_series_additional_custom_trackers" json:"active_series_additional_custom_trackers" doc:"description=Additional custom trackers for active metrics merged on top of the base custom trackers. You can use this configuration option to define the base custom trackers globally for all tenants, and then use the additional trackers to add extra trackers on a per-tenant basis." category:"advanced"`
 	activeSeriesMergedCustomTrackersConfig     *atomic.Pointer[asmodel.CustomTrackersConfig] `yaml:"-" json:"-"`
 	MaxActiveSeriesAdditionalCustomTrackers    int                                           `yaml:"max_active_series_additional_custom_trackers" json:"max_active_series_additional_custom_trackers" category:"experimental"`
+	// UsageTrackerReceivedSeriesEstimationEnabled is not merged from the overrides of tenant metadata: the tenant's value applies to all its metadata. Read compartments use their own overrides.
+	UsageTrackerReceivedSeriesEstimationEnabled bool `yaml:"usage_tracker_received_series_estimation_enabled" json:"usage_tracker_received_series_estimation_enabled" category:"experimental" doc:"hidden"`
 
 	// Max allowed time window for out-of-order samples.
 	OutOfOrderTimeWindow                 model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window"`
@@ -428,6 +429,7 @@ type Limits struct {
 func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxActiveSeriesPerUser, MaxActiveSeriesPerUserFlag, 0, "Maximum number of active series per user. 0 means no limit. This limit only applies with ingest storage enabled.")
 	f.IntVar(&l.ActiveSeriesLimitResponseCode, ActiveSeriesLimitResponseCodeFlag, 429, "HTTP response code to use when rejecting series due to the active series limit.")
+	f.BoolVar(&l.UsageTrackerReceivedSeriesEstimationEnabled, "usage-tracker.tenant-received-series-estimation-enabled", true, "Set to false to disable the usage-tracker received series estimation for a tenant. It only applies when the received series estimation is enabled with -usage-tracker.received-series-estimation-enabled.")
 	f.IntVar(&l.IngestionTenantShardSize, "distributor.ingestion-tenant-shard-size", 0, "The tenant's shard size used by shuffle-sharding. This value is the total size of the shard (ie. it is not the number of ingesters in the shard per zone, but the number of ingesters in the shard across all zones, if zone-awareness is enabled). Must be set both on ingesters and distributors. 0 disables shuffle sharding.")
 	f.Float64Var(&l.RequestRate, RequestRateFlag, 0, "Per-tenant push request rate limit in requests per second. 0 to disable.")
 	f.IntVar(&l.RequestBurstSize, RequestBurstSizeFlag, 0, "Per-tenant allowed push request burst size. 0 to disable.")
@@ -1133,6 +1135,13 @@ func (o *Overrides) MaxActiveOrGlobalSeriesPerUser(limitsKey string) int {
 		return maxActive
 	}
 	return overrides.MaxGlobalSeriesPerUser
+}
+
+// UsageTrackerReceivedSeriesEstimationEnabled returns whether the usage-tracker estimates the number of distinct
+// series received from the tenant, including the rejected ones. The value of the tenant applies to its tenant
+// metadata, but not to its read compartments, which use their own overrides.
+func (o *Overrides) UsageTrackerReceivedSeriesEstimationEnabled(limitsKey string) bool {
+	return o.getOverridesForLimitsKey(limitsKey).UsageTrackerReceivedSeriesEstimationEnabled
 }
 
 // ActiveSeriesLimitResponseCode returns the HTTP status code to use when rejecting series due to the active series limit.
@@ -2029,8 +2038,7 @@ func (o *Overrides) getOverridesForLimitsKey(limitsKey string) *Limits {
 	if o.tenantLimits == nil {
 		return limits
 	}
-	// A read compartment suffix stays in userID, so only the overrides of that read compartment apply.
-	userID, tenantMd, err := compartments.ParseTenantIDWithMetadata(limitsKey)
+	userID, tenantMd, err := tenant.ParseWithMetadata(limitsKey)
 	if err != nil {
 		return limits
 	}

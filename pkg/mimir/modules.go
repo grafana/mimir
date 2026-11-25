@@ -44,7 +44,6 @@ import (
 	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
 	compactorscheduler "github.com/grafana/mimir/pkg/compactor/scheduler"
-	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -927,7 +926,7 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 		topics := make([]string, t.Cfg.Compartments.Read.NumCompartments)
 		getPartitionIDsByCompartment := make([]ingest.GetPartitionIDsFunc, t.Cfg.Compartments.Read.NumCompartments)
 		for readCompartmentID := range topics {
-			topics[readCompartmentID] = compartments.ReplaceReadCompartment(t.Cfg.IngestStorage.KafkaConfig.Topic, readCompartmentID)
+			topics[readCompartmentID] = t.Cfg.IngestStorage.KafkaConfig.ReadCompartmentTopic(readCompartmentID)
 			getPartitionIDsByCompartment[readCompartmentID] = getPartitionIDs(readCompartmentID)
 		}
 

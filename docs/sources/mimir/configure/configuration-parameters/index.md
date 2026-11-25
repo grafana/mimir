@@ -1910,6 +1910,12 @@ label_values_count:
 # label name that shows how many new series the new values of the label create.
 # CLI flag: -ingester.label-churn-enabled
 [label_churn_enabled: <boolean> | default = false]
+
+# (experimental) When enabled, the ingester logs the tenant and labels of series
+# in write requests that have both float samples and native histograms. Logs are
+# sampled according to -ingester.error-sample-rate.
+# CLI flag: -ingester.log-series-with-floats-and-histograms
+[log_series_with_floats_and_histograms: <boolean> | default = false]
 ```
 
 ### querier
@@ -6635,8 +6641,10 @@ bucket_store:
   [postings_offsets_in_mem_sampling_cardinality_threshold: <int> | default = 0]
 
   index_header:
-    # (advanced) Maximum number of idle file handles the store-gateway keeps
-    # open for each index-header file.
+    # (deprecated) Maximum number of idle file handles the store-gateway keeps
+    # open for each index-header file. Deprecated: has no effect (the
+    # store-gateway keeps a single shared file handle open for each loaded
+    # index-header).
     # CLI flag: -blocks-storage.bucket-store.index-header.max-idle-file-handles
     [max_idle_file_handles: <int> | default = 1]
 

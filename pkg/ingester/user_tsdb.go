@@ -95,7 +95,7 @@ type ownedSeriesState struct {
 
 type userTSDB struct {
 	cfg            *Config
-	db             *tsdb.DB
+	db             tenantEngine
 	userID         string
 	activeSeries   *activeseries.ActiveSeries
 	seriesInMetric *metricCounter
@@ -179,7 +179,7 @@ type userTSDB struct {
 // generateHeadStatistics generates statistics for this user's head block.
 func (u *userTSDB) generateHeadStatistics() error {
 	// Open head block
-	head := u.db.Head()
+	head := u.prometheusDB().Head()
 	indexReader, err := head.Index()
 	if err != nil {
 		return fmt.Errorf("failed to open TSDB head index reader: %w", err)
@@ -211,7 +211,12 @@ func (u *userTSDB) getIndexLookupPlannerFunc() tsdb.IndexLookupPlannerFunc {
 }
 
 func (u *userTSDB) engine() tenantEngine {
-	return prometheusEngine{db: u.db, blockDuration: u.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds()}
+	return u.db
+}
+
+// prometheusDB is for callers that still depend on Prometheus TSDB internals.
+func (u *userTSDB) prometheusDB() *tsdb.DB {
+	return u.db.(*prometheusEngine).db
 }
 
 // Querier returns a new querier over the data partition for the given time range.
@@ -232,11 +237,11 @@ func (u *userTSDB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier
 }
 
 func (u *userTSDB) Head() engineHead {
-	return (prometheusEngine{db: u.db}).Head()
+	return u.db.Head()
 }
 
 func (u *userTSDB) Blocks() []*tsdb.Block {
-	return u.db.Blocks()
+	return u.prometheusDB().Blocks()
 }
 
 func (u *userTSDB) Close() error {
@@ -248,7 +253,7 @@ func (u *userTSDB) Compact() error {
 }
 
 func (u *userTSDB) StartTime() (int64, error) {
-	return u.db.StartTime()
+	return u.prometheusDB().StartTime()
 }
 
 // changeState atomically compare-and-swap the current state, and returns state after the operation.
@@ -446,7 +451,7 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 		return nil
 	}
 
-	deletable := tsdb.DefaultBlocksToDelete(u.db)(blocks)
+	deletable := tsdb.DefaultBlocksToDelete(u.prometheusDB())(blocks)
 	result := map[ulid.ULID]struct{}{}
 	deadline := time.Now().Add(-u.blockMinRetention)
 
@@ -475,7 +480,7 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 
 // updateCachedShippedBlocks reads the shipper meta file and updates the cached shipped blocks.
 func (u *userTSDB) updateCachedShippedBlocks() error {
-	shippedBlocks, err := readShippedBlocks(u.db.Dir())
+	shippedBlocks, err := readShippedBlocks(u.prometheusDB().Dir())
 	if err != nil {
 		return err
 	}
@@ -768,7 +773,7 @@ func (u *userTSDB) computeOwnedSeries() int {
 		u.activeSeries.Clear()
 	}
 
-	idx := u.db.Head().MustIndex()
+	idx := u.prometheusDB().Head().MustIndex()
 	defer idx.Close()
 
 	count := 0
@@ -780,7 +785,7 @@ func (u *userTSDB) computeOwnedSeries() int {
 		nonOwnedRefs = make(map[storage.SeriesRef]struct{})
 	}
 
-	u.db.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
+	u.prometheusDB().Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
 		// Fast path: when no token range is owned every series in this batch is non-owned.
 		// activeSeries.Clear() above already handled the active-series side.
 		if allNonOwned {

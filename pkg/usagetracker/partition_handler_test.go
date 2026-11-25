@@ -26,6 +26,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/usagetracker/hll"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
@@ -158,6 +159,73 @@ func TestPartitionHandler(t *testing.T) {
 				h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{shards * 2}})
 				requirePerTenantSeries(t, ph2, map[string]uint64{tenantID: shards + 1})
 
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ph2))
+			})
+		}
+	})
+
+	t.Run("received series are snapshotted and loaded", func(t *testing.T) {
+		// The small target size splits the snapshot into many files, and the received series go in the last one,
+		// alone when they don't fit in the target size with the data of the last shards.
+		const otherTenantID = "other"
+		for maxFileSize, receivedSeriesWithData := range map[int]bool{10e3: true, 100: false} {
+			t.Run("maxFileSize="+strconv.Itoa(maxFileSize), func(t *testing.T) {
+				t.Parallel()
+
+				ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+				defer cancel()
+
+				h := newPartitionHandlerTestHelper(t)
+				h.limiter[tenantID] = 2 * shards
+				configure := func(cfg *Config) {
+					cfg.TargetSnapshotFileSizeBytes = maxFileSize
+					cfg.ReceivedSeriesEstimationEnabled = true
+					require.NoError(t, cfg.ReceivedSeriesEstimationHashSalt.Set("salt"))
+				}
+				estimate := func(p *partitionHandler, tenantID string) float64 {
+					p.store.mtx.RLock()
+					defer p.store.mtx.RUnlock()
+					return p.store.tenants[tenantID].receivedSeries.Load().Estimate(unixMinute(time.Now()), hll.NewSketch(p.store.receivedSeries.precision))
+				}
+
+				ph1 := h.newHandler(t, configure)
+				require.NoError(t, services.StartAndAwaitRunning(ctx, ph1))
+				// Some series are rejected, they are still received.
+				rejected, err := ph1.store.trackSeries(ctx, tenantID, seriesRange(0, 10*shards), time.Now())
+				require.NoError(t, err)
+				require.NotEmpty(t, rejected)
+				// Fewer series than the first tenant, so that loading them into the wrong tenant fails.
+				_, err = ph1.store.trackSeries(ctx, otherTenantID, seriesRange(0, 5*shards), time.Now())
+				require.NoError(t, err)
+				require.NoError(t, ph1.publishSnapshot(ctx))
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ph1))
+				require.InEpsilon(t, 10*shards, estimate(ph1, tenantID), 0.1)
+
+				// The filenames start with the timestamp, so the bucket lists the last file last.
+				var files []usagetrackerpb.SnapshotFile
+				require.NoError(t, h.snapshotsBucket.Iter(ctx, "", func(name string) error {
+					r, err := h.snapshotsBucket.Get(ctx, name)
+					require.NoError(t, err)
+					defer r.Close()
+					data, err := io.ReadAll(r)
+					require.NoError(t, err)
+					var file usagetrackerpb.SnapshotFile
+					require.NoError(t, file.Unmarshal(data))
+					files = append(files, file)
+					return nil
+				}))
+				require.NotEmpty(t, files)
+				last := files[len(files)-1]
+				for _, file := range files[:len(files)-1] {
+					require.Empty(t, file.ReceivedSeries)
+				}
+				require.NotEmpty(t, last.ReceivedSeries)
+				require.Equal(t, receivedSeriesWithData, len(last.Data) > 0)
+
+				ph2 := h.newHandler(t, configure)
+				require.NoError(t, services.StartAndAwaitRunning(ctx, ph2))
+				require.Equal(t, estimate(ph1, tenantID), estimate(ph2, tenantID))
+				require.Equal(t, estimate(ph1, otherTenantID), estimate(ph2, otherTenantID))
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, ph2))
 			})
 		}

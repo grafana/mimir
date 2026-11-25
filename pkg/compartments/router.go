@@ -102,13 +102,12 @@ type TopicRouter struct {
 	topics []string
 }
 
-// NewTopicRouter creates a TopicRouter. kafkaTopicTemplate is the Kafka topic name containing the
-// ReadCompartmentIDPlaceholder, which is replaced with each read compartment ID to derive that
-// compartment's topic.
-func NewTopicRouter(numReadCompartments int, kafkaTopicTemplate string) *TopicRouter {
+// NewTopicRouter creates a TopicRouter. topicForReadCompartment returns the Kafka topic of the given
+// read compartment ID.
+func NewTopicRouter(numReadCompartments int, topicForReadCompartment func(readCompartmentID int) string) *TopicRouter {
 	topics := make([]string, numReadCompartments)
 	for id := range topics {
-		topics[id] = ReplaceReadCompartment(kafkaTopicTemplate, id)
+		topics[id] = topicForReadCompartment(id)
 	}
 	return &TopicRouter{Router: NewRouter(numReadCompartments), topics: topics}
 }

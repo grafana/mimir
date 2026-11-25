@@ -20,7 +20,6 @@ import (
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util/filepool"
 )
 
 // TOCCompat unifies the Prometheus TSDB index TOC values available from different index types,
@@ -209,7 +208,7 @@ func tocFromDiskTSDBIndex(blockID ulid.ULID, dir string) (toc *TOCCompat, err er
 	}
 	indexSize := stat.Size()
 
-	indexReader, err := streamencoding.NewFileReader(f, 0, int(indexSize), filepool.SingleFilePoolNoopCloser{})
+	indexReader, err := streamencoding.NewFileReader(f, 0, int(indexSize))
 	if err != nil {
 		return nil, fmt.Errorf("cannot create reader at offset 0 from index file: %w", err)
 	}

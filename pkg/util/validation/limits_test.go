@@ -3018,53 +3018,43 @@ func TestGetOverridesForUserWithMetadata(t *testing.T) {
 			userID:              "tenant-a:source=test-run",
 			expectedBurstFactor: 5.0,
 		},
-		"read compartment key without metadata uses its own overrides": {
+		"read compartment key inherits the tenant overrides": {
+			tenantLimits: map[string]*Limits{
+				"tenant-a": {IngestionRate: 100, MaxActiveSeriesPerUser: 1000},
+			},
+			userID:         "tenant-a:rc=1",
+			expectedRate:   100,
+			expectedSeries: 1000,
+		},
+		"read compartment key merges the read compartment overrides of the tenant": {
 			tenantLimits: map[string]*Limits{
 				"tenant-a":      {IngestionRate: 100, MaxActiveSeriesPerUser: 1000},
-				"tenant-a/rc/1": {IngestionRate: 200, MaxActiveSeriesPerUser: 300},
+				"tenant-a:rc=1": {MaxActiveSeriesPerUser: 300},
 			},
-			userID:         "tenant-a/rc/1",
-			expectedRate:   200,
+			userID:         "tenant-a:rc=1",
+			expectedRate:   100,
 			expectedSeries: 300,
 		},
-		"read compartment key with metadata merges the read compartment metadata overrides": {
+		"read compartment key merges global read compartment overrides": {
 			tenantLimits: map[string]*Limits{
-				"tenant-a/rc/1":                 {IngestionRate: 200, MaxActiveSeriesPerUser: 300},
-				"tenant-a/rc/1:source=test-run": {MaxActiveSeriesPerUser: 40},
+				":rc=1": {MaxActiveSeriesPerUser: 150},
 			},
-			userID:         "tenant-a/rc/1:source=test-run",
-			expectedRate:   200,
-			expectedSeries: 40,
-		},
-		"read compartment key with metadata merges global metadata overrides": {
-			tenantLimits: map[string]*Limits{
-				":source=test-run": {MaxActiveSeriesPerUser: 150},
-			},
-			userID:              "tenant-a/rc/1:source=test-run",
+			userID:              "tenant-a:rc=1",
 			expectedRate:        500,
 			expectedSeries:      150,
 			expectedBurstSize:   50000,
 			expectedBurstFactor: 2.0,
 		},
-		"read compartment key with metadata ignores metadata overrides of the whole tenant": {
+		"read compartment key with metadata merges the overrides of each key and the full key": {
 			tenantLimits: map[string]*Limits{
-				"tenant-a:source=test-run": {MaxActiveSeriesPerUser: 40},
+				"tenant-a":                      {IngestionRate: 100, MaxActiveSeriesPerUser: 1000},
+				"tenant-a:source=test-run":      {IngestionRate: 200},
+				"tenant-a:rc=1":                 {MaxActiveSeriesPerUser: 300},
+				"tenant-a:rc=1:source=test-run": {MaxActiveSeriesPerUser: 40},
 			},
-			userID:              "tenant-a/rc/1:source=test-run",
-			expectedRate:        500,
-			expectedSeries:      5000,
-			expectedBurstSize:   50000,
-			expectedBurstFactor: 2.0,
-		},
-		"malformed read compartment key falls back to defaults": {
-			tenantLimits: map[string]*Limits{
-				"tenant-a/rc/x:source=test-run": {MaxActiveSeriesPerUser: 40},
-			},
-			userID:              "tenant-a/rc/x:source=test-run",
-			expectedRate:        500,
-			expectedSeries:      5000,
-			expectedBurstSize:   50000,
-			expectedBurstFactor: 2.0,
+			userID:         "tenant-a:rc=1:source=test-run",
+			expectedRate:   200,
+			expectedSeries: 40,
 		},
 		"OTelMetricSuffixesEnabled inherited from parent overlay when child omits it": {
 			tenantLimits: map[string]*Limits{
@@ -3393,6 +3383,23 @@ func getDefaultLimits() Limits {
 	limits := Limits{}
 	flagext.DefaultValues(&limits)
 	return limits
+}
+
+func TestOverrides_UsageTrackerReceivedSeriesEstimationEnabled(t *testing.T) {
+	disabled := getDefaultLimits()
+	disabled.UsageTrackerReceivedSeriesEstimationEnabled = false
+	enabled := getDefaultLimits()
+
+	ov := NewOverrides(getDefaultLimits(), NewMockTenantLimits(map[string]*Limits{
+		"disabled": &disabled,
+		// The tenant's value applies to all its tenant metadata: an override of the metadata doesn't change it.
+		"disabled:source=test-run": &enabled,
+	}))
+
+	assert.True(t, ov.UsageTrackerReceivedSeriesEstimationEnabled("other"))
+	assert.True(t, ov.UsageTrackerReceivedSeriesEstimationEnabled("other:source=test-run"))
+	assert.False(t, ov.UsageTrackerReceivedSeriesEstimationEnabled("disabled"))
+	assert.False(t, ov.UsageTrackerReceivedSeriesEstimationEnabled("disabled:source=test-run"))
 }
 
 func TestOverrides_MaxDurationAcrossAllTenants(t *testing.T) {

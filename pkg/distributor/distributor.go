@@ -237,6 +237,9 @@ type Distributor struct {
 
 	// compartmentRouter shards series to read compartments. Nil when compartments are disabled.
 	compartmentRouter *compartments.TopicRouter
+	// maxReadCompartmentTenantMetadataLength is the maximum length of the tenant metadata of a push
+	// when compartments are enabled. It leaves room for the read compartment key-value pair.
+	maxReadCompartmentTenantMetadataLength int
 
 	// usageTrackerClient is the client that should be used to track per-tenant series and
 	// enforce max series limit in the distributor. This field is nil if usage-tracker
@@ -852,7 +855,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			// Resolve the writer's Kafka address and credentials for this distributor's write compartment.
 			writerKafkaCfg = writerKafkaCfg.WriteCompartmentConfig(cfg.WriteCompartmentID)
 
-			d.compartmentRouter = compartments.NewTopicRouter(cfg.Compartments.Read.NumCompartments, cfg.IngestStorageConfig.KafkaConfig.Topic)
+			d.compartmentRouter = compartments.NewTopicRouter(cfg.Compartments.Read.NumCompartments, cfg.IngestStorageConfig.KafkaConfig.ReadCompartmentTopic)
+			d.maxReadCompartmentTenantMetadataLength = compartments.MaxTenantMetadataLength(cfg.Compartments.Read.NumCompartments)
 
 			d.queryIngesterCompartmentsHit = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 				Name: "cortex_querier_compartments_hit_per_query",
@@ -1552,6 +1556,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		if err != nil {
 			return err
 		}
+		// Reject the push if we exceed the metadata length limit.
+		if length := len(md.Encode()); d.compartmentRouter != nil && d.usageTrackerClient != nil && length > d.maxReadCompartmentTenantMetadataLength {
+			return newTenantMetadataTooLongError(length, d.maxReadCompartmentTenantMetadataLength)
+		}
 
 		limitsKey := md.WithTenant(userID)
 
@@ -1980,7 +1988,7 @@ func (d *Distributor) trackSeriesAsync(ctx context.Context, usageTrackerUserID s
 }
 
 func (d *Distributor) ObserveAsyncUsageTrackerRejection(userID string) {
-	userID = compartments.BaseTenantID(userID)
+	userID = tenant.TrimMetadata(userID)
 	d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Inc()
 }
 

@@ -612,7 +612,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout duration
     	If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity. (default 1h0m0s)
   -blocks-storage.bucket-store.index-header.max-idle-file-handles uint
-    	Maximum number of idle file handles the store-gateway keeps open for each index-header file. (default 1)
+    	[deprecated] Maximum number of idle file handles the store-gateway keeps open for each index-header file. Deprecated: has no effect (the store-gateway keeps a single shared file handle open for each loaded index-header). (default 1)
   -blocks-storage.bucket-store.index-header.verify-on-load
     	If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.
   -blocks-storage.bucket-store.index-header.version int
@@ -1951,6 +1951,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The total size, in bytes, of the distinct values of a single label name held in memory per tenant, across the cluster before replication, at which ingesters start reporting the label name through the cortex_ingester_label_value_bytes_over_threshold metric. Mimir doesn't reject series for label names over the threshold: to block a label name, add it to -validation.blocked-label-names-for-label-value-bytes. Only values longer than 128 bytes are counted, and each distinct value is counted once. 0 to disable.
   -ingester.label-values-count-chunk-size int
     	[experimental] Number of label values processed per work unit submitted to the ingester compute worker pool. Smaller values improve cross-tenant fairness at the cost of more scheduling overhead. (default 32)
+  -ingester.log-series-with-floats-and-histograms
+    	[experimental] When enabled, the ingester logs the tenant and labels of series in write requests that have both float samples and native histograms. Logs are sampled according to -ingester.error-sample-rate.
   -ingester.max-global-exemplars-per-user int
     	[experimental] The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
   -ingester.max-global-metadata-per-metric int

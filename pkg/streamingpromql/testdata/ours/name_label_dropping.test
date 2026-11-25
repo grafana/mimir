@@ -138,3 +138,15 @@ eval instant at 5m ({foo=~"w|x|z"} * 1)[5m1s:1m]
 # Colliding series with samples at the same timestamps must fail, matching Prometheus.
 eval_fail instant at 5m ({foo="bar"} * 1)[3m1s:1m]
   expect fail msg: vector cannot contain metrics with the same labelset
+
+# A series that comes from a different side of "or" at different times, and only one side drops the name.
+# The series has no __name__ label, so dropping the name has no effect, and the result is one series.
+load 1h
+  role_info{pod="p", role="leader"}   1x23
+  role_info{pod="p", role="follower"} _x24 1x24
+
+eval instant at 47h changes((max by (pod) (role_info{role="leader"}) or (0 * max by (pod) (role_info{role="follower"})))[2d:1h])
+  {pod="p"} 1
+
+eval instant at 47h changes(((0 * max by (pod) (role_info{role="follower"})) or max by (pod) (role_info{role="leader"}))[2d:1h])
+  {pod="p"} 1

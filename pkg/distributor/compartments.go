@@ -119,7 +119,7 @@ func groupSeriesHashesByReadCompartment(router *compartments.TopicRouter, userID
 		if count > 0 {
 			end := start + count
 			seriesHashesByReadCompartment = append(seriesHashesByReadCompartment, usagetrackerclient.UserSeries{
-				UserID: metadata.WithTenant(compartments.TenantIDWithReadCompartment(userID, compartment)),
+				UserID: compartments.TenantIDWithReadCompartment(userID, metadata, compartment),
 				Series: hashes[start:end:end],
 			})
 			start = end
