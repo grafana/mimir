@@ -846,7 +846,7 @@ All three endpoints accept the following parameters, supplied either as URL quer
 - **label** - _mandatory for `search/label_values` only; not used by the other endpoints_ - the name of the label whose values are returned.
 - **search[]** - _optional_ - a fuzzy search term to match candidate names or values against. Repeat the parameter to supply multiple terms, which are combined with `OR` semantics. A maximum of 32 terms is allowed per request. When no term is supplied, all candidates that match the other parameters are returned.
 - **match[]** - _optional_ - a PromQL series selector that restricts the candidates to those present in matching series. Repeat the parameter to supply multiple selectors, which are combined with `OR` semantics.
-- **start** - _optional_ - the start of the time range to search, as a Unix timestamp (in seconds, with optional decimal places) or RFC 3339 timestamp. Defaults to one hour before the current time.
+- **start** - _optional_ - the start of the time range to search, as a Unix timestamp (in seconds, with optional decimal places) or RFC 3339 timestamp. Defaults to one hour before the current time. If you set the `-querier.metadata-default-time-range` per-tenant limit, the default is `end` minus the limit. The response trailer then includes a warning that shows the default range.
 - **end** - _optional_ - the end of the time range to search, in the same formats as `start`. Defaults to the current time. The value must not be before `start`.
 - **case_sensitive** - _optional_ - whether `search[]` term matching is case-sensitive. Defaults to `true`.
 - **fuzz_alg** - _optional_ - the fuzzy-matching algorithm used to score `search[]` terms. Either `subsequence` (the default) or `jarowinkler`.
@@ -886,7 +886,7 @@ The stream always ends with a single trailer object reporting the final status:
 - **status** - `success` when iteration completed without error.
 - **has_more** - `true` when more results matched than were returned because the `limit` was reached.
 - **returned** - the number of results in this response, across all `results` batches.
-- **warnings** - _optional_ - an array of non-fatal warning messages, for example when a per-tenant limit clamped the requested `limit`.
+- **warnings** - _optional_ - an array of non-fatal warning messages. For example, a per-tenant limit clamped the requested `limit`, or Mimir applied the `-querier.metadata-default-time-range` default range.
 
 #### Search errors
 
@@ -905,6 +905,8 @@ If an error occurs after one or more result batches have already been streamed, 
   "error": "context deadline exceeded"
 }
 ```
+
+If Mimir applied the `-querier.metadata-default-time-range` default range, the error trailer object also has a `warnings` array with the range warning, because the streamed results come from that range.
 
 ### Get metric metadata
 

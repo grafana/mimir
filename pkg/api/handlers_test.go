@@ -6,14 +6,29 @@
 package api
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/querier"
+	"github.com/grafana/mimir/pkg/util/propagation"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestIndexPageContent(t *testing.T) {
@@ -182,4 +197,60 @@ func TestConfigOverrideHandler(t *testing.T) {
 	body, err := io.ReadAll(resp.Body)
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("config"), body)
+}
+
+type metadataRangeTestQueryable struct {
+	storage.SampleAndChunkQueryable
+	called     bool
+	mint, maxt int64
+}
+
+func (q *metadataRangeTestQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	q.called, q.mint, q.maxt = true, mint, maxt
+	return &storage.MockQuerier{SelectMockFunction: func(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+		return storage.EmptySeriesSet()
+	}}, nil
+}
+
+func TestQuerierHandler_MetadataDefaultTimeRange(t *testing.T) {
+	for _, tc := range []struct{ method, endpoint string }{
+		{http.MethodGet, "labels"},
+		{http.MethodPost, "labels"},
+		{http.MethodGet, "label/job/values"},
+		{http.MethodGet, "series"},
+		{http.MethodPost, "series"},
+	} {
+		for _, limit := range []time.Duration{0, time.Hour} {
+			t.Run(fmt.Sprintf("%s %s, limit %s", tc.method, tc.endpoint, limit), func(t *testing.T) {
+				var cfg querier.Config
+				flagext.DefaultValues(&cfg)
+				limits := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+					defaults.MetadataDefaultTimeRange = model.Duration(limit)
+				})
+				queryable := &metadataRangeTestQueryable{}
+				reg := prometheus.NewRegistry()
+				handler := NewQuerierHandler(Config{ServerPrefix: "/mimir", PrometheusHTTPPrefix: "/prometheus"}, cfg, queryable, nil, nil, nil, nil, querier.NewRequestMetrics(reg), reg, log.NewNopLogger(), limits, &propagation.NoopExtractor{})
+
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, costTestRequest(t, tc.method, tc.endpoint, url.Values{"match[]": {`{__name__="up"}`}, "end": {"10800"}}))
+				require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+				var response struct {
+					Status   string   `json:"status"`
+					Warnings []string `json:"warnings"`
+				}
+				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+				require.Equal(t, "success", response.Status)
+				require.True(t, queryable.called)
+				require.Equal(t, (3 * time.Hour).Milliseconds(), queryable.maxt)
+				if limit == 0 {
+					require.Equal(t, v1.MinTime.UnixMilli(), queryable.mint)
+					require.Empty(t, response.Warnings)
+				} else {
+					require.Equal(t, (2 * time.Hour).Milliseconds(), queryable.mint)
+					require.Equal(t, []string{"start or end not given, applied a default: start=1970-01-01T02:00:00Z, end=1970-01-01T03:00:00Z"}, response.Warnings)
+				}
+			})
+		}
+	}
 }
