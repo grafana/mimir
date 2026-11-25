@@ -439,6 +439,7 @@
   "querier.max-partial-query-length": 0,
   "querier.max-query-parallelism": 14,
   "store.max-labels-query-length": 0,
+  "querier.metadata-default-time-range": 0,
   "querier.max-series-query-limit": 0,
   "querier.max-label-names-limit": 0,
   "querier.max-label-values-limit": 0,

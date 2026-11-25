@@ -779,6 +779,76 @@ func TestTripperware_RetriesKeepPostParameters(t *testing.T) {
 	}
 }
 
+// TestTripperware_MetadataDefaultTimeRange checks that no middleware adds a start or end to a request without them,
+// because then the querier does not apply the metadata default time range.
+func TestTripperware_MetadataDefaultTimeRange(t *testing.T) {
+	for testName, path := range map[string]string{
+		"label names":  labelNamesPathSuffix,
+		"label values": "/api/v1/label/job/values",
+		"series":       seriesPathSuffix,
+	} {
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			for _, limit := range []time.Duration{0, time.Hour} {
+				t.Run(fmt.Sprintf("%s %s, limit %s", method, testName, limit), func(t *testing.T) {
+					downstreamCalls := 0
+					downstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+						downstreamCalls++
+						params, err := util.ParseRequestFormWithoutConsumingBody(r)
+						require.NoError(t, err)
+						require.Empty(t, params.Get("start"))
+						require.Empty(t, params.Get("end"))
+						return &http.Response{
+							StatusCode: http.StatusOK,
+							Body:       io.NopCloser(strings.NewReader(`{"status":"success","data":[]}`)),
+							Header:     http.Header{"Content-Type": []string{"application/json"}},
+						}, nil
+					})
+
+					engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
+					reg := prometheus.NewPedanticRegistry()
+					limits := mockLimits{
+						metadataDefaultTimeRange:      limit,
+						resultsCacheTTLForLabelsQuery: time.Minute,
+						labelsQueryOptimizerEnabled:   true,
+					}
+					tw, err := NewTripperware(Config{CacheResults: true, MaxRetries: 1}, log.NewNopLogger(), limits,
+						newMockQueryLimitsProvider(&limits), newTestCodec(), cache.NewInstrumentedMockCache(), nil, engine, engineOpts, nil,
+						false, false, nil, reg, limiter.NewInflightMemoryConsumptionTracker(reg, nil))
+					require.NoError(t, err)
+					rt := tw(downstream)
+
+					// The labels query optimizer changes this matcher, so it encodes the request again.
+					params := url.Values{"match[]": {`{__name__!="", job="test"}`}}
+					ctx := user.InjectOrgID(t.Context(), "user-1")
+					for range 2 {
+						var req *http.Request
+						if method == http.MethodPost {
+							req = httptest.NewRequest(method, path, strings.NewReader(params.Encode()))
+							req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+						} else {
+							req = httptest.NewRequest(method, path+"?"+params.Encode(), nil)
+						}
+						req = req.WithContext(ctx)
+						require.NoError(t, user.InjectOrgIDIntoHTTPRequest(ctx, req))
+
+						resp, err := rt.RoundTrip(req)
+						require.NoError(t, err)
+						require.Equal(t, http.StatusOK, resp.StatusCode)
+						require.NoError(t, resp.Body.Close())
+					}
+
+					// The labels cache is not used for the series endpoint, or when the querier applies the default.
+					expectedCalls := 2
+					if limit == 0 && path != seriesPathSuffix {
+						expectedCalls = 1
+					}
+					require.Equal(t, expectedCalls, downstreamCalls)
+				})
+			}
+		}
+	}
+}
+
 // TestMiddlewaresConsistency ensures that we don't forget to add a middleware to a given type of request
 // (e.g. range query, remote read, ...) when a new middleware is added. By default, it expects that a middleware
 // is added to each type of request, and then it allows to define exceptions when we intentionally don't
