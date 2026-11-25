@@ -171,6 +171,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	engine := &prometheusEngine{
 		blockDuration:     blockRanges[0],
+		logger:            userLogger,
 		blockMinRetention: i.cfg.BlocksStorageConfig.TSDB.Retention,
 	}
 
@@ -260,8 +261,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		}
 	}
 	userDB.setLastUpdate(lastUpdateTime)
-
-	engine.shippingLogger = userLogger
 
 	// Create a new shipper for this database
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {

@@ -46,6 +46,9 @@ type tenantEngine interface {
 	// out-of-order samples out of memory, along with series that have nothing newer.
 	Flush(ctx context.Context, upTo int64) error
 
+	// Evict persists selected series before removing them from the head.
+	Evict(ctx context.Context, refs []storage.SeriesRef) error
+
 	BlockShippingEnabled() bool
 	// The caller must prevent idle close while ShipBlocks uses the local data.
 	ShipBlocks(ctx context.Context)

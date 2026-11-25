@@ -33,8 +33,8 @@ type prometheusEngine struct {
 	blockMinRetention  time.Duration
 	blockDeletionReady atomic.Bool
 
-	shippingLogger log.Logger
-	shipper        BlocksUploader
+	logger  log.Logger
+	shipper BlocksUploader
 
 	shippedBlocksMtx sync.Mutex
 	shippedBlocks    map[ulid.ULID]time.Time
@@ -229,6 +229,14 @@ func (e *prometheusEngine) Flush(ctx context.Context, upTo int64) error {
 	return e.db.CompactOOOHead(ctx)
 }
 
+func (e *prometheusEngine) Evict(ctx context.Context, refs []storage.SeriesRef) error {
+	if err := e.db.CompactOOOHead(ctx); err != nil {
+		level.Warn(e.logger).Log("msg", "OOO head compaction failed during per-tenant early compaction of non-owned series", "err", err)
+		// Eviction can still persist and remove series without out-of-order data.
+	}
+	return e.db.CompactSelectedSeries(refs)
+}
+
 func (e *prometheusEngine) Configure(settings engineSettings) error {
 	// DB.ApplyConfig only uses the storage settings.
 	return e.db.ApplyConfig(&promcfg.Config{
@@ -286,9 +294,9 @@ func (e *prometheusEngine) ShipBlocks(ctx context.Context) {
 	}
 	uploaded, err := e.shipper.Sync(ctx)
 	if err != nil {
-		level.Warn(e.shippingLogger).Log("msg", "shipper failed to synchronize TSDB blocks with the storage", "uploaded", uploaded, "err", err)
+		level.Warn(e.logger).Log("msg", "shipper failed to synchronize TSDB blocks with the storage", "uploaded", uploaded, "err", err)
 	} else {
-		level.Debug(e.shippingLogger).Log("msg", "shipper successfully synchronized TSDB blocks with storage", "uploaded", uploaded)
+		level.Debug(e.logger).Log("msg", "shipper successfully synchronized TSDB blocks with storage", "uploaded", uploaded)
 	}
 
 	// The shipper meta file could be updated even if the Sync() returned an error,
@@ -298,7 +306,7 @@ func (e *prometheusEngine) ShipBlocks(ctx context.Context) {
 	// the cached list of blocks in such case, so we're not handling it.
 	if uploaded > 0 {
 		if err := e.updateCachedShippedBlocks(); err != nil {
-			level.Error(e.shippingLogger).Log("msg", "failed to update cached shipped blocks after shipper synchronisation", "err", err)
+			level.Error(e.logger).Log("msg", "failed to update cached shipped blocks after shipper synchronisation", "err", err)
 		}
 	}
 }
