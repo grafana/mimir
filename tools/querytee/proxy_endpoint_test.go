@@ -1126,3 +1126,33 @@ func (m *multiCallComparator) Compare(_, secondaryResponse []byte, _ time.Time) 
 
 	return ComparisonFailed, fmt.Errorf("unexpected secondary response: %s", secondaryResponseStr)
 }
+
+func TestProxyEndpoint_ServeHTTP_ForwardsServerTiming(t *testing.T) {
+	newBackend := func(serverTiming ...string) *url.URL {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			for _, v := range serverTiming {
+				w.Header().Add("Server-Timing", v)
+			}
+			_, err := w.Write([]byte("ok"))
+			assert.NoError(t, err)
+		}))
+		t.Cleanup(srv.Close)
+		u, err := url.Parse(srv.URL)
+		require.NoError(t, err)
+		return u
+	}
+
+	backends := []ProxyBackendInterface{
+		NewProxyBackend("preferred", newBackend("querier_wall_time;dur=12.5, samples_processed;val=100", "cache;desc=hit"), time.Second, true, false, "", defaultBackendConfig()),
+		NewProxyBackend("secondary", newBackend("samples_processed;val=999"), time.Second, false, false, "", defaultBackendConfig()),
+	}
+	endpoint := NewProxyEndpoint(backends, Route{RouteName: "test"}, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0, 1.0, false, newTestQueryDecoder())
+
+	req, err := http.NewRequest("GET", "http://test/api/v1/query", nil)
+	require.NoError(t, err)
+	w := httptest.NewRecorder()
+	endpoint.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, []string{"querier_wall_time;dur=12.5, samples_processed;val=100", "cache;desc=hit"}, w.Header().Values("Server-Timing"))
+}
