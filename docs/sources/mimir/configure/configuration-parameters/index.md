@@ -7173,7 +7173,8 @@ scheduler_client:
   [terminating_final_status_timeout: <duration> | default = 30s]
 
   # (experimental) Lanes to request for each worker goroutine. Each entry is a
-  # '+'-separated list of job types in priority order.
+  # '+'-separated list of job types in priority order. Valid job types: plan,
+  # compact, backfill_phase_plan, backfill_work.
   # CLI flag: -compactor.scheduler-client.lanes
   [lanes: <string> | default = "compact+plan,plan"]
 
@@ -7181,6 +7182,11 @@ scheduler_client:
   # job is interrupted (e.g., clean shutdown).
   # CLI flag: -compactor.scheduler-client.enable-interrupted-reassign
   [enable_interrupted_reassign: <boolean> | default = true]
+
+  # (experimental) How long to wait after the scheduler drops the jobs of a
+  # backfill before deleting its data, so workers can stop the dropped jobs.
+  # CLI flag: -compactor.scheduler-client.backfill-cleanup-delay
+  [backfill_cleanup_delay: <duration> | default = 10m]
 ```
 
 ### store_gateway

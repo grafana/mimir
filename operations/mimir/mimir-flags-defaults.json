@@ -1076,6 +1076,7 @@
   "compactor.scheduler-client.terminating-final-status-timeout": 30000000000,
   "compactor.scheduler-client.lanes": "compact+plan,plan",
   "compactor.scheduler-client.enable-interrupted-reassign": true,
+  "compactor.scheduler-client.backfill-cleanup-delay": 600000000000,
   "compactor-scheduler.max-leases": 3,
   "compactor-scheduler.lease-duration": 600000000000,
   "compactor-scheduler.planning-interval": 1800000000000,

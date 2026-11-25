@@ -1297,6 +1297,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum time to wait for ring stability at startup. If the compactor ring keeps changing after this period of time, the compactor will start anyway. (default 5m0s)
   -compactor.ring.wait-stability-min-duration duration
     	Minimum time to wait for ring stability at startup. 0 to disable.
+  -compactor.scheduler-client.backfill-cleanup-delay duration
+    	[experimental] How long to wait after the scheduler drops the jobs of a backfill before deleting its data, so workers can stop the dropped jobs. (default 10m0s)
   -compactor.scheduler-client.compaction-dir-cleanup-interval duration
     	[experimental] Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup. (default 30m0s)
   -compactor.scheduler-client.enable-interrupted-reassign
@@ -1356,7 +1358,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.scheduler-client.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
   -compactor.scheduler-client.lanes comma-separated-list-of-strings
-    	[experimental] Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. (default compact+plan,plan)
+    	[experimental] Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. Valid job types: plan, compact, backfill_phase_plan, backfill_work. (default compact+plan,plan)
   -compactor.scheduler-client.leasing-max-backoff duration
     	[experimental] Maximum backoff time between scheduler job lease requests. (default 2m0s)
   -compactor.scheduler-client.leasing-min-backoff duration

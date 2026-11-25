@@ -22,7 +22,7 @@ import (
 
 const (
 	discoveryPollBlocks    = "blocks"    // pulls the top-level of a blocks bucket
-	discoveryPollBackfills = "backfills" // polls the backfill prefix for tenants that have any phase marker
+	discoveryPollBackfills = "backfills" // polls the backfill prefix for tenants that have any backfill markers or data
 )
 
 // discoverySources is a set of the polls that found a tenant
@@ -191,12 +191,12 @@ func (s *TenantDiscoverer) pollTenants(ctx context.Context) (map[string]discover
 	return tenants, nil
 }
 
-const backfillPhasesPrefix = backfill.BucketPrefix + "/phases/"
+const backfillTenantsPrefix = backfill.BucketPrefix + objstore.DirDelim
 
-// listBackfillTenants lists the tenants that have backfill phase markers
+// listBackfillTenants lists the tenants that have any backfill markers or data, since both are kept under the tenant
 func listBackfillTenants(ctx context.Context, bkt objstore.Bucket) (tenants []string, err error) {
-	err = bkt.Iter(ctx, backfillPhasesPrefix, func(entry string) error {
-		tenantID, ok := strings.CutSuffix(strings.TrimPrefix(entry, backfillPhasesPrefix), objstore.DirDelim)
+	err = bkt.Iter(ctx, backfillTenantsPrefix, func(entry string) error {
+		tenantID, ok := strings.CutSuffix(strings.TrimPrefix(entry, backfillTenantsPrefix), objstore.DirDelim)
 		if !ok || tenant.ValidTenantID(tenantID) != nil {
 			return nil
 		}

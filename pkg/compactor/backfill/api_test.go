@@ -36,13 +36,11 @@ const (
 func TestAPI_Start(t *testing.T) {
 	a, bkt := newTestAPI()
 
-	jobIDs := map[string]struct{}{}
-	for range 3 {
-		jobIDs[startJob(t, a)] = struct{}{}
-	}
+	jobID := startJob(t, a)
+	assert.Equal(t, []string{path.Join(BucketPrefix, testTenantID, jobID, phasesPathPrefix, PhaseBackfill)}, slices.Sorted(maps.Keys(bkt.Objects())))
 
-	assert.Len(t, jobIDs, 3)
-	assert.Empty(t, bkt.Objects())
+	// A tenant has one backfill at a time
+	assert.Equal(t, http.StatusConflict, do(a.Start, "", "", nil).StatusCode)
 }
 
 func TestAPI_BlockUpload(t *testing.T) {
@@ -68,11 +66,12 @@ func TestAPI_BlockUpload(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, do(a.FinishBlockUpload, jobID, "", nil).StatusCode)
 
-	blockPath := path.Join(BucketPrefix, blocksPathPrefix, jobID, testBlockID)
+	blockPath := path.Join(BucketPrefix, testTenantID, jobID, blocksPathPrefix, testBlockID)
 	assert.Equal(t, []string{
 		path.Join(blockPath, "chunks/000001"),
 		path.Join(blockPath, "index"),
 		path.Join(blockPath, block.MetaFilename),
+		path.Join(BucketPrefix, testTenantID, jobID, phasesPathPrefix, PhaseBackfill),
 	}, slices.Sorted(maps.Keys(bkt.Objects())))
 }
 
@@ -84,10 +83,47 @@ func TestAPI_BlockUpload_RejectsInvalidMeta(t *testing.T) {
 	invalidJSON, err := json.Marshal(invalidMeta)
 	require.NoError(t, err)
 
-	resp := do(a.StartBlockUpload, uuid.New().String(), "", bytes.NewReader(invalidJSON))
+	jobID := startJob(t, a)
+	resp := do(a.StartBlockUpload, jobID, "", bytes.NewReader(invalidJSON))
 
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
-	assert.Empty(t, bkt.Objects())
+	assert.Equal(t, []string{path.Join(BucketPrefix, testTenantID, jobID, phasesPathPrefix, PhaseBackfill)}, slices.Sorted(maps.Keys(bkt.Objects())))
+}
+
+func TestAPI_BlockUpload_RequiresUploadingBackfill(t *testing.T) {
+	metaJSON, err := json.Marshal(testMeta())
+	require.NoError(t, err)
+
+	cases := map[string]struct {
+		jobID        func(t *testing.T, a *API) string
+		expectStatus int
+	}{
+		"unknown backfill": {
+			jobID:        func(*testing.T, *API) string { return uuid.New().String() },
+			expectStatus: http.StatusNotFound,
+		},
+		"backfill being cleaned up": {
+			jobID: func(t *testing.T, a *API) string {
+				jobID := startJob(t, a)
+				require.NoError(t, WriteMarker(t.Context(), a.bucketClient, testTenantID, uuid.MustParse(jobID), PhaseCleanup, Marker{}))
+				return jobID
+			},
+			expectStatus: http.StatusConflict,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			a, bkt := newTestAPI()
+			jobID := tc.jobID(t, a)
+			before := slices.Sorted(maps.Keys(bkt.Objects()))
+
+			resp := do(a.StartBlockUpload, jobID, "", bytes.NewReader(metaJSON))
+
+			require.Equal(t, tc.expectStatus, resp.StatusCode)
+			assert.Equal(t, before, slices.Sorted(maps.Keys(bkt.Objects())))
+		})
+	}
 }
 
 func newTestAPI() (*API, *objstore.InMemBucket) {

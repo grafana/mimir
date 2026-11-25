@@ -6,12 +6,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"path"
 	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/google/uuid"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
@@ -21,6 +23,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/compactor"
+	"github.com/grafana/mimir/pkg/compactor/backfill"
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -299,7 +302,7 @@ func TestScheduler_BackfillLifecycle(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			bkt := objstore.NewInMemBucket()
-			require.NoError(t, bkt.Upload(t.Context(), backfillPhasesPrefix+tenant+"/backfill", strings.NewReader("")))
+			require.NoError(t, bkt.Upload(t.Context(), path.Join(backfill.BucketPrefix, backfill.PhaseMarkerPath(tenant, uuid.New(), backfill.PhaseBackfill)), strings.NewReader("{}")))
 
 			cfg := newTestSchedulerConfig()
 			cfg.DiscoveryPolls = []string{discoveryPollBackfills}
@@ -347,7 +350,7 @@ func TestScheduler_BackfillLifecycle(t *testing.T) {
 func TestScheduler_PlannedJobs_BackfillUnchanged(t *testing.T) {
 	const tenant = "tenant1"
 	bkt := objstore.NewInMemBucket()
-	require.NoError(t, bkt.Upload(t.Context(), backfillPhasesPrefix+tenant+"/backfill", strings.NewReader("")))
+	require.NoError(t, bkt.Upload(t.Context(), path.Join(backfill.BucketPrefix, backfill.PhaseMarkerPath(tenant, uuid.New(), backfill.PhaseBackfill)), strings.NewReader("{}")))
 
 	cfg := newTestSchedulerConfig()
 	cfg.DiscoveryPolls = []string{discoveryPollBackfills}

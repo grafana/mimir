@@ -15208,7 +15208,7 @@
               "kind": "field",
               "name": "lanes",
               "required": false,
-              "desc": "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order.",
+              "desc": "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. Valid job types: plan, compact, backfill_phase_plan, backfill_work.",
               "fieldValue": null,
               "fieldDefaultValue": "compact+plan,plan",
               "fieldFlag": "compactor.scheduler-client.lanes",
@@ -15224,6 +15224,17 @@
               "fieldDefaultValue": true,
               "fieldFlag": "compactor.scheduler-client.enable-interrupted-reassign",
               "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "backfill_cleanup_delay",
+              "required": false,
+              "desc": "How long to wait after the scheduler drops the jobs of a backfill before deleting its data, so workers can stop the dropped jobs.",
+              "fieldValue": null,
+              "fieldDefaultValue": 600000000000,
+              "fieldFlag": "compactor.scheduler-client.backfill-cleanup-delay",
+              "fieldType": "duration",
               "fieldCategory": "experimental"
             }
           ],

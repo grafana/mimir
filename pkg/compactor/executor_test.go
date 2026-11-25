@@ -236,6 +236,18 @@ func TestParseLaneRequests(t *testing.T) {
 				{compaction},
 			},
 		},
+		"backfill phase planning": {
+			input:   flagext.StringSliceCSV{"backfill_phase_plan+plan"},
+			workers: [][]compactorschedulerpb.JobType{{compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING, planning}},
+		},
+		"backfill work requests every backfill work job type": {
+			input: flagext.StringSliceCSV{"backfill_work"},
+			workers: [][]compactorschedulerpb.JobType{{
+				compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE,
+				compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION,
+				compactorschedulerpb.JOB_TYPE_BACKFILL_COPY,
+			}},
+		},
 		"duplicate compaction within single worker rejected": {
 			input:   flagext.StringSliceCSV{"compact+compact"},
 			wantErr: true,
