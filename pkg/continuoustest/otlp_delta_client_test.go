@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 )
 
 func TestOTLPDeltaQueryHeaders(t *testing.T) {
@@ -62,7 +63,7 @@ func TestOTLPDeltaQueryHeaders(t *testing.T) {
 			if deltaQuery {
 				wantHeader, wantCache = "true", "no-store"
 			}
-			require.Equal(t, wantHeader, req.Header.Get(useStartTimestampsHeader))
+			require.Equal(t, wantHeader, req.Header.Get(requestoptions.UseStartTimestampsHeader))
 			require.Equal(t, wantHeader, req.Header.Get(compat.ForceFallbackHeaderName))
 			require.Equal(t, wantCache, req.Header.Get("Cache-Control"))
 			require.Equal(t, cfg.TenantID, req.Header.Get("X-Scope-OrgID"))
@@ -80,8 +81,8 @@ func TestOTLPDeltaQueryHeaders(t *testing.T) {
 
 	// Conflicting caller options must not change the delta query semantics.
 	headers := map[string]string{
-		strings.ToLower(useStartTimestampsHeader):       "false",
-		strings.ToLower(compat.ForceFallbackHeaderName): "false",
+		strings.ToLower(requestoptions.UseStartTimestampsHeader): "false",
+		strings.ToLower(compat.ForceFallbackHeaderName):          "false",
 		"cache-control": "public",
 		"X-Test":        "preserved",
 	}

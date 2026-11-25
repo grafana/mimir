@@ -23,6 +23,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 )
 
 func TestClientWriteOTLPMetrics(t *testing.T) {
@@ -148,7 +149,7 @@ func TestClientWriteOTLPMetrics(t *testing.T) {
 func TestDeltaWriterBatchingAndIsolation(t *testing.T) {
 	requests := make(chan pmetricotlp.ExportRequest, 8)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Empty(t, r.Header.Get(useStartTimestampsHeader))
+		assert.Empty(t, r.Header.Get(requestoptions.UseStartTimestampsHeader))
 		assert.Empty(t, r.Header.Get(compat.ForceFallbackHeaderName))
 		assert.Empty(t, r.Header.Get("Cache-Control"))
 
