@@ -43,6 +43,10 @@ func (o *OptimizationPass) Name() string {
 	return "Sharding"
 }
 
+func (o *OptimizationPass) Slug() string {
+	return "sharding"
+}
+
 func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, params *planning.QueryParameters) (parser.Expr, error) {
 	if containsSpunOffSubquery(expr) {
 		return expr, nil

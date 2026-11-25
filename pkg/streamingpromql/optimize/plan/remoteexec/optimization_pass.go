@@ -28,6 +28,10 @@ func (o *OptimizationPass) Name() string {
 	return "Remote execution"
 }
 
+func (o *OptimizationPass) Slug() string {
+	return "remote-execution"
+}
+
 func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	inspectResult := optimize.InspectSelectors(plan.Root)
 	if !inspectResult.HasSelectors || inspectResult.IsRewrittenByMiddleware {

@@ -45,6 +45,10 @@ func (c *ReduceMatchers) Name() string {
 	return "Reduce matchers"
 }
 
+func (c *ReduceMatchers) Slug() string {
+	return "reduce-matchers"
+}
+
 func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr, _ *planning.QueryParameters) (parser.Expr, error) {
 	spanlog := spanlogger.FromContext(ctx, c.logger)
 	c.attempts.Inc()

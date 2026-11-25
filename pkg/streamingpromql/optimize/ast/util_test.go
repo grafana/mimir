@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -42,7 +43,8 @@ func runASTOptimizationPass(t *testing.T, ctx context.Context, input string, cre
 	require.NoError(t, err)
 	planner.RegisterASTOptimizationPass(optimizer)
 	observer := streamingpromql.NoopPlanningObserver{}
-	outputExpr, err := planner.ParseAndApplyASTOptimizationPasses(ctx, params, observer)
+	options := requestoptions.Options{}
+	outputExpr, err := planner.ParseAndApplyASTOptimizationPasses(ctx, options, params, observer)
 	require.NoError(t, err)
 	return reg, outputExpr
 }
