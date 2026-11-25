@@ -1154,5 +1154,5 @@ func TestProxyEndpoint_ServeHTTP_ForwardsServerTiming(t *testing.T) {
 	endpoint.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, []string{"querier_wall_time;dur=12.5, samples_processed;val=100", "cache;desc=hit"}, w.Header().Values("Server-Timing"))
+	require.Equal(t, []string{"querier_wall_time;dur=12.5, samples_processed;val=100", "cache;desc=hit"}, w.Result().Header.Values("Server-Timing"))
 }
