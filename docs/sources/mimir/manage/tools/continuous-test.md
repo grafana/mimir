@@ -63,7 +63,9 @@ You can run `mimir -help` to list all available configuration options. All confi
 ## Test native OTLP delta ingestion
 
 The experimental OTLP delta test checks that delta counters and exponential histograms retain their values and interval boundaries through ingestion and querying.
-It is disabled by default and requires native delta ingestion, start-timestamp storage, and a query engine configured to use start timestamps and support `start_timestamp()`.
+It is disabled by default and requires native delta ingestion and start-timestamp storage.
+Mimir must support the `X-Prometheus-Use-Start-Timestamps` query header, introduced in [PR #17314](https://github.com/grafana/mimir/pull/17314), and allow the experimental `start_timestamp()` function.
+The test uses the Prometheus query engine. If Mimir uses MQE by default, enable fallback to the Prometheus engine.
 
 The following example enables the delta test alongside the standard write/read series test and sends delta metrics directly to Mimir:
 
@@ -87,8 +89,13 @@ Like the standard write/read test, the delta test fills in samples between runs 
 Recovery checks raw values so that missing start timestamps do not cause the test to discard history that should be checked.
 On a fresh start, it writes two samples per series so that smoke-test mode can also check `irate()`.
 
-The test runs instant and range queries over recent and historical data, with the results cache both enabled and disabled.
-These queries check:
+For every instant and range query, including recovery, the delta test automatically sends `X-Prometheus-Use-Start-Timestamps: true` and `X-Mimir-Force-Prometheus-Engine: true`.
+These headers enable start-timestamp evaluation and select the Prometheus engine; they do not enable start-timestamp storage.
+
+The test queries recent and historical data with `Cache-Control: no-store` to bypass caching.
+This bypass is temporary because cache keys do not yet distinguish queries that use start timestamps.
+The standard write/read series test continues to exercise both cache modes.
+The delta queries check:
 
 - Raw values, sample presence, and histogram buckets.
 - Start timestamps against the expected interval boundaries. Absolute errors are summed across series so that errors cannot cancel out.
