@@ -64,6 +64,9 @@ You can run `mimir -help` to list all available configuration options. All confi
 
 The experimental OTLP delta test checks that delta counters and exponential histograms retain their values and interval boundaries through ingestion and querying.
 It is disabled by default and requires native delta ingestion and start-timestamp storage.
+Enable `otel_created_timestamp_zero_ingestion_enabled: true` in the tenant limits, or set `-distributor.otel-created-timestamp-zero-ingestion-enabled=true` on Mimir.
+Despite its name, this setting also controls whether OTLP start timestamps reach storage.
+Use it with `start_timestamp_strategy: store`, `float_chunk_encoding: xor2`, and `histogram_chunk_encoding: histogram_st` to preserve the interval boundaries.
 Mimir must support the `X-Prometheus-Use-Start-Timestamps` query header, introduced in [PR #17314](https://github.com/grafana/mimir/pull/17314), and allow the experimental `start_timestamp()` function.
 The test uses the Prometheus query engine. If Mimir uses MQE by default, enable fallback to the Prometheus engine.
 

@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -612,8 +611,9 @@ func (t *OTLPDeltaTest) runMetadataQueryAndVerifyResult(ctx context.Context, exp
 
 		t.metrics.queryResultChecksTotal.WithLabelValues(typeLabel).Inc()
 		var errs []error
-		if expectedType := v1.MetricType(strings.ToLower(expected.Type.String())); expectedType != got.Type {
-			errs = append(errs, fmt.Errorf("expected:%q got:%q", expectedType, got.Type))
+		// The OTLP translator reports delta metric types as unknown.
+		if got.Type != v1.MetricTypeUnknown {
+			errs = append(errs, fmt.Errorf("expected:%q got:%q", v1.MetricTypeUnknown, got.Type))
 		}
 
 		if expected.Help != got.Help {
