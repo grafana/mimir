@@ -806,8 +806,7 @@ func TestLabelValuesCacheKey_ShouldNotCollideForInvalidLabelNames(t *testing.T) 
 	assert.Len(t, unique, len(keys))
 }
 
-// isValidMemcachedKey follows the key rule of the memcached text protocol:
-// at most 250 bytes, with no space, control character or DEL byte.
+// isValidMemcachedKey copies legalKey in github.com/grafana/gomemcache/memcache.
 func isValidMemcachedKey(key string) bool {
 	if len(key) > 250 {
 		return false

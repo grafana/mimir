@@ -320,7 +320,8 @@ func labelValuesCacheKey(userID string, blockID ulid.ULID, labelName string, mat
 		return key
 	}
 
-	// Memcached rejects this LV2 key, so hash the label name together with the matchers key.
+	// The memcached client rejects this LV2 key.
+	// Hash the label name together with the matchers key instead.
 	// The length prefix keeps two different splits of the same bytes apart.
 	h, _ := blake2b.New256(nil)
 	h.Write(binary.AppendUvarint(nil, uint64(len(labelName))))
@@ -332,8 +333,8 @@ func labelValuesCacheKey(userID string, blockID ulid.ULID, labelName string, mat
 // maxMemcachedKeyLength is the longest key that memcached accepts.
 const maxMemcachedKeyLength = 250
 
-// hasInvalidMemcachedKeyByte reports whether s holds a byte that memcached rejects in a key.
-// Memcached rejects a space, a control character and DEL.
+// hasInvalidMemcachedKeyByte reports whether s holds a byte that the memcached client rejects in a key.
+// It follows legalKey in github.com/grafana/gomemcache/memcache: a space, a control character or DEL.
 func hasInvalidMemcachedKeyByte(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] <= ' ' || s[i] == 0x7f {
