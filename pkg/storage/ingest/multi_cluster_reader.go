@@ -5,6 +5,7 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,10 @@ import (
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 )
+
+// additionalReadClusterName identifies the additional read cluster in the offset file name, consumer group
+// and metric label.
+const additionalReadClusterName = "additional"
 
 // MultiClusterPartitionReader consumes the same partition from multiple Kafka clusters, pushing every
 // cluster's records into the same Pusher. In the compartments architecture there is one Kafka cluster
@@ -47,19 +52,23 @@ type MultiClusterPartitionReader struct {
 }
 
 // NewMultiClusterPartitionReader creates a MultiClusterPartitionReader that consumes the given partition
-// from every configured Kafka cluster. clusterConfigs holds one KafkaConfig per Kafka cluster, already
-// resolved with that cluster's topic, address, and SASL credentials.
+// from every configured Kafka cluster. clusterConfigs holds one KafkaConfig per write compartment's Kafka
+// cluster, already resolved with that cluster's topic, address, and SASL credentials.
+// additionalReadClusterConfig is optional. When set, the reader also consumes from that Kafka cluster,
+// which gets the Kafka cluster ID after the write compartments' clusters.
 //
 // offsetFilePath is the path of each cluster's offset file and must contain the
-// compartments.WriteCompartmentIDPlaceholder, which is replaced with the Kafka cluster ID so each cluster
-// tracks offsets in its own file. instanceID is the base for each reader's consumer group, suffixed per
-// Kafka cluster so each cluster tracks offsets independently.
+// compartments.WriteCompartmentIDPlaceholder, which is replaced with the write compartment ID (or
+// "additional" for the additional read cluster) so each cluster tracks offsets in its own file. instanceID
+// is the base for each reader's consumer group, suffixed per Kafka cluster so each cluster tracks offsets
+// independently.
 //
 // When orderedCfg.Enabled is set, records from every cluster are consumed in best-effort Kafka-record-timestamp
 // order before being pushed; otherwise each cluster pushes independently, so there's no cross-cluster
 // ordering guarantee.
 func NewMultiClusterPartitionReader(
 	clusterConfigs []KafkaConfig,
+	additionalReadClusterConfig *KafkaConfig,
 	orderedCfg OrderedConsumptionConfig,
 	partitionID int32,
 	instanceID string,
@@ -73,6 +82,15 @@ func NewMultiClusterPartitionReader(
 	}
 	if !strings.Contains(offsetFilePath, compartments.WriteCompartmentIDPlaceholder) {
 		return nil, fmt.Errorf("the offset file path %q must contain the %q placeholder", offsetFilePath, compartments.WriteCompartmentIDPlaceholder)
+	}
+
+	clusterNames := make([]string, len(clusterConfigs))
+	for writeCompartmentID := range clusterConfigs {
+		clusterNames[writeCompartmentID] = strconv.Itoa(writeCompartmentID)
+	}
+	if additionalReadClusterConfig != nil {
+		clusterConfigs = slices.Concat(clusterConfigs, []KafkaConfig{*additionalReadClusterConfig})
+		clusterNames = append(clusterNames, additionalReadClusterName)
 	}
 
 	// When ordered consumption is enabled, all clusters feed a shared HeapMerger whose downstream consumer
@@ -98,14 +116,14 @@ func NewMultiClusterPartitionReader(
 	}
 
 	readers := make([]*SingleClusterPartitionReader, len(clusterConfigs))
-	// There is one Kafka cluster per write compartment, so the Kafka cluster ID is also the write
-	// compartment ID. The offset file name, consumer group suffix, and metric label keep the
-	// "write compartment" naming because that's the operator-facing concept.
+	// The offset file name, consumer group suffix, and metric label keep the "write compartment" naming
+	// because that's the operator-facing concept.
 	for kafkaClusterID, clusterCfg := range clusterConfigs {
-		clusterOffsetFilePath := compartments.ReplaceWriteCompartment(offsetFilePath, kafkaClusterID)
-		readerInstanceID := fmt.Sprintf("%s-wc-%d", instanceID, kafkaClusterID)
-		clusterReg := prometheus.WrapRegistererWith(prometheus.Labels{"write_compartment": strconv.Itoa(kafkaClusterID)}, reg)
-		clusterLogger := log.With(logger, "write_compartment", kafkaClusterID)
+		clusterName := clusterNames[kafkaClusterID]
+		clusterOffsetFilePath := strings.ReplaceAll(offsetFilePath, compartments.WriteCompartmentIDPlaceholder, clusterName)
+		readerInstanceID := fmt.Sprintf("%s-wc-%s", instanceID, clusterName)
+		clusterReg := prometheus.WrapRegistererWith(prometheus.Labels{"write_compartment": clusterName}, reg)
+		clusterLogger := log.With(logger, "write_compartment", clusterName)
 
 		// Pick this cluster's consumer: with ordered consumption, records stream into the shared merger,
 		// which pushes them (in merged order) via the shared PusherConsumer; otherwise each cluster pushes
@@ -125,7 +143,7 @@ func NewMultiClusterPartitionReader(
 
 		reader, err := newSingleClusterPartitionReader(clusterCfg, partitionID, readerInstanceID, clusterOffsetFilePath, consumerFactory, pusher, clusterLogger, clusterReg)
 		if err != nil {
-			return nil, errors.Wrapf(err, "creating partition reader for write compartment %d", kafkaClusterID)
+			return nil, errors.Wrapf(err, "creating partition reader for write compartment %s", clusterName)
 		}
 		readers[kafkaClusterID] = reader
 	}
