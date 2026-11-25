@@ -738,11 +738,11 @@ func TestOTelDeltaIngestion(t *testing.T) {
 	ts := time.Unix(100, 0)
 
 	testCases := []struct {
-		name        string
-		allowDelta  bool
-		input       pmetric.Metrics
-		expected    mimirpb.TimeSeries
-		expectedErr string
+		name          string
+		allowDelta    bool
+		input         pmetric.Metrics
+		expected      mimirpb.TimeSeries
+		expectDropped bool
 	}{
 		{
 			name:       "delta counter not allowed",
@@ -760,7 +760,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 				dp.Attributes().PutStr("metric-attr", "metric value")
 				return md
 			}(),
-			expectedErr: `otlp parse error: invalid temporality and type combination for metric "test_metric"`,
+			expectDropped: true,
 		},
 		{
 			name:       "delta counter allowed",
@@ -802,7 +802,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 				dp.Attributes().PutStr("metric-attr", "metric value")
 				return md
 			}(),
-			expectedErr: `otlp parse error: invalid temporality and type combination for metric "test_metric"`,
+			expectDropped: true,
 		},
 		{
 			name:       "delta exponential histogram allowed",
@@ -857,7 +857,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 				dp.Attributes().PutStr("metric-attr", "metric value")
 				return md
 			}(),
-			expectedErr: `otlp parse error: invalid temporality and type combination for metric "test_metric"`,
+			expectDropped: true,
 		},
 		{
 			name:       "delta histogram as nhcb allowed",
@@ -916,8 +916,9 @@ func TestOTelDeltaIngestion(t *testing.T) {
 				},
 				log.NewNopLogger(),
 			)
-			if tc.expectedErr != "" {
-				require.EqualError(t, err, tc.expectedErr)
+			if tc.expectDropped {
+				// Metrics with an unsupported temporality are dropped individually, with a warning rather than an error.
+				require.NoError(t, err)
 				require.Len(t, mimirTS, 0)
 				require.Equal(t, 1, dropped)
 			} else {
@@ -929,6 +930,45 @@ func TestOTelDeltaIngestion(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestOTelDeltaIngestionMixedRequest checks that a delta metric is dropped on its own,
+// without rejecting the other metrics in the same request, when delta ingestion is not allowed.
+func TestOTelDeltaIngestionMixedRequest(t *testing.T) {
+	ts := time.Unix(100, 0)
+
+	md := pmetric.NewMetrics()
+	sm := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty()
+
+	good := sm.Metrics().AppendEmpty()
+	good.SetName("good_metric")
+	goodSum := good.SetEmptySum()
+	goodSum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+	goodSum.SetIsMonotonic(true)
+	goodDP := goodSum.DataPoints().AppendEmpty()
+	goodDP.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+	goodDP.SetDoubleValue(5)
+
+	bad := sm.Metrics().AppendEmpty()
+	bad.SetName("bad_metric")
+	badSum := bad.SetEmptySum()
+	badSum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+	badDP := badSum.DataPoints().AppendEmpty()
+	badDP.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+	badDP.SetDoubleValue(7)
+
+	converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+	mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
+		context.Background(),
+		converter,
+		md,
+		conversionOptions{allowDeltaTemporality: false},
+		log.NewNopLogger(),
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, dropped)
+	require.Len(t, mimirTS, 1)
+	require.Contains(t, mimirTS[0].Labels, mimirpb.LabelAdapter{Name: "__name__", Value: "good_metric"})
 }
 
 // TestOTelCTZeroIngestion checks that when conversionOptions.enableCTZeroIngestion is true,
