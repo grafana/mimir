@@ -99,6 +99,7 @@ func (cfg *ClientConfig) RegisterFlags(f *flag.FlagSet) {
 type Client struct {
 	protocol    WriteProtocol
 	writeClient clientWriter
+	otlpClient  *otlpHTTPWriter
 	readClient  v1.API
 	cfg         ClientConfig
 	logger      log.Logger
@@ -198,9 +199,14 @@ func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (
 	return &Client{
 		protocol:    cfg.WriteProtocol,
 		writeClient: writeClient,
-		readClient:  v1.NewAPI(readClient),
-		cfg:         cfg,
-		logger:      logger,
+		otlpClient: &otlpHTTPWriter{
+			httpClient:        &http.Client{Transport: rt},
+			writeBaseEndpoint: cfg.WriteBaseEndpoint,
+			writeTimeout:      cfg.WriteTimeout,
+		},
+		readClient: v1.NewAPI(readClient),
+		cfg:        cfg,
+		logger:     logger,
 	}, nil
 }
 

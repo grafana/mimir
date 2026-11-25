@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,10 +14,13 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/prompb"
+	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
+
+var errOTLPPartialSuccess = errors.New("OTLP partial success")
 
 type otlpHTTPWriter struct {
 	httpClient        *http.Client
@@ -36,6 +40,10 @@ func (pw *otlpHTTPWriter) sendWriteRequest(ctx context.Context, req *prompb.Writ
 		})
 	}
 	metricRequest := distributor.TimeseriesToOTLPRequest(req.Timeseries, metadata)
+	return pw.sendOTLPRequest(ctx, pw.writeBaseEndpoint.String()+"/otlp/v1/metrics", metricRequest)
+}
+
+func (pw *otlpHTTPWriter) sendOTLPRequest(ctx context.Context, endpoint string, metricRequest pmetricotlp.ExportRequest) (int, error) {
 	rawBytes, err := metricRequest.MarshalProto()
 	if err != nil {
 		return 0, err
@@ -49,14 +57,13 @@ func (pw *otlpHTTPWriter) sendWriteRequest(ctx context.Context, req *prompb.Writ
 	ctx, cancel := context.WithTimeout(ctx, pw.writeTimeout)
 	defer cancel()
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", pw.writeBaseEndpoint.String()+"/otlp/v1/metrics", bytes.NewReader(compressedBytes))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(compressedBytes))
 	if err != nil {
 		// Errors from NewRequest are from unparseable URLs, so are not
 		// recoverable.
 		return 0, err
 	}
 	httpReq.Header.Add("Content-Encoding", "gzip")
-	httpReq.Header.Add("Accept-Encoding", "gzip")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 
 	httpResp, err := pw.httpClient.Do(httpReq)
@@ -74,6 +81,25 @@ func (pw *otlpHTTPWriter) sendWriteRequest(ctx context.Context, req *prompb.Writ
 		return httpResp.StatusCode, fmt.Errorf("server returned HTTP status %s and body %q (truncated to %d bytes)", httpResp.Status, string(truncatedBody), maxErrMsgLen)
 	}
 
+	const maxResponseSize = 1 << 20
+	body, err := io.ReadAll(io.LimitReader(httpResp.Body, maxResponseSize+1))
+	if err != nil {
+		return httpResp.StatusCode, fmt.Errorf("read OTLP response: %w", err)
+	}
+	if len(body) > maxResponseSize {
+		return httpResp.StatusCode, fmt.Errorf("OTLP response exceeds %d bytes", maxResponseSize)
+	}
+	if len(body) > 0 {
+		response := pmetricotlp.NewExportResponse()
+		if err := response.UnmarshalProto(body); err != nil {
+			return httpResp.StatusCode, fmt.Errorf("decode OTLP response: %w", err)
+		}
+		partial := response.PartialSuccess()
+		// With no rejected data points, the message is only a warning.
+		if partial.RejectedDataPoints() > 0 {
+			return httpResp.StatusCode, fmt.Errorf("%w: rejected %d data points: %s", errOTLPPartialSuccess, partial.RejectedDataPoints(), partial.ErrorMessage())
+		}
+	}
 	return httpResp.StatusCode, nil
 }
 

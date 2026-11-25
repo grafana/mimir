@@ -7,6 +7,7 @@ import (
 )
 
 type Config struct {
+	OTLPDeltaTest           OTLPDeltaTestConfig           `yaml:"-"`
 	Client                  ClientConfig                  `yaml:"-"`
 	Manager                 ManagerConfig                 `yaml:"-"`
 	WriteReadSeriesTest     WriteReadSeriesTestConfig     `yaml:"-"`
@@ -16,6 +17,7 @@ type Config struct {
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.Client.RegisterFlags(f)
+	cfg.OTLPDeltaTest.RegisterFlags(f)
 	cfg.Manager.RegisterFlags(f)
 	cfg.WriteReadSeriesTest.RegisterFlags(f)
 	cfg.IngestStorageRecordTest.RegisterFlags(f)
