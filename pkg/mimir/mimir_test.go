@@ -846,6 +846,24 @@ func TestConfigValidation(t *testing.T) {
 			expectAnyError: true,
 		},
 		{
+			name: "should fail if blocks bucket name mappings are set but compartments are disabled",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				cfg.BlocksStorage.BucketNameMappings = flagext.StringSliceCSV{"/data/blocks-rc-0:/data/blocks"}
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should pass if blocks bucket name mappings are set and compartments are enabled",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.BlocksStorage.BucketNameMappings = flagext.StringSliceCSV{"/data/blocks-rc-0:/data/blocks"}
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
 			name: "should pass if only the store-gateway is enabled and the blocks bucket name is explicit",
 			getTestConfig: func() *Config {
 				cfg := validCompartmentsConfig()

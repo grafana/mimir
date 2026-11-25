@@ -298,6 +298,9 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Compartments.Validate(); err != nil {
 		return errors.Wrap(err, "invalid compartments config")
 	}
+	if len(c.BlocksStorage.BucketNameMappings) > 0 && !c.Compartments.Enabled {
+		return fmt.Errorf("-%s requires compartments to be enabled", tsdb.BucketNameMappingsFlag)
+	}
 	if c.Compartments.Enabled {
 		if !c.IngestStorage.Enabled {
 			return errors.New("compartments require ingest storage to be enabled")

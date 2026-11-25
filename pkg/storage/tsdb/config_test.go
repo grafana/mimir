@@ -7,6 +7,7 @@ package tsdb
 
 import (
 	"flag"
+	"fmt"
 	"testing"
 	"time"
 
@@ -176,6 +177,36 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: errIgnoreDeletionMarksDelayTooShort,
 		},
+		"should pass on valid bucket name mappings": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.BucketNameMappings = flagext.StringSliceCSV{"blocks-rc-0:blocks", "blocks-rc-1:other-blocks"}
+			},
+			expectedErr: nil,
+		},
+		"should fail on a bucket name mapping without a separator": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.BucketNameMappings = flagext.StringSliceCSV{"blocks-rc-0"}
+			},
+			expectedErr: fmt.Errorf("%w: %q", errInvalidBucketNameMapping, "blocks-rc-0"),
+		},
+		"should fail on a bucket name mapping with an empty generated name": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.BucketNameMappings = flagext.StringSliceCSV{":blocks"}
+			},
+			expectedErr: fmt.Errorf("%w: %q", errInvalidBucketNameMapping, ":blocks"),
+		},
+		"should fail on a bucket name mapping with an empty name": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.BucketNameMappings = flagext.StringSliceCSV{"blocks-rc-0:"}
+			},
+			expectedErr: fmt.Errorf("%w: %q", errInvalidBucketNameMapping, "blocks-rc-0:"),
+		},
+		"should fail on bucket name mappings with the same generated name twice": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.BucketNameMappings = flagext.StringSliceCSV{"blocks-rc-0:blocks", "blocks-rc-0:other-blocks"}
+			},
+			expectedErr: fmt.Errorf("%w: %q", errInvalidBucketNameMapping, "blocks-rc-0:other-blocks"),
+		},
 	}
 
 	for testName, testData := range tests {
@@ -243,21 +274,29 @@ func TestConfig_DurationList(t *testing.T) {
 
 func TestBlocksStorageConfig_ReadCompartmentBucketConfig(t *testing.T) {
 	tests := map[string]struct {
-		readCompartment0BucketName string
-		expectedBucketNames        []string
+		bucketNameMappings  flagext.StringSliceCSV
+		expectedBucketNames []string
 	}{
-		"without the read compartment 0 bucket name": {
+		"without bucket name mappings": {
 			expectedBucketNames: []string{"blocks-rc-0", "blocks-rc-1"},
 		},
-		"with the read compartment 0 bucket name": {
-			readCompartment0BucketName: "blocks",
-			expectedBucketNames:        []string{"blocks", "blocks-rc-1"},
+		"with a mapping for read compartment 0": {
+			bucketNameMappings:  flagext.StringSliceCSV{"blocks-rc-0:blocks"},
+			expectedBucketNames: []string{"blocks", "blocks-rc-1"},
+		},
+		"with a mapping that matches no read compartment": {
+			bucketNameMappings:  flagext.StringSliceCSV{"blocks-rc-2:blocks"},
+			expectedBucketNames: []string{"blocks-rc-0", "blocks-rc-1"},
+		},
+		"with a mapping for each read compartment": {
+			bucketNameMappings:  flagext.StringSliceCSV{"blocks-rc-0:blocks", "blocks-rc-1:other-blocks"},
+			expectedBucketNames: []string{"blocks", "other-blocks"},
 		},
 	}
 
 	for name, testData := range tests {
 		t.Run(name, func(t *testing.T) {
-			cfg := BlocksStorageConfig{ReadCompartment0BucketName: testData.readCompartment0BucketName}
+			cfg := BlocksStorageConfig{BucketNameMappings: testData.bucketNameMappings}
 			cfg.Bucket.Backend = bucket.GCS
 			cfg.Bucket.GCS.BucketName = "blocks-rc-<read-compartment-id>"
 
