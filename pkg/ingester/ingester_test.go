@@ -11382,6 +11382,10 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 		expectedSampling bool
 		maxExemplars     int
 		nativeHistograms bool
+		// repushedValidTimestamp is the timestamp of the last request's valid sample or histogram.
+		// Each re-push moves it forward by the attempt number so it isn't re-sent as an exact
+		// duplicate, while the invalid samples and the errors they cause stay the same.
+		repushedValidTimestamp int64
 	}{
 		"should soft fail on sample out-of-order": {
 			reqs: []*mimirpb.WriteRequest{
@@ -11515,6 +11519,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			nativeHistograms: true,
 		},
 		"should soft fail on some samples out of bound in a write request": {
+			repushedValidTimestamp: 1575043969 + 1,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
@@ -11551,6 +11556,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			`,
 		},
 		"should soft fail on some samples with timestamp too far in future in a write request": {
+			repushedValidTimestamp: now.UnixMilli() + 1,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
@@ -11585,7 +11591,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			`,
 		},
 		"should soft fail on some histograms with timestamp too far in future in a write request": {
-			nativeHistograms: true,
+			repushedValidTimestamp: now.UnixMilli(),
+			nativeHistograms:       true,
 			reqs: []*mimirpb.WriteRequest{
 				{
 					Timeseries: []mimirpb.PreallocTimeseries{
@@ -11613,7 +11620,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			`,
 		},
 		"should soft fail on some exemplars with timestamp too far in future in a write request": {
-			maxExemplars: 1,
+			repushedValidTimestamp: now.UnixMilli(),
+			maxExemplars:           1,
 			reqs: []*mimirpb.WriteRequest{
 				{
 					Timeseries: []mimirpb.PreallocTimeseries{
@@ -11898,7 +11906,27 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					// - (errorSampleRate - 1) samples for users[0] and
 					// - 1 sample for users[1].
 					for i := 0; i < errorSampleRate-1; i++ {
-						_, err = client.Push(ctxs[0], req)
+						repush := req
+						if testData.repushedValidTimestamp != 0 {
+							repush = &mimirpb.WriteRequest{Source: req.Source}
+							for _, ts := range req.Timeseries {
+								shifted := *ts.TimeSeries
+								shifted.Samples = slices.Clone(ts.Samples)
+								for j := range shifted.Samples {
+									if shifted.Samples[j].TimestampMs == testData.repushedValidTimestamp {
+										shifted.Samples[j].TimestampMs += int64(i)
+									}
+								}
+								shifted.Histograms = slices.Clone(ts.Histograms)
+								for j := range shifted.Histograms {
+									if shifted.Histograms[j].Timestamp == testData.repushedValidTimestamp {
+										shifted.Histograms[j].Timestamp += int64(i)
+									}
+								}
+								repush.Timeseries = append(repush.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: &shifted})
+							}
+						}
+						_, err = client.Push(ctxs[0], repush)
 						require.Error(t, err)
 						status, ok := grpcutil.ErrorToStatus(err)
 						require.True(t, ok)
@@ -12004,6 +12032,9 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 	// - only 2 related log entries,
 	// - all 10 samples as discarded.
 	for i := 0; i < 2*errorSampleRate; i++ {
+		// Move the accepted series' sample forward so that re-pushes aren't exact duplicates.
+		sample2.TimestampMs = timestamp + 2 + int64(i)
+
 		// Append 2 series first, expect max-series-per-user error.
 		_, err = client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{metricLabelAdapters1, metricLabelAdapters2}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
 		require.Error(t, err)
@@ -12102,6 +12133,9 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 	// - only 2 related log entries,
 	// - all 10 samples as discarded.
 	for i := 0; i < 2*errorSampleRate; i++ {
+		// Move the accepted series' sample forward so that re-pushes aren't exact duplicates.
+		sample2.TimestampMs = timestamp + 2 + int64(i)
+
 		// Append 2 series first, expect max-series-per-user error.
 		_, err = client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{metricLabelAdapters1, metricLabelAdapters2}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
 		require.Error(t, err)
