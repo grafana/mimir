@@ -3427,3 +3427,37 @@ func TestOverrides_MaxDurationAcrossAllTenants(t *testing.T) {
 		assert.Equal(t, 4*time.Hour, overrides.MaxDurationAcrossAllTenants(getQueryIngestersWithin))
 	})
 }
+
+func TestOverrides_MaxQueryIngestersWithinAcrossAllTenants(t *testing.T) {
+	t.Run("returns the maximum across the default and all tenants", func(t *testing.T) {
+		overrides := MockOverrides(func(defaults *Limits, tenantLimits map[string]*Limits) {
+			defaults.QueryIngestersWithin = model.Duration(time.Hour)
+			tenantLimits["user1"] = &Limits{QueryIngestersWithin: model.Duration(3 * time.Hour)}
+			tenantLimits["user2"] = &Limits{QueryIngestersWithin: model.Duration(2 * time.Hour)}
+		})
+
+		actual, ok := overrides.MaxQueryIngestersWithinAcrossAllTenants()
+		assert.True(t, ok)
+		assert.Equal(t, 3*time.Hour, actual)
+	})
+
+	t.Run("reports no maximum if disabled for the default", func(t *testing.T) {
+		overrides := MockOverrides(func(defaults *Limits, tenantLimits map[string]*Limits) {
+			defaults.QueryIngestersWithin = 0
+			tenantLimits["user1"] = &Limits{QueryIngestersWithin: model.Duration(time.Hour)}
+		})
+
+		_, ok := overrides.MaxQueryIngestersWithinAcrossAllTenants()
+		assert.False(t, ok)
+	})
+
+	t.Run("reports no maximum if disabled for any tenant", func(t *testing.T) {
+		overrides := MockOverrides(func(defaults *Limits, tenantLimits map[string]*Limits) {
+			defaults.QueryIngestersWithin = model.Duration(time.Hour)
+			tenantLimits["user1"] = &Limits{QueryIngestersWithin: 0}
+		})
+
+		_, ok := overrides.MaxQueryIngestersWithinAcrossAllTenants()
+		assert.False(t, ok)
+	})
+}

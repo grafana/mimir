@@ -1999,6 +1999,20 @@ func (o *Overrides) MaxDurationAcrossAllTenants(f func(*Limits) time.Duration) t
 	return result
 }
 
+// MaxQueryIngestersWithinAcrossAllTenants returns the longest query-ingesters-within across the default limits and
+// the limits of every tenant that currently has overrides. It returns false if query-ingesters-within is disabled
+// for the default or any tenant, in which case ingesters are always queried and there is no maximum.
+func (o *Overrides) MaxQueryIngestersWithinAcrossAllTenants() (time.Duration, bool) {
+	result := o.MaxDurationAcrossAllTenants(func(l *Limits) time.Duration {
+		if l.QueryIngestersWithin <= 0 {
+			return math.MaxInt64
+		}
+		return time.Duration(l.QueryIngestersWithin)
+	})
+
+	return result, result != math.MaxInt64
+}
+
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
 	userID = tenant.TrimMetadata(userID)
 	if o.tenantLimits != nil {

@@ -92,14 +92,8 @@ func (cfg *PartitionRingConfig) deleteInactivePartitionAfter(limits *validation.
 		return 0
 	}
 
-	queryIngestersWithin := limits.MaxDurationAcrossAllTenants(func(l *validation.Limits) time.Duration {
-		if l.QueryIngestersWithin <= 0 {
-			return math.MaxInt64 // Disabled: ingesters are always queried.
-		}
-		return time.Duration(l.QueryIngestersWithin)
-	})
-
-	if queryIngestersWithin == math.MaxInt64 {
+	queryIngestersWithin, ok := limits.MaxQueryIngestersWithinAcrossAllTenants()
+	if !ok {
 		return 0
 	}
 
