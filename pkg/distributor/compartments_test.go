@@ -128,7 +128,7 @@ func TestGroupSeriesHashesByReadCompartment(t *testing.T) {
 	for compartment := range numCompartments {
 		if hashes, ok := expectedHashes[compartment]; ok {
 			expectedGroups = append(expectedGroups, usagetrackerclient.UserSeries{
-				UserID: userID + "/rc/" + strconv.Itoa(compartment) + ":source=test",
+				UserID: userID + ":rc=" + strconv.Itoa(compartment) + ":source=test",
 				Series: hashes,
 			})
 		}

@@ -86,6 +86,13 @@ func TestNewValidationError(t *testing.T) {
 	checkDistributorError(t, wrappedErr, mimirpb.ERROR_CAUSE_BAD_DATA)
 }
 
+func TestNewTenantMetadataTooLongError(t *testing.T) {
+	err := newTenantMetadataTooLongError(60, 59)
+	assert.EqualError(t, err, "the request has been rejected because the tenant metadata is 60 bytes long, but it can be at most 59 bytes long when read compartments are enabled (err-mimir-tenant-metadata-too-long)")
+	checkDistributorError(t, err, mimirpb.ERROR_CAUSE_BAD_DATA)
+	assert.True(t, errors.As(err, &validationError{}))
+}
+
 func TestNewIngestionRateError(t *testing.T) {
 	limit := 10.0
 	burst := 10

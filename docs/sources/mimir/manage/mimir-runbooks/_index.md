@@ -3036,6 +3036,20 @@ How to **fix** it:
 When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
 {{< /admonition >}}
 
+### err-mimir-tenant-metadata-too-long
+
+This error can only be returned when both the experimental compartments (`-compartments.enabled=true`) and the usage-tracker (`-usage-tracker.enabled=true`) are enabled. It occurs when the distributor rejects a write request because the tenant metadata in the tenant ID is too long.
+
+How it **works**:
+
+- Tenant metadata is the list of `:key=value` pairs after the tenant ID, for example `tenant-1:source=example`. It can be at most 64 bytes long.
+- When compartments are enabled, the distributor adds the read compartment ID of each series to the tenant metadata, as `:rc=<id>`, to track the active series of each read compartment in the usage-tracker.
+- To leave room for the read compartment ID, the distributor rejects write requests whose tenant metadata is longer than 64 bytes minus the length of the longest `:rc=<id>` pair, which depends on `-compartments.read.num-compartments`. The 4xx status code is used to ensure the client will not retry a request which will consistently fail.
+
+How to **fix** it:
+
+- Configure the client writing to Mimir to send shorter tenant metadata. Clients pass the tenant metadata in the `X-Scope-OrgID` header, using the format `tenantID:key1=value1:key2=value2`. Shorten or remove some of the `key=value` pairs in the sent headers.
+
 ### err-mimir-max-series-per-user
 
 This error occurs when the number of in-memory series for a given tenant exceeds the configured limit.
