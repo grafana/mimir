@@ -807,6 +807,27 @@ func TestLabelValuesCacheKey_ShouldNotCollideForInvalidLabelNames(t *testing.T) 
 	assert.Len(t, unique, len(keys))
 }
 
+func TestIsValidMemcachedKey_ShouldMatchTheMemcachedClient(t *testing.T) {
+	t.Parallel()
+
+	keys := []string{
+		strings.Repeat("a", 250),
+		strings.Repeat("a", 251),
+		"a b",
+		"a\x00",
+		"a\n",
+		"a\x1f",
+		"a\x7f",
+		"a\x80",
+		"föö",
+		"a:b.c",
+	}
+
+	for _, key := range keys {
+		assert.Equalf(t, memcachedClientAcceptsKey(t, key), isValidMemcachedKey(key), "key %q (%d bytes)", key, len(key))
+	}
+}
+
 // memcachedClientAcceptsKey reports whether the gomemcache client accepts key.
 // The client checks the key before it picks a server, so it needs no server.
 func memcachedClientAcceptsKey(t *testing.T, key string) bool {
