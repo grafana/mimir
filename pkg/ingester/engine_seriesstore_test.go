@@ -148,6 +148,7 @@ func TestIngester_SeriesstoreSnapshotsHeadsWithTheCommittedOffsets(t *testing.T)
 		cortex_ingester_seriesstore_head_snapshots_total{outcome="success"} 1
 	`), "cortex_ingester_seriesstore_head_snapshots_total"))
 	require.Equal(t, 1, testutil.CollectAndCount(ingester.metrics.seriesstoreSnapshotRoundDuration))
+	require.Equal(t, map[string]int64{userID: 42}, ingester.seriesstoreCheckpointOffsets, "the next round orders the tenants by it")
 
 	crashed, err := store.OpenEngine(filepath.Join(dataDir, userID), userID, store.EngineOptions{Shards: 2, Checkpoints: true})
 	require.NoError(t, err)
@@ -189,6 +190,54 @@ func TestIngester_SeriesstoreSnapshotsWhenStoppedWhileStarting(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, restored.Close()) })
 	require.True(t, restored.Restored(), "closed while starting, the head was snapshotted again")
 	require.Equal(t, uint64(1), restored.NumSeries())
+}
+
+// While the ingester catches up on its partition, the heads are snapshotted at least every few minutes, so a catch-up
+// that runs out of memory still moves the next start on. Once running, at the interval.
+func TestSeriesstoreSnapshotInterval(t *testing.T) {
+	const interval = 15 * time.Minute
+	require.Less(t, seriesstoreSnapshotIntervalWhileStarting, interval, "the precondition: the bound is shorter than the interval")
+	for name, c := range map[string]struct {
+		state    services.State
+		interval time.Duration
+		expected time.Duration
+	}{
+		"starting, at most the bound":            {state: services.Starting, interval: interval, expected: seriesstoreSnapshotIntervalWhileStarting},
+		"starting, a shorter interval unchanged": {state: services.Starting, interval: time.Minute, expected: time.Minute},
+		"running, the interval":                  {state: services.Running, interval: interval, expected: interval},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, c.expected, seriesstoreSnapshotInterval(c.state, c.interval))
+		})
+	}
+}
+
+// A start replays from the oldest of its tenants' checkpoints, and from the retention period for a tenant without one,
+// so a round snapshots that tenant first, then the oldest checkpoint first: a round cut short still moves the next start
+// on.
+func TestOrderByCheckpointAge(t *testing.T) {
+	userIDs := []string{"recent", "oldest", "without", "older"}
+	orderByCheckpointAge(userIDs, map[string]int64{"recent": 30, "oldest": 10, "older": 20})
+	require.Equal(t, []string{"without", "oldest", "older", "recent"}, userIDs)
+}
+
+func TestCheckpointOffset(t *testing.T) {
+	for name, c := range map[string]struct {
+		checkpoint     []byte
+		expectedOffset int64
+		expectedOK     bool
+	}{
+		"the oldest of the offset files'": {checkpoint: []byte(`{"kafka-offset.json":20,"kafka-offset-b.json":10}`), expectedOffset: 10, expectedOK: true},
+		"no offset files":                 {checkpoint: []byte(`{}`)},
+		// A head restored from a clean shutdown's snapshot has no checkpoint.
+		"no checkpoint": {checkpoint: nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			offset, ok := checkpointOffset(c.checkpoint)
+			require.Equal(t, c.expectedOK, ok)
+			require.Equal(t, c.expectedOffset, offset)
+		})
+	}
 }
 
 func TestValidateSeriesstoreEngine(t *testing.T) {
