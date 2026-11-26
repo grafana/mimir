@@ -91,8 +91,10 @@ type Config struct {
 	// The lookups' match[], and how far back they look.
 	LookupMatchers flagext.StringSlice
 	LookupRange    time.Duration
-	// How far before a round its queries are evaluated, so that both modes see the same samples: the ingesters
-	// may not have every sample of the last seconds yet.
+	// How far before a round its queries are evaluated, so that both modes see the same samples, though the modes
+	// answer one after the other. Samples can arrive more than a scrape interval late: a stopped scrape writes its
+	// staleness markers an interval and 10% after their timestamp, and a marker arriving between the two answers
+	// drops its series from the second only.
 	EvaluationDelay time.Duration
 	Interval        time.Duration
 }
@@ -104,7 +106,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.LookupMatchers = flagext.StringSlice{`{__name__="up"}`}
 	f.Var(&cfg.LookupMatchers, "lookup-match", "A series selector of the native metadata lookups, their match[], which can be repeated.")
 	f.DurationVar(&cfg.LookupRange, "lookup-range", time.Hour, "How far back the resources lookup looks.")
-	f.DurationVar(&cfg.EvaluationDelay, "evaluation-delay", time.Minute, "How far before a round its queries are evaluated, so that both modes see the same samples.")
+	f.DurationVar(&cfg.EvaluationDelay, "evaluation-delay", 3*time.Minute, "How far before a round its queries are evaluated, so that both modes see the same samples. It must be longer than samples take to arrive, which for staleness markers is over a scrape interval.")
 	f.DurationVar(&cfg.Interval, "interval", time.Minute, "How often to probe.")
 }
 
