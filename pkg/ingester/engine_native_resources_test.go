@@ -83,7 +83,7 @@ func TestSeriesstoreEngineServesNativeResources(t *testing.T) {
 				db := ingester.getTSDB("tenant")
 				require.NotNil(t, db.nativeResources)
 				matchers := [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "requests_total")}}
-				result, err := db.nativeResources.nativeResources(context.Background(), matchers, math.MinInt64, math.MaxInt64, 6, 0)
+				result, err := db.nativeResources.nativeResources(context.Background(), matchers, math.MinInt64, math.MaxInt64, 6, 0, store.NativeResourcesOptions{})
 				if !enabled {
 					// The seriesstore engine keeps none while it's off.
 					require.NoError(t, err)
@@ -116,13 +116,13 @@ func TestSeriesstoreEngineServesNativeResources(t *testing.T) {
 
 				// A time range picks the versions in force during it: the first resource's, though unchanged since, and
 				// the second's, from before the range on.
-				result, err = db.nativeResources.nativeResources(context.Background(), matchers, base+30_000, math.MaxInt64, 0, 0)
+				result, err = db.nativeResources.nativeResources(context.Background(), matchers, base+30_000, math.MaxInt64, 0, 0, store.NativeResourcesOptions{})
 				require.NoError(t, err)
 				require.Len(t, result.Series, 20)
 				for n, series := range result.Series {
 					require.Len(t, series.Versions, 1+n%2)
 				}
-				result, err = db.nativeResources.nativeResources(context.Background(), matchers, base+60_000, math.MaxInt64, 0, 0)
+				result, err = db.nativeResources.nativeResources(context.Background(), matchers, base+60_000, math.MaxInt64, 0, 0, store.NativeResourcesOptions{})
 				require.NoError(t, err)
 				require.Equal(t, backendVersions[1:], result.Series[1].Versions)
 			})

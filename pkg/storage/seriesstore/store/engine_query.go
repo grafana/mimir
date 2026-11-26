@@ -28,6 +28,13 @@ import (
 
 // compilePromMatchers compiles Prometheus matchers, adding a query shard from hints.
 func compilePromMatchers(hints *storage.SelectHints, matchers []*promlabels.Matcher) ([]compiledMatcher, error) {
+	return compilePromMatchersWith(hints, matchers, false)
+}
+
+// compilePromMatchersWith is compilePromMatchers, with sets for large alternations of literals when setMatching, which
+// only native resources lookups ask for. Metric name matchers keep the regex: the head keeps their verdicts on metric
+// names by pattern, for selects and label lookups too.
+func compilePromMatchersWith(hints *storage.SelectHints, matchers []*promlabels.Matcher, setMatching bool) ([]compiledMatcher, error) {
 	compiled := make([]compiledMatcher, 0, len(matchers)+1)
 	for _, matcher := range matchers {
 		switch matcher.Type {
@@ -36,7 +43,11 @@ func compilePromMatchers(hints *storage.SelectHints, matchers []*promlabels.Matc
 		case promlabels.MatchNotEqual:
 			compiled = append(compiled, compiledMatcher{kind: kindNotEqual, name: matcher.Name, value: matcher.Value})
 		case promlabels.MatchRegexp, promlabels.MatchNotRegexp:
-			re, err := anchoredRegex(matcher.Value)
+			compile := anchoredRegex
+			if setMatching && matcher.Name != metricNameLabel {
+				compile = lookupRegex
+			}
+			re, err := compile(matcher.Value)
 			if err != nil {
 				return nil, err
 			}

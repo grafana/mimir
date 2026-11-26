@@ -6242,6 +6242,28 @@
         },
         {
           "kind": "field",
+          "name": "native_resources_lookup_set_matching_enabled",
+          "required": false,
+          "desc": "Match a native resources lookup's large alternations of literals, such as info()'s of every target, against a set of their values rather than the regex, in the seriesstore engine. Selects and label lookups keep the regex. Read on every lookup, so that turning it off takes effect at once.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.native-resources-lookup-set-matching-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "native_resources_lookup_unsorted_enabled",
+          "required": false,
+          "desc": "Leave the series of a native resources lookup by target in the seriesstore engine's shard order rather than sorting them by labels, since the lookup groups them by target and sorts the targets. Read on every lookup, so that turning it off takes effect at once.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.native-resources-lookup-unsorted-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "native_metadata_grouped_lookup_max_series",
           "required": false,
           "desc": "How many series with native resources a lookup of them by target may match in an ingester, which reads every series of each target. Past it, the lookup fails. 0 means no limit.",

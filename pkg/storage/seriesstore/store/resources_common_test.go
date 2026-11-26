@@ -101,7 +101,7 @@ func TestEngine_NativeLookupsCapped(t *testing.T) {
 	require.Equal(t, 3, visited)
 	require.Len(t, metadataSeries, 1)
 	require.Equal(t, int64(2_000), metadataSeries[0].NewestSample)
-	resourceSeries, limited, visited, err := e.NativeResourcesCapped(context.Background(), all, math.MinInt64, math.MaxInt64, 1, 3)
+	resourceSeries, limited, visited, err := e.NativeResourcesCapped(context.Background(), all, math.MinInt64, math.MaxInt64, 1, 3, NativeResourcesOptions{})
 	require.NoError(t, err)
 	require.True(t, limited)
 	require.Equal(t, 3, visited)
@@ -110,6 +110,6 @@ func TestEngine_NativeLookupsCapped(t *testing.T) {
 
 	_, _, _, err = e.NativeMetricMetadataCapped(context.Background(), all, 0, 2)
 	require.ErrorIs(t, err, ErrLookupTooManySeries)
-	_, _, _, err = e.NativeResourcesCapped(context.Background(), all, math.MinInt64, math.MaxInt64, 0, 2)
+	_, _, _, err = e.NativeResourcesCapped(context.Background(), all, math.MinInt64, math.MaxInt64, 0, 2, NativeResourcesOptions{})
 	require.ErrorIs(t, err, ErrLookupTooManySeries)
 }

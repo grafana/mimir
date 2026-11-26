@@ -4931,6 +4931,21 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.native-metadata-lookup-max-series
 [native_metadata_lookup_max_series: <int> | default = 100000]
 
+# (experimental) Match a native resources lookup's large alternations of
+# literals, such as info()'s of every target, against a set of their values
+# rather than the regex, in the seriesstore engine. Selects and label lookups
+# keep the regex. Read on every lookup, so that turning it off takes effect at
+# once.
+# CLI flag: -ingester.native-resources-lookup-set-matching-enabled
+[native_resources_lookup_set_matching_enabled: <boolean> | default = false]
+
+# (experimental) Leave the series of a native resources lookup by target in the
+# seriesstore engine's shard order rather than sorting them by labels, since the
+# lookup groups them by target and sorts the targets. Read on every lookup, so
+# that turning it off takes effect at once.
+# CLI flag: -ingester.native-resources-lookup-unsorted-enabled
+[native_resources_lookup_unsorted_enabled: <boolean> | default = false]
+
 # (experimental) How many series with native resources a lookup of them by
 # target may match in an ingester, which reads every series of each target. Past
 # it, the lookup fails. 0 means no limit.

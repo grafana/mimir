@@ -15,6 +15,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -115,7 +116,11 @@ func (i *Ingester) NativeResources(req *client.NativeResourcesRequest, stream cl
 		// The limit is on targets, which every series of is needed for.
 		limit = 0
 	}
-	result, err := db.nativeResources.nativeResources(ctx, matcherSets, req.StartTimestampMs, req.EndTimestampMs, limit, maxSeries)
+	// The tenant's switches are read on every lookup, so that turning one off takes effect at once. A lookup by series
+	// keeps its label order.
+	setMatching, unsorted := i.limits.NativeResourcesLookupOptions(userID)
+	opts := store.NativeResourcesOptions{SetMatching: setMatching, Unsorted: unsorted && req.GroupByTarget}
+	result, err := db.nativeResources.nativeResources(ctx, matcherSets, req.StartTimestampMs, req.EndTimestampMs, limit, maxSeries, opts)
 	if err != nil {
 		return nativeLookupEngineError(err, maxSeries)
 	}

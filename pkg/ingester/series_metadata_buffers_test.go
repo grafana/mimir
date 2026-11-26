@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -264,7 +265,7 @@ func readEverything(t *testing.T, ingester *Ingester) {
 	}
 
 	if db.nativeResources != nil {
-		resources, err := db.nativeResources.nativeResources(context.Background(), [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+")}}, math.MinInt64, math.MaxInt64, 0, 0)
+		resources, err := db.nativeResources.nativeResources(context.Background(), [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+")}}, math.MinInt64, math.MaxInt64, 0, 0, store.NativeResourcesOptions{})
 		require.NoError(t, err)
 		for _, series := range resources.Series {
 			for _, version := range series.Versions {
@@ -306,7 +307,7 @@ func requireIntactMetadata(t *testing.T, ingester *Ingester, native bool) {
 		require.Equal(t, expected, series.Versions[0].Metadata)
 	}
 
-	resources, err := ingester.getTSDB("tenant").nativeResources.nativeResources(context.Background(), [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+")}}, math.MinInt64, math.MaxInt64, 0, 0)
+	resources, err := ingester.getTSDB("tenant").nativeResources.nativeResources(context.Background(), [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+")}}, math.MinInt64, math.MaxInt64, 0, 0, store.NativeResourcesOptions{})
 	require.NoError(t, err)
 	require.Len(t, resources.Series, retainedBuffersSeries)
 	for _, series := range resources.Series {

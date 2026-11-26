@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -90,12 +92,17 @@ func nativeLookupData(base int64) []*mimirpb.WriteRequest {
 
 // nativeLookupIngester starts an ingester of the engine with limits, which has ingested the requests.
 func nativeLookupIngester(t *testing.T, engine string, limits validation.Limits, requests []*mimirpb.WriteRequest) *Ingester {
+	return nativeLookupIngesterWithOverrides(t, engine, validation.NewOverrides(limits, nil), requests)
+}
+
+// nativeLookupIngesterWithOverrides is nativeLookupIngester with overrides, which may change while it runs.
+func nativeLookupIngesterWithOverrides(t *testing.T, engine string, overrides *validation.Overrides, requests []*mimirpb.WriteRequest) *Ingester {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.IngestStorageConfig.KafkaConfig.ConsumeFromPositionAtStartup = "start"
 	cfg.BlocksStorageConfig.TSDB.Engine = engine
 	// The sequential pusher appends each record by itself.
 	cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyMax = 0
-	ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, validation.NewOverrides(limits, nil), nil, nil, nil)
+	ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, nil, nil)
 	write, last := compatProducer(t, cfg.IngestStorageConfig.KafkaConfig)
 	for _, req := range requests {
 		write("tenant", req)
@@ -278,6 +285,65 @@ func TestIngester_NativeMetricMetadata(t *testing.T) {
 			require.Empty(t, stream.responses[0].Series)
 			require.Equal(t, base, stream.responses[0].CoverageStartMs)
 		})
+	}
+}
+
+// The handler reads the tenant's switches of the seriesstore engine's optional lookup paths on every lookup, and passes
+// each to its own path: changing one override between two lookups moves that path's counter alone, without a restart,
+// so that each can be backed out at once, and the cell's measurements tell them apart by switching. A test of the
+// engine alone, given the options directly, couldn't fail on the handler passing one in another's place, reading an
+// override once, or leaving one out. The answers are the same whichever paths the lookup took.
+func TestIngester_NativeResourcesSwitches(t *testing.T) {
+	skipIfSeriesstore(t, "it sets the engine itself")
+	base := time.Now().Truncate(time.Minute).Add(-time.Hour).UnixMilli()
+	defaults := defaultLimitsTestConfig()
+	defaults.NativeResourcesEnabled = true
+	tenantLimits := defaults
+	overrides := validation.NewOverrides(defaults, validation.NewMockTenantLimits(map[string]*validation.Limits{"tenant": &tenantLimits}))
+	ingester := nativeLookupIngesterWithOverrides(t, mimir_tsdb.EngineSeriesstore, overrides, nativeLookupData(base))
+	ctx := user.InjectOrgID(context.Background(), "tenant")
+
+	// More instances than maxAcceptedValues, as info() asks for, so that the set mode applies; the data's are a and b.
+	instances := []string{"a", "b"}
+	for n := range 300 {
+		instances = append(instances, fmt.Sprintf("other-%d", n))
+	}
+	byInstance := &client.LabelMatcher{Type: client.REGEX_MATCH, Name: "instance", Value: strings.Join(instances, "|")}
+	req := &client.NativeResourcesRequest{MatcherSets: nativeLookupMatchers(requestsTotal, byInstance), StartTimestampMs: math.MinInt64, EndTimestampMs: math.MaxInt64, GroupByTarget: true}
+	lookup := func() []client.NativeResourcesSeries {
+		server := &mockNativeResourcesServer{ctx: ctx}
+		require.NoError(t, ingester.NativeResources(req, server))
+		var series []client.NativeResourcesSeries
+		for _, resp := range server.responses {
+			series = append(series, resp.Series...)
+		}
+		return series
+	}
+	paths := func() (set, unsorted uint64) { return store.NativeResourcesPaths() }
+
+	want := lookup()
+	require.Len(t, want, 2)
+	for _, step := range []struct {
+		name                  string
+		setMatching, unsorted bool
+	}{
+		{name: "the set on", setMatching: true},
+		{name: "the sort skip on too", setMatching: true, unsorted: true},
+		{name: "the set off again", unsorted: true},
+		{name: "both off again"},
+	} {
+		tenantLimits.NativeResourcesLookupSetMatching, tenantLimits.NativeResourcesLookupUnsorted = step.setMatching, step.unsorted
+		setBefore, unsortedBefore := paths()
+		require.Equal(t, want, lookup(), step.name)
+		setAfter, unsortedAfter := paths()
+		moved := func(on bool) uint64 {
+			if on {
+				return 1
+			}
+			return 0
+		}
+		require.Equal(t, moved(step.setMatching), setAfter-setBefore, "%s: the set's path", step.name)
+		require.Equal(t, moved(step.unsorted), unsortedAfter-unsortedBefore, "%s: the sort skip's path", step.name)
 	}
 }
 

@@ -19,6 +19,8 @@ var (
 	coldNameMatches  atomic.Uint64
 	regexEvaluations atomic.Uint64
 	regexCompiles    atomic.Uint64
+	// Sets native resources lookups built for their large alternations of literals.
+	regexSets atomic.Uint64
 	// Pauses of reads' head parts, and the restarts of those that series removed or moved meanwhile.
 	readPauses   atomic.Uint64
 	readRestarts atomic.Uint64

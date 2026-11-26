@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 )
 
 // resourceStep gives the resource to append a series with, as AppendV2Options.Resource takes it, given the series'
@@ -44,8 +45,9 @@ type nativeResourcesEngine interface {
 	// nativeResources returns the resource versions in force during [mint, maxt] of the series matching any of the
 	// matcher sets, in label order, and with a positive limit at most that many series. A version is in force from its
 	// EffectiveFrom until the next one's. With a positive maxSeries, it fails with errNativeLookupTooManySeries once
-	// more series with resources than that match.
-	nativeResources(ctx context.Context, matcherSets [][]*labels.Matcher, mint, maxt int64, limit, maxSeries int) (nativeResourcesResult, error)
+	// more series with resources than that match. opts are the tenant's optional paths of the lookup, which an engine
+	// may not have: with Unsorted and no limit, the series may come in any order.
+	nativeResources(ctx context.Context, matcherSets [][]*labels.Matcher, mint, maxt int64, limit, maxSeries int, opts store.NativeResourcesOptions) (nativeResourcesResult, error)
 }
 
 var _ nativeResourcesEngine = seriesstoreEngine{}
@@ -104,8 +106,8 @@ func (r *seriesstoreResources) resource(entry *mimirpb.ResourceEntry, _ storage.
 	return built
 }
 
-func (e seriesstoreEngine) nativeResources(ctx context.Context, matcherSets [][]*labels.Matcher, mint, maxt int64, limit, maxSeries int) (nativeResourcesResult, error) {
-	series, limited, visited, err := e.NativeResourcesCapped(ctx, matcherSets, mint, maxt, limit, maxSeries)
+func (e seriesstoreEngine) nativeResources(ctx context.Context, matcherSets [][]*labels.Matcher, mint, maxt int64, limit, maxSeries int, opts store.NativeResourcesOptions) (nativeResourcesResult, error) {
+	series, limited, visited, err := e.NativeResourcesCapped(ctx, matcherSets, mint, maxt, limit, maxSeries, opts)
 	if err != nil {
 		return nativeResourcesResult{SeriesVisited: visited}, err
 	}

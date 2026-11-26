@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"slices"
+	"sync/atomic"
 
 	promlabels "github.com/prometheus/prometheus/model/labels"
 
@@ -79,20 +80,46 @@ type NativeResourcesSeries struct {
 // NativeResources returns the native resources in force during [mint, maxt] of the head series that match any of
 // matcherSets, in label order, at most limit of them with a positive limit, and whether more matched.
 func (e *Engine) NativeResources(ctx context.Context, matcherSets [][]*promlabels.Matcher, mint, maxt int64, limit int) ([]NativeResourcesSeries, bool, error) {
-	series, limited, _, err := e.NativeResourcesCapped(ctx, matcherSets, mint, maxt, limit, 0)
+	series, limited, _, err := e.NativeResourcesCapped(ctx, matcherSets, mint, maxt, limit, 0, NativeResourcesOptions{})
 	return series, limited, err
 }
 
+// NativeResourcesOptions are a native resources lookup's optional paths, which the tenant's runtime switches choose on
+// every lookup, so that turning one off takes effect at once.
+type NativeResourcesOptions struct {
+	// SetMatching matches a large alternation of literals against a set of its values rather than the regex.
+	SetMatching bool
+	// Unsorted leaves the series in shard order, for a caller that orders them itself, as a lookup by target groups
+	// them and sorts the targets. A positive limit, which keeps the first series in label order, sorts them anyway.
+	Unsorted bool
+}
+
+// nativeResourcesPaths counts the lookups that took each optional path, for tests of the switches that choose them.
+var nativeResourcesPaths struct{ set, unsorted atomic.Uint64 }
+
+// NativeResourcesPaths returns how many native resources lookups since the process started matched a set, and left
+// their series unsorted, for tests.
+func NativeResourcesPaths() (set, unsorted uint64) {
+	return nativeResourcesPaths.set.Load(), nativeResourcesPaths.unsorted.Load()
+}
+
 // NativeResourcesCapped is NativeResources that also returns how many series with resources matched, and with a
-// positive maxSeries, fails with ErrLookupTooManySeries as soon as more than that many do.
-func (e *Engine) NativeResourcesCapped(ctx context.Context, matcherSets [][]*promlabels.Matcher, mint, maxt int64, limit, maxSeries int) ([]NativeResourcesSeries, bool, int, error) {
+// positive maxSeries, fails with ErrLookupTooManySeries as soon as more than that many do, with opts' paths.
+func (e *Engine) NativeResourcesCapped(ctx context.Context, matcherSets [][]*promlabels.Matcher, mint, maxt int64, limit, maxSeries int, opts NativeResourcesOptions) ([]NativeResourcesSeries, bool, int, error) {
 	compiled := make([][]compiledMatcher, 0, len(matcherSets))
+	usesSet := false
 	for _, matchers := range matcherSets {
-		c, err := compilePromMatchers(nil, matchers)
+		c, err := compilePromMatchersWith(nil, matchers, opts.SetMatching)
 		if err != nil {
 			return nil, false, 0, err
 		}
+		for index := range c {
+			usesSet = usesSet || (c[index].re != nil && c[index].re.set != nil)
+		}
 		compiled = append(compiled, c)
+	}
+	if usesSet {
+		nativeResourcesPaths.set.Add(1)
 	}
 	type selected struct {
 		labels   labels.Labels
@@ -139,7 +166,11 @@ func (e *Engine) NativeResourcesCapped(ctx context.Context, matcherSets [][]*pro
 	if err != nil {
 		return nil, false, len(seen), err
 	}
-	slices.SortFunc(all, func(a, b selected) int { return labels.Compare(a.labels, b.labels) })
+	if opts.Unsorted && limit <= 0 {
+		nativeResourcesPaths.unsorted.Add(1)
+	} else {
+		slices.SortFunc(all, func(a, b selected) int { return labels.Compare(a.labels, b.labels) })
+	}
 	limited := limit > 0 && len(all) > limit
 	if limited {
 		all = all[:limit]
