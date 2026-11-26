@@ -1340,6 +1340,218 @@ func TestSharding(t *testing.T) {
 	}
 }
 
+func TestSharding_ZoneAwareness(t *testing.T) {
+	t.Run("each zone gets the same number of rulers", func(t *testing.T) {
+		desc := zonedRulersDesc(map[string]int{"zone-a": 2, "zone-b": 2})
+		owners := loadRuleGroupsOnEachRuler(t, desc, true, 2, ruleGroupsForUsers(40, 10))
+
+		for user, groups := range owners {
+			for zone, n := range countOwnersPerZone(desc, groups) {
+				assert.LessOrEqual(t, n, 1, "user %s has more than one ruler in %s", user, zone)
+			}
+		}
+	})
+
+	t.Run("a short zone is filled from the other zone", func(t *testing.T) {
+		desc := zonedRulersDesc(map[string]int{"zone-a": 3, "zone-b": 1})
+		owners := loadRuleGroupsOnEachRuler(t, desc, true, 4, ruleGroupsForUsers(5, 64))
+
+		for user, groups := range owners {
+			assert.Equal(t, map[string]int{"zone-a": 3, "zone-b": 1}, countOwnersPerZone(desc, groups), "user %s", user)
+		}
+	})
+
+	// A migration between single-zone and multi-zone rulers sets the zones while zone-awareness is disabled.
+	// The zones then must not move any rule group.
+	// Disabling zone-awareness must also give back the placement of a ring without zones.
+	t.Run("zones don't move rule groups without zone awareness", func(t *testing.T) {
+		zoned := zonedRulersDesc(map[string]int{"zone-a": 2, "zone-b": 2})
+		flat := ring.NewDesc()
+		for id, inst := range zoned.Ingesters {
+			inst.Zone = ""
+			flat.Ingesters[id] = inst
+		}
+		rules := ruleGroupsForUsers(10, 10)
+
+		assert.Equal(t, loadRuleGroupsOnEachRuler(t, flat, false, 2, rules), loadRuleGroupsOnEachRuler(t, zoned, false, 2, rules))
+	})
+}
+
+// ruleGroupsForUsers returns groupsPerUser rule groups for each of the given number of users.
+func ruleGroupsForUsers(users, groupsPerUser int) map[string]rulespb.RuleGroupList {
+	rules := map[string]rulespb.RuleGroupList{}
+	for u := range users {
+		user := fmt.Sprintf("user-%d", u)
+		for g := range groupsPerUser {
+			rules[user] = append(rules[user], &rulespb.RuleGroupDesc{
+				User:      user,
+				Namespace: "namespace",
+				Name:      fmt.Sprintf("group-%d", g),
+				Rules:     []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")},
+				Interval:  10 * time.Second,
+			})
+		}
+	}
+	return rules
+}
+
+// loadRuleGroupsOnEachRuler starts one ruler for each instance in desc, and gets the rule groups that each ruler loads.
+// It returns the ID of the ruler that loads each rule group, by user and rule group name.
+// It fails the test when a rule group is loaded by no ruler or by more than one ruler.
+func loadRuleGroupsOnEachRuler(t *testing.T, desc *ring.Desc, zoneAware bool, shardSize int, rules map[string]rulespb.RuleGroupList) map[string]map[string]string {
+	const port = 9095
+
+	// A ruler owns a rule group when the ring address of the owner is the address of the ruler.
+	withAddrs := ring.NewDesc()
+	for id, inst := range desc.Ingesters {
+		inst.Addr = fmt.Sprintf("%s:%d", id, port)
+		withAddrs.Ingesters[id] = inst
+	}
+
+	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+	require.NoError(t, kvStore.CAS(t.Context(), RulerRingKey, func(any) (any, bool, error) {
+		return withAddrs, true, nil
+	}))
+
+	limits := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+		defaults.RulerEvaluationDelay = 0
+		defaults.RulerTenantShardSize = shardSize
+	})
+
+	var rulerRing *ring.Ring
+	owners := map[string]map[string]string{}
+	for id, inst := range desc.Ingesters {
+		cfg := Config{Ring: RingConfig{
+			Common: util.CommonRingConfig{
+				InstanceID:       id,
+				InstanceAddr:     id,
+				InstancePort:     port,
+				KVStore:          kv.Config{Mock: kvStore},
+				HeartbeatTimeout: time.Minute,
+			},
+			ZoneAwarenessEnabled: zoneAware,
+			InstanceZone:         inst.Zone,
+		}}
+		r := prepareRuler(t, cfg, newMockRuleStore(rules), withLimits(limits))
+		t.Cleanup(r.manager.Stop)
+
+		// All rulers share the ring of the first ruler, and only the ring runs.
+		if rulerRing == nil {
+			rulerRing = r.ring
+			require.NoError(t, services.StartAndAwaitRunning(t.Context(), rulerRing))
+			t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(context.Background(), rulerRing)) })
+		}
+		r.ring = rulerRing
+
+		loaded, err := r.listRuleGroupsToSyncForAllUsers(t.Context(), rulerSyncReasonPeriodic, true)
+		require.NoError(t, err)
+		for user, groups := range loaded {
+			if owners[user] == nil {
+				owners[user] = map[string]string{}
+			}
+			for _, g := range groups {
+				require.NotContains(t, owners[user], g.Name, "user %s rule group %s is loaded by more than one ruler", user, g.Name)
+				owners[user][g.Name] = id
+			}
+		}
+	}
+
+	for user, groups := range rules {
+		require.Len(t, owners[user], len(groups), "user %s has rule groups that no ruler loads", user)
+	}
+	return owners
+}
+
+// countOwnersPerZone returns the number of distinct rulers in each zone that own the given rule groups.
+func countOwnersPerZone(desc *ring.Desc, owners map[string]string) map[string]int {
+	seen := map[string]bool{}
+	counts := map[string]int{}
+	for _, id := range owners {
+		if !seen[id] {
+			seen[id] = true
+			counts[desc.Ingesters[id].Zone]++
+		}
+	}
+	return counts
+}
+
+func TestGetRules_ZoneAwareness(t *testing.T) {
+	// The short zone-b is filled from zone-a, so the shard holds all 4 rulers.
+	// GetRules must ask all of them, or it misses the rule groups of the ruler that fills the shard.
+	rules := ruleGroupsForUsers(5, 64)
+	rulers, _ := startRulersInZones(t, map[string]string{"ruler-1": "zone-a", "ruler-2": "zone-a", "ruler-3": "zone-a", "ruler-4": "zone-b"}, true, 4, rules)
+
+	for userID, groups := range rules {
+		ctx := user.InjectOrgID(t.Context(), userID)
+		for id, r := range rulers {
+			resp, _, err := r.GetRules(ctx, RulesRequest{Filter: AnyRule})
+			require.NoError(t, err)
+			assert.Len(t, resp.Groups, len(groups), "user %s through %s", userID, id)
+		}
+	}
+}
+
+func TestRuler_RingInstancesWithoutZoneMetric(t *testing.T) {
+	// The ruler without a zone can't enable zone-awareness, so it reports no rulers without a zone.
+	_, regs := startRulersInZones(t, map[string]string{"ruler-1": "zone-a", "ruler-2": "zone-b", "ruler-3": ""}, true, 2, ruleGroupsForUsers(1, 1))
+
+	for id, expected := range map[string]int{"ruler-1": 1, "ruler-2": 1, "ruler-3": 0} {
+		assert.NoError(t, prom_testutil.GatherAndCompare(regs[id], strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_ruler_ring_instances_without_zone Number of rulers without an availability zone in the ruler ring, at the last full rule sync of a zone-aware ruler.
+			# TYPE cortex_ruler_ring_instances_without_zone gauge
+			cortex_ruler_ring_instances_without_zone %d
+		`, expected)), "cortex_ruler_ring_instances_without_zone"), id)
+	}
+}
+
+// startRulersInZones starts one ruler for each ID in zoneByRuler, in the given zone, and syncs the rule groups on each ruler.
+// A ruler with a zone gets zoneAware, and a ruler without a zone gets zone-awareness disabled.
+// It returns the rulers and their registries by ruler ID.
+func startRulersInZones(t *testing.T, zoneByRuler map[string]string, zoneAware bool, shardSize int, rules map[string]rulespb.RuleGroupList) (map[string]*Ruler, map[string]*prometheus.Registry) {
+	rulerAddrMap := map[string]*Ruler{}
+	regs := map[string]*prometheus.Registry{}
+	storage := newMockRuleStore(rules)
+
+	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	for id, zone := range zoneByRuler {
+		cfg := defaultRulerConfig(t)
+		cfg.Ring.Common.InstanceID = id
+		cfg.Ring.Common.InstanceAddr = id
+		cfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
+		cfg.Ring.NumTokens = 0 // The test sets the tokens.
+		cfg.Ring.ZoneAwarenessEnabled = zoneAware && zone != ""
+		cfg.Ring.InstanceZone = zone
+		cfg.PollInterval = time.Hour    // The test syncs the rule groups.
+		cfg.RingCheckPeriod = time.Hour // The test syncs the rule groups.
+
+		regs[id] = prometheus.NewPedanticRegistry()
+		prepareRuler(t, cfg, storage, withStart(), withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withPrometheusRegisterer(regs[id]), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+			defaults.RulerEvaluationDelay = 0
+			defaults.RulerTenantShardSize = shardSize
+		})))
+	}
+
+	require.NoError(t, kvStore.CAS(t.Context(), RulerRingKey, func(in any) (any, bool, error) {
+		d, _ := in.(*ring.Desc)
+		if d == nil {
+			d = ring.NewDesc()
+		}
+		for id, zone := range zoneByRuler {
+			d.AddIngester(id, rulerAddrMap[id].lifecycler.GetInstanceAddr(), zone, generateSortedTokens(128), ring.ACTIVE, time.Now(), false, time.Time{}, nil)
+		}
+		return d, true, nil
+	}))
+
+	for _, r := range rulerAddrMap {
+		test.Poll(t, time.Second, len(zoneByRuler), func() any { return r.ring.InstancesWithTokensCount() })
+		require.NoError(t, r.syncRules(t.Context(), nil, rulerSyncReasonPeriodic, true))
+	}
+	return rulerAddrMap, regs
+}
+
 func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnabled(t *testing.T) {
 	const (
 		numRulers     = 2

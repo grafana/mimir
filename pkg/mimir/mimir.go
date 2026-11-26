@@ -292,6 +292,11 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Ruler.Validate(c.LimitsConfig); err != nil {
 		return errors.Wrap(err, "invalid ruler config")
 	}
+	if c.isRulerEnabled() {
+		if err := c.Ruler.Ring.Validate(); err != nil {
+			return errors.Wrap(err, "invalid ruler config")
+		}
+	}
 	if err := c.IngestStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingest storage config")
 	}
