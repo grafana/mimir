@@ -37,7 +37,9 @@ type ProxyBackendInterface interface {
 	MinDataQueriedAge() time.Duration
 	ShouldHandleQuery(minQueryTime time.Time) bool
 	ShouldHandleTenants(tenantIDs []string) bool
-	ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, *http.Response, error)
+	// ForwardRequest calls responseHandler before closing the response body and cancelling
+	// the timeout. The handler must be non-nil and consume the response body as needed.
+	ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser, responseHandler func(*http.Response) error) (time.Duration, error)
 }
 
 // ProxyBackend holds the information of a single backend.
@@ -214,17 +216,24 @@ func (b *ProxyBackend) ShouldHandleTenants(tenantIDs []string) bool {
 	return false
 }
 
-func (b *ProxyBackend) ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
+func (b *ProxyBackend) ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser, responseHandler func(*http.Response) error) (time.Duration, error) {
 	req, err := b.createBackendRequest(ctx, orig, body)
 	if err != nil {
-		return 0, 0, nil, nil, err
+		return 0, err
 	}
 
 	start := time.Now()
-	status, responseBody, resp, err := b.doBackendRequest(req)
-	elapsed := time.Since(start)
+	// Keep the read timeout active while the handler consumes the response body.
+	ctx, cancel := context.WithTimeout(req.Context(), b.timeout)
+	defer cancel()
 
-	return elapsed, status, responseBody, resp, err
+	res, err := b.client.Do(req.WithContext(ctx))
+	if err != nil {
+		return time.Since(start), errors.Wrap(err, "executing backend request")
+	}
+	defer res.Body.Close()
+	err = responseHandler(res)
+	return time.Since(start), err
 }
 
 func (b *ProxyBackend) createBackendRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (*http.Request, error) {
@@ -278,25 +287,4 @@ func (b *ProxyBackend) createBackendRequest(ctx context.Context, orig *http.Requ
 	}
 
 	return req, nil
-}
-
-func (b *ProxyBackend) doBackendRequest(req *http.Request) (int, []byte, *http.Response, error) {
-	// Honor the read timeout.
-	ctx, cancel := context.WithTimeout(req.Context(), b.timeout)
-	defer cancel()
-
-	// Execute the request.
-	res, err := b.client.Do(req.WithContext(ctx))
-	if err != nil {
-		return 0, nil, nil, errors.Wrap(err, "executing backend request")
-	}
-
-	// Read the entire response body.
-	defer res.Body.Close()
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return 0, nil, nil, errors.Wrap(err, "reading backend response")
-	}
-
-	return res.StatusCode, body, res, nil
 }
