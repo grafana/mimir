@@ -1560,13 +1560,14 @@ impl Applier {
                     self.apply_records(std::mem::take(&mut records))?;
                     let started = Instant::now();
                     self.segment_log.maintain()?;
+                    let segment_ms = started.elapsed().as_millis();
                     if self.cluster == 0 {
                         self.store.prune_expired()?;
                     }
                     let timings = std::mem::take(&mut self.timings);
                     if timings.records != 0 {
                         eprintln!(
-                            "phase=kafka_apply_timing cluster={} records={} decode_ms={} encode_ms={} apply_ms={} append_ms={} maintain_ms={}",
+                            "phase=kafka_apply_timing cluster={} records={} decode_ms={} encode_ms={} apply_ms={} append_ms={} maintain_ms={} segment_ms={segment_ms}",
                             self.cluster,
                             timings.records,
                             timings.decode.as_millis(),

@@ -1115,6 +1115,7 @@ impl ColdState {
         self.prune_with_cutoffs(retained, &HashMap::new())
     }
 
+    #[cfg(test)]
     fn prune_with_cutoffs(
         &mut self,
         retained: Retained,
@@ -1261,6 +1262,42 @@ impl ColdState {
                         (tenant, index, tenant.series(index))
                     })
             })
+    }
+}
+
+/// The longest and summed time of each phase over a store pass's shards, to tell which part of
+/// maintenance holds the shard locks queries wait on.
+#[derive(Default)]
+struct PhaseTiming {
+    max_us: [std::sync::atomic::AtomicU64; 5],
+    sum_us: [std::sync::atomic::AtomicU64; 5],
+    shards: std::sync::atomic::AtomicU64,
+    rebuilt: std::sync::atomic::AtomicU64,
+}
+
+impl PhaseTiming {
+    fn record(&self, phase: usize, elapsed: Duration) {
+        let us = elapsed.as_micros() as u64;
+        self.max_us[phase].fetch_max(us, std::sync::atomic::Ordering::Relaxed);
+        self.sum_us[phase].fetch_add(us, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn describe(&self, names: &[&str]) -> String {
+        let load =
+            |value: &std::sync::atomic::AtomicU64| value.load(std::sync::atomic::Ordering::Relaxed);
+        let mut text = format!(
+            "shards={} blocks={}",
+            load(&self.shards),
+            load(&self.rebuilt)
+        );
+        for (index, name) in names.iter().enumerate() {
+            text.push_str(&format!(
+                " {name}_max_ms={} {name}_sum_ms={}",
+                load(&self.max_us[index]) / 1000,
+                load(&self.sum_us[index]) / 1000
+            ));
+        }
+        text
     }
 }
 
@@ -2484,9 +2521,14 @@ impl Store {
         ooo_deadline: i64,
         changed: bool,
     ) -> Result<()> {
-        self.pool.install(|| {
+        let timing = PhaseTiming::default();
+        let started = Instant::now();
+        let result = self.pool.install(|| {
             self.shards.par_iter().try_for_each(|shard| {
+                let waiting = Instant::now();
                 let mut state = shard.write().expect("store lock poisoned");
+                timing.record(0, waiting.elapsed());
+                let held = Instant::now();
                 let cutoff = self
                     .pruned_before
                     .load(std::sync::atomic::Ordering::Relaxed);
@@ -2501,7 +2543,11 @@ impl Store {
                 if !changed && ooo_from.is_none_or(|from| from == previous_ooo) {
                     return Ok(());
                 }
+                timing
+                    .shards
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let retained = Retained { cutoff, ooo_from };
+                let phase = Instant::now();
                 for (id, tenant) in &mut state.tenants {
                     let retained = Retained {
                         cutoff: cutoff.max(cutoffs.get(id).copied().unwrap_or(i64::MIN)),
@@ -2514,7 +2560,69 @@ impl Store {
                         tenant.tick_totals = None;
                     }
                 }
-                state.cold.prune_with_cutoffs(retained, cutoffs)?;
+                timing.record(1, phase.elapsed());
+                // Rebuilding blocks without their expired chunks took up to seconds per block, so
+                // it runs without the lock queries and ingestion wait on: blocks never change, and
+                // a replacement goes in only where its block still is. One that a merge took in
+                // the meantime is pruned by a later pass, and queries skip expired chunks anyway.
+                let blocks = state.cold.blocks.clone();
+                let directory = state.cold.directory.clone();
+                let first_id = state.cold.next_id;
+                state.cold.next_id += blocks.len() as u64;
+                let mut locked = held.elapsed();
+                drop(state);
+                let phase = Instant::now();
+                let mut replacements = Vec::with_capacity(blocks.len());
+                for (index, block) in blocks.iter().enumerate() {
+                    let replacement = match block.drop_expired(retained, cutoffs) {
+                        None => None,
+                        Some(kept) if kept.is_empty() => Some(None),
+                        Some(kept) => match cold::ColdBlock::build(
+                            directory.as_deref(),
+                            first_id + index as u64,
+                            kept,
+                        ) {
+                            Ok(built) => Some(Some(Arc::new(built))),
+                            Err(error) => {
+                                for built in replacements.into_iter().flatten().flatten() {
+                                    remove_cold_block(built);
+                                }
+                                return Err(error);
+                            }
+                        },
+                    };
+                    replacements.push(replacement);
+                }
+                timing.record(2, phase.elapsed());
+                timing.rebuilt.fetch_add(
+                    replacements
+                        .iter()
+                        .filter(|replacement| replacement.is_some())
+                        .count() as u64,
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+                let waiting = Instant::now();
+                let mut state = shard.write().expect("store lock poisoned");
+                timing.record(0, waiting.elapsed());
+                let phase = Instant::now();
+                for (old, replacement) in blocks.into_iter().zip(replacements) {
+                    let Some(replacement) = replacement else {
+                        continue;
+                    };
+                    let current = state
+                        .cold
+                        .blocks
+                        .iter()
+                        .position(|block| Arc::ptr_eq(block, &old));
+                    match (current, replacement) {
+                        (Some(index), None) => remove_cold_block(state.cold.blocks.remove(index)),
+                        (Some(index), Some(new)) => {
+                            remove_cold_block(std::mem::replace(&mut state.cold.blocks[index], new))
+                        }
+                        (None, Some(new)) => remove_cold_block(new),
+                        (None, None) => {}
+                    }
+                }
                 let mut live_files = HashSet::new();
                 for tenant in state.tenants.values() {
                     for (_, series) in tenant.series.iter() {
@@ -2529,9 +2637,21 @@ impl Store {
                 for block in &state.cold.blocks {
                     live_files.extend(block.chunk_files());
                 }
-                state.disk.truncate_unreferenced(&live_files)
+                let truncated = state.disk.truncate_unreferenced(&live_files);
+                timing.record(3, phase.elapsed());
+                locked += phase.elapsed();
+                timing.record(4, locked);
+                truncated
             })
-        })
+        });
+        if timing.shards.load(std::sync::atomic::Ordering::Relaxed) > 0 {
+            eprintln!(
+                "phase=retention_timing total_ms={} {}",
+                started.elapsed().as_millis(),
+                timing.describe(&["wait", "series", "build", "install", "held"])
+            );
+        }
+        result
     }
 
     /// Runs `query` on the tenant's series and cold blocks in every shard in parallel.
@@ -3174,11 +3294,19 @@ impl Store {
             && self
                 .compacted_last_tick
                 .load(std::sync::atomic::Ordering::Relaxed);
+        let timing = PhaseTiming::default();
+        let started = Instant::now();
         let per_shard = self.pool.install(|| {
             self.shards
                 .par_iter()
                 .map(|shard| {
+                    let waiting = Instant::now();
                     let mut state = shard.write().expect("store lock poisoned");
+                    timing.record(0, waiting.elapsed());
+                    timing
+                        .shards
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let held = Instant::now();
                     if compact_ooo && let Err(error) = compact_out_of_order(&mut state, now_ms()) {
                         self.ooo_pending
                             .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -3346,13 +3474,36 @@ impl Store {
                             report
                         })
                         .collect::<Vec<_>>();
-                    if freeze || freeze_idle {
-                        freeze_out_of_head(&mut state);
+                    let mut locked = held.elapsed();
+                    timing.record(1, locked);
+                    if (freeze || freeze_idle)
+                        && let Some(mut prepared) = Freeze::prepare(&mut state)
+                    {
+                        locked = held.elapsed();
+                        let directory = state.cold.directory.clone();
+                        drop(state);
+                        let phase = Instant::now();
+                        let block = prepared.build(directory.as_deref());
+                        timing.record(2, phase.elapsed());
+                        let mut state = shard.write().expect("store lock poisoned");
+                        let phase = Instant::now();
+                        prepared.finish(&mut state, block);
+                        timing.record(3, phase.elapsed());
+                        locked += phase.elapsed();
                     }
+                    timing.record(4, locked);
                     reports
                 })
                 .collect::<Vec<_>>()
         });
+        // Slow ticks hold shard write locks that queries wait on.
+        if started.elapsed() >= Duration::from_millis(500) {
+            eprintln!(
+                "phase=head_tick_timing compact={compact} total_ms={} {}",
+                started.elapsed().as_millis(),
+                timing.describe(&["wait", "tick", "build", "install", "held"])
+            );
+        }
         let mut merged: BTreeMap<String, HeadReport> = BTreeMap::new();
         for report in per_shard.into_iter().flatten() {
             let total = merged
@@ -4528,73 +4679,134 @@ fn append_histogram(
 /// Moves the series the emulated head no longer holds to a new cold block, like Go's head
 /// truncation after compacting them into a block. Their open chunks are cut first, so the block
 /// has all their data; they stay in memory if the block can't be written.
+#[cfg(test)]
 fn freeze_out_of_head(state: &mut State) {
-    let State {
-        tenants,
-        disk,
-        cold,
-    } = state;
-    let started = Instant::now();
-    let mut frozen = Vec::new();
-    for (tenant_id, tenant) in tenants.iter_mut() {
-        tenant.series.for_each_mut(|labels, series| {
-            if series.in_head {
-                return;
-            }
-            let cut = cut_float_head(series, disk)
-                .and_then(|()| cut_histogram_head(series, disk))
-                .and_then(|()| flush_out_of_order(series, disk));
-            if let Err(error) = cut {
-                eprintln!("phase=cold_freeze_error tenant={tenant_id} error={error:#}");
-                return;
-            }
-            frozen.push(cold::Frozen {
-                tenant: tenant_id.clone(),
-                labels: labels.clone(),
-                chunks: ChunkList::from_metas(&series.chunks.to_vec()),
-                native_histogram: series.native_histogram,
-                idle_evicted: series.idle_evicted,
+    if let Some(mut freeze) = Freeze::prepare(state) {
+        let block = freeze.build(state.cold.directory.as_deref());
+        freeze.finish(state, block);
+    }
+}
+
+/// A freeze is prepared and finished under the shard's write lock, and its block built between
+/// the two without it: building took seconds per shard, and every query waits on every shard.
+/// The frozen series stay in memory until the block replaces them, so queries see their data
+/// throughout.
+struct Freeze {
+    started: Instant,
+    id: u64,
+    count: usize,
+    frozen: Vec<cold::Frozen>,
+    keys: HashSet<(String, StoredLabels)>,
+    // The frozen chunks, which only the block holds once it is in.
+    chunks: HashSet<u64>,
+}
+
+impl Freeze {
+    fn prepare(state: &mut State) -> Option<Self> {
+        let State {
+            tenants,
+            disk,
+            cold,
+        } = state;
+        let started = Instant::now();
+        let mut frozen = Vec::new();
+        for (tenant_id, tenant) in tenants.iter_mut() {
+            tenant.series.for_each_mut(|labels, series| {
+                if series.in_head {
+                    return;
+                }
+                let cut = cut_float_head(series, disk)
+                    .and_then(|()| cut_histogram_head(series, disk))
+                    .and_then(|()| flush_out_of_order(series, disk));
+                if let Err(error) = cut {
+                    eprintln!("phase=cold_freeze_error tenant={tenant_id} error={error:#}");
+                    return;
+                }
+                frozen.push(cold::Frozen {
+                    tenant: tenant_id.clone(),
+                    labels: labels.clone(),
+                    chunks: ChunkList::from_metas(&series.chunks.to_vec()),
+                    native_histogram: series.native_histogram,
+                    idle_evicted: series.idle_evicted,
+                });
             });
-        });
+        }
+        if frozen.is_empty() {
+            return None;
+        }
+        let count = frozen.len();
+        let keys = frozen
+            .iter()
+            .map(|series| (series.tenant.clone(), series.labels.clone()))
+            .collect::<HashSet<_>>();
+        // Series without any sample have nothing to keep.
+        let frozen = frozen
+            .into_iter()
+            .filter(|series| !series.chunks.is_empty())
+            .collect::<Vec<_>>();
+        let chunks = frozen
+            .iter()
+            .flat_map(|series| series.chunks.iter().map(|chunk| chunk.reference))
+            .collect();
+        // Reserved now: another freeze or merge can take the next id before this one finishes.
+        let id = cold.next_id;
+        if !frozen.is_empty() {
+            cold.next_id += 1;
+        }
+        Some(Self {
+            started,
+            id,
+            count,
+            frozen,
+            keys,
+            chunks,
+        })
     }
-    if frozen.is_empty() {
-        return;
+
+    fn build(&mut self, directory: Option<&std::path::Path>) -> Option<Result<cold::ColdBlock>> {
+        let frozen = std::mem::take(&mut self.frozen);
+        (!frozen.is_empty()).then(|| cold::ColdBlock::build(directory, self.id, frozen))
     }
-    let count = frozen.len();
-    let id = cold.next_id;
-    let frozen_keys = frozen
-        .iter()
-        .map(|series| (series.tenant.clone(), series.labels.clone()))
-        .collect::<HashSet<_>>();
-    // Series without any sample have nothing to keep.
-    let frozen = frozen
-        .into_iter()
-        .filter(|series| !series.chunks.is_empty())
-        .collect::<Vec<_>>();
-    if !frozen.is_empty() {
-        match cold::ColdBlock::build(cold.directory.as_deref(), id, frozen) {
-            Ok(block) => {
-                cold.next_id += 1;
-                cold.blocks.push(Arc::new(block));
-            }
-            Err(error) => {
+
+    fn finish(self, state: &mut State, block: Option<Result<cold::ColdBlock>>) {
+        let State { tenants, cold, .. } = state;
+        let Self {
+            started,
+            id,
+            count,
+            keys,
+            chunks,
+            ..
+        } = self;
+        match block {
+            Some(Ok(block)) => cold.blocks.push(Arc::new(block)),
+            Some(Err(error)) => {
                 eprintln!("phase=cold_block_error id={id} error={error:#}");
                 return;
             }
+            None => {}
         }
+        for (tenant_id, tenant) in tenants.iter_mut() {
+            tenant.series.retain(|(_, labels), series| {
+                if series.in_head || !keys.contains(&(tenant_id.clone(), labels.clone())) {
+                    return true;
+                }
+                // A series appended to while the block was built keeps its new samples, like one
+                // created again after the freeze.
+                series
+                    .chunks
+                    .retain(|chunk| !chunks.contains(&chunk.reference));
+                has_samples(series)
+            });
+        }
+        if let Err(error) = cold.merge_small_blocks() {
+            eprintln!("phase=cold_block_merge_error error={error:#}");
+        }
+        eprintln!(
+            "phase=cold_block_written id={id} series={count} duration_ms={}",
+            started.elapsed().as_millis()
+        );
     }
-    for (tenant_id, tenant) in tenants.iter_mut() {
-        tenant.series.retain(|(_, labels), series| {
-            series.in_head || !frozen_keys.contains(&(tenant_id.clone(), labels.clone()))
-        });
-    }
-    if let Err(error) = cold.merge_small_blocks() {
-        eprintln!("phase=cold_block_merge_error error={error:#}");
-    }
-    eprintln!(
-        "phase=cold_block_written id={id} series={count} duration_ms={}",
-        started.elapsed().as_millis()
-    );
 }
 
 fn cut_float_head(series: &mut Series, disk: &mut ChunkDiskMapper) -> Result<()> {
@@ -7129,6 +7341,41 @@ mod tests {
             .store;
         assert_eq!(reads(&store), before);
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn a_series_appended_to_while_its_block_builds_keeps_only_its_new_samples() {
+        let store = Store::with_shards(20 * 60 * 1000, None, None, 1, 1).unwrap();
+        store
+            .ingest("tenant", float_request([(10, 1.0), (20, 2.0)]))
+            .unwrap();
+        let mut freeze = {
+            let mut state = store.shards[0].write().unwrap();
+            for tenant in state.tenants.values_mut() {
+                tenant
+                    .series
+                    .for_each_mut(|_, series| series.in_head = false);
+            }
+            Freeze::prepare(&mut state).unwrap()
+        };
+        // The shard lock is free while the block builds.
+        store.ingest("tenant", float_request([(30, 3.0)])).unwrap();
+        assert_eq!(
+            float_samples(&store, 0, 100),
+            [(10, 1.0), (20, 2.0), (30, 3.0)]
+        );
+        let block = freeze.build(None);
+        freeze.finish(&mut store.shards[0].write().unwrap(), block);
+        assert_eq!(store.shards[0].read().unwrap().cold.blocks.len(), 1);
+        with_series(&store, |series| {
+            assert!(series.chunks.is_empty(), "the block holds the old chunks");
+            assert!(series.float_head.is_some());
+        });
+        assert_eq!(
+            float_samples(&store, 0, 100),
+            [(10, 1.0), (20, 2.0), (30, 3.0)],
+            "each sample once"
+        );
     }
 
     #[test]
