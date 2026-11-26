@@ -305,7 +305,7 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, s
 	defer runutil.CloseWithErrCapture(&err, builder, "closing tsdb builder")
 
 	// TODO: the block-builder can skip unmarshaling of exemplars because TSDB doesn't persist them into blocks; find a way to let PusherConsumer know about it
-	consumer := ingest.NewPusherConsumer(builder, b.cfg.Kafka, b.pusherConsumerMetrics, logger)
+	consumer := ingest.NewPusherConsumer(builder, false, b.cfg.Kafka, b.pusherConsumerMetrics, logger)
 
 	if b.cfg.Compartments.Enabled {
 		// Compartment mode: one offset range per write compartment, consumed and merged across

@@ -27,6 +27,10 @@ import (
 
 type Pusher interface {
 	PushToStorageAndReleaseRequest(context.Context, *mimirpb.WriteRequest) error
+	// IngestRecord consumes one record for the tenant in ctx. Content is valid until it returns.
+	// Within a batch, each tenant's records arrive in order and tenants may be pushed concurrently.
+	// An error wrapping ErrMalformedRecord tells the consumer to skip the record.
+	IngestRecord(ctx context.Context, content []byte, version int) error
 	PreCommitNotifier
 }
 
@@ -60,19 +64,21 @@ type PusherConsumer struct {
 
 	kafkaConfig KafkaConfig
 
-	pusher Pusher
+	pusher          Pusher
+	useDirectIngest bool
 }
 
 // NewPusherConsumer creates a new PusherConsumer instance.
-func NewPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *PusherConsumerMetrics, logger log.Logger) *PusherConsumer {
+func NewPusherConsumer(pusher Pusher, useDirectIngest bool, kafkaCfg KafkaConfig, metrics *PusherConsumerMetrics, logger log.Logger) *PusherConsumer {
 	// The layer below (parallelStoragePusher, parallelStorageShards, sequentialStoragePusher) will return all errors they see
 	// and potentially ingesting a batch if they encounter any error.
 	// We can safely ignore client errors and continue ingesting. We abort ingesting if we get any other error.
 	return &PusherConsumer{
-		pusher:      pusher,
-		kafkaConfig: kafkaCfg,
-		metrics:     metrics,
-		logger:      logger,
+		pusher:          pusher,
+		useDirectIngest: useDirectIngest,
+		kafkaConfig:     kafkaCfg,
+		metrics:         metrics,
+		logger:          logger,
 	}
 }
 
@@ -82,6 +88,10 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 	defer func(processingStart time.Time) {
 		c.metrics.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 	}(time.Now())
+
+	if c.useDirectIngest {
+		return c.consumeDirectIngest(ctx, records)
+	}
 
 	type parsedRecord struct {
 		*mimirpb.PreallocWriteRequest

@@ -108,6 +108,18 @@ func (i *ProfilingWrapper) PushToStorageAndReleaseRequest(ctx context.Context, r
 	return i.ing.PushToStorageAndReleaseRequest(ctx, request)
 }
 
+func (i *ProfilingWrapper) IngestRecord(ctx context.Context, content []byte, version int) error {
+	if isTraceSampled(ctx) {
+		userID, _ := tenant.TenantID(ctx)
+		labels := pprof.Labels("userID", userID)
+		defer pprof.SetGoroutineLabels(ctx)
+		ctx = pprof.WithLabels(ctx, labels)
+		pprof.SetGoroutineLabels(ctx)
+	}
+
+	return i.ing.IngestRecord(ctx, content, version)
+}
+
 func (i *ProfilingWrapper) NotifyPreCommit(ctx context.Context) error {
 	return i.ing.NotifyPreCommit(ctx)
 }

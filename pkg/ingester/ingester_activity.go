@@ -40,6 +40,10 @@ func (i *ActivityTrackerWrapper) PushToStorageAndReleaseRequest(ctx context.Cont
 	return i.ing.PushToStorageAndReleaseRequest(ctx, request)
 }
 
+func (i *ActivityTrackerWrapper) IngestRecord(ctx context.Context, content []byte, version int) error {
+	return i.ing.IngestRecord(ctx, content, version)
+}
+
 func (i *ActivityTrackerWrapper) NotifyPreCommit(ctx context.Context) error {
 	return i.ing.NotifyPreCommit(ctx)
 }
