@@ -17,6 +17,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -2497,6 +2498,40 @@ func TestMarshalNamespacesAndSend_RecoversPanic(t *testing.T) {
 	marshalNamespacesAndSend(formatted, 2, w, log.NewNopLogger())
 	require.Equal(t, http.StatusInternalServerError, w.Code)
 	require.Contains(t, w.Body.String(), "test panic")
+}
+
+// failOrCountMarshal fails for one namespace and counts the encodes of the other namespaces.
+// The other namespaces wait until the failing namespace starts to encode.
+type failOrCountMarshal struct {
+	fail    bool
+	failed  chan struct{}
+	encodes *atomic.Int64
+}
+
+func (m failOrCountMarshal) MarshalYAML() (interface{}, error) {
+	if m.fail {
+		close(m.failed)
+		return nil, errors.New("test error")
+	}
+	<-m.failed
+	m.encodes.Add(1)
+	return nil, nil
+}
+
+func TestMarshalNamespacesAndSend_StopsAtFirstEncodeError(t *testing.T) {
+	const others = 1000
+	failed := make(chan struct{})
+	var encodes atomic.Int64
+	// "a" sorts first, so the first worker that takes a namespace takes "a".
+	formatted := map[string]failOrCountMarshal{"a": {fail: true, failed: failed}}
+	for i := range others {
+		formatted[fmt.Sprintf("b%04d", i)] = failOrCountMarshal{failed: failed, encodes: &encodes}
+	}
+	w := httptest.NewRecorder()
+	marshalNamespacesAndSend(formatted, 2, w, log.NewNopLogger())
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	require.Contains(t, w.Body.String(), "test error")
+	require.Less(t, encodes.Load(), int64(others))
 }
 
 func TestRuler_ListRules_EncodeConcurrency(t *testing.T) {
