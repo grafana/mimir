@@ -47,10 +47,12 @@ spec:
       scrapeTimeout: {{ . }}
       {{- end }}
       relabelings:
+        {{- if or (not (hasKey . "relabelJobLabel")) .relabelJobLabel }}
         - action: replace
           sourceLabels: [job]
           replacement: "{{ $.ctx.Release.Namespace }}/{{ $.component }}"
           targetLabel: job
+        {{- end }}
         {{- if kindIs "string" .clusterLabel }}
         - action: replace
           replacement: "{{ .clusterLabel | default (include "mimir.clusterName" $.ctx) }}"
