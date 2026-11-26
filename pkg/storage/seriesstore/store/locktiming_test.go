@@ -3,10 +3,14 @@
 package store
 
 import (
+	"context"
+	"math"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
+	promlabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 )
 
@@ -90,6 +94,16 @@ func TestShardLocksAreObservedByWhatHoldsThem(t *testing.T) {
 	}
 	require.Equal(t, map[string]int{"select": 4}, observer.reads)
 
+	// Every read of the native lookups, which the writers' waits are compared with.
+	for _, phase := range []lockPhase{phaseNativeResources, phaseNativeMetadata} {
+		timer := startReadTimer(phase)
+		shard.RLock()
+		at := timer.held()
+		timer.release(at)
+		shard.RUnlock()
+	}
+	require.Equal(t, map[string]int{"select": 4, "native_resources": 1, "native_metadata": 1}, observer.reads)
+
 	// Without an observer, nothing is recorded.
 	SetLockObserver(nil)
 	holdsBefore, _ = totals()
@@ -101,4 +115,21 @@ func TestShardLocksAreObservedByWhatHoldsThem(t *testing.T) {
 	holds, _ = totals()
 	require.Equal(t, holdsBefore["freeze"], holds["freeze"])
 	require.Equal(t, map[string]int{"push": 4}, observer.writes)
+}
+
+// Each native lookup's read holds are observed under its own phase, so that the resources lookup's show apart from
+// the metric metadata lookup's and from the selects'.
+func TestEngine_NativeLookupsLockPhases(t *testing.T) {
+	observer := &recordingLockObserver{writes: map[string]int{}, waited: map[string]time.Duration{}, reads: map[string]int{}}
+	SetLockObserver(observer)
+	t.Cleanup(func() { SetLockObserver(nil) })
+	e := resourcesEngine(t, 1_000, promlabels.FromStrings(model.MetricNameLabel, "up"))
+	all := [][]*promlabels.Matcher{{promlabels.MustNewMatcher(promlabels.MatchEqual, model.MetricNameLabel, "up")}}
+	_, _, err := e.NativeResources(context.Background(), all, math.MinInt64, math.MaxInt64, 0)
+	require.NoError(t, err)
+	_, _, err = e.NativeMetricMetadata(context.Background(), all, 0)
+	require.NoError(t, err)
+	// A hold of each shard's read lock, every one observed.
+	shards := len(e.store.shards)
+	require.Equal(t, map[string]int{"native_resources": shards, "native_metadata": shards}, observer.reads)
 }

@@ -53,6 +53,8 @@ const (
 	phaseLabels
 	phaseCardinality
 	phaseSnapshot
+	phaseNativeResources
+	phaseNativeMetadata
 )
 
 var lockPhaseNames = [...]string{
@@ -75,6 +77,8 @@ var lockPhaseNames = [...]string{
 	phaseLabels:          "labels",
 	phaseCardinality:     "cardinality",
 	phaseSnapshot:        "snapshot",
+	phaseNativeResources: "native_resources",
+	phaseNativeMetadata:  "native_metadata",
 }
 
 // timedRWMutex is a shard's lock, whose write holds are observed when an observer is set. Its holder names its phase
@@ -179,7 +183,10 @@ func startReadTimer(phase lockPhase) readTimer {
 	if lockObserver.Load() == nil {
 		return readTimer{}
 	}
-	return readTimer{phase: phase, on: readSamples.Add(1)%readSampleEvery == 0}
+	// The native lookups are timed whole, not sampled: few and long, their holds are what the writers' waits are
+	// compared with.
+	lookup := phase == phaseNativeResources || phase == phaseNativeMetadata
+	return readTimer{phase: phase, on: lookup || readSamples.Add(1)%readSampleEvery == 0}
 }
 
 // held returns when the read lock was taken, which release takes, for a sampled read.

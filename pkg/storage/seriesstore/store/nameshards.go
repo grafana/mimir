@@ -122,7 +122,7 @@ func (e *Engine) perShardOfName(name string, byName bool, query func(index int, 
 		bits, ok = e.shardsOfName(name)
 	}
 	if !ok {
-		e.perShard(query)
+		e.perShard(phaseSelect, query)
 		return
 	}
 	timer := startReadTimer(phaseSelect)

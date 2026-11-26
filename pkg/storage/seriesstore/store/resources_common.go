@@ -102,7 +102,7 @@ func (e *Engine) NativeResourcesCapped(ctx context.Context, matcherSets [][]*pro
 	var all []selected
 	seen := map[uint64]struct{}{}
 	var err error
-	e.perShard(func(_ int, t *tenant, _ *chunks.DiskMapper, _ *coldState) {
+	e.perShard(phaseNativeResources, func(_ int, t *tenant, _ *chunks.DiskMapper, _ *coldState) {
 		if err != nil {
 			return
 		}

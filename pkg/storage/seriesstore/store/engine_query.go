@@ -228,9 +228,9 @@ func (q *engineChunkQuerier) SelectStreamed(hints *storage.SelectHints, matchers
 type rawSeries = StreamedSeries
 
 // perShard is the store's perShardIndexed for the engine's tenant, which it finds by what it remembers of where it is
-// rather than by hashing its id in every shard of every query.
-func (e *Engine) perShard(query func(index int, t *tenant, disk *chunks.DiskMapper, cold *coldState)) {
-	timer := startReadTimer(phaseSelect)
+// rather than by hashing its id in every shard of every query. Its read lock holds are timed under phase.
+func (e *Engine) perShard(phase lockPhase, query func(index int, t *tenant, disk *chunks.DiskMapper, cold *coldState)) {
+	timer := startReadTimer(phase)
 	for index, shard := range e.store.shards {
 		shard.RLock()
 		at := timer.held()
@@ -862,7 +862,7 @@ func (q *engineQuerier) Select(_ context.Context, _ bool, hints *storage.SelectH
 // chunks. A series both in memory and in a cold block is in them once: sorted, its copies are next to each other.
 func (e *Engine) selectLabels(start, end int64, compiled []compiledMatcher) []rawSeries {
 	selected := takeSelection()
-	e.perShard(func(_ int, t *tenant, _ *chunks.DiskMapper, cold *coldState) {
+	e.perShard(phaseSelect, func(_ int, t *tenant, _ *chunks.DiskMapper, cold *coldState) {
 		t.series.matching(compiled, func(entry *seriesEntry) bool {
 			if entry.series.hasChunkIn(start, end) {
 				selected = append(selected, rawSeries{stored: entry.labels})

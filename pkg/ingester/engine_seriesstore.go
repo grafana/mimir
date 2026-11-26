@@ -907,7 +907,7 @@ var (
 	seriesstoreLockWriteHeld = prometheus.NewDesc("cortex_ingester_seriesstore_shard_lock_write_held_seconds_total",
 		"Total time the seriesstore engine held store shards' write locks, by phase.", []string{"phase"}, nil)
 	seriesstoreLockWriteWait = prometheus.NewDesc("cortex_ingester_seriesstore_shard_lock_write_wait_seconds_total",
-		"Total time the seriesstore engine's writers waited for store shards' write locks, by what then held them.", []string{"phase"}, nil)
+		"Total time the seriesstore engine's writers waited for store shards' write locks, by the writer's phase.", []string{"phase"}, nil)
 )
 
 // seriesstoreLockTotals exports every write hold of the store's shard locks, which the lock histograms only sample: the

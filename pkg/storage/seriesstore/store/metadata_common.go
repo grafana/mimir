@@ -175,7 +175,7 @@ func (e *Engine) NativeMetricMetadataCapped(ctx context.Context, matcherSets [][
 	seen := map[uint64]struct{}{}
 	limited := false
 	var err error
-	e.perShard(func(_ int, t *tenant, _ *chunks.DiskMapper, _ *coldState) {
+	e.perShard(phaseNativeMetadata, func(_ int, t *tenant, _ *chunks.DiskMapper, _ *coldState) {
 		if err != nil {
 			return
 		}
