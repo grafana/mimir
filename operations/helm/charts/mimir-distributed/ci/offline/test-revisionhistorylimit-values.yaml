@@ -1,5 +1,5 @@
 distributor:
-  revisionHistoryLimit: 3
+  revisionHistoryLimit: 0
 
 overrides_exporter:
   revisionHistoryLimit: 3
@@ -29,17 +29,17 @@ alertmanager:
   revisionHistoryLimit: 3
 
 ingester:
-  revisionHistoryLimit: 3
+  revisionHistoryLimit: 0
 
 store_gateway:
   revisionHistoryLimit: 3
 
 compactor:
-  revisionHistoryLimit: 3
+  revisionHistoryLimit: 0
 
 chunks-cache:
   enabled: true
-  revisionHistoryLimit: 3
+  revisionHistoryLimit: 0
 
 index-cache:
   enabled: true

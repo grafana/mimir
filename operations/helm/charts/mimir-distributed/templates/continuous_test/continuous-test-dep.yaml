@@ -10,8 +10,8 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.continuous_test.replicas }}
-  {{- with .Values.continuous_test.revisionHistoryLimit }}
-  revisionHistoryLimit: {{ . }}
+  {{- if not (kindIs "invalid" .Values.continuous_test.revisionHistoryLimit) }}
+  revisionHistoryLimit: {{ .Values.continuous_test.revisionHistoryLimit }}
   {{- end }}
   selector:
     matchLabels:

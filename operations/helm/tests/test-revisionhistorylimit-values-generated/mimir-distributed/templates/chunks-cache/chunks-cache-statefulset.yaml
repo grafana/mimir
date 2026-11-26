@@ -16,7 +16,7 @@ spec:
   podManagementPolicy: Parallel
   minReadySeconds: 60
   replicas: 1
-  revisionHistoryLimit: 3
+  revisionHistoryLimit: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir

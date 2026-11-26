@@ -10,8 +10,8 @@ metadata:
     {{- toYaml .Values.ruler_query_scheduler.annotations | nindent 4 }}
 spec:
   replicas: {{ .Values.ruler_query_scheduler.replicas }}
-  {{- with .Values.ruler_query_scheduler.revisionHistoryLimit }}
-  revisionHistoryLimit: {{ . }}
+  {{- if not (kindIs "invalid" .Values.ruler_query_scheduler.revisionHistoryLimit) }}
+  revisionHistoryLimit: {{ .Values.ruler_query_scheduler.revisionHistoryLimit }}
   {{- end }}
   selector:
     matchLabels:
