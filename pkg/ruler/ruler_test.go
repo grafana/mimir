@@ -2056,6 +2056,23 @@ func (m *syncHookManager) SyncFullRuleGroups(ctx context.Context, ruleGroupsByUs
 	m.once.Do(func() { m.afterFirstFullSync(ruleGroupsByUser) })
 }
 
+// listHookRuleStore calls beforeFirstListAllUsers once, before the first ListAllUsers.
+// The first ListAllUsers is in the initial sync, before the ownership check.
+type listHookRuleStore struct {
+	rulestore.RuleStore
+	once                    sync.Once
+	beforeFirstListAllUsers func()
+}
+
+func (s *listHookRuleStore) ListAllUsers(ctx context.Context, opts ...rulestore.Option) ([]string, error) {
+	s.once.Do(func() {
+		if s.beforeFirstListAllUsers != nil {
+			s.beforeFirstListAllUsers()
+		}
+	})
+	return s.RuleStore.ListAllUsers(ctx, opts...)
+}
+
 func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 	const (
 		ringCheckPeriod = 20 * time.Millisecond
@@ -2067,6 +2084,8 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 		otherRulerState         ring.InstanceState
 		otherRulerChanges       bool
 		otherRulerBecomesActive bool
+		// The other ruler registers after the start of the initial sync and before its ownership check.
+		otherRulerRegistersDuringInitialSync bool
 		// An ACTIVE ruler with no tokens owns no rule groups.
 		// It only adds an ACTIVE ruler to the ring.
 		activeRulerWithoutTokens bool
@@ -2090,6 +2109,12 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 			otherRulerState:          ring.JOINING,
 			activeRulerWithoutTokens: true,
 			expectedFirstRunSyncs:    1,
+		},
+		"another ruler registers during the initial sync and stays JOINING": {
+			otherRulerState:                      ring.JOINING,
+			otherRulerRegistersDuringInitialSync: true,
+			activeRulerWithoutTokens:             true,
+			expectedFirstRunSyncs:                1,
 		},
 		"cold start: another ruler stays JOINING and no other ruler is ACTIVE": {
 			otherRulerAtStart:      true,
@@ -2160,7 +2185,16 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 					}))
 				}
 
-				r := prepareRuler(t, cfg, storage)
+				store := &listHookRuleStore{RuleStore: storage}
+				r := prepareRuler(t, cfg, store)
+				if tc.otherRulerRegistersDuringInitialSync {
+					store.beforeFirstListAllUsers = func() {
+						// The hook runs on the ruler goroutine.
+						// Thus it must not call t.FailNow.
+						assert.NoError(t, setOtherRuler(true, tc.otherRulerState))
+						assert.NoError(t, ring.WaitInstanceState(t.Context(), r.ring, "other", tc.otherRulerState))
+					}
+				}
 
 				// The other ruler joins, leaves or becomes ACTIVE after the initial sync and before this ruler becomes ACTIVE.
 				var initialSyncGroups int
