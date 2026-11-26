@@ -1146,15 +1146,105 @@ impl ColdState {
             .map_or(self.ooo_compacted_through, |epoch| epoch.start_ref)
     }
 
+    #[cfg(test)]
     fn merge_small_blocks(&mut self) -> Result<()> {
-        const TARGET_BLOCKS: usize = 4;
+        let mut blocks = self.blocks.clone();
+        let mut replaced = Vec::new();
+        let merged = merge_blocks(
+            &mut blocks,
+            self.directory.as_deref(),
+            &mut self.next_id,
+            &mut replaced,
+        );
+        self.blocks = blocks;
+        for old in replaced {
+            remove_cold_block(old);
+        }
+        merged
+    }
+}
+
+const MERGE_TARGET_BLOCKS: usize = 4;
+
+/// Merges a shard's small cold blocks like `merge_blocks`, building the merged blocks without the
+/// shard's lock, which queries and ingestion wait on. The merge goes in only if the blocks it read
+/// are still the shard's oldest; a retention pass replacing one meanwhile leaves it to the next.
+/// Returns how long the lock was held.
+fn merge_cold_unlocked(shard: &RwLock<State>) -> Duration {
+    let mut locked = Duration::ZERO;
+    let (snapshot, directory, first_id) = {
+        let mut state = shard.write().expect("store lock poisoned");
+        let held = Instant::now();
+        if state.cold.blocks.len() <= MERGE_TARGET_BLOCKS {
+            return held.elapsed();
+        }
+        let snapshot = state.cold.blocks.clone();
+        // Each merge leaves one block fewer, so the blocks bound how many ids it takes.
+        let first_id = state.cold.next_id;
+        state.cold.next_id += snapshot.len() as u64;
+        locked += held.elapsed();
+        (snapshot, state.cold.directory.clone(), first_id)
+    };
+    let mut blocks = snapshot.clone();
+    let mut next_id = first_id;
+    let mut replaced = Vec::new();
+    if let Err(error) = merge_blocks(
+        &mut blocks,
+        directory.as_deref(),
+        &mut next_id,
+        &mut replaced,
+    ) {
+        // The merges before the error still go in.
+        eprintln!("phase=cold_block_merge_error error={error:#}");
+    }
+    if replaced.is_empty() {
+        return locked;
+    }
+    let mut state = shard.write().expect("store lock poisoned");
+    let held = Instant::now();
+    let current = &mut state.cold.blocks;
+    let unchanged = current.len() >= snapshot.len()
+        && current
+            .iter()
+            .zip(&snapshot)
+            .all(|(current, read)| Arc::ptr_eq(current, read));
+    if unchanged {
+        let newer = current.split_off(snapshot.len());
+        blocks.extend(newer);
+        *current = blocks;
+        locked += held.elapsed();
+        drop(state);
+        for old in replaced {
+            remove_cold_block(old);
+        }
+    } else {
+        locked += held.elapsed();
+        drop(state);
+        for block in blocks {
+            if !snapshot.iter().any(|read| Arc::ptr_eq(read, &block)) {
+                remove_cold_block(block);
+            }
+        }
+    }
+    locked
+}
+
+/// Merges `blocks` down to a few, leaving the merged ones in `replaced` for the caller to remove
+/// once nothing lists them.
+fn merge_blocks(
+    blocks: &mut Vec<Arc<cold::ColdBlock>>,
+    directory: Option<&std::path::Path>,
+    next_id: &mut u64,
+    replaced: &mut Vec<Arc<cold::ColdBlock>>,
+) -> Result<()> {
+    {
         // Bound the temporary copies of labels and chunk metadata during a merge.
         const MAX_INPUT_BYTES: usize = 64 << 20;
         const MAX_FANOUT: usize = 4;
-        while self.blocks.len() > TARGET_BLOCKS {
-            let excess = self.blocks.len() - TARGET_BLOCKS;
+        while blocks.len() > MERGE_TARGET_BLOCKS {
+            let excess = blocks.len() - MERGE_TARGET_BLOCKS;
             let Some((start, width)) = (2..=(excess + 1).min(MAX_FANOUT)).rev().find_map(|width| {
-                self.blocks
+                blocks
                     .windows(width)
                     .enumerate()
                     .map(|(start, blocks)| {
@@ -1175,7 +1265,7 @@ impl ColdState {
                 chunks: Vec<ChunkMeta>,
             }
             let mut series: BTreeMap<(&str, StoredLabels), Vec<Run>> = BTreeMap::new();
-            for block in &self.blocks[start..start + width] {
+            for block in &blocks[start..start + width] {
                 for (tenant, entry) in block.entries() {
                     let runs = series.entry((tenant.as_str(), entry.labels())).or_default();
                     if let Some(last) = runs
@@ -1206,15 +1296,15 @@ impl ColdState {
                     })
                 })
                 .collect();
-            let block = cold::ColdBlock::build(self.directory.as_deref(), self.next_id, series)?;
-            self.next_id += 1;
-            for old in self.blocks.splice(start..start + width, [Arc::new(block)]) {
-                remove_cold_block(old);
-            }
+            let block = cold::ColdBlock::build(directory, *next_id, series)?;
+            *next_id += 1;
+            replaced.extend(blocks.splice(start..start + width, [Arc::new(block)]));
         }
         Ok(())
     }
+}
 
+impl ColdState {
     /// The tenant's cold series that may match `matchers` with data in `[start, end]`, newer
     /// than `pruned_before`, block by block.
     fn matching<'a>(
@@ -3488,8 +3578,10 @@ impl Store {
                         let mut state = shard.write().expect("store lock poisoned");
                         let phase = Instant::now();
                         prepared.finish(&mut state, block);
-                        timing.record(3, phase.elapsed());
-                        locked += phase.elapsed();
+                        drop(state);
+                        let installed = phase.elapsed() + merge_cold_unlocked(shard);
+                        timing.record(3, installed);
+                        locked += installed;
                     }
                     timing.record(4, locked);
                     reports
@@ -4684,6 +4776,7 @@ fn freeze_out_of_head(state: &mut State) {
     if let Some(mut freeze) = Freeze::prepare(state) {
         let block = freeze.build(state.cold.directory.as_deref());
         freeze.finish(state, block);
+        state.cold.merge_small_blocks().unwrap();
     }
 }
 
@@ -4798,9 +4891,6 @@ impl Freeze {
                     .retain(|chunk| !chunks.contains(&chunk.reference));
                 has_samples(series)
             });
-        }
-        if let Err(error) = cold.merge_small_blocks() {
-            eprintln!("phase=cold_block_merge_error error={error:#}");
         }
         eprintln!(
             "phase=cold_block_written id={id} series={count} duration_ms={}",
@@ -7376,6 +7466,37 @@ mod tests {
             [(10, 1.0), (20, 2.0), (30, 3.0)],
             "each sample once"
         );
+    }
+
+    #[test]
+    fn small_blocks_merge_without_the_shard_lock_and_keep_their_data() {
+        let store = Store::with_shards(20 * 60 * 1000, None, None, 1, 1).unwrap();
+        for index in 0..6 {
+            store
+                .ingest(
+                    "tenant",
+                    series_request(&format!("metric_{index}"), [(index, index as f64)]),
+                )
+                .unwrap();
+            let mut state = store.shards[0].write().unwrap();
+            for tenant in state.tenants.values_mut() {
+                tenant
+                    .series
+                    .for_each_mut(|_, series| series.in_head = false);
+            }
+            let mut freeze = Freeze::prepare(&mut state).unwrap();
+            let block = freeze.build(None);
+            freeze.finish(&mut state, block);
+        }
+        assert_eq!(store.shards[0].read().unwrap().cold.blocks.len(), 6);
+        let before = float_samples(&store, -1, 100);
+        assert_eq!(before.len(), 6);
+        merge_cold_unlocked(&store.shards[0]);
+        assert_eq!(
+            store.shards[0].read().unwrap().cold.blocks.len(),
+            MERGE_TARGET_BLOCKS
+        );
+        assert_eq!(float_samples(&store, -1, 100), before);
     }
 
     #[test]

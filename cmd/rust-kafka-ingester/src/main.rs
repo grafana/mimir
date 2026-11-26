@@ -792,6 +792,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
                 push_circuit_breaker,
                 replay_target,
                 timings: ApplyTimings::default(),
+                retention: RetentionWorker::default(),
             }, !replay_complete);
             if replay_complete {
                 eprintln!(
@@ -1501,6 +1502,47 @@ struct Applier {
     // its push circuit breaker is activated.
     replay_target: i64,
     timings: ApplyTimings,
+    retention: RetentionWorker,
+}
+
+/// Runs the store's retention passes off the applier thread. A pass took tens of seconds, during
+/// which the partition was not consumed and queries waiting for read consistency waited too.
+#[derive(Default)]
+struct RetentionWorker {
+    running: Option<(std::sync::mpsc::SyncSender<()>, std::thread::JoinHandle<()>)>,
+}
+
+impl RetentionWorker {
+    /// Asks for a pass, unless one is already waiting to start.
+    fn request(&mut self, store: &Arc<Store>, fatal_tx: &tokio::sync::watch::Sender<bool>) {
+        let (requests, _) = self.running.get_or_insert_with(|| {
+            let (requests, received) = std::sync::mpsc::sync_channel::<()>(1);
+            let store = Arc::clone(store);
+            let fatal_tx = fatal_tx.clone();
+            let worker = std::thread::Builder::new()
+                .name("store-retention".into())
+                .spawn(move || {
+                    for () in received {
+                        if let Err(error) = store.prune_expired() {
+                            eprintln!("phase=store_retention_error error={error:#}");
+                            let _ = fatal_tx.send(true);
+                            return;
+                        }
+                    }
+                })
+                .expect("spawn retention thread");
+            (requests, worker)
+        });
+        let _ = requests.try_send(());
+    }
+
+    /// Waits for the running pass, so a snapshot sees the store as it leaves it.
+    fn stop(&mut self) {
+        if let Some((requests, worker)) = self.running.take() {
+            drop(requests);
+            let _ = worker.join();
+        }
+    }
 }
 
 #[derive(Default)]
@@ -1562,7 +1604,7 @@ impl Applier {
                     self.segment_log.maintain()?;
                     let segment_ms = started.elapsed().as_millis();
                     if self.cluster == 0 {
-                        self.store.prune_expired()?;
+                        self.retention.request(&self.store, &self.fatal_tx);
                     }
                     let timings = std::mem::take(&mut self.timings);
                     if timings.records != 0 {
@@ -1783,6 +1825,7 @@ fn spawn_applier(
                 eprintln!("Kafka cluster {} failed: {error:#}", applier.cluster);
                 let _ = applier.fatal_tx.send(true);
             }
+            applier.retention.stop();
             snapshot_offset(
                 &mut applier.segment_log,
                 applier.last_timestamp_ms,
@@ -2136,6 +2179,7 @@ mod tests {
             push_circuit_breaker: None,
             replay_target: -1,
             timings: ApplyTimings::default(),
+            retention: RetentionWorker::default(),
         };
         // Every record writes the same series at its offset, so the order shows in its samples.
         let fetched = |offset: i64, padding: usize| {
@@ -2228,6 +2272,7 @@ mod tests {
                 push_circuit_breaker: None,
                 replay_target: 2,
                 timings: ApplyTimings::default(),
+                retention: RetentionWorker::default(),
             },
             true,
         );
@@ -2289,6 +2334,7 @@ mod tests {
             push_circuit_breaker: None,
             replay_target: -1,
             timings: ApplyTimings::default(),
+            retention: RetentionWorker::default(),
         };
         let record = |offset: i64, metric: &str| {
             let request = DecodedRequest {
