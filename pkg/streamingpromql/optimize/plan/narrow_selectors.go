@@ -15,9 +15,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/multiaggregation"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -351,16 +348,8 @@ func labelsKeptBy(node planning.Node) keptLabels {
 		return labelsKeptBy(n.Inner)
 	case *core.UnaryExpression:
 		return labelsKeptBy(n.Inner)
-	case *commonsubexpressionelimination.Duplicate:
-		return labelsKeptBy(n.Inner)
-	case *commonsubexpressionelimination.DuplicateFilter:
-		return labelsKeptBy(n.Inner)
-	case *rangevectorsplitting.SplitFunctionCall:
-		return labelsKeptBy(n.Inner)
 	case *core.AggregateExpression:
 		return labelsKeptByAggregation(n.AggregateExpressionDetails, n.Param).intersect(labelsKeptBy(n.Inner))
-	case *multiaggregation.MultiAggregationInstance:
-		return labelsKeptByAggregation(n.Aggregation, n.Param).intersect(labelsKeptBy(n.Group.Inner))
 	case *core.FunctionCall:
 		return labelsKeptByFunction(n)
 	case *core.BinaryExpression:

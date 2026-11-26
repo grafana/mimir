@@ -40,8 +40,8 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		expectedAttempts int
 		expectedModified int
 
-		// The engine runs common subexpression elimination before narrowing, so the narrowed side can
-		// contain the nodes that this pass adds.
+		// The engine runs narrowing before common subexpression elimination, multi-aggregation and range
+		// vector splitting. These check that the hints are kept when those passes change the plan.
 		enableCommonSubexpressionElimination bool
 
 		// Multi-aggregation needs common subexpression elimination.
@@ -1158,17 +1158,19 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			opts := streamingpromql.NewTestEngineOpts()
 			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
+			if testCase.enableCommonSubexpressionElimination {
+				planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
+			}
+			planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
 			if testCase.enableRangeVectorSplitting {
 				planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(2*time.Hour, true, opts.CommonOpts.Reg, opts.Logger))
 			}
 			if testCase.enableCommonSubexpressionElimination {
-				planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
 				planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableSubsetSelectorElimination, opts.EnableRangeQueryRangeVectorCommonSubexpressionElimination, opts.CommonOpts.Reg, opts.Logger))
 			}
 			if testCase.enableMultiAggregation {
 				planner.RegisterQueryPlanOptimizationPass(multiaggregation.NewOptimizationPass(opts.CommonOpts.Reg))
 			}
-			planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
 
 			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, nil, observer)
 			require.NoError(t, err)

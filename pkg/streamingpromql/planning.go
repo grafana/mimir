@@ -112,6 +112,12 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		planner.RegisterQueryPlanOptimizationPass(plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
 	}
 
+	// Selector narrowing runs before range vector splitting, common subexpression elimination and
+	// multi-aggregation, so it doesn't need to know the nodes that these passes add.
+	if opts.EnableNarrowBinarySelectors {
+		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+	}
+
 	// Range vector splitting must run before projection pushdown and skip histogram decoding, if those are enabled.
 	if opts.RangeVectorSplitting.Enabled {
 		splitInterval := opts.RangeVectorSplitting.SplitInterval
@@ -151,10 +157,6 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		}
 
 		planner.RegisterQueryPlanOptimizationPass(multiaggregation.NewOptimizationPass(opts.CommonOpts.Reg))
-	}
-
-	if opts.EnableNarrowBinarySelectors {
-		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	if opts.RangeQuerySplittingAndCaching.SplitEnabled || opts.RangeQuerySplittingAndCaching.CacheEnabled {
