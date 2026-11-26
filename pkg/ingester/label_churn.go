@@ -44,6 +44,7 @@ const (
 )
 
 var (
+	errLabelChurnUnsupportedEngine    = errors.New("label churn detection is not supported by this storage engine")
 	errLabelChurnDisabled             = errors.New("label churn detection is disabled, enable it with -ingester.label-churn-enabled")
 	errLabelChurnInvalidLookback      = errors.New("the lookback parameter must be a positive duration")
 	errLabelChurnInvalidLimit         = errors.New("the limit parameter must be a non-negative integer")
@@ -124,7 +125,9 @@ func (i *Ingester) recordLabelChurnSeriesRefs(now time.Time) {
 		if db == nil {
 			continue
 		}
-		db.seriesRefHistory.record(now.UnixMilli(), db.prometheusDB().Head().LastSeriesRef())
+		if head, ok := db.Head().(prometheusHead); ok {
+			db.seriesRefHistory.record(now.UnixMilli(), head.LastSeriesRef())
+		}
 	}
 }
 
@@ -230,6 +233,8 @@ func (i *Ingester) labelChurnForRequest(r *http.Request) (*labelChurnResponse, i
 
 	response, err := db.labelChurn(r.Context(), time.Now().Add(-lookback).UnixMilli(), limit)
 	switch {
+	case errors.Is(err, errLabelChurnUnsupportedEngine):
+		return nil, http.StatusNotImplemented, err
 	case errors.Is(err, errLabelChurnCompactedTooRecently) || errors.Is(err, errLabelChurnNoRecord):
 		return nil, http.StatusServiceUnavailable, err
 	case err != nil:
@@ -242,6 +247,11 @@ func (i *Ingester) labelChurnForRequest(r *http.Request) (*labelChurnResponse, i
 // The score is the number of series that have a value of the label which did not exist before sinceMs.
 // A limit of 0 returns all scores.
 func (u *userTSDB) labelChurn(ctx context.Context, sinceMs int64, limit int) (*labelChurnResponse, error) {
+	head, ok := u.Head().(prometheusHead)
+	if !ok {
+		return nil, errLabelChurnUnsupportedEngine
+	}
+
 	// Get the watermark, which is the newest series reference at the start of the time range.
 	// When the head removes the old series of a label value, records from before the removal show the value as new.
 	// Thus the time range starts after the last compaction that removed series.
@@ -258,7 +268,6 @@ func (u *userTSDB) labelChurn(ctx context.Context, sinceMs int64, limit int) (*l
 		return nil, errLabelChurnNoRecord
 	}
 
-	head := u.prometheusDB().Head()
 	idx, err := head.Index()
 	if err != nil {
 		return nil, err

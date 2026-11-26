@@ -807,6 +807,18 @@ func BenchmarkUserTSDB_takePendingNonOwnedRefs(b *testing.B) {
 	}
 }
 
+func (u *userTSDB) prometheusDB() *tsdb.DB {
+	return u.prometheus().db
+}
+
+func (u *userTSDB) prometheus() *prometheusEngine {
+	engine, ok := u.engine().(*prometheusEngine)
+	if !ok {
+		panic("test requires a Prometheus engine")
+	}
+	return engine
+}
+
 func (u *userTSDB) Blocks() []*tsdb.Block {
 	return u.prometheusDB().Blocks()
 }
