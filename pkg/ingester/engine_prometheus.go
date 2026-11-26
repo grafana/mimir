@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/oklog/ulid/v2"
 	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -26,7 +27,7 @@ import (
 // of non-owned series and a restart, the head can have series without any in-order sample, so its max time is
 // math.MinInt64 while local blocks hold recent data. Block max times are aligned to the block range, so the
 // result can be up to one block range newer than the newest sample.
-func (e prometheusEngine) NewestDataTime() int64 {
+func (e *prometheusEngine) NewestDataTime() int64 {
 	t := max(e.db.Head().MaxTime(), e.db.Head().MaxOOOTime())
 	for _, b := range e.db.Blocks() {
 		t = max(t, b.Meta().MaxTime)
@@ -34,22 +35,22 @@ func (e prometheusEngine) NewestDataTime() int64 {
 	return t
 }
 
-func (e prometheusEngine) Querier(mint, maxt int64) (storage.Querier, error) {
+func (e *prometheusEngine) Querier(mint, maxt int64) (storage.Querier, error) {
 	return e.db.Querier(mint, maxt)
 }
 
-func (e prometheusEngine) ChunkQuerier(mint, maxt int64, unordered bool) (storage.ChunkQuerier, error) {
+func (e *prometheusEngine) ChunkQuerier(mint, maxt int64, unordered bool) (storage.ChunkQuerier, error) {
 	if unordered {
 		return e.db.UnorderedChunkQuerier(mint, maxt)
 	}
 	return e.db.ChunkQuerier(mint, maxt)
 }
 
-func (e prometheusEngine) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
+func (e *prometheusEngine) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
 	return e.db.ExemplarQuerier(ctx)
 }
 
-func (e prometheusEngine) Ingest(ctx *ingestContext, timeseries []mimirpb.PreallocTimeseries) error {
+func (e *prometheusEngine) Ingest(ctx *ingestContext, timeseries []mimirpb.PreallocTimeseries) error {
 	i, userID, startAppend, stats := ctx.i, ctx.userID, ctx.startAppend, ctx.stats
 	spanlog := spanlogger.FromContext(ctx, i.logger)
 	app := e.db.AppenderV2(ctx).(extendedAppender)
@@ -102,15 +103,15 @@ func (e prometheusEngine) Ingest(ctx *ingestContext, timeseries []mimirpb.Preall
 	return nil
 }
 
-func (e prometheusEngine) Close() error {
+func (e *prometheusEngine) Close() error {
 	return e.db.Close()
 }
 
-func (e prometheusEngine) Compact(ctx context.Context) error {
+func (e *prometheusEngine) Compact(ctx context.Context) error {
 	return e.db.Compact(ctx)
 }
 
-func (e prometheusEngine) Flush(ctx context.Context, upTo int64) error {
+func (e *prometheusEngine) Flush(ctx context.Context, upTo int64) error {
 	h := e.db.Head()
 	for {
 		blockMinTime, blockMaxTime, isValid, isLast := nextForcedHeadCompactionRange(e.blockDuration, h.MinTime(), h.MaxTime(), upTo)
@@ -131,7 +132,7 @@ func (e prometheusEngine) Flush(ctx context.Context, upTo int64) error {
 	return e.db.CompactOOOHead(ctx)
 }
 
-func (e prometheusEngine) Configure(settings engineSettings) error {
+func (e *prometheusEngine) Configure(settings engineSettings) error {
 	// DB.ApplyConfig only uses the storage settings.
 	return e.db.ApplyConfig(&promcfg.Config{
 		StorageConfig: promcfg.StorageConfig{
@@ -143,4 +144,55 @@ func (e prometheusEngine) Configure(settings engineSettings) error {
 			},
 		},
 	})
+}
+
+func (e *prometheusEngine) BlockShippingEnabled() bool {
+	return e.shipper != nil
+}
+
+func (e *prometheusEngine) ShipBlocks(ctx context.Context) {
+	if !e.BlockShippingEnabled() {
+		return
+	}
+	uploaded, err := e.shipper.Sync(ctx)
+	if err != nil {
+		level.Warn(e.shippingLogger).Log("msg", "shipper failed to synchronize TSDB blocks with the storage", "uploaded", uploaded, "err", err)
+	} else {
+		level.Debug(e.shippingLogger).Log("msg", "shipper successfully synchronized TSDB blocks with storage", "uploaded", uploaded)
+	}
+
+	// The shipper meta file could be updated even if the Sync() returned an error,
+	// so it's safer to update it each time at least a block has been uploaded.
+	// Moreover, the shipper meta file could be updated even if no blocks are uploaded
+	// (eg. blocks removed due to retention) but doesn't cause any harm not updating
+	// the cached list of blocks in such case, so we're not handling it.
+	if uploaded > 0 {
+		if err := e.updateCachedShippedBlocks(); err != nil {
+			level.Error(e.shippingLogger).Log("msg", "failed to update cached shipped blocks after shipper synchronisation", "err", err)
+		}
+	}
+}
+
+// updateCachedShippedBlocks reads the shipper meta file and updates the cached shipped blocks.
+func (e *prometheusEngine) updateCachedShippedBlocks() error {
+	shippedBlocks, err := readShippedBlocks(e.db.Dir())
+	if err != nil {
+		return err
+	}
+
+	// Cache it.
+	e.shippedBlocksMtx.Lock()
+	e.shippedBlocks = shippedBlocks
+	e.shippedBlocksMtx.Unlock()
+
+	return nil
+}
+
+// getCachedShippedBlocks returns the cached shipped blocks.
+func (e *prometheusEngine) getCachedShippedBlocks() map[ulid.ULID]time.Time {
+	e.shippedBlocksMtx.Lock()
+	defer e.shippedBlocksMtx.Unlock()
+
+	// It's safe to directly return the map because it's never updated in-place.
+	return e.shippedBlocks
 }

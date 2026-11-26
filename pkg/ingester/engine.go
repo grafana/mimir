@@ -4,8 +4,11 @@ package ingester
 
 import (
 	"context"
+	"sync"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -44,6 +47,10 @@ type tenantEngine interface {
 	// Flush moves in-order samples through upTo (inclusive, in milliseconds) and all
 	// out-of-order samples out of memory, along with series that have nothing newer.
 	Flush(ctx context.Context, upTo int64) error
+
+	BlockShippingEnabled() bool
+	// The caller must prevent idle close while ShipBlocks uses the local data.
+	ShipBlocks(ctx context.Context)
 }
 
 // ingestContext must not be retained after Ingest returns because its bookkeeping belongs to the request.
@@ -70,6 +77,12 @@ type engineSettings struct {
 type prometheusEngine struct {
 	db            *tsdb.DB
 	blockDuration int64
+
+	shippingLogger log.Logger
+	shipper        BlocksUploader
+
+	shippedBlocksMtx sync.Mutex
+	shippedBlocks    map[ulid.ULID]time.Time
 }
 
 // timeBounds are the times of the samples in the head, in milliseconds.

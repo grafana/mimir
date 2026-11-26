@@ -114,9 +114,6 @@ type userTSDB struct {
 	// Used to detect idle TSDBs.
 	lastUpdate atomic.Int64
 
-	// Thanos shipper used to upload blocks to the storage.
-	shipper BlocksUploader
-
 	// When deletion marker is found for the tenant (checked before shipping),
 	// shipping stops and TSDB is closed before reaching idle timeout time (if enabled).
 	deletionMarkFound atomic.Bool
@@ -141,10 +138,6 @@ type userTSDB struct {
 
 	// Block min retention
 	blockMinRetention time.Duration
-
-	// Cached shipped blocks.
-	shippedBlocksMtx sync.Mutex
-	shippedBlocks    map[ulid.ULID]time.Time
 
 	useOwnedSeriesForLimits bool
 
@@ -216,7 +209,11 @@ func (u *userTSDB) engine() tenantEngine {
 
 // prometheusDB is for callers that still depend on Prometheus TSDB internals.
 func (u *userTSDB) prometheusDB() *tsdb.DB {
-	return u.db.(*prometheusEngine).db
+	return u.prometheus().db
+}
+
+func (u *userTSDB) prometheus() *prometheusEngine {
+	return u.db.(*prometheusEngine)
 }
 
 // Querier returns a new querier over the data partition for the given time range.
@@ -456,8 +453,8 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 	deadline := time.Now().Add(-u.blockMinRetention)
 
 	// The shipper enabled case goes first because its common in the way we run the ingesters
-	if u.shipper != nil {
-		shippedBlocks := u.getCachedShippedBlocks()
+	if u.prometheus().shipper != nil {
+		shippedBlocks := u.prometheus().getCachedShippedBlocks()
 
 		for blockID := range deletable {
 			shippedBlockTime, ok := shippedBlocks[blockID]
@@ -478,39 +475,15 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 	return result
 }
 
-// updateCachedShippedBlocks reads the shipper meta file and updates the cached shipped blocks.
-func (u *userTSDB) updateCachedShippedBlocks() error {
-	shippedBlocks, err := readShippedBlocks(u.prometheusDB().Dir())
-	if err != nil {
-		return err
-	}
-
-	// Cache it.
-	u.shippedBlocksMtx.Lock()
-	u.shippedBlocks = shippedBlocks
-	u.shippedBlocksMtx.Unlock()
-
-	return nil
-}
-
-// getCachedShippedBlocks returns the cached shipped blocks.
-func (u *userTSDB) getCachedShippedBlocks() map[ulid.ULID]time.Time {
-	u.shippedBlocksMtx.Lock()
-	defer u.shippedBlocksMtx.Unlock()
-
-	// It's safe to directly return the map because it's never updated in-place.
-	return u.shippedBlocks
-}
-
 // getOldestUnshippedBlockTime returns the unix timestamp with milliseconds precision of the oldest
 // TSDB block not shipped to the storage yet, or 0 if all blocks have been shipped.
 func (u *userTSDB) getOldestUnshippedBlockTime() uint64 {
 	// When shipping is disabled, always return 0 because the concept of "unshipped" doesn't apply.
-	if u.shipper == nil {
+	if u.prometheus().shipper == nil {
 		return 0
 	}
 
-	shippedBlocks := u.getCachedShippedBlocks()
+	shippedBlocks := u.prometheus().getCachedShippedBlocks()
 	oldestTs := uint64(0)
 
 	for _, b := range u.Blocks() {

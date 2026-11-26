@@ -266,9 +266,11 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 	userDB.setLastUpdate(lastUpdateTime)
 
+	engine.shippingLogger = userLogger
+
 	// Create a new shipper for this database
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
-		userDB.shipper = newShipper(
+		engine.shipper = newShipper(
 			userLogger,
 			i.limits,
 			userID,
@@ -279,7 +281,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		)
 
 		// Initialise the shipper blocks cache.
-		if err := userDB.updateCachedShippedBlocks(); err != nil {
+		if err := engine.updateCachedShippedBlocks(); err != nil {
 			level.Error(userLogger).Log("msg", "failed to update cached shipped blocks after shipper initialisation", "err", err)
 		}
 	}
@@ -603,7 +605,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 		return tsdbShippingDisabled
 	}
 
-	if userDB.shipper == nil && !i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBWhenShippingDisabled {
+	if !userDB.engine().BlockShippingEnabled() && !i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBWhenShippingDisabled {
 		// We will not delete local data when not using shipping to storage unless explicitly configured.
 		return tsdbShippingDisabled
 	}
