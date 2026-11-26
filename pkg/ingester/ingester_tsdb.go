@@ -19,12 +19,10 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/tenant"
-	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
@@ -149,7 +147,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		instanceLimitsFn:        i.getInstanceLimits,
 		instanceSeriesCount:     &i.seriesCount,
 		instanceErrors:          i.metrics.rejected,
-		blockMinRetention:       i.cfg.BlocksStorageConfig.TSDB.Retention,
 		useOwnedSeriesForLimits: i.cfg.UseIngesterOwnedSeriesForLimits,
 		seriesRefHistory:        newSeriesRefHistory(labelChurnRecords),
 
@@ -165,13 +162,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		userDB.plannerProvider = newPlannerProvider(plannerFactory)
 	}
 
-	userDBReady := atomic.NewBool(false)
-	blocksToDelete := func(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
-		if !userDBReady.Load() {
-			return nil
-		}
-		return userDB.blocksToDelete(blocks)
-	}
 	blockGeneration := blockGenerationCalculator(userDB, blockRanges[0])
 
 	if i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled {
@@ -179,6 +169,11 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
+	engine := &prometheusEngine{
+		blockDuration:     blockRanges[0],
+		blockMinRetention: i.cfg.BlocksStorageConfig.TSDB.Retention,
+	}
+
 	// Create a new user database
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                    i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
@@ -192,7 +187,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		WALSegmentSize:                       i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
 		WALReplayConcurrency:                 walReplayConcurrency,
 		SeriesLifecycleCallback:              userDB,
-		BlocksToDelete:                       blocksToDelete,
+		BlocksToDelete:                       engine.blocksToDelete,
 		EnableExemplarStorage:                true, // enable for everyone so we can raise the limit later
 		MaxExemplars:                         int64(i.limiter.maxExemplarsPerUser(userID)),
 		SeriesHashCache:                      i.seriesHashCache,
@@ -231,7 +226,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	level.Info(userLogger).Log("msg", "Running compaction after WAL replay")
 	// Note that we want to let TSDB creation finish without being interrupted by eventual context cancellation,
 	// so passing an independent context here
-	engine := &prometheusEngine{db: db, blockDuration: blockRanges[0]}
+	engine.db = db
 	err = engine.Compact(context.Background())
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to compact TSDB: %s", udir)
@@ -295,9 +290,9 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		}
 	}
 
-	// Must be the last statement: once flipped, blocksToDelete can run against userDB from
-	// the goroutine tsdb.Open started, so every field it reads must already be initialised.
-	userDBReady.Store(true)
+	// tsdb.Open starts a goroutine that can call blocksToDelete. Enable it only after
+	// the engine and its shipper have been initialized.
+	engine.blockDeletionReady.Store(true)
 
 	return userDB, nil
 }
