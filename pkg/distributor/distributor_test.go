@@ -6466,7 +6466,7 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			kafkaCfg.LastProducedOffsetPollInterval = 100 * time.Millisecond
 			kafkaCfg.LastProducedOffsetRetryTimeout = 100 * time.Millisecond
 
-			ingester.partitionReader, err = ingest.NewSingleClusterPartitionReader(kafkaCfg, ingester.partitionID(), ingester.instanceID(), filepath.Join(t.TempDir(), "test.json"), newMockIngesterPusherAdapter(ingester), log.NewNopLogger(), nil)
+			ingester.partitionReader, err = ingest.NewSingleClusterPartitionReader(kafkaCfg, ingester.partitionID(), ingester.instanceID(), filepath.Join(t.TempDir(), "test.json"), newMockIngesterPusherAdapter(ingester), false, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			// We start it async, and then we wait until running in a defer so that multiple partition
@@ -7993,6 +7993,10 @@ func newMockIngesterPusherAdapter(ingester *mockIngester) *mockIngesterPusherAda
 func (c *mockIngesterPusherAdapter) PushToStorageAndReleaseRequest(ctx context.Context, req *mimirpb.WriteRequest) error {
 	_, err := c.ingester.Push(ctx, req)
 	return err
+}
+
+func (c *mockIngesterPusherAdapter) IngestRecord(context.Context, []byte, int) error {
+	return fmt.Errorf("mock ingester requires decoded requests")
 }
 
 func (c *mockIngesterPusherAdapter) NotifyPreCommit(_ context.Context) error {

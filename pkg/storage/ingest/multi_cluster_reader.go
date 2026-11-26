@@ -66,6 +66,7 @@ func NewMultiClusterPartitionReader(
 	offsetFilePath string,
 	compartmentsCfg compartments.Config,
 	pusher Pusher,
+	useDirectIngest bool,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*MultiClusterPartitionReader, error) {
@@ -90,7 +91,7 @@ func NewMultiClusterPartitionReader(
 		pusherFactory := consumerFactoryFunc(func() RecordConsumer {
 			// clusterConfigs[0] only carries the Kafka client tunables consulted by PusherConsumer
 			// (e.g. FallbackClientErrorSampleRate); those are identical across clusters.
-			return NewPusherConsumer(pusher, clusterConfigs[0], pusherMetrics, mergerLogger)
+			return NewPusherConsumer(pusher, useDirectIngest, clusterConfigs[0], pusherMetrics, mergerLogger)
 		})
 		merger = NewHeapMerger(orderedCfg, pusherFactory, reg, mergerLogger)
 	}
@@ -118,7 +119,7 @@ func NewMultiClusterPartitionReader(
 		} else {
 			pusherMetrics := NewPusherConsumerMetrics(clusterReg)
 			consumerFactory = consumerFactoryFunc(func() RecordConsumer {
-				return NewPusherConsumer(pusher, clusterCfg, pusherMetrics, clusterLogger)
+				return NewPusherConsumer(pusher, useDirectIngest, clusterCfg, pusherMetrics, clusterLogger)
 			})
 		}
 

@@ -23,5 +23,6 @@ type API interface {
 	LabelChurnPageHandler(http.ResponseWriter, *http.Request)
 	PrepareInstanceRingDownscaleHandler(http.ResponseWriter, *http.Request)
 	PushToStorageAndReleaseRequest(context.Context, *mimirpb.WriteRequest) error
+	IngestRecord(ctx context.Context, content []byte, version int) error
 	NotifyPreCommit(ctx context.Context) error
 }
