@@ -2616,8 +2616,11 @@ impl Store {
     ) -> Result<()> {
         let timing = PhaseTiming::default();
         let started = Instant::now();
-        let result = self.pool.install(|| {
-            self.shards.par_iter().try_for_each(|shard| {
+        // One shard at a time, off the store's pool: retention runs on its own thread, and its block
+        // rewrites took the pool's threads from ingestion for tens of seconds, while queries
+        // waiting for read consistency waited on ingestion.
+        let result = {
+            self.shards.iter().try_for_each(|shard| {
                 let waiting = Instant::now();
                 let mut state = shard.write().expect("store lock poisoned");
                 timing.record(0, waiting.elapsed());
@@ -2736,7 +2739,7 @@ impl Store {
                 timing.record(4, locked);
                 truncated
             })
-        });
+        };
         if timing.shards.load(std::sync::atomic::Ordering::Relaxed) > 0 {
             eprintln!(
                 "phase=retention_timing total_ms={} {}",
