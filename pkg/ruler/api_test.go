@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"slices"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -2387,18 +2386,21 @@ func requestFor(t *testing.T, method string, url string, body io.Reader, userID 
 	return req.WithContext(ctx)
 }
 
-// yamlTestNamespaces are namespace names that exercise the yaml.v3 map key order and quoting.
+// yamlTestNamespaces returns namespace names that exercise the yaml.v3 map key order and quoting.
 // Do not add a name with a digit run above the int64 range or with a non-ASCII digit.
 // yaml.v3 has no stable order for such names, so TestYAMLKeyLess would fail at random.
-var yamlTestNamespaces = []string{
-	"ns-9", "ns-10", "ns-010", "ns-1", "ns-01", "ns-19", "ns-101", "ns-1a", "a", "B", "b", "a1", "a01", "a001", "a10b", "a9b",
-	"1", "2", "10", "true", "null", "~", "", " lead", "trail ", "x-1-2", "x-1-10", "z", "_", "-",
-	"ns 1", "ns:1", "ns#1", "\u00e9", "\u00fc", "\u65e5\u672c",
+func yamlTestNamespaces() []string {
+	return []string{
+		"ns-9", "ns-10", "ns-010", "ns-1", "ns-01", "ns-19", "ns-101", "ns-1a", "a", "B", "b", "a1", "a01", "a001", "a10b", "a9b",
+		"1", "2", "10", "true", "null", "~", "", " lead", "trail ", "x-1-2", "x-1-10", "z", "_", "-",
+		"ns 1", "ns:1", "ns#1", "\u00e9", "\u00fc", "\u65e5\u672c",
+	}
 }
 
 func TestYAMLKeyLess(t *testing.T) {
-	keys := make(map[string]int, len(yamlTestNamespaces))
-	for i, k := range yamlTestNamespaces {
+	namespaces := yamlTestNamespaces()
+	keys := make(map[string]int, len(namespaces))
+	for i, k := range namespaces {
 		keys[k] = i
 	}
 	d, err := yaml.Marshal(keys)
@@ -2410,14 +2412,15 @@ func TestYAMLKeyLess(t *testing.T) {
 		want = append(want, doc.Content[0].Content[i].Value)
 	}
 
-	got := slices.Clone(yamlTestNamespaces)
+	got := yamlTestNamespaces()
 	sort.Slice(got, func(i, j int) bool { return yamlKeyLess(got[i], got[j]) })
 	require.Equal(t, want, got)
 }
 
 func TestMarshalNamespacesAndSend(t *testing.T) {
+	namespaces := yamlTestNamespaces()
 	all := map[string][]rulefmt.RuleGroup{}
-	for i, ns := range yamlTestNamespaces {
+	for i, ns := range namespaces {
 		all[ns] = []rulefmt.RuleGroup{{
 			Name:     fmt.Sprintf("group-%d", i),
 			Interval: model.Duration(time.Minute),
@@ -2447,7 +2450,7 @@ func TestMarshalNamespacesAndSend(t *testing.T) {
 		marshalAndSend(tc.formatted, want, log.NewNopLogger(), headers)
 		require.Equal(t, http.StatusOK, want.Code)
 
-		for _, concurrency := range []int{1, 2, 8, len(yamlTestNamespaces) + 1, -1, 0} {
+		for _, concurrency := range []int{1, 2, 8, len(namespaces) + 1, -1, 0} {
 			t.Run(fmt.Sprintf("%s/concurrency=%d", tc.name, concurrency), func(t *testing.T) {
 				got := httptest.NewRecorder()
 				marshalNamespacesAndSend(tc.formatted, concurrency, got, log.NewNopLogger(), headers)
