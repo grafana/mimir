@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 	"unicode"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -323,6 +325,42 @@ func TestUserMetricsMetadataSearchWithoutMetadata(t *testing.T) {
 	results, err := mm.search(t.Context(), keepFilter{}, true, storage.OrderByValueAsc, "", 10)
 	require.NoError(t, err)
 	assert.Empty(t, results)
+}
+
+// TestUserMetricsMetadataSearchWithConcurrentWrites runs searches while add and
+// purge change the metadata between the chunks of a search. Run it with -race.
+func TestUserMetricsMetadataSearchWithConcurrentWrites(t *testing.T) {
+	mm := newSearchTestMetadataMap()
+	for i := range 4 * searchBatchSize {
+		addSearchTestMetadata(t, mm, fmt.Sprintf("metric_%04d", i), "keep")
+	}
+
+	writeCtx, stopWrites := context.WithCancel(t.Context())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; writeCtx.Err() == nil; i++ {
+			name := fmt.Sprintf("metric_%04d", i%(8*searchBatchSize))
+			if err := mm.add(name, &mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: name, Help: "keep"}); err != nil {
+				t.Error(err)
+				return
+			}
+			if i%searchBatchSize == 0 {
+				mm.purge(time.Now())
+			}
+		}
+	}()
+
+	for range 50 {
+		results, err := mm.search(t.Context(), keepFilter{}, true, storage.OrderByValueAsc, "", 0)
+		require.NoError(t, err)
+		values := searchResultValues(results)
+		assert.True(t, slices.IsSorted(values))
+		assert.Len(t, slices.Compact(slices.Clone(values)), len(values), "no name twice")
+	}
+	stopWrites()
+	wg.Wait()
 }
 
 func BenchmarkUserMetricsMetadataSearch(b *testing.B) {

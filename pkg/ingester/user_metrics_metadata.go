@@ -172,9 +172,12 @@ func (mm *userMetricsMetadata) toClientMetadata(req *client.MetricsMetadataReque
 // a metric when any of its HELP texts holds the term. order must be
 // OrderByValueAsc or OrderByValueDesc.
 //
-// Only the scan holds the read lock, and it copies no names or HELP texts.
-// It keeps only the first limit matches in order, and it skips the filter for
-// a name that cannot get into them.
+// search copies the names after resumeAfter under the read lock. Then it reads
+// the HELP texts of searchBatchSize names at a time, and it takes the read lock
+// again for each chunk. So add and purge wait for one chunk at most. A metric
+// that add or purge changes during the search can be in the results or not.
+// search keeps only the first limit matches in order, and it skips the filter
+// for a name that cannot get into them.
 //
 // When caseSensitive is false, search writes the text in lower case, byte for
 // byte as strings.ToLower does. The case-folding root of filter then finds
@@ -191,54 +194,63 @@ func (mm *userMetricsMetadata) search(ctx context.Context, filter storage.Filter
 	top := searchResultHeap{before: before}
 	var text []byte
 
-	err := func() error {
+	var names []string
+	func() {
 		mm.mtx.RLock()
 		defer mm.mtx.RUnlock()
-
-		if limit > 0 {
-			top.results = make([]storage.SearchResult, 0, min(limit, len(mm.metricToMetadata)))
+		names = make([]string, 0, len(mm.metricToMetadata))
+		for name := range mm.metricToMetadata {
+			if resumeAfter == "" || before(resumeAfter, name) {
+				names = append(names, name)
+			}
 		}
-		scanned := 0
-		for name, set := range mm.metricToMetadata {
-			scanned++
-			// A check per name would add a ctx.Err call per name. After a cancel,
-			// the interval limits the extra work to searchBatchSize names.
-			if scanned%searchBatchSize == 0 {
-				if err := ctx.Err(); err != nil {
-					return err
+	}()
+
+	if limit > 0 {
+		top.results = make([]storage.SearchResult, 0, min(limit, len(names)))
+	}
+	for len(names) > 0 {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		chunk := names[:min(searchBatchSize, len(names))]
+		names = names[len(chunk):]
+
+		// The closure releases the read lock with defer, so a panic in filter
+		// cannot leave the lock held.
+		func() {
+			mm.mtx.RLock()
+			defer mm.mtx.RUnlock()
+			for _, name := range chunk {
+				if limit > 0 && len(top.results) == limit && !before(name, top.results[0].Value) {
+					continue
+				}
+				set, ok := mm.metricToMetadata[name]
+				if !ok {
+					// purge removed the metric after the copy of the names.
+					continue
+				}
+				text = appendText(text[:0], name, caseSensitive)
+				for metadata := range set {
+					text = append(text, '\n')
+					text = appendText(text, metadata.Help, caseSensitive)
+				}
+				// The filter does not keep the value, so a view of the reused buffer
+				// is safe.
+				accepted, score := filter.Accept(unsafe.String(unsafe.SliceData(text), len(text))) // #nosec G103 -- nosemgrep: use-of-unsafe-block
+				if !accepted {
+					continue
+				}
+				result := storage.SearchResult{Value: name, Score: score}
+				if limit > 0 && len(top.results) == limit {
+					top.replaceLast(result)
+				} else {
+					top.push(result, limit > 0)
 				}
 			}
-			if resumeAfter != "" && !before(resumeAfter, name) {
-				continue
-			}
-			if limit > 0 && len(top.results) == limit && !before(name, top.results[0].Value) {
-				continue
-			}
-			text = appendText(text[:0], name, caseSensitive)
-			for metadata := range set {
-				text = append(text, '\n')
-				text = appendText(text, metadata.Help, caseSensitive)
-			}
-			// The filter does not keep the value, so a view of the reused buffer is
-			// safe.
-			accepted, score := filter.Accept(unsafe.String(unsafe.SliceData(text), len(text))) // #nosec G103 -- nosemgrep: use-of-unsafe-block
-			if !accepted {
-				continue
-			}
-			result := storage.SearchResult{Value: name, Score: score}
-			if limit > 0 && len(top.results) == limit {
-				top.replaceLast(result)
-			} else {
-				top.push(result, limit > 0)
-			}
-		}
-		return nil
-	}()
-	if err != nil {
-		return nil, err
+		}()
 	}
-	// The sort reads only the results of this request, so it runs after the scan
-	// releases the read lock. add and purge wait for that lock.
+
 	slices.SortFunc(top.results, func(a, b storage.SearchResult) int {
 		if before(a.Value, b.Value) {
 			return -1

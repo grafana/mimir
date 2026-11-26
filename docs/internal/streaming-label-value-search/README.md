@@ -228,9 +228,10 @@ gateway sees multiple blocks for a tenant and fans out internally.
 
 ### Ingester (single TSDB head, leaf)
 
-The ingester exposes two gRPC server-streaming RPCs (`stream SearchResultBatch`) over its existing gRPC server. Each RPC reads from the
-per-tenant TSDB head — a **single in-memory source** — and streams batches
-of results back to the gRPC client.
+The ingester exposes three gRPC server-streaming RPCs (`stream SearchResultBatch`) over its existing gRPC server.
+`SearchLabelNames` and `SearchLabelValues` read from the per-tenant TSDB head — a **single in-memory source** — and stream batches
+of results back to the gRPC client. `SearchMetricsMetadata` reads the per-tenant metric metadata that the ingester holds in memory,
+and streams the matching metric names in the same way. The querier does not call it yet.
 
 **Who is the gRPC client?** Despite the file location `pkg/distributor/`,
 the search RPC's fan-out code is the **read-path client wrapper** that runs
