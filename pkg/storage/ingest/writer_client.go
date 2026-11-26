@@ -151,6 +151,12 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		// https://github.com/twmb/franz-go/issues/777
 		kgo.MaxBufferedRecords(math.MaxInt), // Use a high value to set it as unlimited, because the client doesn't support "0 as unlimited".
 		kgo.MaxBufferedBytes(0),
+
+		// Retry a connection that is closed before its first response instead of gating the retry on a metadata update.
+		// The client treats such a close as a likely TLS or SASL misconfiguration and does not retry it by default,
+		// but the same close happens when a broker (or a TCP proxy in front of it) goes away during a restart.
+		// RecordDeliveryTimeout remains a rough limit, checked at send and response boundaries.
+		kgo.AlwaysRetryEOF(),
 	)
 
 	var options kafkaWriterClientOptions

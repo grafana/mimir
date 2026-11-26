@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"io"
 	"strings"
 	"sync"
 	"testing"
@@ -110,6 +111,78 @@ func TestNewKafkaWriterClient_ShouldConfigureRequestTimeoutOverhead(t *testing.T
 	t.Cleanup(client.Close)
 
 	assert.Equal(t, time.Second, client.OptValue(kgo.RequestTimeoutOverhead))
+}
+
+// An established producer must cope with a broker that drops its produce connection and then accepts new connections
+// only to close them before answering the first request, as happens when a broker (or a TCP proxy in front of it)
+// is restarting.
+func TestKafkaProducer_ProduceSync_ShouldRetryConnectionsClosedBeforeTheFirstResponse(t *testing.T) {
+	const (
+		topicName     = "test"
+		numPartitions = 1
+	)
+
+	// setup returns a producer that has already produced one record. After restart is called, the broker closes
+	// the connection on the next Produce request and then closes the next closeNew connections during API versions
+	// negotiation, which is the first request on every new connection. A negative closeNew closes all of them.
+	setup := func(t *testing.T, closeNew int64, writeTimeout time.Duration) (producer *KafkaProducer, restart func(), closed *atomic.Int64) {
+		t.Helper()
+
+		var vnet kfake.VirtualNetwork
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, testkafka.WithVirtualNetwork(&vnet))
+
+		restarting := atomic.NewBool(false)
+		dropProduce := atomic.NewBool(false)
+		closed = atomic.NewInt64(0)
+
+		cluster.ControlKey(int16(kmsg.Produce), func(kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+			if dropProduce.CompareAndSwap(true, false) {
+				return nil, io.EOF, true
+			}
+			return nil, nil, false
+		})
+		cluster.ControlKey(int16(kmsg.ApiVersions), func(kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+			if restarting.Load() && (closeNew < 0 || closed.Load() < closeNew) {
+				closed.Inc()
+				return nil, io.EOF, true
+			}
+			return nil, nil, false
+		})
+
+		producer = createTestKafkaProducerForBackend(t, KafkaBackendKafka, clusterAddr, topicName, prometheus.NewPedanticRegistry(), func(cfg *KafkaConfig) {
+			cfg.Dialer = vnet.DialContext
+			cfg.WriteTimeout = writeTimeout
+		})
+
+		res := producer.ProduceSync(t.Context(), []*kgo.Record{{Topic: topicName, Partition: 0, Value: []byte("before")}})
+		require.NoError(t, res.FirstErr())
+
+		return producer, func() { dropProduce.Store(true); restarting.Store(true) }, closed
+	}
+
+	t.Run("should deliver the record when one new connection is closed", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			// The write timeout is half the ordinary metadata refresh interval.
+			producer, restart, closed := setup(t, 1, DefaultMetadataRefreshInterval/2)
+			restart()
+
+			res := producer.ProduceSync(t.Context(), []*kgo.Record{{Topic: topicName, Partition: 0, Value: []byte("during")}})
+			require.NoError(t, res.FirstErr())
+			assert.EqualValues(t, 1, closed.Load())
+		})
+	})
+
+	t.Run("should fail the record with a timeout when every new connection is closed", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			producer, restart, _ := setup(t, -1, 2*time.Second)
+			restart()
+
+			res := producer.ProduceSync(t.Context(), []*kgo.Record{{Topic: topicName, Partition: 0, Value: []byte("during")}})
+			require.ErrorIs(t, res.FirstErr(), kgo.ErrRecordTimeout)
+		})
+	})
 }
 
 func TestNewKafkaWriterClient_ShouldTrackExtendedKafkaClientMetrics(t *testing.T) {

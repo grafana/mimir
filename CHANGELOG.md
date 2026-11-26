@@ -209,6 +209,7 @@
 * [BUGFIX] Query-frontend: Fix retried POST requests to the label names, label values, series, cardinality and active series endpoints being sent without their body. Retries dropped the parameters sent in the body, such as `match[]`, so a retried label names or label values request could return results for all series. #17445
 * [BUGFIX] Ruler: Return HTTP 500 from the Prometheus rules and alerts endpoints when a ruler client is not available. Previously, the endpoints returned HTTP 200 without the rule groups of that ruler. #17228
 * [BUGFIX] Ingester: Fix the partition reader logging an error and waiting for the full backoff when the Kafka client reports that a broker connection died. This error is now retried immediately, as intended. #17495
+* [BUGFIX] Ingest storage: Retry Kafka writer connections closed before the first response without waiting for a metadata refresh. #17475
 
 ### Mixin
 
