@@ -86,3 +86,8 @@ func (m *IngesterServerMock) SearchLabelValues(req *SearchLabelValuesRequest, sr
 	args := m.Called(req, srv)
 	return args.Error(0)
 }
+
+func (m *IngesterServerMock) SearchMetricsMetadata(req *SearchMetricsMetadataRequest, srv Ingester_SearchMetricsMetadataServer) error {
+	args := m.Called(req, srv)
+	return args.Error(0)
+}

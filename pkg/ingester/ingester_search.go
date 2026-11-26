@@ -6,6 +6,7 @@ package ingester
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 
@@ -125,12 +126,9 @@ func buildSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit 
 	if err != nil {
 		return nil, nil, err
 	}
-	if limit < 0 {
-		return nil, nil, fmt.Errorf("limit must be >= 0, got %d", limit)
-	}
-	hintsLimit := int(limit)
-	if limit > int64(math.MaxInt) {
-		hintsLimit = math.MaxInt
+	hintsLimit, err := searchLimit(limit)
+	if err != nil {
+		return nil, nil, err
 	}
 	hints := &storage.SearchHints{
 		Filter:  filter,
@@ -138,6 +136,83 @@ func buildSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit 
 		Limit:   hintsLimit,
 	}
 	return hints, matchers, nil
+}
+
+func searchLimit(limit int64) (int, error) {
+	if limit < 0 {
+		return 0, fmt.Errorf("limit must be >= 0, got %d", limit)
+	}
+	if limit > int64(math.MaxInt) {
+		return math.MaxInt, nil
+	}
+	return int(limit), nil
+}
+
+// SearchMetricsMetadata streams the names of metrics whose name and HELP text
+// match the search filter.
+func (i *Ingester) SearchMetricsMetadata(req *client.SearchMetricsMetadataRequest, stream client.Ingester_SearchMetricsMetadataServer) (err error) {
+	// See SearchLabelNames for why validation runs ahead of the deferred mapper.
+	params, filter, err := buildMetadataSearchFilter(req.Filter, req.Ordering)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+	limit, err := searchLimit(req.Limit)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+
+	ctx := stream.Context()
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return err
+	}
+	if err := i.enforceReadConsistency(ctx, userID); err != nil {
+		return err
+	}
+
+	userMetadata := i.getUserMetadata(userID)
+	if userMetadata == nil {
+		return nil
+	}
+	results, err := userMetadata.search(ctx, filter, params.CaseSensitive, protoToOrdering(req.Ordering), params.ResumeAfter, limit)
+	if err != nil {
+		return err
+	}
+	return streamSearchResults(ctx, storage.NewSearchResultSetFromSlice(results, nil), params.ResumeAfter != "", stream.Send)
+}
+
+// buildMetadataSearchFilter validates the filter of a SearchMetricsMetadata
+// request and builds it. The filter sees the joined text of a metric, so it
+// carries no cursor; userMetricsMetadata.search applies the cursor to the
+// name.
+func buildMetadataSearchFilter(wf *client.SearchFilter, ord client.SearchOrdering) (*streaminglabelvalues.Params, storage.Filter, error) {
+	if ord == client.ORDER_BY_SCORE_DESC {
+		return nil, nil, errors.New("ORDER_BY_SCORE_DESC is not supported by metric metadata search, because every match scores 1.0")
+	}
+	if wf.GetFuzzAlg() != client.FUZZ_ALG_SUBSTRING {
+		return nil, nil, fmt.Errorf("metric metadata search requires fuzz algorithm FUZZ_ALG_SUBSTRING, got %s", wf.GetFuzzAlg())
+	}
+	params, err := protoToParams(wf)
+	if err != nil {
+		return nil, nil, err
+	}
+	// The text of a metric joins its HELP texts with newlines in map order, so
+	// a term with a newline could match differently on each request.
+	if params.HasTermContaining("\n") {
+		return nil, nil, errors.New("a metric metadata search term must not contain a newline")
+	}
+	filter, err := streaminglabelvalues.BuildFilter(params)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Without terms, the search would return every metric with metadata. The
+	// MetricsMetadata RPC already serves that.
+	if filter == nil {
+		return nil, nil, errors.New("metric metadata search requires search terms or an expression")
+	}
+	return params, filter, nil
 }
 
 // protoToParams converts a wire SearchFilter into a validated
@@ -184,8 +259,8 @@ func protoToOrdering(o client.SearchOrdering) storage.Ordering {
 	}
 }
 
-// searchResultSender is the minimal interface satisfied by both
-// Ingester_SearchLabelNamesServer and Ingester_SearchLabelValuesServer.
+// searchResultSender is the Send method of Ingester_SearchLabelNamesServer,
+// Ingester_SearchLabelValuesServer and Ingester_SearchMetricsMetadataServer.
 type searchResultSender func(*client.SearchResultBatch) error
 
 // streamSearchResults reads from rs in batches of searchBatchSize and emits

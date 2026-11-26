@@ -70,6 +70,15 @@ func (s searchLabelValuesStream) Context() context.Context {
 	return s.ctx
 }
 
+type searchMetricsMetadataStream struct {
+	ctx context.Context
+	client.Ingester_SearchMetricsMetadataServer
+}
+
+func (s searchMetricsMetadataStream) Context() context.Context {
+	return s.ctx
+}
+
 type queryStreamStream struct {
 	ctx context.Context
 	client.Ingester_QueryStreamServer
@@ -278,6 +287,20 @@ func (i *ProfilingWrapper) SearchLabelValues(request *client.SearchLabelValuesRe
 	}
 
 	return i.ing.SearchLabelValues(request, server)
+}
+
+func (i *ProfilingWrapper) SearchMetricsMetadata(request *client.SearchMetricsMetadataRequest, server client.Ingester_SearchMetricsMetadataServer) error {
+	ctx := server.Context()
+	if isTraceSampled(ctx) {
+		userID, _ := tenant.TenantID(ctx)
+		labels := pprof.Labels("userID", userID)
+		defer pprof.SetGoroutineLabels(ctx)
+		ctx = pprof.WithLabels(ctx, labels)
+		pprof.SetGoroutineLabels(ctx)
+		server = searchMetricsMetadataStream{ctx, server}
+	}
+
+	return i.ing.SearchMetricsMetadata(request, server)
 }
 
 func (i *ProfilingWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) {

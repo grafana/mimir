@@ -6,8 +6,15 @@
 package ingester
 
 import (
+	"context"
+	"slices"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
+	"unsafe"
+
+	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -156,6 +163,157 @@ func (mm *userMetricsMetadata) toClientMetadata(req *client.MetricsMetadataReque
 		numMetrics++
 	}
 	return r
+}
+
+// search returns the names of the metrics whose text matches filter, sorted
+// by order, without the names at or before resumeAfter, and at most limit
+// names. A limit of 0 means no limit. The text of a metric is its name and
+// every HELP text of the metric, separated by newlines, so a NOT term rejects
+// a metric when any of its HELP texts holds the term. order must be
+// OrderByValueAsc or OrderByValueDesc.
+//
+// The scan holds the read lock and copies no names or HELP texts. It keeps
+// only the first limit matches in order, and it skips the filter for a name
+// that cannot get into them.
+//
+// When caseSensitive is false, search writes the text in lower case, byte for
+// byte as strings.ToLower does. The case-folding root of filter then finds
+// nothing to change, so it does not allocate a lower-case copy per metric.
+func (mm *userMetricsMetadata) search(ctx context.Context, filter storage.Filter, caseSensitive bool, order storage.Ordering, resumeAfter string, limit int) ([]storage.SearchResult, error) {
+	descending := order == storage.OrderByValueDesc
+	// before reports if name a sorts before name b in the results.
+	before := func(a, b string) bool {
+		if descending {
+			return a > b
+		}
+		return a < b
+	}
+	top := searchResultHeap{before: before}
+	var text []byte
+
+	mm.mtx.RLock()
+	defer mm.mtx.RUnlock()
+
+	if limit > 0 {
+		top.results = make([]storage.SearchResult, 0, min(limit, len(mm.metricToMetadata)))
+	}
+	scanned := 0
+	for name, set := range mm.metricToMetadata {
+		scanned++
+		// A check per name would add a ctx.Err call per name. After a cancel, the
+		// interval limits the extra work to searchBatchSize names.
+		if scanned%searchBatchSize == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
+		if resumeAfter != "" && !before(resumeAfter, name) {
+			continue
+		}
+		if limit > 0 && len(top.results) == limit && !before(name, top.results[0].Value) {
+			continue
+		}
+		text = appendText(text[:0], name, caseSensitive)
+		for metadata := range set {
+			text = append(text, '\n')
+			text = appendText(text, metadata.Help, caseSensitive)
+		}
+		// The filter does not keep the value, so a view of the reused buffer is
+		// safe.
+		accepted, score := filter.Accept(unsafe.String(unsafe.SliceData(text), len(text)))
+		if !accepted {
+			continue
+		}
+		result := storage.SearchResult{Value: name, Score: score}
+		if limit > 0 && len(top.results) == limit {
+			top.replaceLast(result)
+		} else {
+			top.push(result, limit > 0)
+		}
+	}
+	slices.SortFunc(top.results, func(a, b storage.SearchResult) int {
+		if before(a.Value, b.Value) {
+			return -1
+		}
+		return 1
+	})
+	return top.results, nil
+}
+
+// appendText appends s to dst, in lower case when caseSensitive is false. The
+// lower case is byte for byte the output of strings.ToLower, which writes an
+// invalid UTF-8 byte as utf8.RuneError. Lowering the name and each HELP text
+// apart gives the same bytes as lowering the joined text, because no UTF-8
+// sequence can hold the '\n' separator.
+func appendText(dst []byte, s string, caseSensitive bool) []byte {
+	if caseSensitive {
+		return append(dst, s...)
+	}
+	// start is the first byte not yet appended. Bytes that lowering does not
+	// change are appended in bulk.
+	start := 0
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c < utf8.RuneSelf && (c < 'A' || c > 'Z') {
+			i++
+			continue
+		}
+		dst = append(dst, s[start:i]...)
+		if c < utf8.RuneSelf {
+			dst = append(dst, c+'a'-'A')
+			i++
+		} else {
+			r, size := utf8.DecodeRuneInString(s[i:])
+			dst = utf8.AppendRune(dst, unicode.ToLower(r))
+			i += size
+		}
+		start = i
+	}
+	return append(dst, s[start:]...)
+}
+
+// searchResultHeap holds search results with the result that sorts last at
+// index 0, so a better result can replace it in O(log n).
+type searchResultHeap struct {
+	results []storage.SearchResult
+	before  func(a, b string) bool
+}
+
+// push adds r. Without heap order, push only appends, because the caller
+// sorts all results at the end.
+func (h *searchResultHeap) push(r storage.SearchResult, heapOrder bool) {
+	h.results = append(h.results, r)
+	if !heapOrder {
+		return
+	}
+	for i := len(h.results) - 1; i > 0; {
+		parent := (i - 1) / 2
+		if !h.before(h.results[parent].Value, h.results[i].Value) {
+			break
+		}
+		h.results[parent], h.results[i] = h.results[i], h.results[parent]
+		i = parent
+	}
+}
+
+// replaceLast replaces the result that sorts last with r.
+func (h *searchResultHeap) replaceLast(r storage.SearchResult) {
+	h.results[0] = r
+	n := len(h.results)
+	for i := 0; ; {
+		last := i
+		if left := 2*i + 1; left < n && h.before(h.results[last].Value, h.results[left].Value) {
+			last = left
+		}
+		if right := 2*i + 2; right < n && h.before(h.results[last].Value, h.results[right].Value) {
+			last = right
+		}
+		if last == i {
+			return
+		}
+		h.results[i], h.results[last] = h.results[last], h.results[i]
+		i = last
+	}
 }
 
 type metricMetadataSet map[mimirpb.MetricMetadata]time.Time

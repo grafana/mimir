@@ -44,6 +44,11 @@ service Ingester {
   // SearchLabelValues streams label values for the given label name matching the search filter.
   rpc SearchLabelValues(SearchLabelValuesRequest) returns (stream SearchResultBatch) {}
 
+  // SearchMetricsMetadata streams the names of metrics whose name and HELP
+  // text match the search filter. It has no time range and no label matchers,
+  // because the ingester keys metric metadata by metric name only.
+  rpc SearchMetricsMetadata(SearchMetricsMetadataRequest) returns (stream SearchResultBatch) {}
+
   // When adding more read-path methods here, please update ingester_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well.
 }
 
@@ -150,10 +155,12 @@ message SearchFilter {
   // ResumeAfter is the last value of the previous page of a cursor search.
   // Empty means no cursor. Before the server applies the limit, it drops
   // every value that sorts at or before resume_after in the request ordering.
-  // A cursor is only valid for a request with the same label name, matchers,
-  // time range, filter and ordering as the one that returned the previous
-  // page. The server cannot check that, so whoever hands out cursors must
-  // bind each one to those parameters and reject it for any other request.
+  // A cursor is only valid for a request with the same parameters as the one
+  // that returned the previous page: the same filter and ordering, and the
+  // same label name, matchers and time range where the request has them.
+  // The server cannot check that, so whoever hands out cursors must bind
+  // each one to those parameters and reject it for any other request.
+  // SearchMetricsMetadata applies resume_after to the metric name.
   string resume_after = 6;
   // ScoreAfter is the score of resume_after, for an ORDER_BY_SCORE_DESC
   // cursor. It must be in [0,1], and it must be 0 when resume_after is empty.
@@ -187,10 +194,25 @@ message SearchLabelValuesRequest {
   reserved 8;
 }
 
+message SearchMetricsMetadataRequest {
+  // Filter must use FUZZ_ALG_SUBSTRING and carry terms or an expression. No
+  // term may contain a newline. The server matches the filter against one
+  // text per metric: the metric name and every HELP text of the metric,
+  // separated by newlines. So a NOT term excludes a metric when any of its
+  // HELP texts holds the term.
+  SearchFilter filter = 1;
+  // Ordering must be ORDER_BY_VALUE_ASC or ORDER_BY_VALUE_DESC. Every
+  // FUZZ_ALG_SUBSTRING match scores 1.0, so the server rejects
+  // ORDER_BY_SCORE_DESC.
+  SearchOrdering ordering = 2;
+  // Limit caps the number of accepted results; 0 means no limit.
+  int64 limit = 3;
+}
+
 // SearchResultBatch carries one batch of (value, score) pairs in a streaming
-// reply. Both SearchLabel{Names,Values} use this shape. Warnings, when
-// present, accompany the final batch of a stream and carry annotations
-// produced by the underlying Searcher.
+// reply. SearchLabelNames, SearchLabelValues and SearchMetricsMetadata use
+// this shape. Warnings, when present, accompany the final batch of a stream
+// and carry annotations produced by the underlying Searcher.
 message SearchResultBatch {
   message Result {
     string value = 1;
