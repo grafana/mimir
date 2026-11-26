@@ -949,6 +949,29 @@ func (seriesstoreColdCandidates) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(seriesstoreColdCandidatesMisses, prometheus.CounterValue, float64(misses))
 }
 
+var (
+	seriesstoreSetShadowValues = prometheus.NewDesc("cortex_ingester_seriesstore_native_resources_set_shadow_values_total",
+		"How many values the seriesstore engine checked native resources lookups' sets on, against their regexes, for a sample of the lookups.", nil, nil)
+	seriesstoreSetShadowDisagreements = prometheus.NewDesc("cortex_ingester_seriesstore_native_resources_set_shadow_disagreements_total",
+		"How many values native resources lookups' sets answered differently from their regexes, by direction: false_accept, accepted where the regex rejects, or false_reject.", []string{"direction"}, nil)
+)
+
+// seriesstoreSetShadow exports the checks of native resources lookups' sets against their regexes, which the store
+// counts: any disagreement is a set answering wrongly.
+type seriesstoreSetShadow struct{}
+
+func (seriesstoreSetShadow) Describe(ch chan<- *prometheus.Desc) {
+	ch <- seriesstoreSetShadowValues
+	ch <- seriesstoreSetShadowDisagreements
+}
+
+func (seriesstoreSetShadow) Collect(ch chan<- prometheus.Metric) {
+	checked, falseAccepts, falseRejects := store.SetShadowStats()
+	ch <- prometheus.MustNewConstMetric(seriesstoreSetShadowValues, prometheus.CounterValue, float64(checked))
+	ch <- prometheus.MustNewConstMetric(seriesstoreSetShadowDisagreements, prometheus.CounterValue, float64(falseAccepts), "false_accept")
+	ch <- prometheus.MustNewConstMetric(seriesstoreSetShadowDisagreements, prometheus.CounterValue, float64(falseRejects), "false_reject")
+}
+
 // observeSeriesstoreLocks has the store's shard locks observed by the ingester's metrics: the store's lock observer is
 // the process's, as its shards' are.
 func observeSeriesstoreLocks(m *ingesterMetrics) {

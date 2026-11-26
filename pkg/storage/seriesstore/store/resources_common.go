@@ -166,6 +166,9 @@ func (e *Engine) NativeResourcesCapped(ctx context.Context, matcherSets [][]*pro
 	if err != nil {
 		return nil, false, len(seen), err
 	}
+	if usesSet {
+		e.shadowCheckSets(ctx, matcherSets, compiled)
+	}
 	if opts.Unsorted && limit <= 0 {
 		nativeResourcesPaths.unsorted.Add(1)
 	} else {
