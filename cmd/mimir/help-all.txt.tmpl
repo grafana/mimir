@@ -1985,6 +1985,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The window, in sample time, that the seriesstore engine's limits on native resources count in. (default 1h)
   -ingester.native-resources-indexed-attributes comma-separated-list-of-strings
     	[experimental] Comma-separated descriptive attributes of resources, besides the identifying service.name, service.namespace and service.instance.id, that the ingester indexes, to find series by. Changing it takes effect when the tenant's TSDB next opens.
+  -ingester.native-resources-lookup-memo-enabled
+    	[experimental] Decode each resource attribute value a native resources lookup returns once per lookup, outside the seriesstore engine's resources lock, rather than once per series under it, and share the decoded attributes between series. Read on every lookup, so that turning it off takes effect at once.
   -ingester.native-resources-lookup-set-matching-enabled
     	[experimental] Match a native resources lookup's large alternations of literals, such as info()'s of every target, against a set of their values rather than the regex, in the seriesstore engine. Selects and label lookups keep the regex. Read on every lookup, so that turning it off takes effect at once.
   -ingester.native-resources-lookup-unsorted-enabled

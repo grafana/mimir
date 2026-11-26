@@ -277,6 +277,7 @@ type Limits struct {
 	NativeMetadataLookupMaxSeries           int                    `yaml:"native_metadata_lookup_max_series" json:"native_metadata_lookup_max_series" category:"experimental"`
 	NativeResourcesLookupSetMatching        bool                   `yaml:"native_resources_lookup_set_matching_enabled" json:"native_resources_lookup_set_matching_enabled" category:"experimental"`
 	NativeResourcesLookupUnsorted           bool                   `yaml:"native_resources_lookup_unsorted_enabled" json:"native_resources_lookup_unsorted_enabled" category:"experimental"`
+	NativeResourcesLookupMemo               bool                   `yaml:"native_resources_lookup_memo_enabled" json:"native_resources_lookup_memo_enabled" category:"experimental"`
 	NativeMetadataGroupedLookupMaxSeries    int                    `yaml:"native_metadata_grouped_lookup_max_series" json:"native_metadata_grouped_lookup_max_series" category:"experimental"`
 	NativeMetadataResultsCacheDisabled      bool                   `yaml:"native_metadata_results_cache_disabled" json:"native_metadata_results_cache_disabled" category:"experimental"`
 
@@ -524,6 +525,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.NativeMetadataLookupMaxSeries, "ingester.native-metadata-lookup-max-series", 100_000, "How many series with native metric metadata or resources a lookup of them by series may match in an ingester. Past it, the lookup fails. 0 means no limit.")
 	f.BoolVar(&l.NativeResourcesLookupSetMatching, "ingester.native-resources-lookup-set-matching-enabled", false, "Match a native resources lookup's large alternations of literals, such as info()'s of every target, against a set of their values rather than the regex, in the seriesstore engine. Selects and label lookups keep the regex. Read on every lookup, so that turning it off takes effect at once.")
 	f.BoolVar(&l.NativeResourcesLookupUnsorted, "ingester.native-resources-lookup-unsorted-enabled", false, "Leave the series of a native resources lookup by target in the seriesstore engine's shard order rather than sorting them by labels, since the lookup groups them by target and sorts the targets. Read on every lookup, so that turning it off takes effect at once.")
+	f.BoolVar(&l.NativeResourcesLookupMemo, "ingester.native-resources-lookup-memo-enabled", false, "Decode each resource attribute value a native resources lookup returns once per lookup, outside the seriesstore engine's resources lock, rather than once per series under it, and share the decoded attributes between series. Read on every lookup, so that turning it off takes effect at once.")
 	f.IntVar(&l.NativeMetadataGroupedLookupMaxSeries, "ingester.native-metadata-grouped-lookup-max-series", 1_000_000, "How many series with native resources a lookup of them by target may match in an ingester, which reads every series of each target. Past it, the lookup fails. 0 means no limit.")
 	f.BoolVar(&l.NativeMetadataResultsCacheDisabled, "query-frontend.native-metadata-results-cache-disabled", false, "Neither read nor write the results caches for the tenant's queries: the query-frontend's results cache, of query results and errors, and the query engine's intermediate results cache. A TTL of 0 isn't the same, since entries are still written with it. The label names and values and cardinality query caches are already off when their TTLs are 0, the default.")
 	f.BoolVar(&l.NativeMetricMetadataEnabled, "ingester.native-metric-metadata-enabled", false, "Store each series' metric metadata (type, unit and help) in the ingester's memory, as versions over time, in addition to the metric families' metadata. Turning it on takes effect when the tenant's TSDB next opens; turning it off stops storing new metadata right away.")
@@ -1610,11 +1612,11 @@ func (o *Overrides) NativeMetadataLookupMaxSeries(userID string, byTarget bool) 
 }
 
 // NativeResourcesLookupOptions returns which of the seriesstore engine's optional paths the tenant's native resources
-// lookups take: matching large alternations of literals against a set, and leaving a lookup by target's series
-// unsorted.
-func (o *Overrides) NativeResourcesLookupOptions(userID string) (setMatching, unsorted bool) {
+// lookups take: matching large alternations of literals against a set, leaving a lookup by target's series unsorted,
+// and decoding each attribute value once per lookup.
+func (o *Overrides) NativeResourcesLookupOptions(userID string) (setMatching, unsorted, memo bool) {
 	limits := o.getOverridesForUser(userID)
-	return limits.NativeResourcesLookupSetMatching, limits.NativeResourcesLookupUnsorted
+	return limits.NativeResourcesLookupSetMatching, limits.NativeResourcesLookupUnsorted, limits.NativeResourcesLookupMemo
 }
 
 // NativeMetadataResultsCacheDisabled returns whether the tenant's queries neither read nor write the results caches.

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"reflect"
 	"regexp"
 	"runtime"
 	"slices"
@@ -210,13 +211,54 @@ func TestNativeResourcesCapped_Unsorted(t *testing.T) {
 	sorted := lookup(0, NativeResourcesOptions{})
 	require.True(t, slices.IsSorted(sorted))
 
-	_, before := NativeResourcesPaths()
+	_, before, _ := NativeResourcesPaths()
 	unsorted := lookup(0, NativeResourcesOptions{Unsorted: true})
 	require.ElementsMatch(t, sorted, unsorted)
-	_, after := NativeResourcesPaths()
+	_, after, _ := NativeResourcesPaths()
 	require.Equal(t, before+1, after)
 
 	require.Equal(t, sorted[:5], lookup(5, NativeResourcesOptions{Unsorted: true}))
-	_, limited := NativeResourcesPaths()
+	_, limited, _ := NativeResourcesPaths()
 	require.Equal(t, after, limited, "a positive limit sorts")
+}
+
+// The memo answers as the per-series path does, over what a lookup meets: series sharing an identity, descriptions
+// changing past the limit, which coalesces them and changes the latest version in place, identity changes, past their
+// limit too, and a series without a resource. The memo is per lookup and keyed by the encoded
+// values, not their ids, so an id that a trim reclaims and another value takes, between shards or between lookups,
+// finds no entry of the value it had.
+func TestNativeResourcesCapped_Memo(t *testing.T) {
+	var series []promlabels.Labels
+	for n := range 12 {
+		series = append(series, promlabels.FromStrings(model.MetricNameLabel, "up", "instance", fmt.Sprint(n%4), "pod", fmt.Sprint(n)))
+	}
+	e := resourcesEngine(t, 1_000, series...)
+	e.SetResourceLimits(ResourceLimits{WindowMs: 3_600_000, MaxIdentityChangesPerSeries: 1, MaxVersionsPerIdentity: 2})
+	for step := range 6 {
+		for n, l := range series[:11] {
+			service := "frontend"
+			if step >= 3 && n%3 == 0 {
+				service = fmt.Sprintf("other-%d", step)
+			}
+			resourceRoutes["appender"](t, e, int64(2_000+step*1_000), testResourceAttributes(service, fmt.Sprintf("node-%d", step)), l)
+		}
+	}
+	all := [][]*promlabels.Matcher{{promlabels.MustNewMatcher(promlabels.MatchEqual, model.MetricNameLabel, "up")}}
+	lookup := func(mint, maxt int64, memo bool) []NativeResourcesSeries {
+		found, _, _, err := e.NativeResourcesCapped(context.Background(), all, mint, maxt, 0, 0, NativeResourcesOptions{Memo: memo})
+		require.NoError(t, err)
+		return found
+	}
+	coalesced, identityChanged := false, false
+	for _, s := range lookup(math.MinInt64, math.MaxInt64, false) {
+		for i, v := range s.Versions {
+			coalesced = coalesced || v.Coalesced
+			identityChanged = identityChanged || (i > 0 && !reflect.DeepEqual(v.Identifying, s.Versions[i-1].Identifying))
+		}
+	}
+	require.True(t, coalesced, "the data has coalesced versions")
+	require.True(t, identityChanged, "the data has identity changes")
+	for _, r := range [][2]int64{{math.MinInt64, math.MaxInt64}, {3_000, 4_500}, {6_000, 7_000}} {
+		require.Equal(t, lookup(r[0], r[1], false), lookup(r[0], r[1], true), "[%d, %d]", r[0], r[1])
+	}
 }

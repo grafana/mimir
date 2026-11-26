@@ -1059,6 +1059,88 @@ func (e *Engine) resourceVersionsLocked(m *shardResources, series *Series, mint,
 	return into
 }
 
+// lookupAttributesMemo decodes a lookup's encoded attributes once each, keyed by their encoding rather than their dictionary
+// id: a trim, which runs without the shards' locks, can reclaim an id between shards, and intern hand it to another
+// value. The versions of one value share its decoded attributes, which nothing changes. They refer to the key, which
+// keeps it.
+type lookupAttributesMemo map[string][]mimirpb.ResourceAttribute
+
+func (m lookupAttributesMemo) decode(encoded string) []mimirpb.ResourceAttribute {
+	if encoded == "" {
+		return nil
+	}
+	if attributes, ok := m[encoded]; ok {
+		return attributes
+	}
+	attributes := decodeResourceAttributes(encoded, nil)
+	m[encoded] = attributes
+	return attributes
+}
+
+// encodedVersion is a resource version as resourceVersionsMemoized copies it under the resources' lock.
+type encodedVersion struct {
+	from                     int64
+	identifying, descriptive string
+	coalesced                bool
+}
+
+// resourceVersionsMemoized is resourceVersionsLocked with only the versions' starts and encoded values copied under the
+// resources' lock, which writers observing a resource take under their shard's write lock, and the values decoded
+// after releasing it, through the lookup's memo. The encoded values are immutable strings, which the series' runs keep
+// from being reclaimed while the lock is held. scratch is the copies' room, reused between series.
+func (e *Engine) resourceVersionsMemoized(m *shardResources, series *Series, mint, maxt int64, into []ResourceVersion, memo lookupAttributesMemo, scratch *[]encodedVersion) []ResourceVersion {
+	var buf [8]resourceRun
+	runs := m.runsOf(series, buf[:0])
+	r := e.resources
+	copied := (*scratch)[:0]
+	r.state.mu.Lock()
+	for i, run := range runs {
+		end := int64(math.MaxInt64)
+		if i+1 < len(runs) {
+			end = runs[i+1].from
+		}
+		if run.from > maxt || end <= mint {
+			continue
+		}
+		identity := run.id &^ resourceUnknown
+		if identity == 0 {
+			copied = append(copied, encodedVersion{from: run.from, coalesced: true})
+			continue
+		}
+		identifying := r.identities.value(identity)
+		versions := r.state.versions[identity]
+		if len(versions) == 0 {
+			copied = append(copied, encodedVersion{from: run.from, identifying: identifying, coalesced: run.id&resourceUnknown != 0})
+			continue
+		}
+		for j, v := range versions {
+			// As in resourceVersionsLocked.
+			from, to := run.from, end
+			if j > 0 {
+				from = max(from, v.from)
+			}
+			if j+1 < len(versions) {
+				to = min(to, versions[j+1].from)
+			}
+			if from >= to || from > maxt || to <= mint {
+				continue
+			}
+			copied = append(copied, encodedVersion{
+				from:        from,
+				identifying: identifying,
+				descriptive: r.descriptions.value(v.id),
+				coalesced:   run.id&resourceUnknown != 0 || v.id&resourceUnknown != 0,
+			})
+		}
+	}
+	r.state.mu.Unlock()
+	for _, v := range copied {
+		into = append(into, ResourceVersion{EffectiveFrom: v.from, Identifying: memo.decode(v.identifying), Descriptive: memo.decode(v.descriptive), Coalesced: v.coalesced})
+	}
+	*scratch = copied
+	return into
+}
+
 // ResourceStats returns the engine's native resources as its metrics report them.
 func (e *Engine) ResourceStats() ResourceStats {
 	r := e.resources

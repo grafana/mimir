@@ -112,14 +112,31 @@ func (e seriesstoreEngine) nativeResources(ctx context.Context, matcherSets [][]
 		return nativeResourcesResult{SeriesVisited: visited}, err
 	}
 	result := nativeResourcesResult{Series: make([]nativeResourcesSeries, 0, len(series)), Limited: limited, CoverageStart: e.NativeResourcesCoverageStart(), SeriesVisited: visited}
+	asStrings := resourceAttributesAsStrings
+	if opts.Memo {
+		// The engine's memo has the versions of one value share its attributes: they share their maps too, which
+		// nothing changes downstream.
+		maps := map[*mimirpb.ResourceAttribute]map[string]string{}
+		asStrings = func(attributes []mimirpb.ResourceAttribute) map[string]string {
+			if len(attributes) == 0 {
+				return nil
+			}
+			if m, ok := maps[&attributes[0]]; ok {
+				return m
+			}
+			m := resourceAttributesAsStrings(attributes)
+			maps[&attributes[0]] = m
+			return m
+		}
+	}
 	for _, s := range series {
 		out := nativeResourcesSeries{Labels: s.Labels, Versions: make([]nativeResourceVersion, 0, len(s.Versions)), NewestSample: s.NewestSample}
 		for _, v := range s.Versions {
 			out.Coalesced = out.Coalesced || v.Coalesced
 			out.Versions = append(out.Versions, nativeResourceVersion{
 				EffectiveFrom: v.EffectiveFrom,
-				Identifying:   resourceAttributesAsStrings(v.Identifying),
-				Descriptive:   resourceAttributesAsStrings(v.Descriptive),
+				Identifying:   asStrings(v.Identifying),
+				Descriptive:   asStrings(v.Descriptive),
 			})
 		}
 		result.Series = append(result.Series, out)

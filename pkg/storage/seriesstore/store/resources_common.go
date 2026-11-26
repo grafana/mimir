@@ -92,15 +92,18 @@ type NativeResourcesOptions struct {
 	// Unsorted leaves the series in shard order, for a caller that orders them itself, as a lookup by target groups
 	// them and sorts the targets. A positive limit, which keeps the first series in label order, sorts them anyway.
 	Unsorted bool
+	// Memo decodes each attribute value once per lookup, outside the resources' lock, rather than once per series
+	// under it. The versions of one value then share its attributes, which callers mustn't change.
+	Memo bool
 }
 
 // nativeResourcesPaths counts the lookups that took each optional path, for tests of the switches that choose them.
-var nativeResourcesPaths struct{ set, unsorted atomic.Uint64 }
+var nativeResourcesPaths struct{ set, unsorted, memo atomic.Uint64 }
 
-// NativeResourcesPaths returns how many native resources lookups since the process started matched a set, and left
-// their series unsorted, for tests.
-func NativeResourcesPaths() (set, unsorted uint64) {
-	return nativeResourcesPaths.set.Load(), nativeResourcesPaths.unsorted.Load()
+// NativeResourcesPaths returns how many native resources lookups since the process started matched a set, left their
+// series unsorted, and used the memo, for tests.
+func NativeResourcesPaths() (set, unsorted, memo uint64) {
+	return nativeResourcesPaths.set.Load(), nativeResourcesPaths.unsorted.Load(), nativeResourcesPaths.memo.Load()
 }
 
 // NativeResourcesCapped is NativeResources that also returns how many series with resources matched, and with a
@@ -129,6 +132,12 @@ func (e *Engine) NativeResourcesCapped(ctx context.Context, matcherSets [][]*pro
 	var all []selected
 	seen := map[uint64]struct{}{}
 	var err error
+	var memo lookupAttributesMemo
+	var scratch []encodedVersion
+	if opts.Memo {
+		memo = lookupAttributesMemo{}
+		nativeResourcesPaths.memo.Add(1)
+	}
 	e.perShard(phaseNativeResources, func(_ int, t *tenant, _ *chunks.DiskMapper, _ *coldState) {
 		if err != nil {
 			return
@@ -149,7 +158,13 @@ func (e *Engine) NativeResourcesCapped(ctx context.Context, matcherSets [][]*pro
 					err = ErrLookupTooManySeries
 					return false
 				}
-				if versions := e.resourceVersionsLocked(t.nativeResources, &entry.series, mint, maxt, nil); len(versions) > 0 {
+				var versions []ResourceVersion
+				if memo != nil {
+					versions = e.resourceVersionsMemoized(t.nativeResources, &entry.series, mint, maxt, nil, memo, &scratch)
+				} else {
+					versions = e.resourceVersionsLocked(t.nativeResources, &entry.series, mint, maxt, nil)
+				}
+				if len(versions) > 0 {
 					newest, ok := entry.series.newestSample()
 					if !ok {
 						newest = math.MinInt64

@@ -319,23 +319,25 @@ func TestIngester_NativeResourcesSwitches(t *testing.T) {
 		}
 		return series
 	}
-	paths := func() (set, unsorted uint64) { return store.NativeResourcesPaths() }
+	paths := func() (set, unsorted, memo uint64) { return store.NativeResourcesPaths() }
 
 	want := lookup()
 	require.Len(t, want, 2)
 	for _, step := range []struct {
-		name                  string
-		setMatching, unsorted bool
+		name                        string
+		setMatching, unsorted, memo bool
 	}{
 		{name: "the set on", setMatching: true},
 		{name: "the sort skip on too", setMatching: true, unsorted: true},
-		{name: "the set off again", unsorted: true},
-		{name: "both off again"},
+		{name: "the memo on too", setMatching: true, unsorted: true, memo: true},
+		{name: "the set off again", unsorted: true, memo: true},
+		{name: "the sort skip off again", memo: true},
+		{name: "all off again"},
 	} {
-		tenantLimits.NativeResourcesLookupSetMatching, tenantLimits.NativeResourcesLookupUnsorted = step.setMatching, step.unsorted
-		setBefore, unsortedBefore := paths()
+		tenantLimits.NativeResourcesLookupSetMatching, tenantLimits.NativeResourcesLookupUnsorted, tenantLimits.NativeResourcesLookupMemo = step.setMatching, step.unsorted, step.memo
+		setBefore, unsortedBefore, memoBefore := paths()
 		require.Equal(t, want, lookup(), step.name)
-		setAfter, unsortedAfter := paths()
+		setAfter, unsortedAfter, memoAfter := paths()
 		moved := func(on bool) uint64 {
 			if on {
 				return 1
@@ -344,6 +346,7 @@ func TestIngester_NativeResourcesSwitches(t *testing.T) {
 		}
 		require.Equal(t, moved(step.setMatching), setAfter-setBefore, "%s: the set's path", step.name)
 		require.Equal(t, moved(step.unsorted), unsortedAfter-unsortedBefore, "%s: the sort skip's path", step.name)
+		require.Equal(t, moved(step.memo), memoAfter-memoBefore, "%s: the memo's path", step.name)
 	}
 }
 

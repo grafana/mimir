@@ -4946,6 +4946,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.native-resources-lookup-unsorted-enabled
 [native_resources_lookup_unsorted_enabled: <boolean> | default = false]
 
+# (experimental) Decode each resource attribute value a native resources lookup
+# returns once per lookup, outside the seriesstore engine's resources lock,
+# rather than once per series under it, and share the decoded attributes between
+# series. Read on every lookup, so that turning it off takes effect at once.
+# CLI flag: -ingester.native-resources-lookup-memo-enabled
+[native_resources_lookup_memo_enabled: <boolean> | default = false]
+
 # (experimental) How many series with native resources a lookup of them by
 # target may match in an ingester, which reads every series of each target. Past
 # it, the lookup fails. 0 means no limit.

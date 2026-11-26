@@ -118,8 +118,8 @@ func (i *Ingester) NativeResources(req *client.NativeResourcesRequest, stream cl
 	}
 	// The tenant's switches are read on every lookup, so that turning one off takes effect at once. A lookup by series
 	// keeps its label order.
-	setMatching, unsorted := i.limits.NativeResourcesLookupOptions(userID)
-	opts := store.NativeResourcesOptions{SetMatching: setMatching, Unsorted: unsorted && req.GroupByTarget}
+	setMatching, unsorted, memo := i.limits.NativeResourcesLookupOptions(userID)
+	opts := store.NativeResourcesOptions{SetMatching: setMatching, Unsorted: unsorted && req.GroupByTarget, Memo: memo}
 	result, err := db.nativeResources.nativeResources(ctx, matcherSets, req.StartTimestampMs, req.EndTimestampMs, limit, maxSeries, opts)
 	if err != nil {
 		return nativeLookupEngineError(err, maxSeries)

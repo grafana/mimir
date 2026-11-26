@@ -6264,6 +6264,17 @@
         },
         {
           "kind": "field",
+          "name": "native_resources_lookup_memo_enabled",
+          "required": false,
+          "desc": "Decode each resource attribute value a native resources lookup returns once per lookup, outside the seriesstore engine's resources lock, rather than once per series under it, and share the decoded attributes between series. Read on every lookup, so that turning it off takes effect at once.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.native-resources-lookup-memo-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "native_metadata_grouped_lookup_max_series",
           "required": false,
           "desc": "How many series with native resources a lookup of them by target may match in an ingester, which reads every series of each target. Past it, the lookup fails. 0 means no limit.",
