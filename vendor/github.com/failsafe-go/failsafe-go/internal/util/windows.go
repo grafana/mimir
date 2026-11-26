@@ -5,27 +5,27 @@ import (
 	"time"
 )
 
-// RollingSum maintains a sum over a rolling window.
+// MovingSum maintains a sum over a moving window.
 //
 // This type is not concurrency safe.
-type RollingSum struct {
+type MovingSum struct {
 	// For variation and covariance
 	samples []float64
 	size    int
 	index   int
 
-	// Rolling sum fields
+	// Moving sum fields
 	sumY       float64 // Y values are the samples
 	sumSquares float64
 }
 
-func NewRollingSum(capacity uint) RollingSum {
-	return RollingSum{samples: make([]float64, capacity)}
+func NewMovingSum(capacity uint) MovingSum {
+	return MovingSum{samples: make([]float64, capacity)}
 }
 
 // Add adds the value to the window if it's non-zero, updates the sums, and returns the old value along with whether the
 // window is full.
-func (r *RollingSum) Add(value float64) (oldValue float64, full bool) {
+func (r *MovingSum) Add(value float64) (oldValue float64, full bool) {
 	if value != 0 {
 		if r.size == len(r.samples) {
 			full = true
@@ -54,7 +54,7 @@ func (r *RollingSum) Add(value float64) (oldValue float64, full bool) {
 
 // CalculateCV calculates the coefficient of variation (relative variance), mean, and variance for the sum. Returns NaN
 // values if there are < 2 samples, the variance is < 0, or the mean is 0.
-func (r *RollingSum) CalculateCV() (cv, mean, variance float64) {
+func (r *MovingSum) CalculateCV() (cv, mean, variance float64) {
 	if r.size < 2 {
 		return math.NaN(), math.NaN(), math.NaN()
 	}
@@ -70,7 +70,7 @@ func (r *RollingSum) CalculateCV() (cv, mean, variance float64) {
 }
 
 // Reset resets the sum to its initial state.
-func (r *RollingSum) Reset() {
+func (r *MovingSum) Reset() {
 	for i := range r.samples {
 		r.samples[i] = 0
 	}
@@ -87,16 +87,16 @@ type CorrelationWindow struct {
 	warmupSamples uint8
 
 	// Mutable state
-	xSamples  RollingSum
-	ySamples  RollingSum
+	xSamples  MovingSum
+	ySamples  MovingSum
 	corrSumXY float64
 }
 
 func NewCorrelationWindow(capacity uint, warmupSamples uint8) CorrelationWindow {
 	return CorrelationWindow{
 		warmupSamples: warmupSamples,
-		xSamples:      NewRollingSum(capacity),
-		ySamples:      NewRollingSum(capacity),
+		xSamples:      NewMovingSum(capacity),
+		ySamples:      NewMovingSum(capacity),
 	}
 }
 
@@ -235,7 +235,7 @@ func (w *BucketedWindow[T]) ExpireBuckets() *T {
 
 	if newHead > w.HeadTime {
 		bucketsToMove := min(w.BucketCount, newHead-w.HeadTime)
-		for i := int64(0); i < bucketsToMove; i++ {
+		for i := range bucketsToMove {
 			bucket := &w.Buckets[(w.HeadTime+i+1)%w.BucketCount]
 			w.RemoveFn(&w.Summary, bucket)
 			w.ResetFn(bucket)

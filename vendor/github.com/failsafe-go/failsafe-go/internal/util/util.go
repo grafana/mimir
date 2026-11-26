@@ -3,6 +3,7 @@ package util
 import (
 	"context"
 	"math"
+	"math/rand/v2"
 	"reflect"
 	"time"
 )
@@ -13,7 +14,7 @@ type number interface {
 
 func noop(_ error) {}
 
-var errorType = reflect.TypeOf((*error)(nil)).Elem()
+var errorType = reflect.TypeFor[error]()
 
 // ErrorTypesMatch indicates whether the err or any unwrapped causes of the err are assignable to the target type. This is
 // similar to the test that errors.As performs, but does not actually assign a value and allows a non-pointer target.
@@ -161,6 +162,15 @@ func RandomDelayFactor[T number](delay T, jitterFactor float64, random float64) 
 	return T(float64(delay) * randomFactor)
 }
 
+func ApplyJitter[T number](delay T, jitter T, jitterFactor float64) T {
+	if jitter != 0 {
+		delay = RandomDelay(delay, jitter, rand.Float64())
+	} else if jitterFactor != 0 {
+		delay = RandomDelayFactor(delay, jitterFactor, rand.Float64())
+	}
+	return delay
+}
+
 // Smooth returns a value that is decreased by some portion of the oldValue, and increased by some portion of the
 // newValue, based on the factor.
 func Smooth(oldValue, newValue, factor float64) float64 {
@@ -170,7 +180,7 @@ func Smooth(oldValue, newValue, factor float64) float64 {
 var log10Values []int
 
 func init() {
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		log10Values = append(log10Values, 1)
 	}
 	for i := 100; i < 1000; i++ {

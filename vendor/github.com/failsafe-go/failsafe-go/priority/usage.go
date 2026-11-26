@@ -3,6 +3,7 @@ package priority
 import (
 	"container/list"
 	"context"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -163,9 +164,7 @@ func (ut *usageTracker) Calibrate() {
 		}
 	}
 
-	sort.Slice(usages, func(i, j int) bool {
-		return usages[i] < usages[j]
-	})
+	slices.Sort(usages)
 
 	// Update percentiles for all active users
 	for _, entry := range ut.users {
