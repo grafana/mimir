@@ -638,6 +638,8 @@ func (r *Ruler) run(ctx context.Context) error {
 	var ringChangeFirstPendingAt time.Time
 
 	ringLastState, _ := r.ring.GetAllHealthy(RuleEvalRingOp)
+	ringJoiningAndActive, _ := r.ring.GetAllHealthy(RuleSyncRingOp)
+	joiningRulers := len(ringJoiningAndActive.Instances) - len(ringLastState.Instances)
 
 	// Check whether the ring changed during starting().
 	// The ring checks below can't see such a change, because ringLastState already includes it.
@@ -646,7 +648,10 @@ func (r *Ruler) run(ctx context.Context) error {
 	// Ignore instance states, so a ruler that went from JOINING to ACTIVE, like this one, doesn't count.
 	// If the ring changed, start a sync now to start newly owned rule groups and stop newly disowned ones.
 	// During this sync, the ruler continues to evaluate its initial rule groups, reducing missed evaluations.
-	if ring.HasReplicationSetChangedWithoutState(r.ringBeforeInitialSync, ringLastState) {
+	// The sync counts only ACTIVE rulers.
+	// Skip it while JOINING rulers are as many as ACTIVE rulers or more, for example in a cold start.
+	// Otherwise each of the first ACTIVE rulers would load a large share of all rule groups.
+	if ring.HasReplicationSetChangedWithoutState(r.ringBeforeInitialSync, ringLastState) && len(ringLastState.Instances) > joiningRulers {
 		if err := r.syncRules(ctx, nil, rulerSyncReasonFirstRun, true); err != nil {
 			level.Error(r.logger).Log("msg", "unable to sync rules", "err", err)
 		}
