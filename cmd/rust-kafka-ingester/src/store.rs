@@ -351,6 +351,47 @@ struct SeriesByName {
     len: usize,
     // The (name group, label hash) of the series changed since the last head tick, once each.
     touched: Vec<(u32, u64)>,
+    // Each name group's version, which adding or removing one of its series changes.
+    group_versions: Vec<u64>,
+    // What selectors with a metric name matched in their group, by `selector_key`, as of the
+    // group's version: like the Go engine's selector cache, rulers and dashboards send the same
+    // selectors every minute, and a sharded query sends each in every shard, while finding the
+    // few series that match among a group's thousands was most of what a query cost. Candidates
+    // from here are still checked against every matcher.
+    selections: RwLock<hashbrown::HashMap<Box<str>, CachedSelection>>,
+}
+
+struct CachedSelection {
+    group: u32,
+    version: u64,
+    hashes: Arc<[u64]>,
+}
+
+// A group with fewer series is scanned each time.
+const MIN_CACHED_GROUP: usize = 8;
+// A selector matching more series of its group isn't kept: a query returning that many spends its
+// time building the result.
+const MAX_CACHED_SERIES: usize = 256;
+// How many selectors are kept; at this many, they are all dropped, and the ones in use come back.
+const MAX_CACHED_SELECTIONS: usize = 8192;
+
+/// The matchers of a selector but the query shard's, so the shards of a query share a key.
+fn selector_key(matchers: &[CompiledMatcher]) -> Box<str> {
+    let mut parts = matchers
+        .iter()
+        .filter_map(|matcher| {
+            let (kind, name, value) = match matcher {
+                CompiledMatcher::Equal(name, value) => (0, name, value.as_str()),
+                CompiledMatcher::NotEqual(name, value) => (1, name, value.as_str()),
+                CompiledMatcher::Regex(name, regex) => (2, name, regex.as_str()),
+                CompiledMatcher::NotRegex(name, regex) => (3, name, regex.as_str()),
+                CompiledMatcher::Shard(..) => return None,
+            };
+            Some(format!("{name}\0{kind}\0{value}"))
+        })
+        .collect::<Vec<_>>();
+    parts.sort_unstable();
+    parts.join("\u{1}").into()
 }
 
 // A name matcher other than an equality, by type and pattern.
@@ -464,6 +505,7 @@ impl SeriesByName {
                 self.names.insert(CompactString::from(name), group);
                 self.group_names.push(CompactString::from(name));
                 self.groups.push(HashTable::new());
+                self.group_versions.push(0);
                 group
             }
         };
@@ -473,6 +515,7 @@ impl SeriesByName {
         let shared_postings = &mut self.shared_postings;
         let refs = &mut self.refs;
         let touched = &mut self.touched;
+        let version = &mut self.group_versions[group as usize];
         let (labels, series) = match table.entry(
             hash,
             |((entry_hash, entry_labels), _)| *entry_hash == hash && is_same(entry_labels),
@@ -484,6 +527,7 @@ impl SeriesByName {
             }
             hashbrown::hash_table::Entry::Vacant(entry) => {
                 *len += 1;
+                *version += 1;
                 let labels = labels();
                 add_postings(
                     postings,
@@ -663,9 +707,46 @@ impl SeriesByName {
             .filter(|(count, _)| *count < chosen);
         // Name groups hold exactly one name, so candidates taken from groups already match the
         // name matcher; checking it again read every candidate's labels, a cache miss per series.
+        let cache_key = name_group
+            .filter(|_| matches!(name_matcher, Some(CompiledMatcher::Equal(..))))
+            .filter(|group| self.groups[*group as usize].len() >= MIN_CACHED_GROUP)
+            .map(|group| (group, selector_key(matchers)));
+        let cached = cache_key.as_ref().and_then(|(group, key)| {
+            let selections = self.selections.read().expect("selections lock poisoned");
+            selections
+                .get(key)
+                .filter(|cached| {
+                    cached.group == *group && cached.version == self.group_versions[*group as usize]
+                })
+                .map(|cached| Arc::clone(&cached.hashes))
+        });
+        let building = match (&cached, cache_key) {
+            (None, Some((group, key))) => Some(Building {
+                selections: &self.selections,
+                key,
+                group,
+                version: self.group_versions[group as usize],
+                hashes: Vec::new(),
+                overflowed: false,
+            }),
+            _ => None,
+        };
+        let cached_len = cached.as_ref().map(|hashes| hashes.len());
         let mut name_matched = true;
         let mut source = "all";
         let candidates: Box<dyn Iterator<Item = (&SeriesKey, &Series)>> = match (best, name_group) {
+            (_, Some(group)) if cached.is_some() => {
+                source = "cached";
+                let hashes = cached.expect("checked");
+                let table = &self.groups[group as usize];
+                Box::new((0..hashes.len()).flat_map(move |index| {
+                    let hash = hashes[index];
+                    table
+                        .iter_hash(hash)
+                        .filter(move |((entry_hash, _), _)| *entry_hash == hash)
+                        .map(|(key, series)| (key, &**series))
+                }))
+            }
             _ if present.is_some() => {
                 name_matched = false;
                 source = "present";
@@ -726,7 +807,8 @@ impl SeriesByName {
                 None => Box::new(self.iter()),
             },
         };
-        let candidates_len = present.map_or(chosen, |(count, _)| count);
+        let candidates_len =
+            cached_len.unwrap_or_else(|| present.map_or(chosen, |(count, _)| count));
         // Each matcher's label name is looked up once rather than for every series. A matcher that
         // accepts the empty value accepts every series without its label; when few series have it,
         // their hashes tell which candidates to check, and the others pass without reading labels.
@@ -756,40 +838,59 @@ impl SeriesByName {
             })
             .collect::<Vec<_>>();
         let mut remembered = vec![hashbrown::HashMap::<Box<str>, bool>::new(); resolved.len()];
+        let recording = building.is_some();
         Box::new(CountedCandidates {
             candidates,
             source,
             visited: 0,
             matched: 0,
+            building,
+            // Whether the candidate matches the matchers but the query shard's, when a selection
+            // is being kept, and whether it matches them all.
             keep: move |((hash, labels), series): &(&SeriesKey, &Series)| {
-                resolved.iter().zip(&mut remembered).all(
-                    |((matcher, name, with_label), remembered)| match matcher {
-                        CompiledMatcher::Shard(..) => {
-                            in_query_shard(series.shard_hash, std::slice::from_ref(matcher))
-                        }
-                        // A hash collision only makes a series without the label read its labels.
-                        _ if with_label.as_ref().is_some_and(|with| !with.contains(hash)) => true,
-                        CompiledMatcher::Regex(..) | CompiledMatcher::NotRegex(..) => {
-                            count_label_value_read();
-                            let value = name.map_or("", |name| labels.value_of(name));
-                            if let Some(matched) = remembered.get(value) {
-                                return *matched;
+                let mut check = |shard: bool| {
+                    resolved
+                        .iter()
+                        .zip(&mut remembered)
+                        .filter(|((matcher, _, _), _)| {
+                            matches!(matcher, CompiledMatcher::Shard(..)) == shard
+                        })
+                        .all(|((matcher, name, with_label), remembered)| match matcher {
+                            CompiledMatcher::Shard(..) => {
+                                in_query_shard(series.shard_hash, std::slice::from_ref(matcher))
                             }
-                            #[cfg(test)]
-                            REGEX_EVALUATIONS
-                                .with(|evaluations| evaluations.set(evaluations.get() + 1));
-                            let matched = matcher.matches_value(value);
-                            if remembered.len() < REMEMBERED_VALUES {
-                                remembered.insert(value.into(), matched);
+                            // A hash collision only makes a series without the label read its labels.
+                            _ if with_label.as_ref().is_some_and(|with| !with.contains(hash)) => {
+                                true
                             }
-                            matched
-                        }
-                        _ => {
-                            count_label_value_read();
-                            matcher.matches_value(name.map_or("", |name| labels.value_of(name)))
-                        }
-                    },
-                )
+                            CompiledMatcher::Regex(..) | CompiledMatcher::NotRegex(..) => {
+                                count_label_value_read();
+                                let value = name.map_or("", |name| labels.value_of(name));
+                                if let Some(matched) = remembered.get(value) {
+                                    return *matched;
+                                }
+                                #[cfg(test)]
+                                REGEX_EVALUATIONS
+                                    .with(|evaluations| evaluations.set(evaluations.get() + 1));
+                                let matched = matcher.matches_value(value);
+                                if remembered.len() < REMEMBERED_VALUES {
+                                    remembered.insert(value.into(), matched);
+                                }
+                                matched
+                            }
+                            _ => {
+                                count_label_value_read();
+                                matcher.matches_value(name.map_or("", |name| labels.value_of(name)))
+                            }
+                        })
+                };
+                if recording {
+                    let rest = check(false);
+                    (rest, rest && check(true))
+                } else {
+                    // The query shard is checked first: it reads no labels.
+                    (false, check(true) && check(false))
+                }
             },
         })
     }
@@ -935,7 +1036,11 @@ impl SeriesByName {
     fn retain_in_groups(&mut self, mut keep: impl FnMut(u32, &SeriesKey, &mut Series) -> bool) {
         let mut len = 0;
         for (group, table) in self.groups.iter_mut().enumerate() {
+            let before = table.len();
             table.retain(|(key, series)| keep(group as u32, key, series));
+            if table.len() != before {
+                self.group_versions[group] += 1;
+            }
             // Retention removes whole hours of series at once; give back the slots.
             if table.capacity() > 4 * table.len().max(8) {
                 table.shrink_to_fit(|((hash, _), _)| *hash);
@@ -1383,30 +1488,76 @@ impl ColdState {
 
 /// Head query candidates, counting how many were checked and how many matched by how they were
 /// chosen, to tell which query shapes check series that don't match.
-struct CountedCandidates<I, F> {
+struct CountedCandidates<'a, I, F> {
     candidates: I,
     keep: F,
     source: &'static str,
     visited: u64,
     matched: u64,
+    building: Option<Building<'a>>,
 }
 
-impl<T, I: Iterator<Item = T>, F: FnMut(&T) -> bool> Iterator for CountedCandidates<I, F> {
-    type Item = T;
+/// A selection being kept: the series of its group matching its matchers but the query shard's.
+struct Building<'a> {
+    selections: &'a RwLock<hashbrown::HashMap<Box<str>, CachedSelection>>,
+    key: Box<str>,
+    group: u32,
+    version: u64,
+    hashes: Vec<u64>,
+    overflowed: bool,
+}
 
-    fn next(&mut self) -> Option<T> {
+impl Building<'_> {
+    fn keep(self) {
+        let mut selections = self.selections.write().expect("selections lock poisoned");
+        if selections.len() >= MAX_CACHED_SELECTIONS {
+            selections.clear();
+        }
+        selections.insert(
+            self.key,
+            CachedSelection {
+                group: self.group,
+                version: self.version,
+                hashes: self.hashes.into(),
+            },
+        );
+    }
+}
+
+impl<'a, I, F> Iterator for CountedCandidates<'a, I, F>
+where
+    I: Iterator<Item = (&'a SeriesKey, &'a Series)>,
+    F: FnMut(&(&'a SeriesKey, &'a Series)) -> (bool, bool),
+{
+    type Item = (&'a SeriesKey, &'a Series);
+
+    fn next(&mut self) -> Option<Self::Item> {
         for candidate in self.candidates.by_ref() {
             self.visited += 1;
-            if (self.keep)(&candidate) {
+            let (rest, all) = (self.keep)(&candidate);
+            if rest && let Some(building) = &mut self.building {
+                if building.hashes.len() < MAX_CACHED_SERIES {
+                    building.hashes.push(candidate.0.0);
+                } else {
+                    building.overflowed = true;
+                }
+            }
+            if all {
                 self.matched += 1;
                 return Some(candidate);
             }
+        }
+        // Only a selection that saw all its candidates is kept.
+        if let Some(building) = self.building.take()
+            && !building.overflowed
+        {
+            building.keep();
         }
         None
     }
 }
 
-impl<I, F> Drop for CountedCandidates<I, F> {
+impl<I, F> Drop for CountedCandidates<'_, I, F> {
     fn drop(&mut self) {
         let candidates = &metrics::HEAD_QUERY_CANDIDATES;
         candidates
@@ -7737,6 +7888,149 @@ mod tests {
             println!(
                 "step {step}: {:.1} ns/series",
                 started.elapsed().as_nanos() as f64 / SERIES as f64
+            );
+        }
+    }
+
+    #[test]
+    fn kept_selections_answer_every_query_shard_until_their_group_changes() {
+        let store = Store::with_shards(20 * 60 * 1000, None, None, 1, 1).unwrap();
+        let ingest = |range: std::ops::Range<u32>| {
+            let mut request = series_request("cached", [(1_000, 1.0)]);
+            let template = request.series.remove(0);
+            for n in range {
+                let mut series = template.clone();
+                series
+                    .labels
+                    .push(("job".into(), ["a", "b"][n as usize % 2].into()));
+                series.labels.push(("n".into(), n.to_string().into()));
+                series.labels.sort();
+                request.series.push(series);
+            }
+            store.ingest("tenant", request).unwrap();
+        };
+        ingest(0..64);
+        let matcher = |r#type, name: &str, value: &str| cortex::LabelMatcher {
+            r#type,
+            name: name.into(),
+            value: value.into(),
+        };
+        let selected = |job_type, job: &str| {
+            let mut all = (1..=4)
+                .flat_map(|index| {
+                    store
+                        .select_labels(
+                            "tenant",
+                            i64::MIN,
+                            i64::MAX,
+                            &[
+                                matcher(0, "__query_shard__", &format!("{index}_of_4")),
+                                matcher(0, "__name__", "cached"),
+                                matcher(job_type, "job", job),
+                            ],
+                        )
+                        .unwrap()
+                })
+                .map(|labels| labels.into_iter().find(|(name, _)| name == "n").unwrap().1)
+                .collect::<Vec<_>>();
+            all.sort();
+            all
+        };
+        let expected = |range: std::ops::Range<u32>, job: usize| {
+            let mut all = range
+                .filter(|n| *n as usize % 2 == job)
+                .map(|n| n.to_string())
+                .collect::<Vec<_>>();
+            all.sort();
+            all
+        };
+        let kept = || {
+            store.shards[0].read().unwrap().tenants["tenant"]
+                .series
+                .selections
+                .read()
+                .unwrap()
+                .len()
+        };
+        // The first shard keeps the selection, and the others, then the same query again, use it.
+        assert_eq!(selected(0, "a"), expected(0..64, 0));
+        assert_eq!(kept(), 1);
+        assert_eq!(selected(0, "a"), expected(0..64, 0));
+        assert_eq!(selected(2, "b|c"), expected(0..64, 1));
+        assert_eq!(kept(), 2);
+        // A new series of the group makes the kept selections stale.
+        ingest(64..70);
+        assert_eq!(selected(0, "a"), expected(0..70, 0));
+        assert_eq!(selected(2, "b|c"), expected(0..70, 1));
+        // Removed series are gone from what a query returns.
+        store.shards[0]
+            .write()
+            .unwrap()
+            .tenants
+            .get_mut("tenant")
+            .unwrap()
+            .series
+            .retain(|(_, labels), _| {
+                labels
+                    .pairs()
+                    .find(|(name, _)| *name == "n")
+                    .unwrap()
+                    .1
+                    .parse::<u32>()
+                    .unwrap()
+                    >= 10
+            });
+        assert_eq!(selected(0, "a"), expected(10..70, 0));
+    }
+
+    // A dashboard's selector of a large metric, sent in 16 query shards over and over.
+    // cargo test --release --lib store::tests::bench_sharded_selector -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn bench_sharded_selector() {
+        let store = Store::with_shards(20 * 60 * 1000, None, None, 1, 1).unwrap();
+        let mut request = series_request("big_metric", [(1_000, 1.0)]);
+        let template = request.series.remove(0);
+        for n in 0..5000 {
+            let mut series = template.clone();
+            series
+                .labels
+                .push(("job".into(), format!("job-{}", n % 50).into()));
+            series
+                .labels
+                .push(("pod".into(), format!("pod-{n}").into()));
+            series.labels.sort();
+            request.series.push(series);
+        }
+        store.ingest("tenant", request).unwrap();
+        let matcher = |r#type, name: &str, value: &str| cortex::LabelMatcher {
+            r#type,
+            name: name.into(),
+            value: value.into(),
+        };
+        for round in 0..3 {
+            let started = std::time::Instant::now();
+            let mut returned = 0;
+            for _ in 0..100 {
+                for index in 1..=16 {
+                    returned += store
+                        .select_labels(
+                            "tenant",
+                            i64::MIN,
+                            i64::MAX,
+                            &[
+                                matcher(0, "__query_shard__", &format!("{index}_of_16")),
+                                matcher(0, "__name__", "big_metric"),
+                                matcher(2, "job", "job-(1|2)"),
+                            ],
+                        )
+                        .unwrap()
+                        .len();
+                }
+            }
+            println!(
+                "round {round}: {:.1} us/query, {returned} series",
+                started.elapsed().as_micros() as f64 / 1600.0
             );
         }
     }
