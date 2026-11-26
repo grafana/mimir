@@ -2043,6 +2043,219 @@ func TestRuler_RunRingChangeMaxDebounce(t *testing.T) {
 	})
 }
 
+// syncHookManager calls afterFirstFullSync once, after the first full sync.
+// The first full sync is the initial sync.
+type syncHookManager struct {
+	MultiTenantManager
+	once               sync.Once
+	afterFirstFullSync func(ruleGroupsByUser map[string]rulespb.RuleGroupList)
+}
+
+func (m *syncHookManager) SyncFullRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList) {
+	m.MultiTenantManager.SyncFullRuleGroups(ctx, ruleGroupsByUser)
+	m.once.Do(func() { m.afterFirstFullSync(ruleGroupsByUser) })
+}
+
+// listHookRuleStore calls beforeFirstListAllUsers once, before the first ListAllUsers.
+// The first ListAllUsers is in the initial sync, before the ownership check.
+type listHookRuleStore struct {
+	rulestore.RuleStore
+	once                    sync.Once
+	beforeFirstListAllUsers func()
+}
+
+func (s *listHookRuleStore) ListAllUsers(ctx context.Context, opts ...rulestore.Option) ([]string, error) {
+	s.once.Do(func() {
+		if s.beforeFirstListAllUsers != nil {
+			s.beforeFirstListAllUsers()
+		}
+	})
+	return s.RuleStore.ListAllUsers(ctx, opts...)
+}
+
+func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
+	const (
+		ringCheckPeriod = 20 * time.Millisecond
+		userID          = "user-1"
+	)
+
+	testCases := map[string]struct {
+		otherRulerAtStart       bool
+		otherRulerState         ring.InstanceState
+		otherRulerChanges       bool
+		otherRulerBecomesActive bool
+		// The other ruler registers after the start of the initial sync and before its ownership check.
+		otherRulerRegistersDuringInitialSync bool
+		// An ACTIVE ruler with no tokens owns no rule groups.
+		// It only adds an ACTIVE ruler to the ring.
+		activeRulerWithoutTokens bool
+		keepsInitialAssignment   bool
+		expectedFirstRunSyncs    float64
+	}{
+		"another ruler joins after the initial sync": {
+			otherRulerAtStart:     false,
+			otherRulerState:       ring.ACTIVE,
+			otherRulerChanges:     true,
+			expectedFirstRunSyncs: 1,
+		},
+		"another ruler leaves after the initial sync": {
+			otherRulerAtStart:     true,
+			otherRulerState:       ring.ACTIVE,
+			otherRulerChanges:     true,
+			expectedFirstRunSyncs: 1,
+		},
+		"another ruler stays JOINING throughout startup": {
+			otherRulerAtStart:        true,
+			otherRulerState:          ring.JOINING,
+			activeRulerWithoutTokens: true,
+			expectedFirstRunSyncs:    1,
+		},
+		"another ruler registers during the initial sync and stays JOINING": {
+			otherRulerState:                      ring.JOINING,
+			otherRulerRegistersDuringInitialSync: true,
+			activeRulerWithoutTokens:             true,
+			expectedFirstRunSyncs:                1,
+		},
+		"cold start: another ruler stays JOINING and no other ruler is ACTIVE": {
+			otherRulerAtStart:      true,
+			otherRulerState:        ring.JOINING,
+			keepsInitialAssignment: true,
+			expectedFirstRunSyncs:  0,
+		},
+		"another ruler becomes ACTIVE before run() starts": {
+			otherRulerAtStart:       true,
+			otherRulerState:         ring.JOINING,
+			otherRulerBecomesActive: true,
+			expectedFirstRunSyncs:   0,
+		},
+		"no ring change after the initial sync": {
+			otherRulerAtStart:     true,
+			otherRulerState:       ring.ACTIVE,
+			otherRulerChanges:     false,
+			expectedFirstRunSyncs: 0,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var groups rulespb.RuleGroupList
+				for i := range 20 {
+					groups = append(groups, createRuleGroup(fmt.Sprintf("group-%d", i), userID, createRecordingRule("UP_RULE", "up")))
+				}
+				storage := newMockRuleStore(map[string]rulespb.RuleGroupList{userID: groups})
+
+				cfg := defaultRulerConfig(t)
+				cfg.Ring.NumTokens = 128
+				cfg.PollInterval = time.Hour // Isolate ring-change syncing from periodic syncing.
+				cfg.RingCheckPeriod = ringCheckPeriod
+
+				setOtherRuler := func(inRing bool, state ring.InstanceState) error {
+					return cfg.Ring.Common.KVStore.Mock.CAS(t.Context(), RulerRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+						d, _ := in.(*ring.Desc)
+						if d == nil {
+							d = ring.NewDesc()
+						}
+						if !inRing {
+							d.RemoveIngester("other")
+							return d, true, nil
+						}
+						// Give the peer the next token after each group hash so it owns
+						// those groups while it is eligible for initial assignment.
+						tokens := make([]uint32, 0, len(groups))
+						for _, group := range groups {
+							tokens = append(tokens, tokenForGroup(group)+1)
+						}
+						slices.Sort(tokens)
+						d.AddIngester("other", "other", "", tokens, state, time.Now(), false, time.Time{}, nil)
+						return d, true, nil
+					})
+				}
+				if tc.otherRulerAtStart {
+					require.NoError(t, setOtherRuler(true, tc.otherRulerState))
+				}
+				if tc.activeRulerWithoutTokens {
+					require.NoError(t, cfg.Ring.Common.KVStore.Mock.CAS(t.Context(), RulerRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+						d, _ := in.(*ring.Desc)
+						if d == nil {
+							d = ring.NewDesc()
+						}
+						d.AddIngester("active", "active", "", nil, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
+						return d, true, nil
+					}))
+				}
+
+				store := &listHookRuleStore{RuleStore: storage}
+				r := prepareRuler(t, cfg, store)
+				if tc.otherRulerRegistersDuringInitialSync {
+					store.beforeFirstListAllUsers = func() {
+						// The hook runs on the ruler goroutine.
+						// Thus it must not call t.FailNow.
+						assert.NoError(t, setOtherRuler(true, tc.otherRulerState))
+						assert.NoError(t, ring.WaitInstanceState(t.Context(), r.ring, "other", tc.otherRulerState))
+					}
+				}
+
+				// The other ruler joins, leaves or becomes ACTIVE after the initial sync and before this ruler becomes ACTIVE.
+				var initialSyncGroups int
+				r.manager = &syncHookManager{
+					MultiTenantManager: r.manager,
+					afterFirstFullSync: func(ruleGroupsByUser map[string]rulespb.RuleGroupList) {
+						initialSyncGroups = len(ruleGroupsByUser[userID])
+						// The hook runs on the ruler goroutine.
+						// Thus it must not call t.FailNow.
+						switch {
+						case tc.otherRulerChanges:
+							assert.NoError(t, setOtherRuler(!tc.otherRulerAtStart, tc.otherRulerState))
+						case tc.otherRulerBecomesActive:
+							assert.NoError(t, setOtherRuler(true, ring.ACTIVE))
+						}
+					},
+				}
+
+				require.NoError(t, services.StartAndAwaitRunning(t.Context(), r))
+				t.Cleanup(func() {
+					require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r))
+				})
+
+				time.Sleep(2 * ringCheckPeriod)
+				synctest.Wait()
+
+				var expected, actual []string
+				for _, g := range groups {
+					owned, err := instanceOwnsRuleGroup(r.ring, g, r.lifecycler.GetInstanceAddr(), rulerSyncReasonRingChange)
+					require.NoError(t, err)
+					if owned {
+						expected = append(expected, g.Name)
+					}
+				}
+				for _, g := range r.manager.GetRules(userID) {
+					actual = append(actual, g.Name())
+				}
+				if tc.otherRulerState == ring.JOINING {
+					// The initial sync counted the JOINING ruler as the owner of all rule groups.
+					require.Zero(t, initialSyncGroups)
+				}
+				if tc.otherRulerState == ring.JOINING && !tc.otherRulerBecomesActive {
+					state, err := r.ring.GetInstanceState("other")
+					require.NoError(t, err)
+					require.Equal(t, ring.JOINING, state)
+					require.Len(t, expected, len(groups))
+				}
+				if tc.expectedFirstRunSyncs > 0 {
+					require.NotEqual(t, initialSyncGroups, len(expected), "ownership changes for at least one group")
+				}
+				if tc.keepsInitialAssignment {
+					require.Len(t, actual, initialSyncGroups)
+				} else {
+					require.ElementsMatch(t, expected, actual)
+				}
+				require.Equal(t, tc.expectedFirstRunSyncs, prom_testutil.ToFloat64(r.metrics.rulerSync.WithLabelValues(string(rulerSyncReasonFirstRun))))
+			})
+		})
+	}
+}
+
 // User shuffle shard token.
 func userToken(user string, skip int) uint32 {
 	r := rand.New(rand.NewSource(util.ShuffleShardSeed(user, "")))
@@ -2198,6 +2411,7 @@ func verifySyncRulesMetrics(t *testing.T, reg prometheus.Gatherer, initialCount,
 			cortex_ruler_sync_rules_total{reason="api-change"} %d
 			cortex_ruler_sync_rules_total{reason="periodic"} 0
 			cortex_ruler_sync_rules_total{reason="ring-change"} 0
+			cortex_ruler_sync_rules_total{reason="first-run"} 0
 		`, initialCount, apiChangeCount)), "cortex_ruler_sync_rules_total")
 	})
 	test.Poll(t, time.Second, nil, func() interface{} {

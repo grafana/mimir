@@ -17,12 +17,16 @@ import (
 )
 
 var (
-	// RuleEvalRingOp is the operation used for distributing rule groups between rulers.
+	// RuleEvalRingOp selects the ACTIVE rulers.
+	// Every sync after the initial sync assigns rule groups to them.
 	RuleEvalRingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, func(s ring.InstanceState) bool {
 		// Only ACTIVE rulers get any rule groups. If instance is not ACTIVE, we need to find another ruler.
 		return s != ring.ACTIVE
 	})
 
+	// RuleSyncRingOp selects the JOINING and ACTIVE rulers.
+	// The initial sync runs while the ruler is JOINING, so it assigns rule groups with this operation.
+	// An API change also notifies these rulers to sync.
 	RuleSyncRingOp = ring.NewOp([]ring.InstanceState{ring.JOINING, ring.ACTIVE}, func(s ring.InstanceState) bool {
 		// Only ACTIVE or JOINING rulers can sync rule groups. If instance is not ACTIVE NOR JOINING, we need to find another ruler.
 		return s != ring.ACTIVE && s != ring.JOINING
