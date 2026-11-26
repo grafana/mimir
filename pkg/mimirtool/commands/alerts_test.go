@@ -3,6 +3,7 @@
 package commands
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -86,4 +87,48 @@ func TestLoadAlertmanagerConfigAndTemplateFile(t *testing.T) {
 			assert.Equal(t, loadedTemplates[fileName], fileContent)
 		}
 	}
+}
+
+func TestReadAlertmanagerConfig_templateValidation(t *testing.T) {
+	writeTemplate := func(t *testing.T, name, body string) string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), name)
+		require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+		return path
+	}
+
+	t.Run("template using Mimir custom functions is accepted", func(t *testing.T) {
+		cmd := AlertmanagerCommand{
+			AlertmanagerConfigFile: "./testdata/alertmanager_config.yaml",
+			TemplateFiles: []string{
+				writeTemplate(t, "custom.tmpl", `{{ define "t" }}{{ tenantID }} {{ grafanaExploreURL "http://grafana" "ds" "now-1h" "now" "up" }}{{ end }}`),
+			},
+		}
+		_, _, err := cmd.readAlertManagerConfig()
+		require.NoError(t, err)
+	})
+
+	t.Run("template with a missing end is rejected", func(t *testing.T) {
+		cmd := AlertmanagerCommand{
+			AlertmanagerConfigFile: "./testdata/alertmanager_config.yaml",
+			TemplateFiles: []string{
+				writeTemplate(t, "broken.tmpl", `{{ define "t" }}{{ .CommonLabels.alertname }}`),
+			},
+		}
+		_, _, err := cmd.readAlertManagerConfig()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid template file broken.tmpl")
+	})
+
+	t.Run("template with an unknown function is rejected", func(t *testing.T) {
+		cmd := AlertmanagerCommand{
+			AlertmanagerConfigFile: "./testdata/alertmanager_config.yaml",
+			TemplateFiles: []string{
+				writeTemplate(t, "unknown.tmpl", `{{ define "t" }}{{ noSuchFunction }}{{ end }}`),
+			},
+		}
+		_, _, err := cmd.readAlertManagerConfig()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid template file unknown.tmpl")
+	})
 }
