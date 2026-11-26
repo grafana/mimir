@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
 )
@@ -132,7 +133,7 @@ func TestGroupSeriesHashesByReadCompartment(t *testing.T) {
 	require.Greater(t, len(expectedGroups), 1)
 	require.Less(t, len(expectedGroups), numCompartments)
 
-	assert.Equal(t, expectedGroups, groupSeriesHashesByReadCompartment(router, userID, metadata, timeseries, seriesHashes))
+	assert.Equal(t, expectedGroups, groupSeriesHashesByReadCompartment(router, compartments.Config{}, userID, metadata, timeseries, seriesHashes))
 	// The second call can get the scratch buffers that the first call returned to the pool.
-	assert.Equal(t, expectedGroups, groupSeriesHashesByReadCompartment(router, userID, metadata, timeseries, seriesHashes))
+	assert.Equal(t, expectedGroups, groupSeriesHashesByReadCompartment(router, compartments.Config{}, userID, metadata, timeseries, seriesHashes))
 }

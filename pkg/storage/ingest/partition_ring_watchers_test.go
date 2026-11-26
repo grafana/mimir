@@ -31,7 +31,7 @@ func TestPartitionRingWatchers_Disabled(t *testing.T) {
 	// Under the legacy key, exactly as today.
 	writePartitions(t, kvClient, testRingKey, 0, 1, 2)
 
-	w, err := NewPartitionRingWatchers(false, 0, testRingName, testRingKey, kvClient, nil, log.NewNopLogger(), nil)
+	w, err := NewPartitionRingWatchers(compartments.Config{}, testRingName, testRingKey, kvClient, nil, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	startPartitionRingWatchers(t, w)
 
@@ -49,7 +49,7 @@ func TestPartitionRingWatchers_Enabled(t *testing.T) {
 	writePartitions(t, kvClient, compartments.WithReadCompartmentSuffix(testRingKey, 1), 0, 1)
 	writePartitions(t, kvClient, compartments.WithReadCompartmentSuffix(testRingKey, 2), 0, 1, 2)
 
-	w, err := NewPartitionRingWatchers(true, 3, testRingName, testRingKey, kvClient, nil, log.NewNopLogger(), nil)
+	w, err := NewPartitionRingWatchers(compartments.Config{Enabled: true, Read: compartments.ReadConfig{NumCompartments: 3}}, testRingName, testRingKey, kvClient, nil, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	startPartitionRingWatchers(t, w)
 
@@ -76,7 +76,7 @@ func TestPartitionRingWatchers_DoesNotPanicWithRealRegistererAndMultipleCompartm
 	var w *ring.PartitionRingWatchers
 	require.NotPanics(t, func() {
 		var err error
-		w, err = NewPartitionRingWatchers(true, 4, testRingName, testRingKey, kvClient, nil, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		w, err = NewPartitionRingWatchers(compartments.Config{Enabled: true, Read: compartments.ReadConfig{NumCompartments: 4}}, testRingName, testRingKey, kvClient, nil, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 		require.NoError(t, err)
 		require.Equal(t, 4, w.Count())
 	})
@@ -91,7 +91,7 @@ func TestPartitionRingWatchers_ReturnsErrorWhenEnabledWithNoCompartments(t *test
 	t.Cleanup(func() { _ = closer.Close() })
 
 	for _, numCompartments := range []int{0, -1} {
-		w, err := NewPartitionRingWatchers(true, numCompartments, testRingName, testRingKey, kvClient, nil, log.NewNopLogger(), nil)
+		w, err := NewPartitionRingWatchers(compartments.Config{Enabled: true, Read: compartments.ReadConfig{NumCompartments: numCompartments}}, testRingName, testRingKey, kvClient, nil, log.NewNopLogger(), nil)
 		assert.Error(t, err)
 		assert.Nil(t, w)
 	}
@@ -135,7 +135,7 @@ func TestPartitionRingWatchers_ResolvesDerivedTokensWithTokenGenerator(t *testin
 				writePartitionsWith(t, kvClient, key, (*ring.PartitionRingDesc).AddPartitionWithDerivedTokens, partitionIDs...)
 			}
 
-			w, err := NewPartitionRingWatchers(tc.compartmentsEnabled, tc.numCompartments, testRingName, testRingKey, kvClient, tokenTable, log.NewNopLogger(), nil)
+			w, err := NewPartitionRingWatchers(compartments.Config{Enabled: tc.compartmentsEnabled, Read: compartments.ReadConfig{NumCompartments: tc.numCompartments}}, testRingName, testRingKey, kvClient, tokenTable, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 			startPartitionRingWatchers(t, w)
 

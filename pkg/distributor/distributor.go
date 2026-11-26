@@ -1878,7 +1878,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		if d.compartmentRouter == nil {
 			trackedAsync, rejectedHashes, err = d.trackTenantSeries(ctx, limitsKey, seriesHashes)
 		} else {
-			seriesHashesByReadCompartment := groupSeriesHashesByReadCompartment(d.compartmentRouter, userID, metadata, req.Timeseries, seriesHashes)
+			seriesHashesByReadCompartment := groupSeriesHashesByReadCompartment(d.compartmentRouter, d.cfg.Compartments, userID, metadata, req.Timeseries, seriesHashes)
 			trackedAsync, rejectedHashes, err = d.trackReadCompartmentSeries(ctx, seriesHashesByReadCompartment)
 		}
 		if err != nil {
