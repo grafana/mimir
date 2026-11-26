@@ -14,13 +14,17 @@ func GroupLabel(o *Overrides, userID string, timeseries []mimirpb.PreallocTimese
 		return ""
 	}
 
-	groupLabel := o.SeparateMetricsGroupLabel(userID)
+	return GroupLabelFromLabels(o.SeparateMetricsGroupLabel(userID), timeseries[0].Labels)
+}
+
+// GroupLabelFromLabels copies the group label value so it can outlive the write request.
+func GroupLabelFromLabels(groupLabel string, labels []mimirpb.LabelAdapter) string {
 	if groupLabel == "" {
 		// If not set, label value will be "" and dropped by Prometheus
 		return groupLabel
 	}
 
-	for _, label := range timeseries[0].Labels {
+	for _, label := range labels {
 		if label.Name == groupLabel {
 			// label.Value string is cloned as underlying PreallocTimeseries contains
 			// unsafe strings that should not be retained
