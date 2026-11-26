@@ -1313,6 +1313,7 @@ impl ColdState {
         matchers: &'a [CompiledMatcher],
         start: i64,
         end: i64,
+        retained: Retained,
     ) -> impl Iterator<Item = cold::ColdSeries<'a>> + 'a {
         self.blocks
             .iter()
@@ -1323,7 +1324,9 @@ impl ColdState {
                     .into_iter()
                     .map(move |index| block.series(tenant_id, index as usize))
             })
-            .filter(move |series| series.has_data(start, end) && matches(series, matchers))
+            .filter(move |series| {
+                series.has_retained_data(start, end, retained) && matches(series, matchers)
+            })
     }
 
     /// Every candidate of `matchers` in the blocks overlapping `[start, end]`, unchecked, with its
@@ -2830,13 +2833,9 @@ impl Store {
         let has_shard = compiled
             .iter()
             .any(|matcher| matches!(matcher, CompiledMatcher::Shard(..)));
-        let head_min = self.head_view(tenant_id).head_min;
-        let retained = move |cold: &ColdState| Retained {
-            cutoff: self
-                .pruned_before
-                .load(std::sync::atomic::Ordering::Relaxed),
-            ooo_from: self.ooo_compaction.then(|| cold.oldest_live_ooo_ref()),
-        };
+        let head = self.head_view(tenant_id);
+        let head_min = head.head_min;
+        let retained = move |cold: &ColdState| self.cold_retained(&head, cold);
         let scan_cold = move |blocks: &[Arc<cold::ColdBlock>],
                               retained: Retained,
                               compiled: &[CompiledMatcher]| {
@@ -3066,6 +3065,7 @@ impl Store {
         matchers: &[cortex::LabelMatcher],
     ) -> Result<Vec<Vec<(String, String)>>> {
         let compiled = compile_matchers(matchers)?;
+        let head = self.head_view(tenant_id);
         Ok(self
             .per_shard_with_cold(tenant_id, |tenant, _, cold| {
                 let mut selected = tenant
@@ -3075,8 +3075,14 @@ impl Store {
                     .map(|((_, labels), _)| labels.clone())
                     .collect::<HashSet<_>>();
                 selected.extend(
-                    cold.matching(tenant_id, &compiled, start, end)
-                        .map(|series| series.labels()),
+                    cold.matching(
+                        tenant_id,
+                        &compiled,
+                        start,
+                        end,
+                        self.cold_retained(&head, cold),
+                    )
+                    .map(|series| series.labels()),
                 );
                 selected.iter().map(owned_labels).collect::<Vec<_>>()
             })
@@ -3104,10 +3110,10 @@ impl Store {
                 names.extend(labels.iter().map(|(name, _)| name));
             }
         });
-        for block in cold {
+        for (block, retained) in cold {
             for id in block.candidates(tenant_id, &compiled) {
                 let series = block.series(tenant_id, id as usize);
-                if window.includes_cold(&series) && matches(&series, &compiled) {
+                if window.includes_cold(&series, retained) && matches(&series, &compiled) {
                     names.extend(series.pairs().map(|(name, _)| name));
                 }
             }
@@ -3183,11 +3189,11 @@ impl Store {
                 tenant.series.matching(&compiled).for_each(visit);
             }
         });
-        for block in cold {
+        for (block, retained) in cold {
             block.collect_label_values(
                 tenant_id,
                 name,
-                |series| window.includes_cold(series),
+                |series| window.includes_cold(series, retained),
                 &compiled,
                 limit,
                 &mut values,
@@ -3206,13 +3212,14 @@ impl Store {
         tenant_id: &str,
         window: &LabelWindow,
         mut visit: impl FnMut(&Tenant),
-    ) -> Vec<Arc<cold::ColdBlock>> {
+    ) -> Vec<(Arc<cold::ColdBlock>, Retained)> {
         let mut blocks = Vec::new();
         for shard in &self.shards {
             let state = shard.read().expect("store lock poisoned");
             if let Some(tenant) = state.tenants.get(tenant_id) {
                 visit(tenant);
             }
+            let retained = self.cold_retained(&window.head_view, &state.cold);
             blocks.extend(
                 state
                     .cold
@@ -3227,7 +3234,7 @@ impl Store {
                                     block.overlaps(tenant_id, start, end)
                                 }))
                     })
-                    .cloned(),
+                    .map(|block| (Arc::clone(block), retained)),
             );
         }
         blocks
@@ -3241,7 +3248,19 @@ impl Store {
                 head_min: tenant.head_min,
                 min_time: tenant.min_time,
                 max_time: tenant.max_time,
+                retention_cutoff: tenant.retention_cutoff,
             })
+    }
+
+    /// The chunks of `cold` a query of the tenant `head` describes may read.
+    fn cold_retained(&self, head: &HeadView, cold: &ColdState) -> Retained {
+        Retained {
+            cutoff: self
+                .pruned_before
+                .load(std::sync::atomic::Ordering::Relaxed)
+                .max(head.retention_cutoff),
+            ooo_from: self.ooo_compaction.then(|| cold.oldest_live_ooo_ref()),
+        }
     }
 
     pub fn has_tenant(&self, tenant_id: &str) -> bool {
@@ -3932,6 +3951,7 @@ impl Store {
                             head_min: tenant.head_min,
                             min_time: tenant.min_time,
                             max_time: tenant.max_time,
+                            retention_cutoff: tenant.retention_cutoff,
                         },
                     )
                 })
@@ -4000,10 +4020,10 @@ impl Store {
                 }
             }
         });
-        for block in blocks {
+        for (block, retained) in blocks {
             for index in block.candidates(tenant_id, &compiled) {
                 let series = block.series(tenant_id, index as usize);
-                if window.includes_cold(&series) && matches(&series, &compiled) {
+                if window.includes_cold(&series, retained) && matches(&series, &compiled) {
                     for (name, value) in series.pairs() {
                         add(name, value);
                     }
@@ -4128,6 +4148,8 @@ struct HeadView {
     head_min: i64,
     min_time: i64,
     max_time: i64,
+    // Cold blocks keep chunks older than this until enough of a block expired to rewrite it.
+    retention_cutoff: i64,
 }
 
 impl HeadView {
@@ -4135,6 +4157,7 @@ impl HeadView {
         head_min: i64::MIN,
         min_time: i64::MAX,
         max_time: i64::MIN,
+        retention_cutoff: i64::MIN,
     };
 
     fn holds(&self, series: &Series) -> bool {
@@ -4174,13 +4197,13 @@ struct LabelWindow {
 }
 
 impl LabelWindow {
-    fn includes_cold(&self, series: &cold::ColdSeries<'_>) -> bool {
+    fn includes_cold(&self, series: &cold::ColdSeries<'_>, retained: Retained) -> bool {
         self.blocks
-            .is_some_and(|(lower, upper)| series.has_data(lower, upper))
+            .is_some_and(|(lower, upper)| series.has_retained_data(lower, upper, retained))
             || (series.idle_evicted
                 && self
                     .idle_blocks
-                    .is_some_and(|(lower, upper)| series.has_data(lower, upper)))
+                    .is_some_and(|(lower, upper)| series.has_retained_data(lower, upper, retained)))
     }
 
     fn includes(&self, series: &Series) -> bool {
@@ -7497,6 +7520,58 @@ mod tests {
             MERGE_TARGET_BLOCKS
         );
         assert_eq!(float_samples(&store, -1, 100), before);
+    }
+
+    #[test]
+    fn blocks_with_few_expired_chunks_stay_but_reads_skip_them() {
+        let store = Store::with_shards(20 * 60 * 1000, None, None, 1, 1).unwrap();
+        store
+            .ingest("tenant", series_request("expired", [(10, 1.0)]))
+            .unwrap();
+        for index in 0..5 {
+            store
+                .ingest(
+                    "tenant",
+                    series_request(&format!("kept_{index}"), [(1000 + index, 2.0)]),
+                )
+                .unwrap();
+        }
+        {
+            let mut state = store.shards[0].write().unwrap();
+            for tenant in state.tenants.values_mut() {
+                tenant
+                    .series
+                    .for_each_mut(|_, series| series.in_head = false);
+                tenant.head_min = 5000;
+                tenant.retention_cutoff = 500;
+            }
+            freeze_out_of_head(&mut state);
+        }
+        let before = Arc::clone(&store.shards[0].read().unwrap().cold.blocks[0]);
+        store
+            .apply_retention(&HashMap::from([("tenant".to_owned(), 500)]), i64::MIN, true)
+            .unwrap();
+        let after = Arc::clone(&store.shards[0].read().unwrap().cold.blocks[0]);
+        assert!(
+            Arc::ptr_eq(&before, &after),
+            "one chunk in six is not worth a rewrite"
+        );
+        assert_eq!(float_samples(&store, 0, 5000).len(), 5);
+        let names = store
+            .label_values("tenant", "__name__", 0, 5000, &[])
+            .unwrap();
+        assert_eq!(names.len(), 5, "{names:?}");
+        assert!(!names.contains(&"expired".to_owned()));
+        assert_eq!(
+            store.select_labels("tenant", 0, 5000, &[]).unwrap().len(),
+            5
+        );
+        let all = store.label_names_and_values("tenant", &[], false).unwrap();
+        assert!(
+            all.get("__name__")
+                .is_none_or(|names| !names.contains("expired")),
+            "{all:?}"
+        );
     }
 
     #[test]

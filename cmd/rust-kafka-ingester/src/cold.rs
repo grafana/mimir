@@ -356,6 +356,26 @@ impl ColdBlock {
         if unchanged {
             return None;
         }
+        // Queries skip expired chunks, so a block is only rewritten once a quarter of its chunks
+        // expired: rewriting every block each time the cutoff moved re-encoded all cold data to
+        // drop a few minutes of it.
+        let retained_for = |tenant: &String| Retained {
+            cutoff: retained
+                .cutoff
+                .max(cutoffs.get(tenant).copied().unwrap_or(i64::MIN)),
+            ..retained
+        };
+        let (mut expired, mut total) = (0_usize, 0_usize);
+        for (tenant, series) in self.entries() {
+            let retained = retained_for(tenant);
+            for chunk in series.chunks() {
+                total += 1;
+                expired += usize::from(!retained.includes(&chunk));
+            }
+        }
+        if expired == 0 || (expired < total && expired * 4 < total) {
+            return None;
+        }
         let mut changed = false;
         let kept = self
             .entries()
@@ -1006,9 +1026,17 @@ impl ColdSeries<'_> {
         }
     }
 
+    #[cfg(test)]
     pub fn has_data(&self, start: i64, end: i64) -> bool {
         self.chunks()
             .any(|chunk| chunk.min_time <= end && chunk.max_time >= start)
+    }
+
+    /// Whether the series has chunks in `[start, end]` that retention has not dropped yet.
+    pub fn has_retained_data(&self, start: i64, end: i64, retained: Retained) -> bool {
+        self.chunks().any(|chunk| {
+            chunk.min_time <= end && chunk.max_time >= start && retained.includes(&chunk)
+        })
     }
 }
 
