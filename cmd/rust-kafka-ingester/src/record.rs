@@ -257,8 +257,7 @@ pub fn decode_record_bytes(version: u32, bytes: Bytes) -> Result<DecodedRequest>
     if version < 2 {
         return decode_v1(&bytes, None).context("decode WriteRequest");
     }
-    let request = cortexpb::WriteRequest::decode(bytes).context("decode WriteRequest")?;
-    decode_v2(request)
+    decode_v2(&bytes).context("decode WriteRequest")
 }
 
 /// Like `decode_record_bytes`, with where each series' encoded labels are in `bytes`, when they
@@ -349,56 +348,91 @@ fn normalize_metadata_name(name: &str, metric_type: i32) -> String {
         .to_owned()
 }
 
-fn decode_v2(request: cortexpb::WriteRequest) -> Result<DecodedRequest> {
+// Like `decode_v1`, version 2 records are read field by field: prost's messages cost an allocation
+// for every symbol and series, and most of decoding them. Decodes like
+// `cortexpb::WriteRequest::decode` then `decode_v2_request`.
+fn decode_v2(record: &Bytes) -> Result<DecodedRequest> {
+    let ctx = DecodeContext::default();
+    let mut buf = &record[..];
+    let mut source = 0;
+    let mut symbol_fields = Vec::new();
+    let mut series_fields = Vec::new();
+    while !buf.is_empty() {
+        let (tag, wire_type) = decode_key(&mut buf)?;
+        match tag {
+            // Version 1 fields, which a version 2 record does not use but prost validates.
+            1 => {
+                cortexpb::TimeSeries::decode(length_delimited(wire_type, &mut buf)?)?;
+            }
+            2 => source = varint(wire_type, &mut buf)? as i32,
+            3 => {
+                cortexpb::MetricMetadata::decode(length_delimited(wire_type, &mut buf)?)?;
+            }
+            4 => {
+                let field = length_delimited(wire_type, &mut buf)?;
+                std::str::from_utf8(field)
+                    .context("invalid string value: data is not UTF-8 encoded")?;
+                symbol_fields.push(field);
+            }
+            // Symbols can follow the series, so series are read once all fields are.
+            5 => series_fields.push(length_delimited(wire_type, &mut buf)?),
+            _ => skip_field(wire_type, tag, &mut buf, ctx.clone())?,
+        }
+    }
     // Each symbol is converted once, and labels share it.
-    let symbols = request
-        .symbols_rw2
+    let symbols = symbol_fields
         .into_iter()
-        .map(LabelStr::from)
+        .map(|field| {
+            if field.len() <= INLINE_LABEL_BYTES {
+                LabelStr::inline_short(field).expect("short label")
+            } else {
+                LabelStr(LabelStorage::Shared(record.slice_ref(field)))
+            }
+        })
         .collect::<Vec<_>>();
-    let symbol = |reference: u32| -> Result<LabelStr> {
+    let symbol = |reference: u32| -> Result<&LabelStr> {
         let reference = reference as usize;
         if reference < COMMON_SYMBOLS.len() {
-            return Ok(LabelStr::from_static(COMMON_SYMBOLS[reference]));
+            return Ok(&COMMON_LABELS[reference]);
         }
         if reference < SYMBOL_OFFSET {
             bail!("reserved RW2 symbol reference {reference}");
         }
         symbols
             .get(reference - SYMBOL_OFFSET)
-            .cloned()
             .with_context(|| format!("RW2 symbol reference {reference} out of range"))
     };
-
+    // Each symbol's interned name, once a series uses it as a name.
+    let mut interned_names: Vec<Option<Option<&'static str>>> = vec![None; symbols.len()];
     let mut metadata = Vec::new();
-    let mut series = Vec::with_capacity(request.timeseries_rw2.len());
-    let mut interned_names = hashbrown::HashMap::new();
-    for ts in request.timeseries_rw2 {
-        if ts.labels_refs.len() % 2 != 0 {
+    let mut series = Vec::with_capacity(series_fields.len());
+    let mut labels_refs = Vec::new();
+    for field in series_fields {
+        let fields = decode_series_v2(record, field, &mut labels_refs)?;
+        if labels_refs.len() % 2 != 0 {
             bail!("odd number of RW2 label references");
         }
-        let mut labels = Vec::with_capacity(ts.labels_refs.len() / 2);
-        for pair in ts.labels_refs.as_chunks::<2>().0 {
+        let mut labels = Vec::with_capacity(labels_refs.len() / 2);
+        for pair in labels_refs.as_chunks::<2>().0 {
             let reference = pair[0] as usize;
-            let name = if reference >= SYMBOL_OFFSET {
-                // Reuse names the store already holds without incrementing the record's
-                // shared refcount for every occurrence or interning rejected input.
-                let known = interned_names.entry(reference).or_insert_with(|| {
-                    symbols
-                        .get(reference - SYMBOL_OFFSET)
-                        .and_then(|name| crate::labels::names::lookup(name.as_str()))
-                        .map(crate::labels::names::name)
+            let known = reference
+                .checked_sub(SYMBOL_OFFSET)
+                .and_then(|index| Some((index, interned_names.get_mut(index)?)))
+                .and_then(|(index, known)| {
+                    // Reuse names the store already holds without copying the symbol for every
+                    // occurrence or interning rejected input.
+                    *known.get_or_insert_with(|| {
+                        crate::labels::names::lookup(symbols[index].as_str())
+                            .map(crate::labels::names::name)
+                    })
                 });
-                match *known {
-                    Some(name) => LabelStr::from_static(name),
-                    None => symbol(pair[0])?,
-                }
-            } else {
-                symbol(pair[0])?
+            let name = match known {
+                Some(name) => LabelStr::from_static(name),
+                None => symbol(pair[0])?.clone(),
             };
-            labels.push((name, symbol(pair[1])?));
+            labels.push((name, symbol(pair[1])?.clone()));
         }
-        let exemplars = ts
+        let exemplars = fields
             .exemplars
             .into_iter()
             .map(|e| -> Result<cortexpb::Exemplar> {
@@ -408,8 +442,8 @@ fn decode_v2(request: cortexpb::WriteRequest) -> Result<DecodedRequest> {
                 let mut pairs = Vec::with_capacity(e.labels_refs.len() / 2);
                 for pair in e.labels_refs.as_chunks::<2>().0 {
                     pairs.push(cortexpb::LabelPair {
-                        name: symbol(pair[0])?.into_bytes(),
-                        value: symbol(pair[1])?.into_bytes(),
+                        name: symbol(pair[0])?.clone().into_bytes(),
+                        value: symbol(pair[1])?.clone().into_bytes(),
                     });
                 }
                 Ok(cortexpb::Exemplar {
@@ -419,39 +453,137 @@ fn decode_v2(request: cortexpb::WriteRequest) -> Result<DecodedRequest> {
                 })
             })
             .collect::<Result<Vec<_>>>()?;
-        if let Some(meta) = ts.metadata {
-            let metric_name = labels
-                .iter()
-                .find(|(name, _)| name == "__name__")
-                .map(|(_, value)| String::from(value.clone()))
-                .unwrap_or_default();
-            let help = String::from(symbol(meta.help_ref)?);
-            let unit = String::from(symbol(meta.unit_ref)?);
+        if let Some(meta) = fields.metadata {
+            let help = symbol(meta.help_ref)?;
+            let unit = symbol(meta.unit_ref)?;
             // Like Mimir's RW2 unmarshalling, every series carries a metadata field, and only
             // one that says something about a named metric becomes metadata.
-            if !metric_name.is_empty() && (meta.r#type != 0 || !help.is_empty() || !unit.is_empty())
-            {
-                metadata.push(cortexpb::MetricMetadata {
-                    r#type: meta.r#type,
-                    metric_family_name: metric_name,
-                    help,
-                    unit,
-                });
+            if meta.r#type != 0 || !help.is_empty() || !unit.is_empty() {
+                let metric_name = labels
+                    .iter()
+                    .find(|(name, _)| name == "__name__")
+                    .map_or("", |(_, value)| value.as_str());
+                if !metric_name.is_empty() {
+                    metadata.push(cortexpb::MetricMetadata {
+                        r#type: meta.r#type,
+                        metric_family_name: metric_name.to_owned(),
+                        help: help.as_str().to_owned(),
+                        unit: unit.as_str().to_owned(),
+                    });
+                }
             }
         }
         series.push(DecodedSeries {
             labels,
-            samples: ts.samples,
-            histograms: ts.histograms,
+            samples: fields.samples,
+            histograms: fields.histograms,
             exemplars,
-            created_timestamp: ts.created_timestamp,
+            created_timestamp: fields.created_timestamp,
         });
     }
     Ok(DecodedRequest {
-        source: request.source,
+        source,
         series,
         metadata,
     })
+}
+
+static COMMON_LABELS: std::sync::LazyLock<Vec<LabelStr>> = std::sync::LazyLock::new(|| {
+    COMMON_SYMBOLS
+        .iter()
+        .map(|symbol| LabelStr::from_static(symbol))
+        .collect()
+});
+
+// A version 2 series' fields but its labels, which go to `labels_refs`.
+struct SeriesV2Fields {
+    samples: Vec<cortexpb::Sample>,
+    histograms: Vec<cortexpb::Histogram>,
+    exemplars: Vec<cortexpb::ExemplarRw2>,
+    metadata: Option<cortexpb::MetadataRw2>,
+    created_timestamp: i64,
+}
+
+// Decodes like prost's `TimeSeriesRw2`: repeated scalars packed or not, and a repeated message
+// field merges into the one before.
+fn decode_series_v2(
+    record: &Bytes,
+    mut buf: &[u8],
+    labels_refs: &mut Vec<u32>,
+) -> Result<SeriesV2Fields> {
+    let ctx = DecodeContext::default();
+    labels_refs.clear();
+    let mut series = SeriesV2Fields {
+        samples: Vec::new(),
+        histograms: Vec::new(),
+        exemplars: Vec::new(),
+        metadata: None,
+        created_timestamp: 0,
+    };
+    while !buf.is_empty() {
+        let (tag, wire_type) = decode_key(&mut buf)?;
+        match tag {
+            1 => {
+                if wire_type == WireType::LengthDelimited {
+                    let mut packed = length_delimited(wire_type, &mut buf)?;
+                    while !packed.is_empty() {
+                        labels_refs.push(decode_varint(&mut packed)? as u32);
+                    }
+                } else {
+                    labels_refs.push(varint(wire_type, &mut buf)? as u32);
+                }
+            }
+            2 => series
+                .samples
+                .push(decode_sample(length_delimited(wire_type, &mut buf)?)?),
+            3 => series
+                .histograms
+                .push(cortexpb::Histogram::decode(length_delimited(
+                    wire_type, &mut buf,
+                )?)?),
+            4 => {
+                let exemplar = length_delimited(wire_type, &mut buf)?;
+                series
+                    .exemplars
+                    .push(cortexpb::ExemplarRw2::decode(record.slice_ref(exemplar))?);
+            }
+            5 => {
+                let mut fields = length_delimited(wire_type, &mut buf)?;
+                let metadata = series.metadata.get_or_insert_default();
+                while !fields.is_empty() {
+                    let (tag, wire_type) = decode_key(&mut fields)?;
+                    match tag {
+                        1 => metadata.r#type = varint(wire_type, &mut fields)? as i32,
+                        3 => metadata.help_ref = varint(wire_type, &mut fields)? as u32,
+                        4 => metadata.unit_ref = varint(wire_type, &mut fields)? as u32,
+                        _ => skip_field(wire_type, tag, &mut fields, ctx.clone())?,
+                    }
+                }
+            }
+            6 => series.created_timestamp = varint(wire_type, &mut buf)? as i64,
+            _ => skip_field(wire_type, tag, &mut buf, ctx.clone())?,
+        }
+    }
+    Ok(series)
+}
+
+fn decode_sample(mut buf: &[u8]) -> Result<cortexpb::Sample> {
+    let ctx = DecodeContext::default();
+    let mut sample = cortexpb::Sample::default();
+    while !buf.is_empty() {
+        let (tag, wire_type) = decode_key(&mut buf)?;
+        match tag {
+            1 => {
+                check_wire_type(WireType::SixtyFourBit, wire_type)?;
+                let (bits, rest) = buf.split_first_chunk::<8>().context("buffer underflow")?;
+                sample.value = f64::from_le_bytes(*bits);
+                buf = rest;
+            }
+            2 => sample.timestamp_ms = varint(wire_type, &mut buf)? as i64,
+            _ => skip_field(wire_type, tag, &mut buf, ctx.clone())?,
+        }
+    }
+    Ok(sample)
 }
 
 fn decode_series(record: &Bytes, mut buf: &[u8]) -> Result<(DecodedSeries, Option<Range<usize>>)> {
@@ -494,26 +626,9 @@ fn decode_series(record: &Bytes, mut buf: &[u8]) -> Result<(DecodedSeries, Optio
                     .labels
                     .push((label(record, name), label(record, value)));
             }
-            2 => {
-                let mut sample_buf = length_delimited(wire_type, &mut buf)?;
-                let mut sample = cortexpb::Sample::default();
-                while !sample_buf.is_empty() {
-                    let (tag, wire_type) = decode_key(&mut sample_buf)?;
-                    match tag {
-                        1 => {
-                            check_wire_type(WireType::SixtyFourBit, wire_type)?;
-                            let (bits, rest) = sample_buf
-                                .split_first_chunk::<8>()
-                                .context("buffer underflow")?;
-                            sample.value = f64::from_le_bytes(*bits);
-                            sample_buf = rest;
-                        }
-                        2 => sample.timestamp_ms = varint(wire_type, &mut sample_buf)? as i64,
-                        _ => skip_field(wire_type, tag, &mut sample_buf, ctx.clone())?,
-                    }
-                }
-                series.samples.push(sample);
-            }
+            2 => series
+                .samples
+                .push(decode_sample(length_delimited(wire_type, &mut buf)?)?),
             3 => {
                 let exemplar = length_delimited(wire_type, &mut buf)?;
                 series
@@ -617,6 +732,113 @@ mod tests {
         })
     }
 
+    // What `decode_v2` must match: prost's decoding, then the same conversions.
+    fn decode_v2_with_prost(request: cortexpb::WriteRequest) -> Result<DecodedRequest> {
+        // Each symbol is converted once, and labels share it.
+        let symbols = request
+            .symbols_rw2
+            .into_iter()
+            .map(LabelStr::from)
+            .collect::<Vec<_>>();
+        let symbol = |reference: u32| -> Result<LabelStr> {
+            let reference = reference as usize;
+            if reference < COMMON_SYMBOLS.len() {
+                return Ok(LabelStr::from_static(COMMON_SYMBOLS[reference]));
+            }
+            if reference < SYMBOL_OFFSET {
+                bail!("reserved RW2 symbol reference {reference}");
+            }
+            symbols
+                .get(reference - SYMBOL_OFFSET)
+                .cloned()
+                .with_context(|| format!("RW2 symbol reference {reference} out of range"))
+        };
+
+        let mut metadata = Vec::new();
+        let mut series = Vec::with_capacity(request.timeseries_rw2.len());
+        let mut interned_names = hashbrown::HashMap::new();
+        for ts in request.timeseries_rw2 {
+            if ts.labels_refs.len() % 2 != 0 {
+                bail!("odd number of RW2 label references");
+            }
+            let mut labels = Vec::with_capacity(ts.labels_refs.len() / 2);
+            for pair in ts.labels_refs.as_chunks::<2>().0 {
+                let reference = pair[0] as usize;
+                let name = if reference >= SYMBOL_OFFSET {
+                    // Reuse names the store already holds without incrementing the record's
+                    // shared refcount for every occurrence or interning rejected input.
+                    let known = interned_names.entry(reference).or_insert_with(|| {
+                        symbols
+                            .get(reference - SYMBOL_OFFSET)
+                            .and_then(|name| crate::labels::names::lookup(name.as_str()))
+                            .map(crate::labels::names::name)
+                    });
+                    match *known {
+                        Some(name) => LabelStr::from_static(name),
+                        None => symbol(pair[0])?,
+                    }
+                } else {
+                    symbol(pair[0])?
+                };
+                labels.push((name, symbol(pair[1])?));
+            }
+            let exemplars = ts
+                .exemplars
+                .into_iter()
+                .map(|e| -> Result<cortexpb::Exemplar> {
+                    if e.labels_refs.len() % 2 != 0 {
+                        bail!("odd number of RW2 exemplar label references");
+                    }
+                    let mut pairs = Vec::with_capacity(e.labels_refs.len() / 2);
+                    for pair in e.labels_refs.as_chunks::<2>().0 {
+                        pairs.push(cortexpb::LabelPair {
+                            name: symbol(pair[0])?.into_bytes(),
+                            value: symbol(pair[1])?.into_bytes(),
+                        });
+                    }
+                    Ok(cortexpb::Exemplar {
+                        labels: pairs,
+                        value: e.value,
+                        timestamp_ms: e.timestamp,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            if let Some(meta) = ts.metadata {
+                let metric_name = labels
+                    .iter()
+                    .find(|(name, _)| name == "__name__")
+                    .map(|(_, value)| String::from(value.clone()))
+                    .unwrap_or_default();
+                let help = String::from(symbol(meta.help_ref)?);
+                let unit = String::from(symbol(meta.unit_ref)?);
+                // Like Mimir's RW2 unmarshalling, every series carries a metadata field, and only
+                // one that says something about a named metric becomes metadata.
+                if !metric_name.is_empty()
+                    && (meta.r#type != 0 || !help.is_empty() || !unit.is_empty())
+                {
+                    metadata.push(cortexpb::MetricMetadata {
+                        r#type: meta.r#type,
+                        metric_family_name: metric_name,
+                        help,
+                        unit,
+                    });
+                }
+            }
+            series.push(DecodedSeries {
+                labels,
+                samples: ts.samples,
+                histograms: ts.histograms,
+                exemplars,
+                created_timestamp: ts.created_timestamp,
+            });
+        }
+        Ok(DecodedRequest {
+            source: request.source,
+            series,
+            metadata,
+        })
+    }
+
     struct Random(u64);
 
     impl Random {
@@ -712,6 +934,161 @@ mod tests {
         record
     }
 
+    fn random_rw2_record(random: &mut Random) -> Vec<u8> {
+        let mut record = Vec::new();
+        let symbols = random.below(6);
+        let reference = |random: &mut Random| -> u32 {
+            match random.below(8) {
+                // Common, reserved, or past the last symbol.
+                0 => random.below(SYMBOL_OFFSET as u64 + 2) as u32,
+                1 => (SYMBOL_OFFSET as u64 + symbols + random.below(2)) as u32,
+                _ => (SYMBOL_OFFSET as u64 + random.below(symbols.max(1))) as u32,
+            }
+        };
+        let mut series_fields = Vec::new();
+        for _ in 0..random.below(4) {
+            let mut labels_refs = (0..random.below(3) * 2)
+                .map(|_| reference(random))
+                .collect::<Vec<_>>();
+            if random.below(8) == 0 {
+                labels_refs.push(reference(random));
+            }
+            let series = cortexpb::TimeSeriesRw2 {
+                labels_refs,
+                samples: (0..random.below(3))
+                    .map(|_| cortexpb::Sample {
+                        value: random.below(1000) as f64 - 500.5,
+                        timestamp_ms: random.next() as i64,
+                    })
+                    .collect(),
+                histograms: (0..random.below(2))
+                    .map(|_| cortexpb::Histogram {
+                        sum: 2.0,
+                        schema: 3,
+                        positive_deltas: vec![1, -1, random.below(9) as i64],
+                        timestamp: random.below(100) as i64,
+                        count: Some(cortexpb::histogram::Count::CountInt(random.below(9))),
+                        ..Default::default()
+                    })
+                    .collect(),
+                exemplars: (0..random.below(2))
+                    .map(|_| cortexpb::ExemplarRw2 {
+                        labels_refs: (0..random.below(2) * 2 + random.below(4) / 3)
+                            .map(|_| reference(random))
+                            .collect(),
+                        value: 1.5,
+                        timestamp: random.below(100) as i64,
+                    })
+                    .collect(),
+                metadata: (random.below(3) != 0).then(|| cortexpb::MetadataRw2 {
+                    r#type: random.below(3) as i32,
+                    help_ref: [0, reference(random)][random.below(2) as usize],
+                    unit_ref: [0, reference(random)][random.below(2) as usize],
+                }),
+                created_timestamp: random.below(3) as i64,
+            };
+            let mut encoded = series.encode_to_vec();
+            match random.below(6) {
+                // A field the decoder does not know.
+                0 => {
+                    prost::encoding::encode_key(7, WireType::Varint, &mut encoded);
+                    prost::encoding::encode_varint(random.next(), &mut encoded);
+                }
+                // An unpacked reference, and a second metadata field merging into the first.
+                1 => {
+                    prost::encoding::encode_key(1, WireType::Varint, &mut encoded);
+                    prost::encoding::encode_varint(reference(random).into(), &mut encoded);
+                    let metadata = cortexpb::MetadataRw2 {
+                        help_ref: reference(random),
+                        ..Default::default()
+                    };
+                    put_field(&mut encoded, 5, &metadata.encode_to_vec());
+                }
+                _ => {}
+            }
+            series_fields.push(encoded);
+        }
+        // Symbols usually come first, but can follow or interleave with the series.
+        let symbols_first = random.below(4) != 0;
+        if !symbols_first {
+            for series in &series_fields {
+                put_field(&mut record, 5, series);
+            }
+        }
+        for index in 0..symbols {
+            let symbol = match random.below(4) {
+                0 => format!("a_long_symbol_shared_with_the_record_{index}").into_bytes(),
+                _ => random.bytes(),
+            };
+            put_field(&mut record, 4, &symbol);
+        }
+        if symbols_first {
+            for series in &series_fields {
+                put_field(&mut record, 5, series);
+            }
+        }
+        if random.below(2) == 0 {
+            prost::encoding::encode_key(2, WireType::Varint, &mut record);
+            prost::encoding::encode_varint(random.below(3), &mut record);
+        }
+        if random.below(8) == 0 {
+            let series = cortexpb::TimeSeries {
+                labels: vec![cortexpb::LabelPair {
+                    name: random.bytes().into(),
+                    value: random.bytes().into(),
+                }],
+                ..Default::default()
+            };
+            put_field(&mut record, 1, &series.encode_to_vec());
+        }
+        if random.below(4) == 0 {
+            put_field(&mut record, 99, b"unknown");
+        }
+        record
+    }
+
+    #[test]
+    fn version_2_records_decode_like_prost() {
+        let mut random = Random(0x2545_f491_4f6c_dd1d);
+        let (mut compared, mut decoded_ok) = (0, 0);
+        for _ in 0..5_000 {
+            let record = random_rw2_record(&mut random);
+            let mut candidates = vec![record.clone()];
+            // Truncated and corrupted records must fail, or decode the same, like prost.
+            for _ in 0..3 {
+                if !record.is_empty() {
+                    candidates.push(record[..random.below(record.len() as u64) as usize].to_vec());
+                    let mut corrupted = record.clone();
+                    let position = random.below(record.len() as u64) as usize;
+                    corrupted[position] ^= 1 << random.below(8);
+                    candidates.push(corrupted);
+                }
+            }
+            for candidate in candidates {
+                let candidate = Bytes::from(candidate);
+                let expected = cortexpb::WriteRequest::decode(candidate.clone())
+                    .map_err(anyhow::Error::from)
+                    .and_then(decode_v2_with_prost);
+                let decoded = decode_v2(&candidate);
+                match (&expected, &decoded) {
+                    // Corrupted floats can be NaN, which only compare equal printed.
+                    (Ok(expected), Ok(decoded)) => {
+                        assert_eq!(format!("{decoded:?}"), format!("{expected:?}"));
+                        decoded_ok += 1;
+                    }
+                    (Err(_), Err(_)) => {}
+                    _ => panic!(
+                        "prost: {expected:?}, decode_v2: {decoded:?} for {:?}",
+                        &candidate[..]
+                    ),
+                }
+                compared += 1;
+            }
+        }
+        assert!(compared > 10_000);
+        assert!(decoded_ok > 2_000, "{decoded_ok} records decoded");
+    }
+
     #[test]
     fn version_1_records_decode_like_prost() {
         let mut random = Random(0x9e37_79b9_7f4a_7c15);
@@ -759,6 +1136,90 @@ mod tests {
             }
         }
         assert!(compared > 10_000);
+    }
+
+    // A remote-write 2 record like the ones ingesters consume: a few dozen series from one
+    // scrape, sharing most of their label values and each carrying its metric's metadata.
+    fn synthetic_rw2_record(series: usize) -> Bytes {
+        let mut symbols: Vec<String> = Vec::new();
+        let mut refs = std::collections::HashMap::new();
+        let mut symbol = |value: String| -> u32 {
+            *refs.entry(value.clone()).or_insert_with(|| {
+                symbols.push(value);
+                (SYMBOL_OFFSET + symbols.len() - 1) as u32
+            })
+        };
+        let timeseries = (0..series)
+            .map(|index| {
+                let metric = format!(
+                    "synthetic_http_server_request_duration_seconds_{}",
+                    index % 9
+                );
+                let mut labels_refs = vec![
+                    1,
+                    symbol(metric.clone()),
+                    16,
+                    symbol("dev-cluster-0".into()),
+                    20,
+                    symbol(format!("10.0.{}.{}:9090", index % 3, index % 7)),
+                    19,
+                    symbol("synthetic-namespace/synthetic-service".into()),
+                    17,
+                    symbol("synthetic-namespace".into()),
+                    18,
+                    symbol(format!("synthetic-service-7d9f8b6c4-{:05}", index % 3)),
+                    symbol("route".into()),
+                    symbol(format!("/api/v1/resource/{}", index % 11)),
+                ];
+                if index % 2 == 0 {
+                    labels_refs.extend([4, symbol(format!("{}", index % 12))]);
+                }
+                cortexpb::TimeSeriesRw2 {
+                    labels_refs,
+                    samples: vec![cortexpb::Sample {
+                        value: index as f64,
+                        timestamp_ms: 1_700_000_000_000 + index as i64,
+                    }],
+                    metadata: Some(cortexpb::MetadataRw2 {
+                        r#type: 3,
+                        help_ref: symbol(format!("Help for {metric}.")),
+                        unit_ref: 0,
+                    }),
+                    ..Default::default()
+                }
+            })
+            .collect();
+        Bytes::from(
+            cortexpb::WriteRequest {
+                symbols_rw2: symbols,
+                timeseries_rw2: timeseries,
+                ..Default::default()
+            }
+            .encode_to_vec(),
+        )
+    }
+
+    // cargo test --release --lib record::tests::bench_rw2_decode -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn bench_rw2_decode() {
+        let record = synthetic_rw2_record(80);
+        let iterations = 200_000;
+        for round in 0..5 {
+            let started = std::time::Instant::now();
+            for _ in 0..iterations {
+                std::hint::black_box(
+                    decode_record_with_label_spans(2, std::hint::black_box(record.clone()))
+                        .unwrap(),
+                );
+            }
+            let elapsed = started.elapsed();
+            println!(
+                "round {round}: {:.0} ns/record, {:.1} ns/series",
+                elapsed.as_nanos() as f64 / iterations as f64,
+                elapsed.as_nanos() as f64 / iterations as f64 / 80.0
+            );
+        }
     }
 
     #[test]
