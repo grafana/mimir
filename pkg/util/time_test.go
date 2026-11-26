@@ -143,6 +143,29 @@ func TestParseTime(t *testing.T) {
 			// Test float rounding.
 			input:  "1543578564.705",
 			result: time.Unix(1543578564, 705*1e6),
+		}, {
+			input:  "-123.5",
+			result: time.Unix(-124, 500*1e6),
+		}, {
+			input: "NaN",
+			fail:  true,
+		}, {
+			input: "Inf",
+			fail:  true,
+		}, {
+			input: "-Inf",
+			fail:  true,
+		}, {
+			// More seconds than fit in int64 milliseconds.
+			input: "1e30",
+			fail:  true,
+		}, {
+			input: "-1e30",
+			fail:  true,
+		}, {
+			// First whole second that no longer fits in int64 milliseconds.
+			input: "9223372036854776",
+			fail:  true,
 		},
 	}
 
@@ -183,6 +206,41 @@ func TestUnixSecondsJSON(t *testing.T) {
 			err = json.Unmarshal([]byte(tc.json), &newObj)
 			require.NoError(t, err)
 			require.Equal(t, tc.obj, newObj)
+		})
+	}
+}
+
+func TestParseDurationMS(t *testing.T) {
+	for _, tc := range []struct {
+		input    string
+		expected int64
+		fail     bool
+	}{
+		{input: "", fail: true},
+		{input: "abc", fail: true},
+		{input: "15", expected: 15000},
+		{input: "1.5", expected: 1500},
+		{input: "-2", expected: -2000},
+		{input: "30s", expected: 30000},
+		{input: "2m", expected: 120000},
+		{input: "NaN", fail: true},
+		{input: "Inf", fail: true},
+		{input: "-Inf", fail: true},
+		{input: "1e30", fail: true},
+		{input: "-1e30", fail: true},
+		// 2^63 / 1000 seconds is the first value that overflows int64 milliseconds.
+		{input: "9223372036854776", fail: true},
+		{input: "-1e16", fail: true},
+		{input: "1e15", expected: 1e18},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			got, err := ParseDurationMS(tc.input)
+			if tc.fail {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.expected, got)
 		})
 	}
 }
