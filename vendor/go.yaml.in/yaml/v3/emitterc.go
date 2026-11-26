@@ -1331,6 +1331,84 @@ func yaml_emitter_analyze_scalar(emitter *yaml_emitter_t, value []byte) bool {
 
 	preceded_by_whitespace = true
 	for i, w := 0, 0; i < len(value); i += w {
+		if b := value[i]; b < 0x80 {
+			// ASCII fast path.
+			// Bytes below 0x80 take this path only.
+			// The tests compare this function with yaml_emitter_analyze_scalar_reference.
+			w = 1
+			switch b {
+			case ',', '[', ']', '{', '}':
+				flow_indicators = true
+				if i == 0 {
+					block_indicators = true
+				}
+			case '#':
+				if preceded_by_whitespace {
+					flow_indicators = true
+					block_indicators = true
+				}
+			case '&', '*', '!', '|', '>', '\'', '"', '%', '@', '`':
+				if i == 0 {
+					flow_indicators = true
+					block_indicators = true
+				}
+			case ':':
+				flow_indicators = true
+				if i+1 >= len(value) || is_blank(value, i+1) {
+					block_indicators = true
+				}
+			case '?':
+				flow_indicators = true
+				if i == 0 && (i+1 >= len(value) || is_blank(value, i+1)) {
+					block_indicators = true
+				}
+			case '-':
+				if i == 0 && (i+1 >= len(value) || is_blank(value, i+1)) {
+					flow_indicators = true
+					block_indicators = true
+				}
+			}
+			if b == '\t' {
+				tab_characters = true
+			} else if b != '\n' && (b < 0x20 || b > 0x7e) {
+				special_characters = true
+			}
+			switch b {
+			case ' ':
+				if i == 0 {
+					leading_space = true
+				}
+				if i+1 == len(value) {
+					trailing_space = true
+				}
+				if previous_break {
+					break_space = true
+				}
+				previous_space = true
+				previous_break = false
+			case '\r', '\n':
+				line_breaks = true
+				if i == 0 {
+					leading_break = true
+				}
+				if i+1 == len(value) {
+					trailing_break = true
+				}
+				if previous_space {
+					space_break = true
+				}
+				previous_space = false
+				previous_break = true
+			default:
+				previous_space = false
+				previous_break = false
+			}
+			preceded_by_whitespace = b == ' ' || b == '\t' || b == '\r' || b == '\n' || b == 0
+			continue
+		}
+		// Only bytes from 0x80 get to this point.
+		// The ASCII rules below are unreachable.
+		// They stay unchanged to keep merges from upstream clean.
 		w = width(value[i])
 		followed_by_whitespace = i+w >= len(value) || is_blank(value, i+w)
 

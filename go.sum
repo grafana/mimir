@@ -1196,8 +1196,8 @@ github.com/grafana/dskit v0.0.0-20261125033558-238db5271da1 h1:kuEV9IjqrNFIVx9l0
 github.com/grafana/dskit v0.0.0-20261125033558-238db5271da1/go.mod h1:tcQGVglFqoPB4A5e21aOHCpmC9mztMZ66FtmYr1miVU=
 github.com/grafana/e2e v0.1.2-0.20261026011823-81b51f5a0481 h1:l1ihMwCbvpAJrIxFKRRtGovb/HKUsrRjDqVwb9pGBCE=
 github.com/grafana/e2e v0.1.2-0.20261026011823-81b51f5a0481/go.mod h1:o6aUPNFrl7H0XjIdBpXSU2Gou6vVwctVBuSvWPN7Ogg=
-github.com/grafana/go-yaml/v3 v3.0.0-20261021130729-4d2ac027e9e5 h1:1pkjFOUq/5rZFG3FFTVILVj1VntLALezxBFY1vz3NpQ=
-github.com/grafana/go-yaml/v3 v3.0.0-20261021130729-4d2ac027e9e5/go.mod h1:FWqXKmpTKh7spGdV89XqWZN+kdZL8NZJJWyZQtuTXiI=
+github.com/grafana/go-yaml/v3 v3.0.0-20261126141444-ecd15baa1e52 h1:tC7mOXIbve4K/6GpUi4fPJNzvAvqw5+o2Q+3daaum18=
+github.com/grafana/go-yaml/v3 v3.0.0-20261126141444-ecd15baa1e52/go.mod h1:FWqXKmpTKh7spGdV89XqWZN+kdZL8NZJJWyZQtuTXiI=
 github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce h1:WI1olbgS+sEl77qxEYbmt9TgRUz7iLqmjh8lYPpGlKQ=
 github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce/go.mod h1:GFAN9Jn9t1cX7sNfc6ZoFyc4f7i8jtm3SajrWdZM2EE=
 github.com/grafana/gomemcache v0.0.0-20261112174412-3f2aa5dee9f7 h1:gR9p7AtK9/Z3Fsy3R2B6QDR7XPktT1/LHgUvWz14TLs=
