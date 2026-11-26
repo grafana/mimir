@@ -452,3 +452,54 @@ load 5m
 
 eval range from 0 to 20m step 5m {__name__=~"churned_a|churned_b"} + fill_right(0) missing_metric
   {label="x"} 1 _ _ _ 2
+
+# ---------- Matcher propagation ----------
+#
+# Matcher propagation must not change which series have a match, or remove series that the fill
+# value is used for.
+
+clear
+
+load 5m
+  fill_propagate_left{foo="a"}  1
+  fill_propagate_left{foo="d"}  4
+  fill_propagate_right{foo="a"} 10
+  fill_propagate_right{foo="c"} 30
+
+eval instant at 0 fill_propagate_left{foo=~"a|d"} + fill_right(0) fill_propagate_right
+  {foo="a"} 11
+  {foo="d"} 4
+
+eval instant at 0 fill_propagate_left + fill_left(0) fill_propagate_right{foo=~"a|c"}
+  {foo="a"} 11
+  {foo="c"} 30
+
+# Matchers from outside the fill operation must not narrow its sides on labels that the
+# results using the fill value do not have.
+
+clear
+
+load 5m
+  fill_outer_left{foo="a", baz="x"} 1
+  fill_outer_right{foo="a"}         2
+  fill_outer_filter{foo="a"}        3
+
+eval instant at 0 (fill_outer_left + on(foo) fill_left(0) fill_outer_right) and on(baz) fill_outer_filter{baz!="x"}
+  {foo="a"} 3
+
+# Matchers from the left side must not narrow the right side, as that would hide the error for
+# duplicate series in the right-side match group {g="b"}, which has no match.
+
+clear
+
+load 5m
+  fill_dup_left{g="a"}             2
+  fill_dup_right{g="a"}            1
+  fill_dup_right{g="b", pod="p1"}  1
+  fill_dup_right{g="b", pod="p2"}  2
+
+eval_fail instant at 0 fill_dup_left{g="a"} + on(g) fill_right(0) fill_dup_right
+  expected_fail_regexp found duplicate series for the match group .* on the right (hand-)?side of the operation
+
+eval_fail instant at 0 fill_dup_left{g="a"} + on(g) fill_left(0) fill_dup_right
+  expected_fail_regexp found duplicate series for the match group .* on the right (hand-)?side of the operation
