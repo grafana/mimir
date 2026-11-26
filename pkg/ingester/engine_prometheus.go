@@ -7,8 +7,13 @@ package ingester
 
 import (
 	"context"
+	_ "embed"
+	"html/template"
+	"net/http"
+	"sync"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid/v2"
 	promcfg "github.com/prometheus/prometheus/config"
@@ -16,8 +21,20 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+type prometheusEngine struct {
+	db            *tsdb.DB
+	blockDuration int64
+
+	shippingLogger log.Logger
+	shipper        BlocksUploader
+
+	shippedBlocksMtx sync.Mutex
+	shippedBlocks    map[ulid.ULID]time.Time
+}
 
 // NewestDataTime returns the max time of the head (in-order and out-of-order) and of the local blocks,
 // or math.MinInt64 if the TSDB has no data.
@@ -33,6 +50,82 @@ func (e *prometheusEngine) NewestDataTime() int64 {
 		t = max(t, b.Meta().MaxTime)
 	}
 	return t
+}
+
+type tenantTSDBPageContent struct {
+	Now    time.Time
+	Tenant string
+
+	Head   tenantTSDBHeadPageContent
+	Blocks []blockDiagnostics
+
+	LabelChurnEnabled bool
+}
+
+type tenantTSDBHeadPageContent struct {
+	MinTime                string
+	MaxTime                string
+	NumSeries              uint64
+	AppendableMinValidTime string
+	MinOOOTime             string
+	MaxOOOTime             string
+}
+
+//go:embed tenant_tsdb.gohtml
+var tenantTSDBPageHTML string
+var tenantTSDBTemplate = template.Must(template.New("webpage").Parse(tenantTSDBPageHTML))
+
+type blockDiagnostics struct {
+	ID         string
+	MinTime    string
+	MaxTime    string
+	OutOfOrder bool
+	Compaction tsdb.BlockMetaCompaction
+	Stats      tsdb.BlockStats
+	UploadedOn string
+}
+
+func (e *prometheusEngine) RenderDiagnosticsPage(w http.ResponseWriter, req *http.Request, tenant string, labelChurnEnabled bool) {
+	head := e.Head()
+	bounds := head.TimeBounds()
+
+	c := tenantTSDBPageContent{
+		Now:    time.Now(),
+		Tenant: tenant,
+
+		Head: tenantTSDBHeadPageContent{
+			NumSeries:  head.NumSeries(),
+			MinTime:    formatMillisTime(bounds.MinTime),
+			MaxTime:    formatMillisTime(bounds.MaxTime),
+			MinOOOTime: formatMillisTime(bounds.MinOOOTime),
+			MaxOOOTime: formatMillisTime(bounds.MaxOOOTime),
+		},
+
+		LabelChurnEnabled: labelChurnEnabled,
+	}
+
+	if m, ok := head.MinInOrderAppendTime(); ok {
+		c.Head.AppendableMinValidTime = formatMillisTime(m)
+	}
+
+	shipped := e.getCachedShippedBlocks()
+	for _, block := range e.db.Blocks() {
+		m := block.Meta()
+		b := blockDiagnostics{
+			ID:         m.ULID.String(),
+			MinTime:    formatMillisTime(m.MinTime),
+			MaxTime:    formatMillisTime(m.MaxTime),
+			Stats:      m.Stats,
+			OutOfOrder: m.OutOfOrder,
+			Compaction: m.Compaction,
+		}
+		if t, ok := shipped[m.ULID]; ok {
+			b.UploadedOn = formatTime(t)
+		}
+		c.Blocks = append(c.Blocks, b)
+	}
+
+	util.RenderHTTPResponse(w, c, tenantTSDBTemplate, req)
 }
 
 func (e *prometheusEngine) Querier(mint, maxt int64) (storage.Querier, error) {
