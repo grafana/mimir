@@ -447,13 +447,16 @@ fn value_hash(value: &str) -> u64 {
 }
 
 impl SeriesByName {
+    /// Finds or adds a series. With `touch`, the next head tick re-evaluates it; otherwise the
+    /// caller marks it with `touch` once it knows whether its counts changed.
     fn get_or_insert_with(
         &mut self,
         name: &str,
         hash: u64,
         is_same: impl Fn(&StoredLabels) -> bool,
         labels: impl FnOnce() -> StoredLabels,
-    ) -> (&StoredLabels, &mut Series) {
+        touch: bool,
+    ) -> (&StoredLabels, &mut Series, u32) {
         let group = match self.names.get(name) {
             Some(group) => *group,
             None => {
@@ -496,12 +499,17 @@ impl SeriesByName {
                 (&*labels, &mut **series)
             }
         };
-        // Every change to a series' samples goes through here, so the next head tick finds it.
-        if !series.touched {
+        if touch && !series.touched {
             series.touched = true;
             touched.push((group, hash));
         }
-        (labels, series)
+        (labels, series, group)
+    }
+
+    /// Lists a series the caller of `get_or_insert_with` just flagged as touched for the next head
+    /// tick.
+    fn push_touched(&mut self, group: u32, hash: u64) {
+        self.touched.push((group, hash));
     }
 
     /// Visits the series changed since the last head tick, once each, and forgets them.
@@ -530,7 +538,7 @@ impl SeriesByName {
         let (hash, labels) = key;
         let mut series = Some(series);
         let inserted = std::cell::Cell::new(false);
-        let (_, stored) = self.get_or_insert_with(
+        let (_, stored, _) = self.get_or_insert_with(
             metric_name(&labels),
             hash,
             |existing| *existing == labels,
@@ -538,6 +546,7 @@ impl SeriesByName {
                 inserted.set(true);
                 labels.clone()
             },
+            true,
         );
         if inserted.get() {
             *stored = series.take().expect("series inserted once");
@@ -4310,7 +4319,7 @@ fn ingest_series(
         series: by_name, ..
     } = tenant;
     let created = std::cell::Cell::new(false);
-    let (key_labels, series) = by_name.get_or_insert_with(
+    let (key_labels, series, group) = by_name.get_or_insert_with(
         name,
         hash,
         |stored| {
@@ -4328,8 +4337,14 @@ fn ingest_series(
                     .map(|(name, value)| (name.as_str(), value.as_str())),
             )
         },
+        false,
     );
-    if created.get() {
+    // The head tick's counts of a series only change when it is created, comes back into the
+    // head, or its chunks change: re-evaluating every appended series each tick cost more than
+    // the appends.
+    let was_in_head = series.in_head;
+    let new_series = created.get();
+    if new_series {
         series.owned_hash = shard_by_all_labels(context.tenant_id, key_labels);
         series.shard_hash = stable_hash_set(key_labels);
     }
@@ -4465,6 +4480,9 @@ fn ingest_series(
         *outcome.chunks_created.entry(context.index).or_default() += chunks_created;
     }
     // Exemplars need an existing series, like `AppendExemplar`.
+    let touch = (new_series || !was_in_head || chunks_created > 0 || out_of_order > 0)
+        && !series.touched;
+    series.touched |= touch;
     if context.keep_exemplars && !decoded.exemplars.is_empty() && !existed && accepted == 0 {
         outcome.exemplars_without_series += decoded.exemplars.len() as u64;
     }
@@ -4477,6 +4495,9 @@ fn ingest_series(
             key_labels.clone(),
             decoded.exemplars,
         ));
+    }
+    if touch {
+        by_name.push_touched(group, hash);
     }
     Ok(())
 }
