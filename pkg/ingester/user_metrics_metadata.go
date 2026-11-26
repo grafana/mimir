@@ -220,7 +220,7 @@ func (mm *userMetricsMetadata) search(ctx context.Context, filter storage.Filter
 		}
 		// The filter does not keep the value, so a view of the reused buffer is
 		// safe.
-		accepted, score := filter.Accept(unsafe.String(unsafe.SliceData(text), len(text)))
+		accepted, score := filter.Accept(unsafe.String(unsafe.SliceData(text), len(text))) // #nosec G103 -- nosemgrep: use-of-unsafe-block
 		if !accepted {
 			continue
 		}
