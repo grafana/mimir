@@ -390,7 +390,20 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedModified: 1,
 		},
 		"binary expression on RHS count_values": {
-			// count_values sets its label to the sample value.
+			expr: `some_metric / on (cluster, env) count_values by (cluster, env) ("value", some_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster, env) RHS, hints include (cluster, env)
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: AggregateExpression: count_values by (cluster, env)
+						- expression: VectorSelector: {__name__="some_other_metric"}
+						- parameter: StringLiteral: "value"
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression on RHS count_values grouped by value label": {
+			// count_values sets its label to the sample value, even when the label is also a grouping
+			// label. This is unusual, but valid.
 			expr: `some_metric / on (cluster, value) count_values by (cluster, value) ("value", some_other_metric)`,
 			expectedPlan: `
 				- BinaryExpression: LHS / on (cluster, value) RHS, hints include (cluster)

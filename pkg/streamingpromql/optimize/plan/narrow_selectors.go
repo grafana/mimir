@@ -373,14 +373,16 @@ func labelsKeptBy(node planning.Node) keptLabels {
 
 func labelsKeptByAggregation(aggregation *core.AggregateExpressionDetails, param planning.Node) keptLabels {
 	if aggregation.Op == core.AGGREGATION_LIMIT_RATIO {
-		// limit_ratio selects each series from a hash of its own labels, so a matcher that removes
-		// other series doesn't change which series it selects. It keeps all labels of these series.
+		// Unlike topk, bottomk and limitk, which select series by comparing them with the other
+		// series in their group, limit_ratio selects each series from a hash of its own labels. So a
+		// matcher that removes other series doesn't change which series it selects, and it keeps all
+		// labels of these series.
 		return keepAllLabels
 	}
 
-	// This also applies to topk, bottomk and limitk, which keep all labels of the series that they
-	// select. They select series in each group, so a matcher for a label that is not a grouping
-	// label changes which series they select.
+	// topk, bottomk and limitk keep all labels of the series that they select, but they also use
+	// this path: a matcher for a label that is not a grouping label removes series from a group,
+	// which changes which series they select.
 	var kept keptLabels
 	switch {
 	case aggregation.Without:
