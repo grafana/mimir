@@ -101,7 +101,9 @@ spec:
           configMap:
             name: small-values-mimir-runtime
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: ingester
           imagePullPolicy: IfNotPresent
@@ -257,7 +259,9 @@ spec:
           configMap:
             name: small-values-mimir-runtime
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: ingester
           imagePullPolicy: IfNotPresent
@@ -413,7 +417,9 @@ spec:
           configMap:
             name: small-values-mimir-runtime
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: ingester
           imagePullPolicy: IfNotPresent

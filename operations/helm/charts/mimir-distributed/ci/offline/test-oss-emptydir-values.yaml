@@ -5,3 +5,11 @@ store_gateway:
     emptyDir:
       medium: Memory
       sizeLimit: 1Gi
+
+ingester:
+  activeQueriesVolume:
+    inMemory: false
+
+distributor:
+  activeQueriesVolume:
+    sizeLimit: 32Mi

@@ -76,7 +76,9 @@ spec:
         - name: tmp
           emptyDir: {}
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
         - name: alertmanager-fallback-config
           configMap:
             name: keda-autoscaling-metamonitoring-values-mimir-alertmanager-fallback-config

@@ -105,7 +105,9 @@ spec:
           configMap:
             name: test-oss-topology-spread-constraints-values-mimir-runtime
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: ingester
           imagePullPolicy: IfNotPresent
@@ -263,7 +265,9 @@ spec:
           configMap:
             name: test-oss-topology-spread-constraints-values-mimir-runtime
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: ingester
           imagePullPolicy: IfNotPresent
@@ -421,7 +425,9 @@ spec:
           configMap:
             name: test-oss-topology-spread-constraints-values-mimir-runtime
         - name: active-queries
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
       containers:
         - name: ingester
           imagePullPolicy: IfNotPresent

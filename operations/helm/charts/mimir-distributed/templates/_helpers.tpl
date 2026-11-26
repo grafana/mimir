@@ -171,6 +171,30 @@ configMap:
 {{- end -}}
 
 {{/*
+The volume source of the active-queries volume, which holds the activity tracker file.
+Settings in the activeQueriesVolume section of the component take precedence over the ones in global.activeQueriesVolume.
+Params:
+  ctx = . context
+  component = name of the component
+*/}}
+{{- define "mimir.activeQueriesVolume" -}}
+{{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml -}}
+{{- $component := $componentSection.activeQueriesVolume | default dict -}}
+{{- $global := .ctx.Values.global.activeQueriesVolume | default dict -}}
+{{- $inMemory := ternary $component.inMemory $global.inMemory (hasKey $component "inMemory") -}}
+{{- $sizeLimit := ternary $component.sizeLimit $global.sizeLimit (hasKey $component "sizeLimit") -}}
+{{- if $inMemory -}}
+emptyDir:
+  medium: Memory
+  {{- with $sizeLimit }}
+  sizeLimit: {{ . }}
+  {{- end }}
+{{- else -}}
+emptyDir: {}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Internal servers http listen port - derived from Mimir default
 */}}
 {{- define "mimir.serverHttpListenPort" -}}
