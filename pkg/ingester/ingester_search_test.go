@@ -420,6 +420,54 @@ func TestProtoToParamsFuzzAlg(t *testing.T) {
 	})
 }
 
+func TestProtoToParamsExpression(t *testing.T) {
+	t.Run("expression is decoded", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{
+			Expression:      "kube AND NOT test",
+			CaseInsensitive: true,
+			FuzzAlg:         client.FUZZ_ALG_SUBSTRING,
+			FuzzThreshold:   10,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Empty(t, params.Terms)
+		assert.False(t, params.CaseSensitive)
+		assert.Equal(t, streaminglabelvalues.FuzzAlgSubstring, params.FuzzAlg)
+		assert.Equal(t, 10, params.FuzzThreshold)
+
+		filter, err := streaminglabelvalues.BuildFilter(params)
+		require.NoError(t, err)
+		accepted, _ := filter.Accept("KUBE-prod")
+		assert.True(t, accepted)
+		accepted, _ = filter.Accept("kube-test")
+		assert.False(t, accepted)
+	})
+
+	t.Run("terms and expression together are rejected", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}, Expression: "bar"})
+		require.ErrorIs(t, err, streaminglabelvalues.ErrTermsAndExpression)
+		require.EqualError(t, err, "invalid search parameters: search terms and search expression are mutually exclusive")
+		assert.Nil(t, params)
+	})
+
+	t.Run("expression with an unknown fuzz algorithm is rejected", func(t *testing.T) {
+		_, err := protoToParams(&client.SearchFilter{Expression: "foo", FuzzAlg: client.SearchFilter_FuzzAlg(99)})
+		require.EqualError(t, err, "unknown fuzz algorithm 99")
+	})
+
+	t.Run("expression keeps the cursor", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{Expression: "foo AND bar", ResumeAfter: "foo_bar", ScoreAfter: 0.5})
+		require.NoError(t, err)
+		assert.Equal(t, "foo_bar", params.ResumeAfter)
+		assert.Equal(t, 0.5, params.ScoreAfter)
+	})
+
+	t.Run("expression with an invalid cursor is rejected", func(t *testing.T) {
+		_, err := protoToParams(&client.SearchFilter{Expression: "foo", ScoreAfter: 0.5})
+		require.EqualError(t, err, "score after 0.5 requires resume after")
+	})
+}
+
 // TestStreamSearchResults covers streamSearchResults' batching and warnings
 // behaviour.
 func TestStreamSearchResults(t *testing.T) {
@@ -771,4 +819,111 @@ func BenchmarkIngester_LegacyVsSearchLabelValues(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestIngesterSearchWithExpression(t *testing.T) {
+	series := []util_test.Series{
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric", "status", "200"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric", "status", "300"), Samples: []util_test.Sample{{TS: 110000, Val: 1}}},
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric", "status", "500", "env", "prod"), Samples: []util_test.Sample{{TS: 120000, Val: 1}}},
+	}
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(t.Context(), "test")
+	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
+
+	collect := func(sent []*client.SearchResultBatch) []string {
+		var got []string
+		for _, b := range sent {
+			for _, r := range b.Results {
+				got = append(got, r.Value)
+			}
+		}
+		return got
+	}
+
+	t.Run("label values", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			expression string
+			want       []string
+		}{
+			{name: "AND NOT excludes a value", expression: "0 AND NOT 3", want: []string{"200", "500"}},
+			{name: "OR matches either term", expression: "20 OR 50", want: []string{"200", "500"}},
+			{name: "AND needs both terms", expression: "2 AND 0", want: []string{"200"}},
+			{name: "no match returns empty", expression: "9 AND 0"},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				req := &client.SearchLabelValuesRequest{
+					StartTimestampMs: 0,
+					EndTimestampMs:   200_000,
+					Name:             "status",
+					Filter:           &client.SearchFilter{Expression: tc.expression, FuzzAlg: client.FUZZ_ALG_SUBSTRING},
+				}
+				s := &mockSearchLabelValuesStream{ctx: ctx}
+				require.NoError(t, i.SearchLabelValues(req, s))
+				assert.Equal(t, tc.want, collect(s.sent))
+			})
+		}
+	})
+
+	t.Run("label names", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			expression string
+			caseInsens bool
+			want       []string
+		}{
+			{name: "OR matches either term", expression: "env OR stat", want: []string{"env", "status"}},
+			{name: "AND NOT excludes a name", expression: "a AND NOT n", want: []string{"status"}},
+			{name: "case-insensitive expression", expression: "ENV OR STAT", caseInsens: true, want: []string{"env", "status"}},
+			{name: "case-sensitive expression misses a case difference", expression: "ENV OR STAT"},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				req := &client.SearchLabelNamesRequest{
+					StartTimestampMs: 0,
+					EndTimestampMs:   200_000,
+					Filter:           &client.SearchFilter{Expression: tc.expression, CaseInsensitive: tc.caseInsens, FuzzAlg: client.FUZZ_ALG_SUBSTRING},
+				}
+				s := &mockSearchLabelNamesStream{ctx: ctx}
+				require.NoError(t, i.SearchLabelNames(req, s))
+				assert.Equal(t, tc.want, collect(s.sent))
+			})
+		}
+	})
+
+	t.Run("invalid filters are rejected as InvalidArgument", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			filter  *client.SearchFilter
+			wantMsg string
+		}{
+			{
+				name:    "unparseable expression",
+				filter:  &client.SearchFilter{Expression: "foo AND"},
+				wantMsg: "search expression: expected term or (, got end of expression at position 7",
+			},
+			{
+				name:    "terms and expression together",
+				filter:  &client.SearchFilter{Terms: []string{"foo"}, Expression: "bar"},
+				wantMsg: "invalid search parameters: search terms and search expression are mutually exclusive",
+			},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				errs := map[string]error{
+					"label names":  i.SearchLabelNames(&client.SearchLabelNamesRequest{EndTimestampMs: 200_000, Filter: tc.filter}, &mockSearchLabelNamesStream{ctx: ctx}),
+					"label values": i.SearchLabelValues(&client.SearchLabelValuesRequest{EndTimestampMs: 200_000, Name: "status", Filter: tc.filter}, &mockSearchLabelValuesStream{ctx: ctx}),
+				}
+				for rpc, err := range errs {
+					require.Error(t, err, rpc)
+					st, ok := grpcutil.ErrorToStatus(err)
+					require.True(t, ok, "%s: expected gRPC status error, got %T: %v", rpc, err, err)
+					assert.Equal(t, codes.InvalidArgument, st.Code(), rpc)
+					assert.Equal(t, tc.wantMsg, st.Message(), rpc)
+				}
+			})
+		}
+	})
 }
