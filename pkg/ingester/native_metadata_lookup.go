@@ -59,7 +59,7 @@ func (i *Ingester) NativeMetricMetadata(req *client.NativeMetricMetadataRequest,
 		return nativeLookupEngineError(err, maxSeries)
 	}
 
-	resp := &client.NativeMetricMetadataResponse{Limited: result.Limited, CoverageStartMs: lookupCoverageStart(result.CoverageStart, len(result.Series)), SeriesVisited: int64(result.SeriesVisited)}
+	resp := &client.NativeMetricMetadataResponse{Limited: result.Limited, CoverageStartMs: lookupCoverageStart(result.CoverageStart, result.SeriesVisited), SeriesVisited: int64(result.SeriesVisited)}
 	size := 0
 	for _, s := range result.Series {
 		series := client.NativeMetricMetadataSeries{
@@ -135,7 +135,7 @@ func (i *Ingester) NativeResources(req *client.NativeResourcesRequest, stream cl
 		}
 	}
 
-	resp := &client.NativeResourcesResponse{Limited: limited, CoverageStartMs: lookupCoverageStart(result.CoverageStart, len(series)), SeriesVisited: int64(result.SeriesVisited)}
+	resp := &client.NativeResourcesResponse{Limited: limited, CoverageStartMs: lookupCoverageStart(result.CoverageStart, result.SeriesVisited), SeriesVisited: int64(result.SeriesVisited)}
 	size := 0
 	for _, s := range series {
 		if size > 0 && size+s.Size() > nativeLookupMaxBatchBytes {
@@ -150,12 +150,14 @@ func (i *Ingester) NativeResources(req *client.NativeResourcesRequest, stream cl
 	return stream.Send(resp)
 }
 
-// lookupCoverageStart is when a lookup's answer covers the series' changes from. A lookup without series has nothing
-// for the querier's cutover to wait for, however late the engine's native metadata starts: an empty head's, and an
-// engine that hasn't observed any, starts at math.MaxInt64, which would hold back the cutover of every partition's
-// answer.
-func lookupCoverageStart(coverageStart int64, series int) int64 {
-	if series == 0 {
+// lookupCoverageStart is when a lookup's answer covers the series' changes from: the engine's start, whatever the
+// lookup's range found, since before it the stored target_info is in force. An engine that hasn't started, at
+// math.MaxInt64, and visited none of the matching series with native metadata, has nothing for the querier's cutover
+// to wait for: an empty head, or one holding only series without, as a partition holding only target_info series,
+// whose own series carry no resource. One that visited some holds the cutover back: after its flag went off and on
+// again, it keeps the versions from before until its next observation, which don't cover the off period.
+func lookupCoverageStart(coverageStart int64, visited int) int64 {
+	if coverageStart == math.MaxInt64 && visited == 0 {
 		return math.MinInt64
 	}
 	return coverageStart

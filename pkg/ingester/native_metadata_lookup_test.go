@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -136,7 +137,11 @@ func TestIngester_NativeResources(t *testing.T) {
 			// The caps are told apart: a lookup by series of all four fails, one by target doesn't.
 			limits.NativeMetadataLookupMaxSeries = 3
 			limits.NativeMetadataGroupedLookupMaxSeries = 4
-			ingester := nativeLookupIngester(t, engine, limits, nativeLookupData(base))
+			// Besides the targets' series, a series without a resource, as one sent over Remote Write.
+			withoutResource := compatSeries("up", mimirpb.Sample{TimestampMs: base, Value: 1})
+			withoutResource.Labels = append(withoutResource.Labels, mimirpb.LabelAdapter{Name: "instance", Value: "c"}, mimirpb.LabelAdapter{Name: "job", Value: "api"})
+			requests := append(nativeLookupData(base), &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{withoutResource}})
+			ingester := nativeLookupIngester(t, engine, limits, requests)
 			ctx := user.InjectOrgID(context.Background(), "tenant")
 			lookup := func(req *client.NativeResourcesRequest) (*mockNativeResourcesServer, error) {
 				stream := &mockNativeResourcesServer{ctx: ctx}
@@ -178,8 +183,72 @@ func TestIngester_NativeResources(t *testing.T) {
 			// A matcher set has to narrow the lookup down.
 			_, err = lookup(&client.NativeResourcesRequest{MatcherSets: nativeLookupMatchers(&client.LabelMatcher{Type: client.REGEX_MATCH, Name: "pod", Value: ".*"})})
 			require.Equal(t, codes.InvalidArgument, status.Code(err))
+
+			// Before the series' first versions, the lookup finds none in force, but the engine's native resources
+			// started at base: the querier's cutover waits for it, so that the stored target_info answers for the range.
+			stream, err = lookup(&client.NativeResourcesRequest{MatcherSets: pod0, StartTimestampMs: base - 10*60_000, EndTimestampMs: base - 60_000})
+			require.NoError(t, err)
+			require.Empty(t, stream.responses[0].Series)
+			require.Equal(t, base, stream.responses[0].CoverageStartMs)
+
+			// Likewise for series without a resource, such as a target's that stopped before its native resources
+			// started, which the lookup visits none of.
+			stream, err = lookup(&client.NativeResourcesRequest{MatcherSets: nativeLookupMatchers(&client.LabelMatcher{Type: client.EQUAL, Name: "__name__", Value: "up"}), StartTimestampMs: base, EndTimestampMs: base + 75_000, GroupByTarget: true})
+			require.NoError(t, err)
+			require.Empty(t, stream.responses[0].Series)
+			require.Zero(t, stream.responses[0].SeriesVisited)
+			require.Equal(t, base, stream.responses[0].CoverageStartMs)
 		})
 	}
+}
+
+// An engine whose native resources haven't started holds back the querier's cutover only if it visits series with
+// versions it kept, which an engine whose flag went off and on again keeps until its next observation: they don't
+// cover the off period. One that visits none has nothing to hold back, as a partition holding only target_info series,
+// whose own series carry no resource.
+func TestIngester_NativeResourcesCoverageStartBeforeTheEngineStarts(t *testing.T) {
+	skipIfSeriesstore(t, "it sets the engine itself")
+	base := time.Now().Truncate(time.Minute).Add(-time.Hour).UnixMilli()
+	limits := defaultLimitsTestConfig()
+	limits.NativeResourcesEnabled = true
+	ctx := user.InjectOrgID(context.Background(), "tenant")
+	lookup := func(ingester *Ingester, start, end int64) *client.NativeResourcesResponse {
+		stream := &mockNativeResourcesServer{ctx: ctx}
+		require.NoError(t, ingester.NativeResources(&client.NativeResourcesRequest{MatcherSets: nativeLookupMatchers(requestsTotal), StartTimestampMs: start, EndTimestampMs: end, GroupByTarget: true}, stream))
+		require.Len(t, stream.responses, 1)
+		return stream.responses[0]
+	}
+
+	t.Run("no resource observed", func(t *testing.T) {
+		// The tenant's series, without their resources, as Remote Write sends them.
+		requests := nativeLookupData(base)
+		for _, req := range requests {
+			req.ResourceTable = nil
+			for i := range req.Timeseries {
+				req.Timeseries[i].ResourceRef = 0
+			}
+		}
+		ingester := nativeLookupIngester(t, mimir_tsdb.EngineSeriesstore, limits, requests)
+		resp := lookup(ingester, base, base+75_000)
+		require.Zero(t, resp.SeriesVisited)
+		require.Equal(t, int64(math.MinInt64), resp.CoverageStartMs)
+	})
+
+	t.Run("flag off and on again", func(t *testing.T) {
+		ingester := nativeLookupIngester(t, mimir_tsdb.EngineSeriesstore, limits, nativeLookupData(base))
+		// The ingester sets the flag from the tenant's limits with each batch; no batch comes after these.
+		engine := ingester.getTSDB("tenant").nativeResources.(seriesstoreEngine)
+		engine.SetNativeResources(false)
+		engine.SetNativeResources(true)
+
+		resp := lookup(ingester, base, base+75_000)
+		require.NotEmpty(t, resp.Series)
+		require.Equal(t, int64(math.MaxInt64), resp.CoverageStartMs)
+		// Before the kept versions too, where the lookup finds none in force.
+		resp = lookup(ingester, base-10*60_000, base-60_000)
+		require.Empty(t, resp.Series)
+		require.Equal(t, int64(math.MaxInt64), resp.CoverageStartMs)
+	})
 }
 
 func TestIngester_NativeMetricMetadata(t *testing.T) {
@@ -199,6 +268,12 @@ func TestIngester_NativeMetricMetadata(t *testing.T) {
 			}}, stream.responses[0].Series)
 			require.True(t, stream.responses[0].Limited)
 			require.Equal(t, int64(4), stream.responses[0].SeriesVisited)
+			require.Equal(t, base, stream.responses[0].CoverageStartMs)
+
+			// A lookup matching no series still answers the engine's start, which the metadata covers from.
+			stream = &mockNativeMetricMetadataServer{ctx: user.InjectOrgID(context.Background(), "tenant")}
+			require.NoError(t, ingester.NativeMetricMetadata(&client.NativeMetricMetadataRequest{MatcherSets: nativeLookupMatchers(&client.LabelMatcher{Type: client.EQUAL, Name: "__name__", Value: "missing"})}, stream))
+			require.Empty(t, stream.responses[0].Series)
 			require.Equal(t, base, stream.responses[0].CoverageStartMs)
 		})
 	}

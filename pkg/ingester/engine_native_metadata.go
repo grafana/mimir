@@ -30,8 +30,8 @@ type nativeMetadataResult struct {
 	Series []nativeMetadataSeries
 	// Limited reports whether more series matched than the limit let through.
 	Limited bool
-	// CoverageStart is when the metadata starts: the later of the head's min time and, as the seriesstore engine
-	// doesn't persist native metadata, the first observation since it opened.
+	// CoverageStart is when the metadata starts: the later of the head's min time and the first observation, which the
+	// seriesstore engine keeps in its snapshots, and starts again when the tenant's flag goes off.
 	CoverageStart int64
 	// SeriesVisited is how many series with metadata matched, whatever the limit let through.
 	SeriesVisited int

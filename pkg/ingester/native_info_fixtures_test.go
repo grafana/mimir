@@ -96,6 +96,9 @@ type nativeInfoFixture struct {
 	step     time.Duration
 	// The minutes at which native and the join differ, as the fixture's documented class predicts.
 	differAt []float64
+	// Whether the range is wholly before the lookups' coverage starts, so that native info() gets the stored target_info
+	// for all of it, through its lookups: it synthesizes no series.
+	beforeCoverage bool
 }
 
 func TestNativeInfo_Fixtures(t *testing.T) {
@@ -107,6 +110,20 @@ func TestNativeInfo_Fixtures(t *testing.T) {
 		for minute := from; minute <= to; minute++ {
 			push(minute)
 		}
+	}
+	// The tenant's native resources go on at minute 5, as an experiment tenant's do, and the host changes at minute 7.
+	turnedOnPartway := func(t testing.TB, h *nativeInfoHarness, at func(float64) time.Time) {
+		h.setNativeResources(false)
+		everyMinute(0, 4, func(m int) { h.pushOTLP(t, otlpGauge(at(float64(m)), api("a", "node-1"), 0, 1)) })
+		h.setNativeResources(true)
+		everyMinute(5, 9, func(m int) {
+			host := "node-1"
+			if m >= 7 {
+				host = "node-2"
+			}
+			h.pushOTLP(t, otlpGauge(at(float64(m)), api("a", host), 0, 1))
+		})
+		require.Equal(t, at(5).UnixMilli(), h.nativeResourcesCoverageStart(t, "requests"), "the coverage starts partway")
 	}
 	fixtures := map[string]nativeInfoFixture{
 		// One identity replaces another that collapses onto the same job and instance, service.namespace x and
@@ -173,21 +190,34 @@ func TestNativeInfo_Fixtures(t *testing.T) {
 		// coverage starts with the first push after. Before it, the stored target_info is in force, and the lookback
 		// bridges from its last sample to the first that the ingesters see the resource with.
 		"native resources turned on partway": {
-			push: func(t testing.TB, h *nativeInfoHarness, at func(float64) time.Time) {
-				h.setNativeResources(false)
-				everyMinute(0, 4, func(m int) { h.pushOTLP(t, otlpGauge(at(float64(m)), api("a", "node-1"), 0, 1)) })
-				h.setNativeResources(true)
-				everyMinute(5, 9, func(m int) {
-					host := "node-1"
-					if m >= 7 {
-						host = "node-2"
-					}
-					h.pushOTLP(t, otlpGauge(at(float64(m)), api("a", host), 0, 1))
-				})
-				require.Equal(t, at(5).UnixMilli(), h.nativeResourcesCoverageStart(t, "requests"), "the coverage starts partway")
-			},
+			push:    turnedOnPartway,
 			queries: []string{`info(requests)`},
 			from:    0, to: 9, step: 15 * time.Second,
+		},
+		// The same, over a range wholly before the coverage starts: the lookups find no version in force then, but the
+		// ingesters' native resources start after it, so the stored target_info is in force throughout.
+		"native info() before native resources turned on": {
+			push:    turnedOnPartway,
+			queries: []string{`info(requests)`},
+			from:    0, to: 4, step: 15 * time.Second,
+			beforeCoverage: true,
+		},
+		// A target that stopped before the tenant's native resources went on has no resource, so no ingester visits a
+		// series of it: the ingesters' starts still hold the cutover after the range, which another target's resources
+		// set, rather than the lookup taking its native target_info, which has none of the stopped target.
+		"native info() of a target that stopped before native resources turned on": {
+			push: func(t testing.TB, h *nativeInfoHarness, at func(float64) time.Time) {
+				h.setNativeResources(false)
+				everyMinute(0, 3, func(m int) { h.pushOTLP(t, otlpGauge(at(float64(m)), api("a", "node-1"), 0, 1)) })
+				h.setNativeResources(true)
+				everyMinute(5, 9, func(m int) { h.pushOTLP(t, otlpGauge(at(float64(m)), api("b", "node-2"), 0, 1)) })
+				// The query's own lookup, of its target over its range and lookback.
+				target := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "api"), labels.MustNewMatcher(labels.MatchEqual, "instance", "a")}
+				require.Equal(t, at(5).UnixMilli(), h.nativeResourcesCoverageStartOf(t, at(-5), at(4), target...), "the stopped target's lookup waits for the coverage start")
+			},
+			queries: []string{`info(requests{instance="a"})`},
+			from:    0, to: 4, step: 15 * time.Second,
+			beforeCoverage: true,
 		},
 		// A change between pushes, read through the lookback, an @ modifier and an offset.
 		"@, offsets and lookback": {
@@ -283,7 +313,13 @@ func TestNativeInfo_Fixtures(t *testing.T) {
 				}
 				// A fixture that passes by measuring the join twice would prove nothing.
 				require.Zero(t, h.fallbacks(t))
-				require.Positive(t, h.synthesized(t))
+				if f.beforeCoverage {
+					// Native lookups were made, and their coverage put the whole range on the stored target_info.
+					require.Positive(t, h.counter(t, "cortex_querier_native_target_info_lookups_total"))
+					require.Zero(t, h.synthesized(t))
+				} else {
+					require.Positive(t, h.synthesized(t))
+				}
 			})
 		}
 	}

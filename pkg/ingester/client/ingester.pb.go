@@ -2145,7 +2145,7 @@ type NativeMetricMetadataResponse struct {
 	Series []NativeMetricMetadataSeries `protobuf:"bytes,1,rep,name=series,proto3" json:"series"`
 	// Whether more series matched than the limit let through.
 	Limited bool `protobuf:"varint,2,opt,name=limited,proto3" json:"limited,omitempty"`
-	// When the ingester's native metadata starts, math.MinInt64 when it has no series of the tenant.
+	// When the ingester's native metadata starts, math.MinInt64 when it hasn't started and holds no matching series with any.
 	CoverageStartMs int64 `protobuf:"varint,3,opt,name=coverage_start_ms,json=coverageStartMs,proto3" json:"coverage_start_ms,omitempty"`
 	// How many series with native metadata matched, whatever the limit let through.
 	SeriesVisited int64 `protobuf:"varint,4,opt,name=series_visited,json=seriesVisited,proto3" json:"series_visited,omitempty"`
@@ -2435,7 +2435,7 @@ type NativeResourcesResponse struct {
 	Series []NativeResourcesSeries `protobuf:"bytes,1,rep,name=series,proto3" json:"series"`
 	// Whether more series, or targets, matched than the limit let through.
 	Limited bool `protobuf:"varint,2,opt,name=limited,proto3" json:"limited,omitempty"`
-	// When the ingester's native resources start, math.MinInt64 when it has no series of the tenant.
+	// When the ingester's native resources start, math.MinInt64 when they haven't started and it holds no matching series with any.
 	CoverageStartMs int64 `protobuf:"varint,3,opt,name=coverage_start_ms,json=coverageStartMs,proto3" json:"coverage_start_ms,omitempty"`
 	// How many series with native resources matched, whatever the limit let through.
 	SeriesVisited int64 `protobuf:"varint,4,opt,name=series_visited,json=seriesVisited,proto3" json:"series_visited,omitempty"`

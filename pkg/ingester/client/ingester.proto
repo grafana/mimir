@@ -346,7 +346,7 @@ message NativeMetricMetadataResponse {
   repeated NativeMetricMetadataSeries series = 1 [(gogoproto.nullable) = false];
   // Whether more series matched than the limit let through.
   bool limited = 2;
-  // When the ingester's native metadata starts, math.MinInt64 when it has no series of the tenant.
+  // When the ingester's native metadata starts, math.MinInt64 when it hasn't started and holds no matching series with any.
   int64 coverage_start_ms = 3;
   // How many series with native metadata matched, whatever the limit let through.
   int64 series_visited = 4;
@@ -392,7 +392,7 @@ message NativeResourcesResponse {
   repeated NativeResourcesSeries series = 1 [(gogoproto.nullable) = false];
   // Whether more series, or targets, matched than the limit let through.
   bool limited = 2;
-  // When the ingester's native resources start, math.MinInt64 when it has no series of the tenant.
+  // When the ingester's native resources start, math.MinInt64 when they haven't started and it holds no matching series with any.
   int64 coverage_start_ms = 3;
   // How many series with native resources matched, whatever the limit let through.
   int64 series_visited = 4;

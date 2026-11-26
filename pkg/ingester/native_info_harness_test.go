@@ -257,6 +257,14 @@ func (h *nativeInfoHarness) nativeResourcesCoverageStart(t testing.TB, name stri
 	return res.CoverageStart
 }
 
+// nativeResourcesCoverageStartOf is the coverage start of a lookup by target, as native info() makes it, with the
+// matchers over [start, end], once the ingesters have every push.
+func (h *nativeInfoHarness) nativeResourcesCoverageStartOf(t testing.TB, start, end time.Time, matchers ...*labels.Matcher) int64 {
+	res, err := h.distributor.NativeResources(h.queryContext(true), [][]*labels.Matcher{matchers}, start.UnixMilli(), end.UnixMilli(), 0, true)
+	require.NoError(t, err)
+	return res.CoverageStart
+}
+
 // pushOTLP pushes the metrics as an OTLP request, which the distributor converts with the tenant's settings: its
 // series carry their resources, and the conversion writes target_info.
 func (h *nativeInfoHarness) pushOTLP(t testing.TB, md pmetric.Metrics) {
