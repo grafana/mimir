@@ -478,6 +478,7 @@ func marshalNamespacesAndSend[V any](formatted map[string]V, concurrency int, w 
 		g.Go(func() error {
 			for i := int(next.Add(1)) - 1; i < len(namespaces); i = int(next.Add(1)) - 1 {
 				if err := encode(i); err != nil {
+					next.Store(int64(len(namespaces)))
 					return err
 				}
 			}
