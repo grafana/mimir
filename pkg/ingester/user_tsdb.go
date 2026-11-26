@@ -167,8 +167,10 @@ type userTSDB struct {
 
 // generateHeadStatistics generates statistics for this user's head block.
 func (u *userTSDB) generateHeadStatistics() error {
-	// Open head block
-	head := u.prometheusDB().Head()
+	head, ok := u.Head().(prometheusHead)
+	if !ok {
+		return nil
+	}
 	indexReader, err := head.Index()
 	if err != nil {
 		return fmt.Errorf("failed to open TSDB head index reader: %w", err)
@@ -201,15 +203,6 @@ func (u *userTSDB) getIndexLookupPlannerFunc() tsdb.IndexLookupPlannerFunc {
 
 func (u *userTSDB) engine() tenantEngine {
 	return u.db
-}
-
-// prometheusDB is for callers that still depend on Prometheus TSDB internals.
-func (u *userTSDB) prometheusDB() *tsdb.DB {
-	return u.prometheus().db
-}
-
-func (u *userTSDB) prometheus() *prometheusEngine {
-	return u.db.(*prometheusEngine)
 }
 
 // Querier returns a new querier over the data partition for the given time range.

@@ -47,6 +47,32 @@ func TestSeriesRefHistory(t *testing.T) {
 	require.False(t, found)
 }
 
+type nonPrometheusTestEngine struct {
+	tenantEngine
+}
+
+func (nonPrometheusTestEngine) Head() engineHead {
+	return struct{ engineHead }{}
+}
+
+func TestIngester_LabelChurnUnsupportedEngine(t *testing.T) {
+	db := &userTSDB{db: nonPrometheusTestEngine{}}
+	i := &Ingester{
+		cfg:   Config{LabelChurnEnabled: true},
+		tsdbs: map[string]*userTSDB{userID: db},
+	}
+
+	require.NotPanics(t, func() { i.recordLabelChurnSeriesRefs(time.Now()) })
+	require.NoError(t, db.generateHeadStatistics())
+
+	req := httptest.NewRequest(http.MethodGet, "/ingester/tsdb/"+userID+"/label_churn.json", nil)
+	req = mux.SetURLVars(req, map[string]string{"tenant": userID})
+	rec := httptest.NewRecorder()
+	i.LabelChurnHandler(rec, req)
+	require.Equal(t, http.StatusNotImplemented, rec.Code)
+	require.Contains(t, rec.Body.String(), errLabelChurnUnsupportedEngine.Error())
+}
+
 func TestIngester_LabelChurn(t *testing.T) {
 	const userID = "test"
 	ctx := user.InjectOrgID(context.Background(), userID)
