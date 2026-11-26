@@ -2067,7 +2067,11 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 		otherRulerState         ring.InstanceState
 		otherRulerChanges       bool
 		otherRulerBecomesActive bool
-		expectedFirstRunSyncs   float64
+		// An ACTIVE ruler with no tokens owns no rule groups.
+		// It only adds an ACTIVE ruler to the ring.
+		activeRulerWithoutTokens bool
+		keepsInitialAssignment   bool
+		expectedFirstRunSyncs    float64
 	}{
 		"another ruler joins after the initial sync": {
 			otherRulerAtStart:     false,
@@ -2082,9 +2086,16 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 			expectedFirstRunSyncs: 1,
 		},
 		"another ruler stays JOINING throughout startup": {
-			otherRulerAtStart:     true,
-			otherRulerState:       ring.JOINING,
-			expectedFirstRunSyncs: 1,
+			otherRulerAtStart:        true,
+			otherRulerState:          ring.JOINING,
+			activeRulerWithoutTokens: true,
+			expectedFirstRunSyncs:    1,
+		},
+		"cold start: another ruler stays JOINING and no other ruler is ACTIVE": {
+			otherRulerAtStart:      true,
+			otherRulerState:        ring.JOINING,
+			keepsInitialAssignment: true,
+			expectedFirstRunSyncs:  0,
 		},
 		"another ruler becomes ACTIVE before run() starts": {
 			otherRulerAtStart:       true,
@@ -2138,6 +2149,16 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 				if tc.otherRulerAtStart {
 					require.NoError(t, setOtherRuler(true, tc.otherRulerState))
 				}
+				if tc.activeRulerWithoutTokens {
+					require.NoError(t, cfg.Ring.Common.KVStore.Mock.CAS(t.Context(), RulerRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+						d, _ := in.(*ring.Desc)
+						if d == nil {
+							d = ring.NewDesc()
+						}
+						d.AddIngester("active", "active", "", nil, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
+						return d, true, nil
+					}))
+				}
 
 				r := prepareRuler(t, cfg, storage)
 
@@ -2190,7 +2211,11 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 				if tc.expectedFirstRunSyncs > 0 {
 					require.NotEqual(t, initialSyncGroups, len(expected), "ownership changes for at least one group")
 				}
-				require.ElementsMatch(t, expected, actual)
+				if tc.keepsInitialAssignment {
+					require.Len(t, actual, initialSyncGroups)
+				} else {
+					require.ElementsMatch(t, expected, actual)
+				}
 				require.Equal(t, tc.expectedFirstRunSyncs, prom_testutil.ToFloat64(r.metrics.rulerSync.WithLabelValues(string(rulerSyncReasonFirstRun))))
 			})
 		})
