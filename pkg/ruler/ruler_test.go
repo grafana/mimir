@@ -2064,6 +2064,7 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 
 	testCases := map[string]struct {
 		otherRulerAtStart     bool
+		otherRulerState       ring.InstanceState
 		otherRulerChanges     bool
 		expectedFirstRunSyncs float64
 	}{
@@ -2075,6 +2076,11 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 		"another ruler leaves after the initial sync": {
 			otherRulerAtStart:     true,
 			otherRulerChanges:     true,
+			expectedFirstRunSyncs: 1,
+		},
+		"another ruler stays JOINING throughout startup": {
+			otherRulerAtStart:     true,
+			otherRulerState:       ring.JOINING,
 			expectedFirstRunSyncs: 1,
 		},
 		"no ring change after the initial sync": {
@@ -2108,11 +2114,14 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 							d.RemoveIngester("other")
 							return d, true, nil
 						}
-						tokens := make([]uint32, 128)
-						for i := range tokens {
-							tokens[i] = uint32(i) << 25
+						// Give the peer the next token after each group hash so it owns
+						// those groups while it is eligible for initial assignment.
+						tokens := make([]uint32, 0, len(groups))
+						for _, group := range groups {
+							tokens = append(tokens, tokenForGroup(group)+1)
 						}
-						d.AddIngester("other", "other", "", tokens, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
+						slices.Sort(tokens)
+						d.AddIngester("other", "other", "", tokens, tc.otherRulerState, time.Now(), false, time.Time{}, nil)
 						return d, true, nil
 					})
 				}
@@ -2156,8 +2165,15 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 				for _, g := range r.manager.GetRules(userID) {
 					actual = append(actual, g.Name())
 				}
-				if tc.otherRulerChanges {
-					require.NotEqual(t, initialSyncGroups, len(expected), "the ring change moves at least one rule group")
+				if tc.otherRulerState == ring.JOINING {
+					state, err := r.ring.GetInstanceState("other")
+					require.NoError(t, err)
+					require.Equal(t, ring.JOINING, state)
+					require.Zero(t, initialSyncGroups)
+					require.Len(t, expected, len(groups))
+				}
+				if tc.expectedFirstRunSyncs > 0 {
+					require.NotEqual(t, initialSyncGroups, len(expected), "ownership changes for at least one group")
 				}
 				require.ElementsMatch(t, expected, actual)
 				require.Equal(t, tc.expectedFirstRunSyncs, prom_testutil.ToFloat64(r.metrics.rulerSync.WithLabelValues(string(rulerSyncReasonFirstRun))))
