@@ -194,6 +194,8 @@ func (mm *userMetricsMetadata) search(ctx context.Context, filter storage.Filter
 	top := searchResultHeap{before: before}
 	var text []byte
 
+	// Each closure limits the read lock to its block. defer runs when the
+	// closure returns, so a later return in the block cannot skip the release.
 	var names []string
 	func() {
 		mm.mtx.RLock()
@@ -216,8 +218,6 @@ func (mm *userMetricsMetadata) search(ctx context.Context, filter storage.Filter
 		chunk := names[:min(searchBatchSize, len(names))]
 		names = names[len(chunk):]
 
-		// The closure releases the read lock with defer, so a panic in filter
-		// cannot leave the lock held.
 		func() {
 			mm.mtx.RLock()
 			defer mm.mtx.RUnlock()
