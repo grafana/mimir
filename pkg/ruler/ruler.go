@@ -388,7 +388,7 @@ type Ruler struct {
 	subservicesWatcher *services.FailureWatcher
 
 	// ringBeforeInitialSync is the ring at start-up, as the initial sync uses it.
-	// run() compares it with the ACTIVE rulers at its own start.
+	// run() compares it with the JOINING and ACTIVE rulers at its own start.
 	ringBeforeInitialSync ring.ReplicationSet
 
 	// Pool of clients used to connect to other ruler replicas.
@@ -637,21 +637,29 @@ func (r *Ruler) run(ctx context.Context) error {
 	// It's used to cap how long continuous ring churn can keep postponing the sync, via RingChangeMaxDebounce.
 	var ringChangeFirstPendingAt time.Time
 
+	// ringLastState holds the ACTIVE rulers, the owners for every sync after the initial sync.
+	// ringJoiningAndActive also holds the JOINING rulers, the owners for the initial sync.
 	ringLastState, _ := r.ring.GetAllHealthy(RuleEvalRingOp)
 	ringJoiningAndActive, _ := r.ring.GetAllHealthy(RuleSyncRingOp)
-	joiningRulers := len(ringJoiningAndActive.Instances) - len(ringLastState.Instances)
 
-	// Check whether the ring changed during starting().
-	// The ring checks below can't see such a change, because ringLastState already includes it.
-	// ringLastState holds only ACTIVE rulers, but the initial sync also gave rule groups to JOINING rulers.
-	// So a ruler that is still JOINING also counts as a change.
-	// Ignore instance states, so a ruler that went from JOINING to ACTIVE, like this one, doesn't count.
-	// If the ring changed, start a sync now to start newly owned rule groups and stop newly disowned ones.
+	// The ring checks in the for loop compare the ring with ringLastState.
+	// So they miss a ring change during starting(), which ringLastState already includes.
+	// Compare without instance states, because the initial sync already counted JOINING rulers as owners.
+	// So a ruler that went from JOINING to ACTIVE, like this one, doesn't count as a change.
+	ringChanged := ring.HasReplicationSetChangedWithoutState(r.ringBeforeInitialSync, ringJoiningAndActive)
+	// The initial sync gave some rule groups to JOINING rulers, which don't evaluate them yet.
+	// The other rulers drop the ones that fall to this ruler among the ACTIVE rulers.
+	// So no ruler evaluates them until this ruler syncs or the JOINING ruler is ACTIVE.
+	joiningRulers := len(ringJoiningAndActive.Instances) - len(ringLastState.Instances)
+	// In a cold start (for example 1:10 ACTIVE:JOINING rulers), a sync would give each of the first ACTIVE rulers
+	// a large share of all rule groups.
+	// Each of them could then run out of memory and restart.
+	// The next ACTIVE rulers could then do the same, so the rulers might never all become ACTIVE.
+	mostRulersActive := len(ringLastState.Instances) > joiningRulers
+
+	// Start newly owned rule groups and stop newly disowned ones.
 	// During this sync, the ruler continues to evaluate its initial rule groups, reducing missed evaluations.
-	// The sync counts only ACTIVE rulers.
-	// Skip it while JOINING rulers are as many as ACTIVE rulers or more, for example in a cold start.
-	// Otherwise each of the first ACTIVE rulers would load a large share of all rule groups.
-	if ring.HasReplicationSetChangedWithoutState(r.ringBeforeInitialSync, ringLastState) && len(ringLastState.Instances) > joiningRulers {
+	if (ringChanged || joiningRulers > 0) && mostRulersActive {
 		if err := r.syncRules(ctx, nil, rulerSyncReasonFirstRun, true); err != nil {
 			level.Error(r.logger).Log("msg", "unable to sync rules", "err", err)
 		}
