@@ -212,6 +212,12 @@ func (c *ActiveSeries) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 	}
 }
 
+// ActiveRefs provides the active-series data needed to filter head postings.
+type ActiveRefs interface {
+	ContainsRef(ref storage.SeriesRef) bool
+	NativeHistogramBuckets(ref storage.SeriesRef) (int, bool)
+}
+
 func (c *ActiveSeries) ContainsRef(ref storage.SeriesRef) bool {
 	stripeID := ref % numStripes
 	return c.stripes[stripeID].containsRef(ref)
