@@ -4,6 +4,8 @@ package client
 
 import (
 	"fmt"
+	"math/rand"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -65,6 +67,25 @@ func TestMergeNativeResourceVersions(t *testing.T) {
 			answers: [][]NativeResourceVersion{{version(100, 100, "a")}},
 			want:    []NativeResourceVersion{version(100, 100, "a")},
 		},
+		// The answer with the newest sample has no change at 200, where an older one has: the newer one has read
+		// further, so the older one's change doesn't get through, though the newer one's point continues the version
+		// before.
+		"the newest answer continuing the version before": {
+			answers: [][]NativeResourceVersion{
+				{version(100, 199, "a"), version(200, 300, "b")},
+				{version(200, 500, "a")},
+			},
+			want: []NativeResourceVersion{version(100, 500, "a")},
+		},
+		// Two answers as new have different content from the same time, as a coalesced version's latest description
+		// can: the least content wins, whichever answer comes first.
+		"the same time and newest sample, different content": {
+			answers: [][]NativeResourceVersion{
+				{version(100, 300, "b")},
+				{version(100, 300, "a")},
+			},
+			want: []NativeResourceVersion{version(100, 300, "a")},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			require.Equal(t, tc.want, MergeNativeResourceVersions(tc.answers))
@@ -85,6 +106,57 @@ func TestMergeNativeMetricMetadataVersions(t *testing.T) {
 		{at(requests, 100, 199), at(served, 200, 250)},
 	})
 	require.Equal(t, []NativeMetricMetadataVersion{at(requests, 100, 199), at(served, 200, 299), at(requests, 300, 400)}, merged)
+}
+
+// The merge gives the same versions whatever the answers' order: the querier gets them in the order its streams
+// arrive in, and the ingester groups a target's series in the order the engine returns them. The answers have few
+// times, contents and newest samples, so that ties of each are common.
+func TestMergeNativeVersions_AnyOrder(t *testing.T) {
+	t.Run("resources", func(t *testing.T) {
+		hosts := []string{"a", "b", "c"}
+		requireMergeIndependentOfOrder(t, MergeNativeResourceVersions, func(r *rand.Rand, minTime, maxTime int64) NativeResourceVersion {
+			return NativeResourceVersion{MinTimeMs: minTime, MaxTimeMs: maxTime, Identifying: map[string]string{"service.name": "api"}, Descriptive: map[string]string{"host.name": hosts[r.Intn(len(hosts))]}}
+		})
+	})
+	t.Run("metric metadata", func(t *testing.T) {
+		helps := []string{"Requests.", "Requests served.", "Requests received."}
+		requireMergeIndependentOfOrder(t, MergeNativeMetricMetadataVersions, func(r *rand.Rand, minTime, maxTime int64) NativeMetricMetadataVersion {
+			return NativeMetricMetadataVersion{MinTimeMs: minTime, MaxTimeMs: maxTime, Type: mimirpb.COUNTER, Unit: "requests", Help: helps[r.Intn(len(helps))]}
+		})
+	})
+}
+
+func requireMergeIndependentOfOrder[V any](t *testing.T, merge func([][]V) []V, version func(r *rand.Rand, minTime, maxTime int64) V) {
+	r := rand.New(rand.NewSource(1))
+	for range 1000 {
+		answers := make([][]V, 2+r.Intn(4))
+		for i := range answers {
+			// Change points at some of a few times, the last one lasting until one of a few newest samples.
+			var times []int64
+			for _, minTime := range []int64{100, 200, 300} {
+				if r.Intn(2) == 0 {
+					times = append(times, minTime)
+				}
+			}
+			if len(times) == 0 {
+				continue
+			}
+			newest := []int64{300, 400}[r.Intn(2)]
+			for j, minTime := range times {
+				maxTime := newest
+				if j+1 < len(times) {
+					maxTime = times[j+1] - 1
+				}
+				answers[i] = append(answers[i], version(r, minTime, maxTime))
+			}
+		}
+		want := merge(answers)
+		for range 5 {
+			shuffled := slices.Clone(answers)
+			r.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+			require.Equal(t, want, merge(shuffled), "answers %v", answers)
+		}
+	}
 }
 
 // A querier tells a disabled tenant and a lookup over its cap apart from failures, and from each other, through the

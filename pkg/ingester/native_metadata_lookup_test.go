@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand"
+	"slices"
 	"testing"
 	"time"
 
@@ -304,5 +306,35 @@ func TestIngester_NativeLookupsOfADisabledTenant(t *testing.T) {
 			err = ingester.NativeMetricMetadata(&client.NativeMetricMetadataRequest{MatcherSets: nativeLookupMatchers(requestsTotal)}, &mockNativeMetricMetadataServer{ctx: ctx})
 			require.True(t, client.IsNativeMetadataDisabled(err), fmt.Sprint(err))
 		})
+	}
+}
+
+// A lookup by target answers the same whatever the order of the engine's series, which it may return in shard order
+// rather than label order. The series have few targets, times, contents and newest samples, so that a target's series
+// tie on each.
+func TestGroupNativeResourcesByTarget_AnyOrder(t *testing.T) {
+	r := rand.New(rand.NewSource(1))
+	targets := [][]mimirpb.LabelAdapter{
+		{{Name: "instance", Value: "a:9100"}, {Name: "job", Value: "node"}},
+		{{Name: "instance", Value: "b:9100"}, {Name: "job", Value: "node"}},
+		{{Name: "job", Value: "batch"}},
+	}
+	hosts := []string{"a", "b", "c"}
+	for range 500 {
+		var series []client.NativeResourcesSeries
+		for i := range 2 + r.Intn(10) {
+			target := targets[r.Intn(len(targets))]
+			lbls := append([]mimirpb.LabelAdapter{{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}}, target...)
+			minTime := []int64{100, 200}[r.Intn(2)]
+			newest := []int64{300, 400}[r.Intn(2)]
+			versions := []client.NativeResourceVersion{{MinTimeMs: minTime, MaxTimeMs: newest, Identifying: map[string]string{"service.name": "api"}, Descriptive: map[string]string{"host.name": hosts[r.Intn(len(hosts))]}}}
+			series = append(series, client.NativeResourcesSeries{Labels: lbls, Versions: versions, Coalesced: r.Intn(4) == 0})
+		}
+		want := groupNativeResourcesByTarget(series)
+		for range 5 {
+			shuffled := slices.Clone(series)
+			r.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+			require.Equal(t, want, groupNativeResourcesByTarget(shuffled))
+		}
 	}
 }

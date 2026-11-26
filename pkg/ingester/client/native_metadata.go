@@ -70,6 +70,8 @@ type versionOps[V any] struct {
 	maxTime func(*V) int64
 	setTime func(v *V, minTime, maxTime int64)
 	same    func(a, b *V) bool
+	// compare orders versions by content, 0 exactly when same.
+	compare func(a, b *V) int
 }
 
 var nativeMetricMetadataVersionOps = versionOps[NativeMetricMetadataVersion]{
@@ -81,6 +83,9 @@ var nativeMetricMetadataVersionOps = versionOps[NativeMetricMetadataVersion]{
 	same: func(a, b *NativeMetricMetadataVersion) bool {
 		return a.Type == b.Type && a.Unit == b.Unit && a.Help == b.Help
 	},
+	compare: func(a, b *NativeMetricMetadataVersion) int {
+		return cmp.Or(cmp.Compare(a.Type, b.Type), strings.Compare(a.Unit, b.Unit), strings.Compare(a.Help, b.Help))
+	},
 }
 
 var nativeResourceVersionOps = versionOps[NativeResourceVersion]{
@@ -90,12 +95,29 @@ var nativeResourceVersionOps = versionOps[NativeResourceVersion]{
 	same: func(a, b *NativeResourceVersion) bool {
 		return maps.Equal(a.Identifying, b.Identifying) && maps.Equal(a.Descriptive, b.Descriptive)
 	},
+	compare: func(a, b *NativeResourceVersion) int {
+		return cmp.Or(compareAttributes(a.Identifying, b.Identifying), compareAttributes(a.Descriptive, b.Descriptive))
+	},
+}
+
+// compareAttributes orders attributes by their sorted keys and values, a nil map as an empty one, as maps.Equal does.
+func compareAttributes(a, b map[string]string) int {
+	if maps.Equal(a, b) {
+		return 0
+	}
+	aKeys, bKeys := slices.Sorted(maps.Keys(a)), slices.Sorted(maps.Keys(b))
+	for i := range min(len(aKeys), len(bKeys)) {
+		if c := cmp.Or(strings.Compare(aKeys[i], bKeys[i]), strings.Compare(a[aKeys[i]], b[bKeys[i]])); c != 0 {
+			return c
+		}
+	}
+	return cmp.Compare(len(aKeys), len(bKeys))
 }
 
 // mergeVersions merges answers' versions by their change points' times. At the same time, the answer with the newest
-// sample wins: its ingester has read further. Neighbours of the same content become one, since each answer sees a
-// change at its own series' next sample. Each version then ends where the next starts, and the last at the newest
-// sample of any answer.
+// sample wins: its ingester has read further. Of answers as new, the least content wins, so that the merge doesn't
+// depend on the answers' order. Neighbours of the same content become one, since each answer sees a change at its own
+// series' next sample. Each version then ends where the next starts, and the last at the newest sample of any answer.
 func mergeVersions[V any](answers [][]V, ops versionOps[V]) []V {
 	type changePoint struct {
 		version V
@@ -127,14 +149,20 @@ func mergeVersions[V any](answers [][]V, ops versionOps[V]) []V {
 		return cmp.Compare(b.newest, a.newest)
 	})
 	merged := make([]V, 0, len(points))
-	for i := range points {
-		v := points[i].version
-		if n := len(merged); n > 0 {
-			last := &merged[n-1]
-			// Points at the same time as the kept one lost to it, and a neighbour of the same content continues it.
-			if ops.minTime(&v) == ops.minTime(last) || ops.same(&v, last) {
-				continue
+	for i := 0; i < len(points); {
+		// The points at one time, the newest answers' first: one of those wins, and every other point at the time lost
+		// to it, also when the winner continues the version before.
+		winner, next := i, i+1
+		for ; next < len(points) && ops.minTime(&points[next].version) == ops.minTime(&points[i].version); next++ {
+			if points[next].newest == points[i].newest && !ops.same(&points[next].version, &points[winner].version) && ops.compare(&points[next].version, &points[winner].version) < 0 {
+				winner = next
 			}
+		}
+		v := points[winner].version
+		i = next
+		// A neighbour of the same content continues the last version.
+		if n := len(merged); n > 0 && ops.same(&v, &merged[n-1]) {
+			continue
 		}
 		merged = append(merged, v)
 	}
