@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
@@ -207,6 +208,10 @@ func parseQuery(query string, metrics map[string]struct{}, promqlParser parser.P
 				return nil
 			}
 			for _, m := range n.LabelMatchers {
+				// Negative matchers exclude series by name, they don't use the metric.
+				if m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp {
+					continue
+				}
 				if m.Name == model.MetricNameLabel && validMetricName.MatchString(m.Value) {
 					metrics[m.Value] = struct{}{}
 					return nil

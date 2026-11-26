@@ -210,6 +210,7 @@
 * [BUGFIX] Ruler: Return HTTP 500 from the Prometheus rules and alerts endpoints when a ruler client is not available. Previously, the endpoints returned HTTP 200 without the rule groups of that ruler. #17228
 * [BUGFIX] Ingester: Fix the partition reader logging an error and waiting for the full backoff when the Kafka client reports that a broker connection died. This error is now retried immediately, as intended. #17495
 * [BUGFIX] Mimirtool: Stop `mimirtool rules get` from printing the API request path to stdout before the rule group, which made the output invalid YAML. #17440
+* [BUGFIX] Mimirtool: Fix `analyse grafana` counting metric names that dashboard queries only exclude with `__name__!=` or `__name__!~` matchers as used metrics. #17443
 
 ### Mixin
 

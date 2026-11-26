@@ -109,6 +109,24 @@ func TestMetricsFromTemplating(t *testing.T) {
 		require.Equal(t, map[string]struct{}{"metric": {}}, metrics)
 	})
 
+	t.Run(`negative __name__ matchers do not count as used metrics`, func(t *testing.T) {
+		for _, query := range []string{
+			`label_values({__name__!="excluded", job=~"$job"}, entity)`,
+			`label_values({__name__!~"excluded", job=~"$job"}, entity)`,
+		} {
+			metrics := make(map[string]struct{})
+			in := minisdk.Templating{
+				List: []minisdk.TemplateVar{
+					{Name: "variable", Type: "query", Query: query},
+				},
+			}
+
+			errs := metricsFromTemplating(in, metrics, util.CreatePromQLParser(false), log.NewNopLogger())
+			require.Empty(t, errs)
+			require.Empty(t, metrics, query)
+		}
+	})
+
 	t.Run(`label_values query with multiline metric`, func(t *testing.T) {
 		metrics := make(map[string]struct{})
 		in := minisdk.Templating{
