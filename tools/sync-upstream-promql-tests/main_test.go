@@ -3,6 +3,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -98,4 +100,15 @@ eval instant at 0m C
 			require.Equal(t, tc.expectedConflicts, conflicts)
 		})
 	}
+}
+
+func TestRunFailsWithoutUpstreamFiles(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "a", "b")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	t.Chdir(dir)
+
+	// Resolved like run() does, so the expected path is the same on every OS, whatever the temp dir's symlinks.
+	upstreamDir, err := filepath.Abs(filepath.Join("..", "..", "vendor", "github.com", "prometheus", "prometheus", "promql", "promqltest", "testdata"))
+	require.NoError(t, err)
+	require.EqualError(t, run(), "no upstream test files found in "+upstreamDir+": run this tool from its own directory")
 }
