@@ -3595,30 +3595,33 @@ impl Store {
                             report
                         })
                         .collect::<Vec<_>>();
-                    let mut locked = held.elapsed();
-                    timing.record(1, locked);
-                    if (freeze || freeze_idle)
-                        && let Some(mut prepared) = Freeze::prepare(&mut state)
-                    {
-                        locked = held.elapsed();
-                        let directory = state.cold.directory.clone();
-                        drop(state);
-                        let phase = Instant::now();
-                        let block = prepared.build(directory.as_deref());
-                        timing.record(2, phase.elapsed());
-                        let mut state = shard.write().expect("store lock poisoned");
-                        let phase = Instant::now();
-                        prepared.finish(&mut state, block);
-                        drop(state);
-                        let installed = phase.elapsed() + merge_cold_unlocked(shard);
-                        timing.record(3, installed);
-                        locked += installed;
-                    }
-                    timing.record(4, locked);
-                    reports
+                    timing.record(1, held.elapsed());
+                    let prepared = (freeze || freeze_idle)
+                        .then(|| Freeze::prepare(&mut state))
+                        .flatten()
+                        .map(|prepared| (prepared, state.cold.directory.clone()));
+                    timing.record(4, held.elapsed());
+                    (reports, prepared)
                 })
                 .collect::<Vec<_>>()
         });
+        // Frozen blocks are built and merged one shard at a time, off the store's pool: building
+        // every shard's at once took the pool from ingestion for seconds, and queries waiting for
+        // read consistency waited on ingestion.
+        let (per_shard, freezes): (Vec<_>, Vec<_>) = per_shard.into_iter().unzip();
+        for (shard, freeze) in self.shards.iter().zip(freezes) {
+            let Some((mut prepared, directory)) = freeze else {
+                continue;
+            };
+            let phase = Instant::now();
+            let block = prepared.build(directory.as_deref());
+            timing.record(2, phase.elapsed());
+            let mut state = shard.write().expect("store lock poisoned");
+            let phase = Instant::now();
+            prepared.finish(&mut state, block);
+            drop(state);
+            timing.record(3, phase.elapsed() + merge_cold_unlocked(shard));
+        }
         // Slow ticks hold shard write locks that queries wait on.
         if started.elapsed() >= Duration::from_millis(500) {
             eprintln!(
@@ -4480,8 +4483,8 @@ fn ingest_series(
         *outcome.chunks_created.entry(context.index).or_default() += chunks_created;
     }
     // Exemplars need an existing series, like `AppendExemplar`.
-    let touch = (new_series || !was_in_head || chunks_created > 0 || out_of_order > 0)
-        && !series.touched;
+    let touch =
+        (new_series || !was_in_head || chunks_created > 0 || out_of_order > 0) && !series.touched;
     series.touched |= touch;
     if context.keep_exemplars && !decoded.exemplars.is_empty() && !existed && accepted == 0 {
         outcome.exemplars_without_series += decoded.exemplars.len() as u64;
