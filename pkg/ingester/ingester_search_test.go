@@ -175,6 +175,81 @@ func TestIngesterSearchLabelValues(t *testing.T) {
 	}
 }
 
+// TestIngesterSearchLabelValuesWithFilterAndMatchers covers searches that
+// have both a filter and a matcher for another label. Only these searches let
+// TSDB drop the values that the filter rejects before it intersects postings.
+func TestIngesterSearchLabelValuesWithFilterAndMatchers(t *testing.T) {
+	series := []util_test.Series{
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric_a", "status", "200"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric_a", "status", "201"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric_a", "status", "500"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric_b", "status", "202"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric_b", "status", "404"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+	}
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(t.Context(), "test")
+	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
+
+	metricA := &client.LabelMatcher{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "metric_a"}
+	tests := []struct {
+		name        string
+		filterTerms []string
+		matchers    []*client.LabelMatcher
+		ordering    client.SearchOrdering
+		limit       int64
+		resumeAfter string
+		want        []string
+	}{
+		{name: "no filter", matchers: []*client.LabelMatcher{metricA}, want: []string{"200", "201", "500"}},
+		{name: "filter and matcher each reject values", filterTerms: []string{"20"}, matchers: []*client.LabelMatcher{metricA}, want: []string{"200", "201"}},
+		{name: "matcher selects other series", filterTerms: []string{"20"}, matchers: []*client.LabelMatcher{{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "metric_b"}}, want: []string{"202"}},
+		{name: "not-equal matcher", filterTerms: []string{"20"}, matchers: []*client.LabelMatcher{{Type: client.NOT_EQUAL, Name: model.MetricNameLabel, Value: "metric_a"}}, want: []string{"202"}},
+		{name: "filter accepts only values of unmatched series", filterTerms: []string{"40"}, matchers: []*client.LabelMatcher{metricA}},
+		{name: "filter rejects every value", filterTerms: []string{"9"}, matchers: []*client.LabelMatcher{metricA}},
+		{name: "matcher for the searched label too", filterTerms: []string{"1"}, matchers: []*client.LabelMatcher{metricA, {Type: client.REGEX_MATCH, Name: "status", Value: "2.."}}, want: []string{"201"}},
+		{name: "score desc", filterTerms: []string{"20"}, matchers: []*client.LabelMatcher{metricA}, ordering: client.ORDER_BY_SCORE_DESC, want: []string{"200", "201"}},
+		{name: "value desc applies the filter before the limit", filterTerms: []string{"20"}, matchers: []*client.LabelMatcher{metricA}, ordering: client.ORDER_BY_VALUE_DESC, limit: 1, want: []string{"201"}},
+		{name: "resume after", matchers: []*client.LabelMatcher{metricA}, resumeAfter: "200", want: []string{"201", "500"}},
+	}
+
+	runAll := func(t *testing.T) {
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				req := &client.SearchLabelValuesRequest{
+					StartTimestampMs: 0,
+					EndTimestampMs:   200_000,
+					Name:             "status",
+					Matchers:         tc.matchers,
+					Filter:           &client.SearchFilter{Terms: tc.filterTerms, ResumeAfter: tc.resumeAfter},
+					Ordering:         tc.ordering,
+					Limit:            tc.limit,
+				}
+				s := &mockSearchLabelValuesStream{ctx: ctx}
+				require.NoError(t, i.SearchLabelValues(req, s))
+
+				var got []string
+				for _, b := range s.sent {
+					for _, r := range b.Results {
+						got = append(got, r.Value)
+					}
+				}
+				assert.Equal(t, tc.want, got)
+			})
+		}
+	}
+
+	// The head and a persistent block read label values through different
+	// index readers.
+	t.Run("head", runAll)
+
+	i.compactBlocks(t.Context(), true, math.MaxInt64, nil)
+	db := i.getTSDB("test")
+	require.Equal(t, uint64(0), db.Head().NumSeries())
+	require.Len(t, db.Blocks(), 1)
+
+	t.Run("block", runAll)
+}
+
 // fakeSearchResultSet is a test SearchResultSet backed by an in-memory slice
 // plus an optional terminal error and pre-populated annotations. Used to
 // exercise streamSearchResults without spinning up a real TSDB.
