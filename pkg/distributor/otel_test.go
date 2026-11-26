@@ -12,11 +12,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -2962,15 +2962,14 @@ func TestOTLPHandler_JSONZstdDoesNotLeakGoroutines(t *testing.T) {
 		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
 	)
 
-	before := runtime.NumGoroutine()
-	for i := range 20 {
-		resp := httptest.NewRecorder()
-		handler.ServeHTTP(resp, req)
-		require.Equal(t, http.StatusRequestEntityTooLarge, resp.Code, "iteration %d", i)
-		req.Body.(*reusableReader).Reset()
-	}
-
-	require.Eventually(t, func() bool {
-		return runtime.NumGoroutine() <= before+2
-	}, 5*time.Second, 50*time.Millisecond, "zstd decoders leaked goroutines: before=%d after=%d", before, runtime.NumGoroutine())
+	// synctest.Test fails if any goroutine started in the bubble is still blocked when the function returns,
+	// which is the case for a zstd decoder that was not closed.
+	synctest.Test(t, func(t *testing.T) {
+		for i := range 20 {
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			require.Equal(t, http.StatusRequestEntityTooLarge, resp.Code, "iteration %d", i)
+			req.Body.(*reusableReader).Reset()
+		}
+	})
 }
