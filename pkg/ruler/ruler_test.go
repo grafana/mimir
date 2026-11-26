@@ -2063,18 +2063,21 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 	)
 
 	testCases := map[string]struct {
-		otherRulerAtStart     bool
-		otherRulerState       ring.InstanceState
-		otherRulerChanges     bool
-		expectedFirstRunSyncs float64
+		otherRulerAtStart       bool
+		otherRulerState         ring.InstanceState
+		otherRulerChanges       bool
+		otherRulerBecomesActive bool
+		expectedFirstRunSyncs   float64
 	}{
 		"another ruler joins after the initial sync": {
 			otherRulerAtStart:     false,
+			otherRulerState:       ring.ACTIVE,
 			otherRulerChanges:     true,
 			expectedFirstRunSyncs: 1,
 		},
 		"another ruler leaves after the initial sync": {
 			otherRulerAtStart:     true,
+			otherRulerState:       ring.ACTIVE,
 			otherRulerChanges:     true,
 			expectedFirstRunSyncs: 1,
 		},
@@ -2083,8 +2086,15 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 			otherRulerState:       ring.JOINING,
 			expectedFirstRunSyncs: 1,
 		},
+		"another ruler becomes ACTIVE before run() starts": {
+			otherRulerAtStart:       true,
+			otherRulerState:         ring.JOINING,
+			otherRulerBecomesActive: true,
+			expectedFirstRunSyncs:   0,
+		},
 		"no ring change after the initial sync": {
 			otherRulerAtStart:     true,
+			otherRulerState:       ring.ACTIVE,
 			otherRulerChanges:     false,
 			expectedFirstRunSyncs: 0,
 		},
@@ -2104,7 +2114,7 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 				cfg.PollInterval = time.Hour // Isolate ring-change syncing from periodic syncing.
 				cfg.RingCheckPeriod = ringCheckPeriod
 
-				setOtherRuler := func(inRing bool) error {
+				setOtherRuler := func(inRing bool, state ring.InstanceState) error {
 					return cfg.Ring.Common.KVStore.Mock.CAS(t.Context(), RulerRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 						d, _ := in.(*ring.Desc)
 						if d == nil {
@@ -2121,28 +2131,30 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 							tokens = append(tokens, tokenForGroup(group)+1)
 						}
 						slices.Sort(tokens)
-						d.AddIngester("other", "other", "", tokens, tc.otherRulerState, time.Now(), false, time.Time{}, nil)
+						d.AddIngester("other", "other", "", tokens, state, time.Now(), false, time.Time{}, nil)
 						return d, true, nil
 					})
 				}
 				if tc.otherRulerAtStart {
-					require.NoError(t, setOtherRuler(true))
+					require.NoError(t, setOtherRuler(true, tc.otherRulerState))
 				}
 
 				r := prepareRuler(t, cfg, storage)
 
-				// The other ruler joins or leaves after the initial sync and before the ruler becomes ACTIVE.
+				// The other ruler joins, leaves or becomes ACTIVE after the initial sync and before this ruler becomes ACTIVE.
 				var initialSyncGroups int
 				r.manager = &syncHookManager{
 					MultiTenantManager: r.manager,
 					afterFirstFullSync: func(ruleGroupsByUser map[string]rulespb.RuleGroupList) {
 						initialSyncGroups = len(ruleGroupsByUser[userID])
-						if !tc.otherRulerChanges {
-							return
-						}
 						// The hook runs on the ruler goroutine.
 						// Thus it must not call t.FailNow.
-						assert.NoError(t, setOtherRuler(!tc.otherRulerAtStart))
+						switch {
+						case tc.otherRulerChanges:
+							assert.NoError(t, setOtherRuler(!tc.otherRulerAtStart, tc.otherRulerState))
+						case tc.otherRulerBecomesActive:
+							assert.NoError(t, setOtherRuler(true, ring.ACTIVE))
+						}
 					},
 				}
 
@@ -2166,10 +2178,13 @@ func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
 					actual = append(actual, g.Name())
 				}
 				if tc.otherRulerState == ring.JOINING {
+					// The initial sync counted the JOINING ruler as the owner of all rule groups.
+					require.Zero(t, initialSyncGroups)
+				}
+				if tc.otherRulerState == ring.JOINING && !tc.otherRulerBecomesActive {
 					state, err := r.ring.GetInstanceState("other")
 					require.NoError(t, err)
 					require.Equal(t, ring.JOINING, state)
-					require.Zero(t, initialSyncGroups)
 					require.Len(t, expected, len(groups))
 				}
 				if tc.expectedFirstRunSyncs > 0 {

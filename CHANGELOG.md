@@ -208,7 +208,7 @@
 * [BUGFIX] MQE: Fix `quantile`, `quantile_over_time` and `mad_over_time` returning a value with a rounding error, or `0` for very small values, when the quantile falls between two identical values. MQE now returns that value exactly, the same as the Prometheus engine. #17444
 * [BUGFIX] Query-frontend: Fix retried POST requests to the label names, label values, series, cardinality and active series endpoints being sent without their body. Retries dropped the parameters sent in the body, such as `match[]`, so a retried label names or label values request could return results for all series. #17445
 * [BUGFIX] Ruler: Return HTTP 500 from the Prometheus rules and alerts endpoints when a ruler client is not available. Previously, the endpoints returned HTTP 200 without the rule groups of that ruler. #17228
-* [BUGFIX] Ruler: Fix rule groups running on two rulers, or on no ruler, when rulers start together, for example in a rollout. This lasted up to `-ruler.poll-interval`. A new ruler now syncs again if the ring changed during its start-up, with `reason="first-run"` in `cortex_ruler_sync_rules_total`. #17513
+* [BUGFIX] Ruler: Fix rule groups running on two rulers, or on no ruler, when rulers start together, for example in a rollout. This lasted up to `-ruler.poll-interval`. A new ruler now syncs again if the ring changed during its start-up or another ruler is still `JOINING`, with `reason="first-run"` in `cortex_ruler_sync_rules_total`. #17513
 * [BUGFIX] Ingester: Fix the partition reader logging an error and waiting for the full backoff when the Kafka client reports that a broker connection died. This error is now retried immediately, as intended. #17495
 
 ### Mixin
