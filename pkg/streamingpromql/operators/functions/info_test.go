@@ -4,10 +4,14 @@ package functions
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -54,6 +58,52 @@ func TestFilterInfoInnerMatchers(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			require.Equal(t, testCase.expected, filterInfoInnerMatchers(matchers, testCase.dataLabelMatchers))
+		})
+	}
+}
+
+// The same targets give the same pattern, whatever the order of the inner series and of the map collecting their
+// values, so that the compiled regexes' caches hit across the queries and rounds that select them.
+func TestInfoFunction_GenerateInfoMatchers(t *testing.T) {
+	// Enough values that the map's order is all but certain to differ from the sorted one.
+	var instances []string
+	for i := range 50 {
+		instances = append(instances, fmt.Sprintf("10.0.%d.1:9100", i))
+	}
+	sorted := slices.Clone(instances)
+	slices.Sort(sorted)
+	quoted := make([]string, 0, len(sorted))
+	for _, instance := range sorted {
+		quoted = append(quoted, regexp.QuoteMeta(instance))
+	}
+	shuffled := slices.Clone(instances)
+	rand.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+	inner := func(withoutInstance bool) []types.SeriesMetadata {
+		var series []types.SeriesMetadata
+		for _, instance := range shuffled {
+			series = append(series, types.SeriesMetadata{Labels: labels.FromStrings("__name__", "up", "instance", instance, "job", "node")})
+		}
+		if withoutInstance {
+			series = append(series, types.SeriesMetadata{Labels: labels.FromStrings("__name__", "up", "job", "node")})
+		}
+		return series
+	}
+
+	for name, testCase := range map[string]struct {
+		withoutInstance bool
+		instancePattern string
+	}{
+		"every inner series with an instance": {instancePattern: "(" + strings.Join(quoted, "|") + ")"},
+		// The empty alternative, for the info series of the inner series without one, stays last.
+		"an inner series without an instance": {withoutInstance: true, instancePattern: "(" + strings.Join(quoted, "|") + "|)"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			matchers, skip := (&InfoFunction{}).generateInfoMatchers(inner(testCase.withoutInstance), nil)
+			require.False(t, skip)
+			require.Equal(t, types.Matchers{
+				{Type: labels.MatchRegexp, Name: "instance", Value: testCase.instancePattern},
+				{Type: labels.MatchEqual, Name: "job", Value: "node"},
+			}, matchers)
 		})
 	}
 }

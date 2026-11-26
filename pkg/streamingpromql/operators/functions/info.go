@@ -5,6 +5,7 @@ package functions
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"strconv"
@@ -413,7 +414,9 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 		}
 
 		valueSlice := make([]string, 0, len(values)+1)
-		for value := range values {
+		// In sorted order, as Prometheus' info() has them, so that the same targets give the same pattern, which the
+		// compiled regexes' caches then hit. In the map's order, every query's pattern was new.
+		for _, value := range slices.Sorted(maps.Keys(values)) {
 			valueSlice = append(valueSlice, regexp.QuoteMeta(value))
 		}
 		if mixed {
