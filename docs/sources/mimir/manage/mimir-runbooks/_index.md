@@ -3036,6 +3036,20 @@ How to **fix** it:
 When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
 {{< /admonition >}}
 
+### err-mimir-tenant-metadata-too-long
+
+This error can only be returned when both the experimental compartments (`-compartments.enabled=true`) and the usage-tracker (`-usage-tracker.enabled=true`) are enabled. It occurs when the distributor rejects a write request because the tenant metadata in the tenant ID is too long.
+
+How it **works**:
+
+- Tenant metadata is the list of `:key=value` pairs after the tenant ID, for example `tenant-1:source=example`. It can be at most 64 bytes long.
+- When compartments are enabled, the distributor adds the read compartment ID of each series to the tenant metadata, as `:rc=<id>`, to track the active series of each read compartment in the usage-tracker.
+- To leave room for the read compartment ID, the distributor rejects write requests whose tenant metadata is longer than 64 bytes minus the length of the longest `:rc=<id>` pair, which depends on `-compartments.read.num-compartments`. The 4xx status code is used to ensure the client will not retry a request which will consistently fail.
+
+How to **fix** it:
+
+- Configure the client writing to Mimir to send shorter tenant metadata. Clients pass the tenant metadata in the `X-Scope-OrgID` header, using the format `tenantID:key1=value1:key2=value2`. Shorten or remove some of the `key=value` pairs in the sent headers.
+
 ### err-mimir-max-series-per-user
 
 This error occurs when the number of in-memory series for a given tenant exceeds the configured limit.
@@ -3983,10 +3997,26 @@ will remain in the `Terminated` state. This is harmless and will remain there un
 
 This means a sample with the same timestamp as the latest one was received with a different value. The number of occurrences is recorded in the `cortex_discarded_samples_total` metric with the label `reason="new-value-for-timestamp"`.
 
+Samples that exactly duplicate an already-stored sample are dropped without an error or log line. Refer to [Samples discarded with reason same-value-for-timestamp](#samples-discarded-with-reason-same-value-for-timestamp).
+
 Possible reasons for this are:
 
 - Incorrect relabelling rules can cause a label to be dropped from a series so that multiple series have the same labels. If these series were collected from the same target they will have the same timestamp.
 - The exporter being scraped sets the same timestamp on every scrape. Note that exporters should generally not set timestamps.
+- Multiple processes exporting metrics with the same identity (for example, prefork workers missing a `service.instance.id` resource attribute in OTLP setups), so their samples collide on the same series.
+
+## Samples discarded with reason same-value-for-timestamp
+
+This means a sample was received that exactly duplicates an already-stored sample of the same series: same timestamp and same value. These samples are dropped silently: the client receives a successful response and no log line is emitted. The number of occurrences is recorded in the `cortex_discarded_samples_total` metric with the label `reason="same-value-for-timestamp"`, and the drops are attributed per series in cost attribution when it's enabled.
+
+Possible reasons for this are:
+
+- Clients or shippers retrying, or double-sending, remote-write requests.
+- Multiple processes exporting identical metrics with the same identity, for example, prefork workers missing a `service.instance.id` resource attribute in OTLP setups.
+- With ingest storage enabled, ingesters can re-process recent Kafka records after a restart or a partition rebalance, and the replayed samples are discarded with this reason. Bursts following ingester rollouts are expected and don't indicate a client problem.
+- With OTLP start times or created timestamps, Mimir writes a synthetic zero sample at a series' start timestamp. If the series already has a sample there, the zero is dropped and can be counted with this reason even though the client never sent it, so a small reconciliation gap against received samples is expected for such tenants.
+
+These discards are harmless because the sample's value is already stored. A sustained high rate indicates duplicated client traffic that is wasting write-path resources.
 
 ## Investigating query evaluation issues
 

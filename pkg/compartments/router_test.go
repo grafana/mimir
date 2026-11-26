@@ -15,7 +15,9 @@ import (
 )
 
 func newTestRouter(numCompartments int) *TopicRouter {
-	return NewTopicRouter(numCompartments, "mimir-rc-<read-compartment-id>")
+	return NewTopicRouter(numCompartments, func(readCompartmentID int) string {
+		return ReplaceReadCompartment("mimir-rc-<read-compartment-id>", readCompartmentID)
+	})
 }
 
 func TestTopicRouter_TopicForCompartment(t *testing.T) {
@@ -155,7 +157,7 @@ func TestRouter_TopicForMetric(t *testing.T) {
 func TestNewRouter(t *testing.T) {
 	const numCompartments = 4
 	r := NewRouter(numCompartments)
-	withTopics := NewTopicRouter(numCompartments, "mimir-rc-<read-compartment-id>")
+	withTopics := newTestRouter(numCompartments)
 
 	assert.Equal(t, numCompartments, r.NumCompartments())
 

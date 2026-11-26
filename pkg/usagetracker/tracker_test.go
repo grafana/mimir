@@ -31,6 +31,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kfake"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/usagetracker/hll"
 	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
@@ -925,6 +926,38 @@ func TestConfig_ValidateNumShards(t *testing.T) {
 			cfg.NumShards = tc.numShards
 
 			err := cfg.ValidateForClient()
+			if tc.expectedErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.EqualError(t, err, tc.expectedErr)
+		})
+	}
+}
+
+func TestConfig_ValidateReceivedSeriesEstimation(t *testing.T) {
+	cluster := fakeKafkaCluster(t)
+	for name, tc := range map[string]struct {
+		enabled     bool
+		precision   int
+		salt        string
+		expectedErr string
+	}{
+		"disabled, no salt needed": {precision: 8},
+		"default precision":        {enabled: true, precision: 8, salt: "salt"},
+		"min precision":            {enabled: true, precision: hll.MinPrecision, salt: "salt"},
+		"max precision":            {enabled: true, precision: hll.MaxPrecision, salt: "salt"},
+		"precision too low":        {enabled: true, precision: hll.MinPrecision - 1, salt: "salt", expectedErr: "invalid usage-tracker received series estimation HLL precision 3, should be between 4 and 16"},
+		"precision too high":       {enabled: true, precision: hll.MaxPrecision + 1, salt: "salt", expectedErr: "invalid usage-tracker received series estimation HLL precision 17, should be between 4 and 16"},
+		"no salt":                  {enabled: true, precision: 8, expectedErr: "the usage-tracker received series estimation hash salt must be set when the received series estimation is enabled"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := newTestUsageTrackerConfig(t, "usage-tracker-zone-a-0", "zone-a", nil, nil, cluster)
+			cfg.ReceivedSeriesEstimationEnabled = tc.enabled
+			cfg.ReceivedSeriesEstimationHLLPrecision = tc.precision
+			require.NoError(t, cfg.ReceivedSeriesEstimationHashSalt.Set(tc.salt))
+
+			err := cfg.ValidateForUsageTracker()
 			if tc.expectedErr == "" {
 				require.NoError(t, err)
 				return

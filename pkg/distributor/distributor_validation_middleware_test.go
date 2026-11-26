@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -514,6 +515,62 @@ func TestDistributor_prePushValidationMiddleware(t *testing.T) {
 				fmt.Fprintf(&expected, "cortex_discarded_samples_total{group=\"\",reason=%q,user=%q} %d\n", reason, userID, tc.wantRejected[reason])
 			}
 			assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(expected.String()), "cortex_discarded_samples_total"))
+		})
+	}
+}
+
+func TestDistributor_prePushValidationMiddleware_RejectTooLongTenantMetadata(t *testing.T) {
+	const (
+		userID          = "user"
+		numCompartments = 11
+	)
+	maxMetadataLength := compartments.MaxTenantMetadataLength(numCompartments)
+	metadataOfLength := func(length int) string {
+		return ":source=" + strings.Repeat("x", length-len(":source="))
+	}
+
+	testCases := map[string]struct {
+		metadata      string
+		expectedError error
+	}{
+		"metadata of the maximum length": {
+			metadata: metadataOfLength(maxMetadataLength),
+		},
+		"metadata longer than the maximum length": {
+			metadata:      metadataOfLength(maxMetadataLength + 1),
+			expectedError: newTenantMetadataTooLongError(maxMetadataLength+1, maxMetadataLength),
+		},
+	}
+
+	for testName, testData := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			ds, _, _, _ := prepare(t, prepConfig{numDistributors: 1})
+			d := ds[0]
+			d.compartmentRouter = compartmentsTestRouter(numCompartments)
+			d.maxReadCompartmentTenantMetadataLength = maxMetadataLength
+			d.usageTrackerClient = &usageTrackerClientMock{}
+
+			nextCalled := false
+			next := func(context.Context, *Request) error {
+				nextCalled = true
+				return nil
+			}
+
+			writeReq := &mimirpb.WriteRequest{
+				Timeseries: []mimirpb.PreallocTimeseries{
+					makeTimeseries([]string{model.MetricNameLabel, "series"}, makeSamples(time.Now().UnixMilli(), 1), nil, nil),
+				},
+			}
+			ctx := user.InjectOrgID(t.Context(), userID+testData.metadata)
+			err := d.prePushValidationMiddleware(next)(ctx, NewParsedRequest(writeReq, 0))
+
+			if testData.expectedError != nil {
+				require.Equal(t, testData.expectedError, err)
+				require.False(t, nextCalled)
+				return
+			}
+			require.NoError(t, err)
+			require.True(t, nextCalled)
 		})
 	}
 }

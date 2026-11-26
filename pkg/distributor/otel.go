@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
+	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
@@ -746,6 +747,9 @@ type otlpMimirConverter struct {
 	converter *prometheusremotewrite.PrometheusConverter
 	// err holds OTLP parse errors
 	err error
+	// droppedByWarning counts metrics dropped for an unsupported temporality, which the translator reports as warnings rather than errors.
+	// Metrics sharing a name count once, because annotations are keyed by message.
+	droppedByWarning int
 }
 
 func newOTLPMimirConverter(appender *otlpappender.MimirAppender) *otlpMimirConverter {
@@ -760,17 +764,34 @@ func (c *otlpMimirConverter) ToSeriesAndMetadata(ctx context.Context, md pmetric
 		return nil, nil
 	}
 
-	_, c.err = c.converter.FromMetrics(ctx, md, settings)
+	var annots annotations.Annotations
+	annots, c.err = c.converter.FromMetrics(ctx, md, settings)
+	// Count only invalid-temporality warnings, since that's the only warning category known to discard samples.
+	// The other categories either keep the data or, for empty data points, drop a metric that has no samples.
+	c.droppedByWarning = prometheusremotewrite.CountWarningsByCategory(annots)[prometheusremotewrite.WarningCategoryInvalidTemporality]
+	if c.droppedByWarning > 0 {
+		var dropped []string
+		for msg, err := range annots {
+			if prometheusremotewrite.WarningCategoryOf(err) == prometheusremotewrite.WarningCategoryInvalidTemporality {
+				dropped = append(dropped, msg)
+				if len(dropped) == 5 {
+					break
+				}
+			}
+		}
+		level.Warn(logger).Log("msg", "dropped OTLP metrics with unsupported temporality", "count", c.droppedByWarning, "warnings", strings.Join(dropped, "; "))
+	}
 
 	timeseries, metadata := c.appender.GetResult()
 	return timeseries, metadata
 }
 
 func (c *otlpMimirConverter) DroppedTotal() int {
+	dropped := c.droppedByWarning
 	if c.err != nil {
-		return len(multierr.Errors(c.err))
+		dropped += len(multierr.Errors(c.err))
 	}
-	return 0
+	return dropped
 }
 
 func (c *otlpMimirConverter) Err() error {

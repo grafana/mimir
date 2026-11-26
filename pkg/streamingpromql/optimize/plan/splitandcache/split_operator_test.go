@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -672,13 +673,13 @@ func TestSplitOperator_ConflictingDropNameValuesForSameSeries(t *testing.T) {
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	range1 := &operators.TestOperator{
-		Series:                   []labels.Labels{labels.FromStrings("idx", "0")},
+		Series:                   []labels.Labels{labels.FromStrings(model.MetricNameLabel, "foo", "idx", "0")},
 		DropName:                 []bool{true},
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 	}
 
 	range2 := &operators.TestOperator{
-		Series:                   []labels.Labels{labels.FromStrings("idx", "0")},
+		Series:                   []labels.Labels{labels.FromStrings(model.MetricNameLabel, "foo", "idx", "0")},
 		DropName:                 []bool{false},
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 	}
@@ -696,7 +697,7 @@ func TestSplitOperator_ConflictingDropNameValuesForSameSeries(t *testing.T) {
 	require.NoError(t, o.AfterPrepare(ctx))
 
 	_, err := o.SeriesMetadata(ctx, nil)
-	require.EqualError(t, err, `series with labels {idx="0"} has conflicting drop name values in different ranges / extents`)
+	require.EqualError(t, err, `series with labels {__name__="foo", idx="0"} has conflicting drop name values in different ranges / extents`)
 }
 
 func TestSplitOperator_FinishedReadingCalledWithoutCallingSeriesMetadata(t *testing.T) {

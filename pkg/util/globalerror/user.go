@@ -82,6 +82,8 @@ const (
 
 	MaxActiveSeries ID = "max-active-series"
 
+	TenantMetadataTooLong ID = "tenant-metadata-too-long"
+
 	DistributorMaxWriteMessageSize         ID = "distributor-max-write-message-size"
 	DistributorMaxOTLPRequestSize          ID = "distributor-max-otlp-request-size"
 	DistributorMaxWriteRequestDataItemSize ID = "distributor-max-write-request-data-item-size"

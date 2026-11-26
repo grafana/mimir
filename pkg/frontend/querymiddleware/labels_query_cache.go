@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -21,6 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -42,7 +44,27 @@ func newLabelsQueryCacheRoundTripper(
 		limits: limits,
 	}
 
-	return newGenericQueryCacheRoundTripper(cache, generator.LabelValues, ttl, next, logger, splitandcache.NewResultsCacheMetrics(queryTypeLabels, reg))
+	cacheKey := func(r *http.Request) (*GenericQueryCacheKey, error) {
+		tenantIDs, err := tenant.TenantIDs(r.Context())
+		if err != nil {
+			return nil, err
+		}
+		// The cache key uses MinTime for a missing start and MaxTime for a missing end. The querier replaces them
+		// with the default range instead, and adds a warning with that range to the response. Thus the response
+		// must not be cached.
+		if validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, limits.MetadataDefaultTimeRange) > 0 {
+			params, err := util.ParseRequestFormWithoutConsumingBody(r)
+			if err != nil {
+				return nil, err
+			}
+			if params.Get("start") == "" || params.Get("end") == "" {
+				return nil, ErrUnsupportedRequest
+			}
+		}
+		return generator.LabelValues(r)
+	}
+
+	return newGenericQueryCacheRoundTripper(cache, cacheKey, ttl, next, logger, splitandcache.NewResultsCacheMetrics(queryTypeLabels, reg))
 }
 
 type labelsQueryTTL struct {
@@ -57,6 +79,18 @@ func (g DefaultCacheKeyGenerator) LabelValues(r *http.Request) (*GenericQueryCac
 	labelValuesReq, err := g.codec.DecodeLabelsSeriesQueryRequest(r.Context(), r)
 	if err != nil {
 		return nil, err
+	}
+
+	// The codec decodes an explicit start or end of 0 to the same value as a missing start or end, but the querier
+	// queries a different range for each. The cache key cannot hold the difference, so the response must not be cached.
+	if labelValuesReq.GetStart() == 0 || labelValuesReq.GetEnd() == 0 {
+		params, err := util.ParseRequestFormWithoutConsumingBody(r)
+		if err != nil {
+			return nil, err
+		}
+		if (labelValuesReq.GetStart() == 0 && params.Get("start") != "") || (labelValuesReq.GetEnd() == 0 && params.Get("end") != "") {
+			return nil, ErrUnsupportedRequest
+		}
 	}
 
 	var cacheKeyPrefix string

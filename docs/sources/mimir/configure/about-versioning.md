@@ -94,6 +94,7 @@ The following features are currently experimental:
   - Debounce ring-change-triggered rule syncs.
     - `-ruler.ring-change-debounce`
     - `-ruler.ring-change-max-debounce`
+  - Keep evaluating rule groups on shutdown after leaving the ring, so other rulers can take them over (`-ruler.shutdown-handover-period`)
   - `-ruler.min-rule-evaluation-interval`
   - Attach headers identifying the rule being evaluated to the queries sent to the query-frontend.
     - `-ruler.query-frontend.enable-rule-detail-headers`
@@ -160,6 +161,7 @@ The following features are currently experimental:
     - `-ingester.early-compaction-non-owned-series-max-grace-period`
   - Timely head compaction (`-blocks-storage.tsdb.timely-head-compaction-enabled`)
   - Per-label-name metric threshold on the total size of distinct label values (`-ingester.label-value-bytes-metric-threshold`)
+  - Logging the tenant and labels of series that have both float samples and native histograms in a write request (`-ingester.log-series-with-floats-and-histograms`)
   - Count owned series and use them to enforce series limits:
     - `-ingester.track-ingester-owned-series`
     - `-ingester.use-ingester-owned-series-for-limits`
@@ -239,7 +241,11 @@ The following features are currently experimental:
   - Kafka write request timeout overhead
     - `-ingest-storage.kafka.write-timeout-overhead`
 - Querier
+  - [Query cost estimation HTTP endpoints](../../references/http-api/#query-cost) `/api/v1/query_cost` and `/api/v1/query_range_cost`
+    - `-querier.experimental-query-cost-api-enabled`
+    - `-querier.query-cost-estimated-scrape-interval`
   - Streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}` returning NDJSON, mirroring the [Prometheus search API](https://github.com/prometheus/prometheus/pull/18573) (`-querier.experimental-search-api-enabled`).
+  - Default time range for series, label names, label values and search requests that do not specify both start and end (`-querier.metadata-default-time-range`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-querier.query-engine` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
@@ -365,3 +371,7 @@ The following features or configuration parameters are currently deprecated and 
   - `evaluation_delay` field: use `query_offset` instead
 - The `-store-gateway.sharding-ring.auto-forget-enabled` is deprecated and will be removed in a future release. Set the `-store-gateway.sharding-ring.auto-forget-unhealthy-periods` flag to 0 to disable the auto-forget feature. Deprecated since Mimir 2.17.
 - The `-distributor.otel-start-time-quiet-zero` parameter no longer has any effect and will be removed in a future release. Deprecated since Mimir 3.0.
+
+The following features or configuration parameters were deprecated in Mimir 3.3 and will be removed in Mimir 3.5:
+
+- The `-blocks-storage.bucket-store.index-header.max-idle-file-handles` CLI flag is deprecated and has no effect. The store-gateway keeps a single file handle open for each loaded index-header and shares it across concurrent readers.

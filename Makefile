@@ -246,7 +246,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr17304-92dfc487c3@sha256:002f5180a3357e51f64ac1159f724af2b236538a11af9fd3504129ff9f8014f4
+LATEST_BUILD_IMAGE_TAG ?= pr17202-cf1d7ae62f@sha256:02e6836c1b16ab751181ba9375348d14c64a9a153a02c0f86c2d1f35cc9d58f5
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -351,7 +351,7 @@ LINT_GO_ENV := CGO_ENABLED=0 GOFLAGS="-tags=$(GO_TAGS)"
 .PHONY: lint-checklocks
 lint-checklocks: ## Check mutex contracts in the annotated packages.
 	@command -v checklocks >/dev/null || { echo "checklocks not found; run this target in mimir-build-image or install checklocks on PATH" >&2; exit 1; }
-	$(LINT_GO_ENV) go vet -vettool=$$(command -v checklocks) -inferred=false ./pkg/querier/worker ./pkg/usagetracker/usagetrackerclient
+	$(LINT_GO_ENV) go vet -vettool=$$(command -v checklocks) -inferred=false ./pkg/querier/worker ./pkg/usagetracker/hll ./pkg/usagetracker/usagetrackerclient
 
 lint: ## Run lints to check for style issues.
 lint: check-makefiles check-merge-conflicts lint-checklocks

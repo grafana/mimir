@@ -66,11 +66,11 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 		{expr: `metric[5m]`, expectSpinOffSuccess: false},
 	}
 
-	baselineEngine, _ := newSubquerySpinOffTestEngine(t, false)
+	baselineEngine, _ := newSubquerySpinOffTestEngine(t, false, false)
 
 	for _, q := range queries {
 		t.Run(q.expr, func(t *testing.T) {
-			spinOffEngine, reg := newSubquerySpinOffTestEngine(t, true)
+			spinOffEngine, reg := newSubquerySpinOffTestEngine(t, true, false)
 
 			ctx := user.InjectOrgID(context.Background(), "tenant-1")
 
@@ -142,8 +142,8 @@ func TestSubquerySpinOff_ScalarDownstreamPreservesType(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "tenant-1")
 
-	baselineEngine, _ := newSubquerySpinOffTestEngine(t, false)
-	spinOffEngine, _ := newSubquerySpinOffTestEngine(t, true)
+	baselineEngine, _ := newSubquerySpinOffTestEngine(t, false, false)
+	spinOffEngine, _ := newSubquerySpinOffTestEngine(t, true, false)
 
 	baselineQuery, err := baselineEngine.NewInstantQuery(ctx, storage, nil, expr, evalTime)
 	require.NoError(t, err)
@@ -160,10 +160,58 @@ func TestSubquerySpinOff_ScalarDownstreamPreservesType(t *testing.T) {
 		"spin-off changed the query outcome: baseline errored with %s but spin-off returned %s", baselineRes.Err.Error(), spinOffRes.String())
 }
 
-func newSubquerySpinOffTestEngine(t *testing.T, enableSpinOff bool) (*streamingpromql.Engine, *prometheus.Registry) {
+// TestSubquerySpinOff_SeriesFromNameDroppingExpressionInSomeSplits checks a series that comes from a
+// different side of "or" in different splits of a spun-off subquery. The pod is the leader in the first
+// day and the follower in the second, so only the second day's series comes from the name-dropping "0 *".
+// The series has no __name__ label, so dropping the name has no effect, and the splits must merge into one series.
+func TestSubquerySpinOff_SeriesFromNameDroppingExpressionInSomeSplits(t *testing.T) {
+	data := `
+		load 1h
+			role_info{pod="p", role="leader"}   1x23
+			role_info{pod="p", role="follower"} _x24 1x24
+	`
+
+	storage := promqltest.LoadedStorage(t, data)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	testCases := map[string]string{
+		"name-dropping expression on right side": `changes((max by (pod) (role_info{role="leader"}) or (0 * max by (pod) (role_info{role="follower"})))[2d:1h])`,
+		"name-dropping expression on left side":  `changes(((0 * max by (pod) (role_info{role="follower"})) or max by (pod) (role_info{role="leader"}))[2d:1h])`,
+	}
+
+	evalTime := time.Unix(0, 0).Add(47 * time.Hour)
+	expected := `{pod="p"} => 1 @[169200000]`
+	ctx := user.InjectOrgID(context.Background(), "tenant-1")
+
+	for name, expr := range testCases {
+		t.Run(name, func(t *testing.T) {
+			for _, enableDelayedNameRemoval := range []bool{false, true} {
+				t.Run(fmt.Sprintf("delayed name removal=%v", enableDelayedNameRemoval), func(t *testing.T) {
+					baselineEngine, _ := newSubquerySpinOffTestEngine(t, false, enableDelayedNameRemoval)
+					spinOffEngine, reg := newSubquerySpinOffTestEngine(t, true, enableDelayedNameRemoval)
+
+					require.Equal(t, expected, execInstantQuery(t, ctx, baselineEngine, storage, expr, evalTime))
+					require.Equal(t, expected, execInstantQuery(t, ctx, spinOffEngine, storage, expr, evalTime))
+
+					// The splits are merged only if the subquery is spun off, so the test is not valid without it.
+					require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(`
+						# HELP cortex_frontend_subquery_spinoff_successes_total Total number of queries the query-frontend successfully spun off subqueries from.
+						# TYPE cortex_frontend_subquery_spinoff_successes_total counter
+						cortex_frontend_subquery_spinoff_successes_total 1
+					`), "cortex_frontend_subquery_spinoff_successes_total"))
+				})
+			}
+		})
+	}
+}
+
+func newSubquerySpinOffTestEngine(t *testing.T, enableSpinOff bool, enableDelayedNameRemoval bool) (*streamingpromql.Engine, *prometheus.Registry) {
 	reg := prometheus.NewPedanticRegistry()
 	opts := streamingpromql.NewTestEngineOpts()
 	opts.CommonOpts.Reg = reg
+	limits := streamingpromql.NewStaticQueryLimitsProvider()
+	limits.EnableDelayedNameRemoval = enableDelayedNameRemoval
+	opts.Limits = limits
 	opts.RangeQuerySplittingAndCaching.SplitEnabled = true
 	opts.RangeQuerySplittingAndCaching.SplitInterval = 24 * time.Hour
 	opts.RangeQuerySplittingAndCaching.CacheEnabled = true

@@ -14,6 +14,7 @@ import (
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -270,8 +271,8 @@ func TestDistributor_Push_Compartments_ShouldEnforceMaxSeriesLimitsPerCompartmen
 	hashA1, hashA2 := hashes[0], hashes[2]
 	hashC1, hashC2, hashC3 := hashes[1], hashes[3], hashes[4]
 
-	userA := compartments.TenantIDWithReadCompartment(userID, int(compartmentA))
-	userC := compartments.TenantIDWithReadCompartment(userID, int(compartmentC))
+	userA := compartments.TenantIDWithReadCompartment(userID, tenant.Metadata{}, int(compartmentA))
+	userC := compartments.TenantIDWithReadCompartment(userID, tenant.Metadata{}, int(compartmentC))
 	hashesA := []uint64{hashA1, hashA2}
 	hashesC := []uint64{hashC1, hashC2, hashC3}
 
@@ -394,12 +395,12 @@ func TestDistributor_ObserveAsyncUsageTrackerRejection(t *testing.T) {
 			userID:             "user-1:source=test-run",
 			expectedMetricUser: "user-1",
 		},
-		"read compartment suffix uses main tenant ID": {
-			userID:             "user-1/rc/2",
+		"read compartment uses main tenant ID": {
+			userID:             "user-1:rc=2",
 			expectedMetricUser: "user-1",
 		},
-		"read compartment suffix with metadata uses main tenant ID": {
-			userID:             "user-1/rc/2:source=test-run",
+		"read compartment with metadata uses main tenant ID": {
+			userID:             "user-1:rc=2:source=test-run",
 			expectedMetricUser: "user-1",
 		},
 	}

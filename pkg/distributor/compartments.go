@@ -90,7 +90,7 @@ var groupSeriesHashesScratchPool = sync.Pool{
 // groupSeriesHashesByReadCompartment groups seriesHashes by the read compartment of each series in
 // timeseries. Each group is treated by the usage-tracker client as a separate user. The groups are
 // ordered by ascending compartment ID and share one backing array for the hashes.
-func groupSeriesHashesByReadCompartment(router *compartments.TopicRouter, userID string, metadata tenant.Metadata, timeseries []mimirpb.PreallocTimeseries, seriesHashes []uint64) []usagetrackerclient.UserSeries {
+func groupSeriesHashesByReadCompartment(router *compartments.TopicRouter, compartmentsCfg compartments.Config, userID string, metadata tenant.Metadata, timeseries []mimirpb.PreallocTimeseries, seriesHashes []uint64) []usagetrackerclient.UserSeries {
 	numCompartments := router.NumCompartments()
 
 	scratch := groupSeriesHashesScratchPool.Get().(*groupSeriesHashesScratch)
@@ -119,7 +119,7 @@ func groupSeriesHashesByReadCompartment(router *compartments.TopicRouter, userID
 		if count > 0 {
 			end := start + count
 			seriesHashesByReadCompartment = append(seriesHashesByReadCompartment, usagetrackerclient.UserSeries{
-				UserID: metadata.WithTenant(compartments.TenantIDWithReadCompartment(userID, compartment)),
+				UserID: compartmentsCfg.ReadCompartmentTenantID(userID, metadata, compartment),
 				Series: hashes[start:end:end],
 			})
 			start = end

@@ -1903,6 +1903,12 @@ label_values_count:
 # label name that shows how many new series the new values of the label create.
 # CLI flag: -ingester.label-churn-enabled
 [label_churn_enabled: <boolean> | default = false]
+
+# (experimental) When enabled, the ingester logs the tenant and labels of series
+# in write requests that have both float samples and native histograms. Logs are
+# sampled according to -ingester.error-sample-rate.
+# CLI flag: -ingester.log-series-with-floats-and-histograms
+[log_series_with_floats_and_histograms: <boolean> | default = false]
 ```
 
 ### querier
@@ -2134,6 +2140,18 @@ store_gateway_client:
 # experimental.search-api feature gate.
 # CLI flag: -querier.experimental-search-api-enabled
 [experimental_search_api_enabled: <boolean> | default = false]
+
+# (experimental) Enable the experimental /api/v1/query_cost and
+# /api/v1/query_range_cost endpoints to estimate query storage input without
+# evaluating the query.
+# CLI flag: -querier.experimental-query-cost-api-enabled
+[experimental_query_cost_api_enabled: <boolean> | default = false]
+
+# (experimental) Assumed scrape interval for experimental query cost estimates.
+# Mimir cannot determine the actual scrape interval or native histogram size
+# through bounded storage sampling.
+# CLI flag: -querier.query-cost-estimated-scrape-interval
+[query_cost_estimated_scrape_interval: <duration> | default = 1m]
 
 # (advanced) Maximum number of remote read queries that can be executed
 # concurrently. 0 or negative values mean unlimited concurrency.
@@ -2464,7 +2482,9 @@ The `frontend` block configures the query-frontend.
 # (experimental) Reserve query-scheduler queue slots for the remote execution
 # sub-requests of a query evaluation, before the query-frontend sends them. A
 # reservation holds the smaller of -querier.max-query-parallelism and the number
-# of sub-requests. Requires -query-frontend.enable-remote-execution and
+# of sub-requests. An evaluation with one sub-request does not reserve, and its
+# sub-request uses the plain enqueue. Requires
+# -query-frontend.enable-remote-execution and
 # -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results, and
 # -query-frontend.use-mimir-query-engine-for-sharding when sharding is enabled.
 # A sub-request that waits for -querier.max-query-parallelism can fail the query
@@ -3277,6 +3297,13 @@ tenant_federation:
 # -ruler.ring-change-debounce is greater than 0.
 # CLI flag: -ruler.ring-change-max-debounce
 [ring_change_max_debounce: <duration> | default = 15s]
+
+# (experimental) How long the ruler keeps evaluating its rule groups on shutdown
+# after leaving the ring, so other rulers can take them over without skipping an
+# evaluation. Set it longer than the ring check (up to 6s) plus two full rule
+# syncs. 0 to disable.
+# CLI flag: -ruler.shutdown-handover-period
+[shutdown_handover_period: <duration> | default = 0s]
 
 # (experimental) Number of rules rules that don't have dependencies that we
 # allow to be evaluated concurrently across all tenants. 0 to disable.
@@ -4984,6 +5011,21 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -store.max-labels-query-length
 [max_labels_query_length: <duration> | default = 0s]
 
+# (experimental) Default time range for series, label names, label values and
+# search requests that do not specify both start and end. A request with neither
+# start nor end queries from now minus this value to now. A request with only
+# end queries from end minus this value to end. A request with only start
+# queries from start to now. A request with both start and end does not change.
+# The response to a changed request includes a warning that shows the default
+# range. Other limits, such as -store.max-labels-query-length and
+# -querier.max-query-lookback, can make the queried range shorter. 0 to disable.
+# When disabled, the series, label names and label values endpoints use the
+# earliest possible time for a missing start, and the latest possible time for a
+# missing end. The search endpoints then use a default start of one hour before
+# now and a default end of now.
+# CLI flag: -querier.metadata-default-time-range
+[metadata_default_time_range: <duration> | default = 0s]
+
 # Maximum number of series, the series endpoint queries. This limit is enforced
 # in the querier. If the requested limit is outside of the allowed value, the
 # request doesn't fail, but is manipulated to only query data up to the allowed
@@ -6578,8 +6620,10 @@ bucket_store:
   [postings_offsets_in_mem_sampling_cardinality_threshold: <int> | default = 0]
 
   index_header:
-    # (advanced) Maximum number of idle file handles the store-gateway keeps
-    # open for each index-header file.
+    # (deprecated) Maximum number of idle file handles the store-gateway keeps
+    # open for each index-header file. Deprecated: has no effect (the
+    # store-gateway keeps a single shared file handle open for each loaded
+    # index-header).
     # CLI flag: -blocks-storage.bucket-store.index-header.max-idle-file-handles
     [max_idle_file_handles: <int> | default = 1]
 

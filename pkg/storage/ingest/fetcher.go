@@ -32,7 +32,7 @@ const (
 	unknownBroker = "unknown broker"
 
 	// chosenBrokerDied duplicates a constant from franz-go because it isn't exported.
-	chosenBrokerDied = "the internal broker struct chosen to issue this request has died--either the broker id is migrating or no longer exists"
+	chosenBrokerDied = "the broker connection has died and the request will be retried on a new connection"
 
 	// initialBytesPerRecord is the initial number of estimated bytes per record.
 	// We start with an estimation, we will update it as we consume.

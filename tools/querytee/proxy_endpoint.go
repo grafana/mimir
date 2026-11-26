@@ -95,6 +95,9 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, downstreamRes.err.Error(), http.StatusInternalServerError)
 	} else {
 		w.Header().Set("Content-Type", downstreamRes.contentType)
+		for _, v := range downstreamRes.serverTiming {
+			w.Header().Add(serverTimingHeader, v)
+		}
 		w.WriteHeader(downstreamRes.status)
 		if _, err := w.Write(downstreamRes.body); err != nil {
 			level.Warn(p.logger).Log("msg", "Unable to write response", "err", err)
@@ -240,6 +243,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 
 			elapsed, status, body, resp, err := b.ForwardRequest(ctx, req, bodyReader)
 			contentType := ""
+			var serverTiming []string
 
 			if p.slowResponseThreshold > 0 {
 				timingMtx.Lock()
@@ -256,15 +260,17 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 
 			if resp != nil {
 				contentType = resp.Header.Get("Content-Type")
+				serverTiming = resp.Header.Values(serverTimingHeader)
 			}
 
 			res := &backendResponse{
-				backend:     b,
-				status:      status,
-				contentType: contentType,
-				body:        body,
-				err:         err,
-				elapsedTime: elapsed,
+				backend:      b,
+				status:       status,
+				contentType:  contentType,
+				serverTiming: serverTiming,
+				body:         body,
+				err:          err,
+				elapsedTime:  elapsed,
 			}
 
 			// Log with a level based on the backend response.
@@ -409,13 +415,18 @@ func (p *ProxyEndpoint) compareResponses(expectedResponse, actualResponse *backe
 	return p.comparator.Compare(expectedResponse.body, actualResponse.body, queryEvaluationTime)
 }
 
+// serverTimingHeader carries the query stats the query-frontend reports (-query-frontend.query-stats-enabled).
+const serverTimingHeader = "Server-Timing"
+
 type backendResponse struct {
 	backend     ProxyBackendInterface
 	status      int
 	contentType string
-	body        []byte
-	err         error
-	elapsedTime time.Duration
+	// serverTiming is forwarded to the client so it gets the same query stats as without query-tee.
+	serverTiming []string
+	body         []byte
+	err          error
+	elapsedTime  time.Duration
 }
 
 func (r *backendResponse) succeeded() bool {
