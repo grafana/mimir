@@ -8,6 +8,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/encoding"
+	"google.golang.org/grpc/encoding/proto"
+	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -94,3 +97,63 @@ func TestNativeLookupErrors(t *testing.T) {
 	require.False(t, IsNativeLookupTooManySeries(ErrNativeMetadataDisabled))
 	require.False(t, IsNativeMetadataDisabled(status.Error(codes.FailedPrecondition, "something else")))
 }
+
+// The codec unmarshals the responses' labels without copying them, so they refer to the buffer the response came in.
+// gRPC releases its reference to the buffer as soon as the codec returns, and its pool hands the buffer to a later
+// message, so each response keeps a reference until FreeBuffer. Without one, a querier merged series whose labels
+// had become another message's, or zeros.
+func TestNativeLookupResponses_Unmarshal(t *testing.T) {
+	var series [][]mimirpb.LabelAdapter
+	// Enough series for gRPC to pool the buffer, which it doesn't for small ones.
+	for i := range 64 {
+		series = append(series, []mimirpb.LabelAdapter{{Name: "instance", Value: fmt.Sprintf("10.0.0.%d:9100", i)}, {Name: "job", Value: "node"}})
+	}
+	unmarshal := func(t *testing.T, sent any, received mimirpb.MessageWithBufferRef) {
+		codec := encoding.GetCodecV2(proto.Name)
+		data, err := codec.Marshal(sent)
+		require.NoError(t, err)
+		raw := data.Materialize()
+		data.Free()
+		require.False(t, mem.IsBelowBufferPoolingThreshold(len(raw)), "gRPC doesn't pool a buffer of %d bytes", len(raw))
+		buf := mem.NewBuffer(&raw, zeroingPool{})
+		require.NoError(t, codec.Unmarshal(mem.BufferSlice{buf}, received))
+		// gRPC's reference.
+		buf.Free()
+	}
+
+	t.Run("metric metadata", func(t *testing.T) {
+		sent := &NativeMetricMetadataResponse{}
+		for _, lbls := range series {
+			sent.Series = append(sent.Series, NativeMetricMetadataSeries{Labels: lbls})
+		}
+		var received NativeMetricMetadataResponse
+		unmarshal(t, sent, &received)
+		defer received.FreeBuffer()
+		for i, s := range received.Series {
+			require.Equal(t, series[i], s.Labels)
+		}
+	})
+	t.Run("resources", func(t *testing.T) {
+		sent := &NativeResourcesResponse{}
+		for _, lbls := range series {
+			sent.Series = append(sent.Series, NativeResourcesSeries{Labels: lbls})
+		}
+		var received NativeResourcesResponse
+		unmarshal(t, sent, &received)
+		defer received.FreeBuffer()
+		for i, s := range received.Series {
+			require.Equal(t, series[i], s.Labels)
+		}
+	})
+}
+
+// zeroingPool stands for gRPC's buffer pool, and zeroes a buffer it gets back, as a later message reusing it would
+// overwrite it.
+type zeroingPool struct{}
+
+func (zeroingPool) Get(length int) *[]byte {
+	b := make([]byte, length)
+	return &b
+}
+
+func (zeroingPool) Put(b *[]byte) { clear(*b) }

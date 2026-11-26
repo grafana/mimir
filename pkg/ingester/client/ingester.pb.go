@@ -2142,6 +2142,9 @@ func (m *NativeMetricMetadataRequest) GetLimit() int64 {
 // A NativeMetricMetadataResponse is a batch of the lookup's series, in label order. The first batch has the lookup's
 // limited, coverage_start_ms and series_visited, and is sent even without series.
 type NativeMetricMetadataResponse struct {
+	// Keep reference to buffer for unsafe references.
+	mimirpb.BufferHolder
+
 	Series []NativeMetricMetadataSeries `protobuf:"bytes,1,rep,name=series,proto3" json:"series"`
 	// Whether more series matched than the limit let through.
 	Limited bool `protobuf:"varint,2,opt,name=limited,proto3" json:"limited,omitempty"`
@@ -2432,6 +2435,9 @@ func (m *NativeResourcesRequest) GetGroupByTarget() bool {
 // A NativeResourcesResponse is a batch of the lookup's series, or targets, in label order. The first batch has the
 // lookup's limited, coverage_start_ms and series_visited, and is sent even without series.
 type NativeResourcesResponse struct {
+	// Keep reference to buffer for unsafe references.
+	mimirpb.BufferHolder
+
 	Series []NativeResourcesSeries `protobuf:"bytes,1,rep,name=series,proto3" json:"series"`
 	// Whether more series, or targets, matched than the limit let through.
 	Limited bool `protobuf:"varint,2,opt,name=limited,proto3" json:"limited,omitempty"`

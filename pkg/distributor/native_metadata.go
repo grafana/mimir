@@ -72,6 +72,8 @@ func (d *Distributor) NativeMetricMetadata(ctx context.Context, matcherSets [][]
 			for _, s := range msg.Series {
 				merge.addSeries(s.Labels, s.Versions, s.Truncated, s.Coalesced)
 			}
+			// The merge has copied the labels, the only fields that refer to the buffer.
+			msg.FreeBuffer()
 		}
 	})
 	if err != nil {
@@ -113,6 +115,8 @@ func (d *Distributor) NativeResources(ctx context.Context, matcherSets [][]*labe
 			for _, s := range msg.Series {
 				merge.addSeries(s.Labels, s.Versions, false, s.Coalesced)
 			}
+			// As for the metadata, the merge has copied the labels.
+			msg.FreeBuffer()
 		}
 	})
 	if err != nil {

@@ -1,5 +1,5 @@
 diff --git a/pkg/ingester/client/ingester.pb.go b/pkg/ingester/client/ingester.pb.go
-index bc368b90cb..9e2f495391 100644
+index 08d4ff0b1a..8f6eee0b61 100644
 --- a/pkg/ingester/client/ingester.pb.go
 +++ b/pkg/ingester/client/ingester.pb.go
 @@ -1005,9 +1005,6 @@ func (m *SearchResultBatch_Result) GetScore() float64 {
@@ -42,3 +42,23 @@ index bc368b90cb..9e2f495391 100644
  	Metric []*mimirpb.Metric `protobuf:"bytes,1,rep,name=metric,proto3" json:"metric,omitempty"`
  	// bucket_count is only used when the request type was NATIVE_HISTOGRAM_SERIES.
  	// bucket_count contains the native histogram active buckets count for each series in "metric" above.
+@@ -2142,9 +2130,6 @@ func (m *NativeMetricMetadataRequest) GetLimit() int64 {
+ // A NativeMetricMetadataResponse is a batch of the lookup's series, in label order. The first batch has the lookup's
+ // limited, coverage_start_ms and series_visited, and is sent even without series.
+ type NativeMetricMetadataResponse struct {
+-	// Keep reference to buffer for unsafe references.
+-	mimirpb.BufferHolder
+-
+ 	Series []NativeMetricMetadataSeries `protobuf:"bytes,1,rep,name=series,proto3" json:"series"`
+ 	// Whether more series matched than the limit let through.
+ 	Limited bool `protobuf:"varint,2,opt,name=limited,proto3" json:"limited,omitempty"`
+@@ -2435,9 +2420,6 @@ func (m *NativeResourcesRequest) GetGroupByTarget() bool {
+ // A NativeResourcesResponse is a batch of the lookup's series, or targets, in label order. The first batch has the
+ // lookup's limited, coverage_start_ms and series_visited, and is sent even without series.
+ type NativeResourcesResponse struct {
+-	// Keep reference to buffer for unsafe references.
+-	mimirpb.BufferHolder
+-
+ 	Series []NativeResourcesSeries `protobuf:"bytes,1,rep,name=series,proto3" json:"series"`
+ 	// Whether more series, or targets, matched than the limit let through.
+ 	Limited bool `protobuf:"varint,2,opt,name=limited,proto3" json:"limited,omitempty"`
