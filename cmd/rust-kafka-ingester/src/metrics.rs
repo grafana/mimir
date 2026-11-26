@@ -37,6 +37,20 @@ metric!(DISCARDED_SAMPLES: IntCounterVec = IntCounterVec::new(
     Opts::new("cortex_discarded_samples_total", "The total number of samples that were discarded."),
     &["reason", "user", "group"],
 ).unwrap());
+metric!(HEAD_QUERY_CANDIDATES: IntCounterVec = IntCounterVec::new(
+    Opts::new(
+        "rust_ingester_head_query_candidates_total",
+        "Head series that queries checked against their matchers, by how the candidates were chosen and whether they matched.",
+    ),
+    &["source", "matched"],
+).unwrap());
+metric!(HEAD_QUERY_SELECTIONS: IntCounterVec = IntCounterVec::new(
+    Opts::new(
+        "rust_ingester_head_query_selections_total",
+        "Head selections of queries, by how their candidates were chosen.",
+    ),
+    &["source"],
+).unwrap());
 metric!(DISCARDED_METADATA: IntCounterVec = IntCounterVec::new(
     Opts::new("cortex_discarded_metadata_total", "The total number of metadata that were discarded."),
     &["reason", "user"],
