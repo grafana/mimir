@@ -4,6 +4,7 @@ package ruler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"testing"
@@ -16,6 +17,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -151,6 +154,138 @@ func TestWrapQueryableWithReadConsistency(t *testing.T) {
 		assert.False(t, hasReadConsistency)
 	})
 }
+
+func TestWrapQueryableWithReadConsistency_AlertsForStateStreamOrder(t *testing.T) {
+	alertsForState := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, alertForStateMetricName)
+
+	newQuerier := func(stream *orderedStreamSeriesSet) storage.Querier {
+		querier := newQuerierMock()
+		querier.selectFunc = func(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+			return stream
+		}
+
+		wrappedQueryable := WrapQueryableWithReadConsistency(&storage.MockQueryable{MockQuerier: querier}, log.NewNopLogger())
+		wrappedQuerier, err := wrappedQueryable.Querier(math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		return wrappedQuerier
+	}
+
+	t.Run("series of ALERTS_FOR_STATE can be iterated in any order, like RestoreForState does", func(t *testing.T) {
+		stream := newOrderedStreamSeriesSet(
+			[]labels.Labels{labels.FromStrings("instance", "a"), labels.FromStrings("instance", "b"), labels.FromStrings("instance", "c")},
+			[][]float64{{1, 2}, {3, 4}, {5, 6}},
+		)
+
+		set := newQuerier(stream).Select(context.Background(), true, nil, alertsForState)
+
+		// Retain all the series first, then consume them in reverse order (the first series does not
+		// have a matching active alert, so it is never read before the others).
+		var series []storage.Series
+		for set.Next() {
+			series = append(series, set.At())
+		}
+		require.NoError(t, set.Err())
+		require.Len(t, series, 3)
+
+		expected := []float64{2, 4, 6}
+		for i := len(series) - 1; i >= 0; i-- {
+			it := series[i].Iterator(nil)
+			var last float64
+			for it.Next() == chunkenc.ValFloat {
+				_, last = it.At()
+			}
+			require.NoError(t, it.Err())
+			assert.Equal(t, expected[i], last)
+		}
+	})
+
+	t.Run("an error reading the stream is returned by the series set", func(t *testing.T) {
+		stream := newOrderedStreamSeriesSet(
+			[]labels.Labels{labels.FromStrings("instance", "a"), labels.FromStrings("instance", "b")},
+			[][]float64{{1}, {2}},
+		)
+		stream.failAt = 1
+
+		set := newQuerier(stream).Select(context.Background(), true, nil, alertsForState)
+		for set.Next() {
+		}
+		require.ErrorContains(t, set.Err(), "stream failed")
+	})
+
+	t.Run("other series are not buffered", func(t *testing.T) {
+		stream := newOrderedStreamSeriesSet(
+			[]labels.Labels{labels.FromStrings("instance", "a"), labels.FromStrings("instance", "b")},
+			[][]float64{{1}, {2}},
+		)
+
+		set := newQuerier(stream).Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "up"))
+		require.True(t, set.Next())
+		assert.Zero(t, stream.nextToRead, "the underlying stream must not be consumed")
+	})
+}
+
+// orderedStreamSeriesSet mimics the ingester chunks stream: the iterator of series N can
+// only be consumed once the iterators of all the previous series have been consumed.
+type orderedStreamSeriesSet struct {
+	lbls   []labels.Labels
+	values [][]float64
+	pos    int
+
+	nextToRead int
+	failAt     int // Index of the series whose consumption fails, or -1.
+}
+
+func newOrderedStreamSeriesSet(lbls []labels.Labels, values [][]float64) *orderedStreamSeriesSet {
+	return &orderedStreamSeriesSet{lbls: lbls, values: values, pos: -1, failAt: -1}
+}
+
+func (s *orderedStreamSeriesSet) Next() bool {
+	s.pos++
+	return s.pos < len(s.lbls)
+}
+
+func (s *orderedStreamSeriesSet) At() storage.Series {
+	return &orderedStreamSeries{set: s, idx: s.pos}
+}
+
+func (s *orderedStreamSeriesSet) Err() error                        { return nil }
+func (s *orderedStreamSeriesSet) Warnings() annotations.Annotations { return nil }
+
+type orderedStreamSeries struct {
+	set *orderedStreamSeriesSet
+	idx int
+}
+
+func (s *orderedStreamSeries) Labels() labels.Labels { return s.set.lbls[s.idx] }
+
+func (s *orderedStreamSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator {
+	var err error
+	switch {
+	case s.idx == s.set.failAt:
+		err = errors.New("stream failed")
+	case s.idx != s.set.nextToRead:
+		err = fmt.Errorf("attempted to read series at index %d from ingester chunks stream, but the stream has series with index %d", s.idx, s.set.nextToRead)
+	default:
+		s.set.nextToRead++
+	}
+	if err != nil {
+		return &errIterator{err: err}
+	}
+
+	floats := make([]promql.FPoint, 0, len(s.set.values[s.idx]))
+	for i, v := range s.set.values[s.idx] {
+		floats = append(floats, promql.FPoint{T: int64(i + 1), F: v})
+	}
+	return promql.NewStorageSeries(promql.Series{Metric: s.Labels(), Floats: floats}).Iterator(nil)
+}
+
+type errIterator struct {
+	chunkenc.Iterator
+	err error
+}
+
+func (e *errIterator) Next() chunkenc.ValueType { return chunkenc.ValNone }
+func (e *errIterator) Err() error               { return e.err }
 
 func TestIsQueryingAlertsForStateMetric(t *testing.T) {
 	assert.False(t, isQueryingAlertsForStateMetric(""))
