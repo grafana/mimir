@@ -51,17 +51,25 @@ type queueBroker struct {
 	idleSlotsByTenant map[string]int
 }
 
+// newQueueBroker creates a queueBroker.
+// With empty fixedPriorityQueueDimensions, the root algorithm maps worker IDs to the queue dimensions that exist.
+// Otherwise each worker ID gets a fixed priority queue dimension from fixedPriorityQueueDimensions.
 func newQueueBroker(
 	maxTenantQueueSize int,
 	forgetDelay time.Duration,
+	fixedPriorityQueueDimensions []string,
 ) *queueBroker {
 	qc := newConsumerConnections(forgetDelay)
 	tqas := newTenantConsumerAssignments()
 	var treeQueue tree.Tree
 	var err error
+	var rootAlgo tree.QueuingAlgorithm = tree.NewConsumerWorkerQueuePriorityAlgo()
+	if len(fixedPriorityQueueDimensions) > 0 {
+		rootAlgo = tree.NewConsumerWorkerFixedPriorityAlgo(fixedPriorityQueueDimensions)
+	}
 	algos := []tree.QueuingAlgorithm{
-		tree.NewConsumerWorkerQueuePriorityAlgo(), // root; algorithm selects query component based on worker ID
-		tqas.queuingAlgorithm,                     // query components; algorithm selects tenants
+		rootAlgo,              // root; algorithm selects query component based on worker ID
+		tqas.queuingAlgorithm, // query components; algorithm selects tenants
 	}
 	treeQueue, err = tree.NewTree(algos...)
 
