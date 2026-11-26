@@ -18335,7 +18335,7 @@
           "kind": "field",
           "name": "list_rules_encode_concurrency",
           "required": false,
-          "desc": "Maximum number of namespaces that the list rule groups API encodes at the same time. A value of 1 or less encodes all namespaces in one pass.",
+          "desc": "Maximum number of namespaces that one list rule groups API request encodes at the same time. Each request that runs at the same time uses its own workers. A value of 1 or less encodes all namespaces in one pass.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "ruler.list-rules-encode-concurrency",
