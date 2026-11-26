@@ -21,8 +21,8 @@ store-gateways, block-builders and compactors, and is responsible for the series
 flowchart LR
     subgraph WCk["Write compartments (Kafka clusters)"]
         direction TB
-        K0["kafka-wc-0<br/>&quot;ingest-rc-1&quot; topic, partition 0"]
-        K1["kafka-wc-1<br/>&quot;ingest-rc-1&quot; topic, partition 0"]
+        K0["kafka-wc-0<br/>#quot;ingest-rc-1#quot; topic, partition#nbsp;0"]
+        K1["kafka-wc-1<br/>#quot;ingest-rc-1#quot; topic, partition#nbsp;0"]
     end
 
     ING["ingester-0 of rc-1<br/>owns partition 0"]

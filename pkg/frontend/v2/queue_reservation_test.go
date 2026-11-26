@@ -217,6 +217,21 @@ func doGroupRequests(t *testing.T, f *Frontend, ctx context.Context, n int) []Re
 	return streams
 }
 
+// forceReservedSubRequest sends one sub-request and makes it use the queue reservation.
+//
+// The query-frontend skips the queue reservation for an evaluation with one group. So
+// forceReservedSubRequest first registers a second group that never sends a sub-request. In
+// production, a group does this when all its nodes finish before it sends. With a
+// maxParallelism of 1, the reservation has 1 slot, and the sub-request uses it.
+//
+// Tests use it to check one reservation with exactly one sub-request. A second real sub-request
+// would add its own ENQUEUE and enqueue outcome, and the tests would need to account for them.
+func forceReservedSubRequest(t *testing.T, f *Frontend, ctx context.Context) []ResponseStream {
+	_, err := querymiddleware.RemoteExecutionReservationScopeFromContext(ctx).Register()
+	require.NoError(t, err)
+	return doGroupRequests(t, f, ctx, 1)
+}
+
 func requireStreamsSucceed(t *testing.T, f *Frontend, s *reservationTestScheduler, streams []ResponseStream) {
 	ctx := user.InjectOrgID(t.Context(), reservationTestUserID)
 	for _, m := range s.messages(schedulerpb.ENQUEUE) {
@@ -365,12 +380,16 @@ func TestQueueReservation_SlotsAreTheSmallerOfParallelismAndSubRequests(t *testi
 }
 
 func TestQueueReservation_PlainPath(t *testing.T) {
+	// The disabled and unsupported cases send two sub-requests, because an evaluation with one
+	// group uses the plain path in every configuration.
 	tests := map[string]struct {
-		enabled   bool
-		supported bool
+		enabled     bool
+		supported   bool
+		subRequests int
 	}{
-		"queue reservation disabled on the frontend": {enabled: false, supported: true},
-		"scheduler without queue reservation":        {enabled: true, supported: false},
+		"queue reservation disabled on the frontend": {enabled: false, supported: true, subRequests: 2},
+		"scheduler without queue reservation":        {enabled: true, supported: false, subRequests: 2},
+		"evaluation with one group":                  {enabled: true, supported: true, subRequests: 1},
 	}
 
 	for name, tc := range tests {
@@ -378,16 +397,18 @@ func TestQueueReservation_PlainPath(t *testing.T) {
 			s := newReservationTestScheduler(t, tc.supported, nil)
 			f := setupReservationFrontend(t, nil, func(cfg *Config) { cfg.QueueReservationEnabled = tc.enabled }, s)
 
-			ctx, scope := newReservationTestContext(t, 1)
-			streams := doGroupRequests(t, f, ctx, 1)
-			test.Poll(t, time.Second, 1, func() interface{} {
+			ctx, scope := newReservationTestContext(t, tc.subRequests)
+			streams := doGroupRequests(t, f, ctx, tc.subRequests)
+			test.Poll(t, time.Second, tc.subRequests, func() interface{} {
 				return len(s.messages(schedulerpb.ENQUEUE))
 			})
 			requireStreamsSucceed(t, f, s, streams)
 			scope.Close(false)
 
 			require.Empty(t, s.messages(schedulerpb.RESERVE))
-			require.Empty(t, s.messages(schedulerpb.ENQUEUE)[0].ReservationID)
+			for _, m := range s.messages(schedulerpb.ENQUEUE) {
+				require.Empty(t, m.ReservationID)
+			}
 		})
 	}
 }
@@ -497,7 +518,7 @@ func TestQueueReservation_BrokenStreamAbortsLostReservation(t *testing.T) {
 
 	ctx, scope := newReservationTestContext(t, 1)
 	defer scope.Close(false)
-	requireStreamError(t, apierror.New(apierror.TypeInternal, "failed to enqueue request"), doGroupRequests(t, f, ctx, 1))
+	requireStreamError(t, apierror.New(apierror.TypeInternal, "failed to enqueue request"), forceReservedSubRequest(t, f, ctx))
 	verifyEnqueueRequestsMetric(t, reg, map[string]int{"retries_exhausted": 1})
 
 	// The frontend tries the RESERVE once per attempt, each time with a new reservation ID. The
@@ -552,7 +573,7 @@ func TestQueueReservation_RetriesReserve(t *testing.T) {
 
 			ctx, scope := newReservationTestContext(t, 1)
 			defer scope.Close(false)
-			doGroupRequests(t, f, ctx, 1)
+			forceReservedSubRequest(t, f, ctx)
 			test.Poll(t, 5*time.Second, 1, func() interface{} {
 				return len(s.messages(schedulerpb.ENQUEUE))
 			})
@@ -592,7 +613,7 @@ func TestQueueReservation_TooManyRequestsRetriesOnAnotherScheduler(t *testing.T)
 
 	ctx, scope := newReservationTestContext(t, 1)
 	defer scope.Close(false)
-	doGroupRequests(t, f, ctx, 1)
+	forceReservedSubRequest(t, f, ctx)
 	test.Poll(t, 5*time.Second, 1, func() interface{} {
 		return totalMessages(schedulerpb.ENQUEUE, first, second)
 	})
@@ -640,6 +661,32 @@ func TestQueueReservation_TooManyRequestsOnEverySchedulerFails(t *testing.T) {
 	require.Equal(t, float64(len(schedulers)-1), testutil.ToFloat64(f.queueReservationRetries))
 }
 
+func TestQueueReservation_OneGroupTooManyRequestsDoesNotRetryOnAnotherScheduler(t *testing.T) {
+	// Every scheduler rejects the ENQUEUE, because the worker of any scheduler can take a plain
+	// request.
+	reject := func(_ *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type == schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+		}
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	}
+	first := newReservationTestScheduler(t, true, nil)
+	first.replyFunc = reject
+	second := newReservationTestScheduler(t, true, nil)
+	second.replyFunc = reject
+	reg := prometheus.NewPedanticRegistry()
+	f := setupReservationFrontend(t, reg, nil, first, second)
+
+	ctx, scope := newReservationTestContext(t, 1)
+	defer scope.Close(false)
+	requireStreamError(t, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests"), doGroupRequests(t, f, ctx, 1))
+
+	require.Equal(t, 1, totalMessages(schedulerpb.ENQUEUE, first, second), "the plain path must not retry a rejected ENQUEUE")
+	require.Zero(t, totalMessages(schedulerpb.RESERVE, first, second))
+	verifyEnqueueRequestsMetric(t, reg, map[string]int{"too_many_requests": 1})
+	require.Zero(t, testutil.ToFloat64(f.queueReservationRetries))
+}
+
 func TestQueueReservation_TooManyRequestsWinsOverLaterFailures(t *testing.T) {
 	var reserves atomic.Int64
 	reply := func(*schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
@@ -657,7 +704,7 @@ func TestQueueReservation_TooManyRequestsWinsOverLaterFailures(t *testing.T) {
 
 	ctx, scope := newReservationTestContext(t, 1)
 	defer scope.Close(false)
-	requireStreamError(t, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests"), doGroupRequests(t, f, ctx, 1))
+	requireStreamError(t, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests"), forceReservedSubRequest(t, f, ctx))
 	verifyEnqueueRequestsMetric(t, reg, map[string]int{"too_many_requests": 1})
 
 	require.Len(t, first.messages(schedulerpb.RESERVE), 1)
@@ -690,7 +737,7 @@ func TestQueueReservation_ErrorAfterTooManyRequestsRetriesOnAnotherScheduler(t *
 
 	ctx, scope := newReservationTestContext(t, 1)
 	defer scope.Close(false)
-	doGroupRequests(t, f, ctx, 1)
+	forceReservedSubRequest(t, f, ctx)
 	test.Poll(t, 5*time.Second, 1, func() interface{} {
 		return totalMessages(schedulerpb.ENQUEUE, schedulers...)
 	})
@@ -724,7 +771,7 @@ func TestQueueReservation_ErrorAfterTooManyRequestsFailsWhenNoOtherSchedulerRema
 
 	ctx, scope := newReservationTestContext(t, 1)
 	defer scope.Close(false)
-	requireStreamError(t, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests"), doGroupRequests(t, f, ctx, 1))
+	requireStreamError(t, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests"), forceReservedSubRequest(t, f, ctx))
 	verifyEnqueueRequestsMetric(t, reg, map[string]int{"too_many_requests": 1})
 
 	for i, s := range []*reservationTestScheduler{first, second} {
@@ -1140,7 +1187,7 @@ func TestQueueReservation_ReservationNotFoundCountsAsTimedOut(t *testing.T) {
 
 	ctx, scope := newReservationTestContext(t, 1)
 	defer scope.Close(false)
-	requireStreamError(t, apierror.New(apierror.TypeInternal, "no reservation is open with this ID"), doGroupRequests(t, f, ctx, 1))
+	requireStreamError(t, apierror.New(apierror.TypeInternal, "no reservation is open with this ID"), forceReservedSubRequest(t, f, ctx))
 	verifyEnqueueRequestsMetric(t, reg, map[string]int{"reservation_timed_out": 1})
 }
 
@@ -1160,7 +1207,7 @@ func TestQueueReservation_BusySchedulerDoesNotTakeReservation(t *testing.T) {
 	for i := 1; i <= 2; i++ {
 		ctx, scope := newReservationTestContext(t, 1)
 		defer scope.Close(false)
-		doGroupRequests(t, f, ctx, 1)
+		forceReservedSubRequest(t, f, ctx)
 		test.Poll(t, time.Second, i, func() interface{} {
 			return totalMessages(schedulerpb.RESERVE, first, second)
 		})
@@ -1313,9 +1360,22 @@ func TestQueueReservation_ClosesGrantAfterTheEvaluationEnded(t *testing.T) {
 			ctx, scope := newReservationTestContext(t, 1)
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
-			streams := doGroupRequests(t, f, ctx, 1)
+			streams := forceReservedSubRequest(t, f, ctx)
 			test.Poll(t, time.Second, 1, func() interface{} {
 				return len(s.messages(schedulerpb.RESERVE))
+			})
+			// A sub-request that the evaluation ends before it gets a ParallelismLimiter permit fails
+			// without an enqueue outcome. Wait until the sub-request holds the only permit, so that it
+			// waits for the reservation when the evaluation ends.
+			limiter := querymiddleware.ParallelismLimiterFromContext(ctx)
+			test.Poll(t, time.Second, true, func() interface{} {
+				probeCtx, cancelProbe := context.WithTimeout(t.Context(), 100*time.Millisecond)
+				defer cancelProbe()
+				if err := limiter.BeginRequest(probeCtx); err != nil {
+					return true
+				}
+				limiter.RequestFinished()
+				return false
 			})
 
 			tc.endEvaluation(cancel, scope, streams)

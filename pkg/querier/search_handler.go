@@ -158,11 +158,15 @@ type searchTrailerEnvelope struct {
 }
 
 // searchErrorEnvelope is the final NDJSON line when iteration fails after at
-// least one batch has been flushed. Mirrors Prometheus's error trailer shape.
+// least one batch has been flushed. It has the fields of the Prometheus error
+// trailer, and also Warnings, which Prometheus does not have.
 type searchErrorEnvelope struct {
 	Status    string `json:"status"`
 	ErrorType string `json:"errorType"`
 	Error     string `json:"error"`
+	// Warnings holds the metadata default time range warning when iteration fails after a batch, because the client
+	// already has results from that range.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // searchRequest holds the parsed, validated query parameters for one search
@@ -179,9 +183,11 @@ type searchRequest struct {
 	// which allows for an easy determination of has_more.
 	// limit==0 means "no limit" (Prometheus convention) and hints.Limit
 	// is left at 0 to pass that through.
-	limit        int
-	startMs      int64
-	endMs        int64
+	limit   int
+	startMs int64
+	endMs   int64
+	// rangeWarning is set when the per-tenant metadata default time range replaced a missing start or end.
+	rangeWarning error
 	batchSize    int
 	includeScore bool
 	// includeMetadata specifies whether the response should include per-metric
@@ -193,9 +199,10 @@ type searchRequest struct {
 
 // parseSearchRequest reads the HTTP request and builds a searchRequest.
 // requireLabelName is true for the label-values endpoint where the `label`
-// parameter is mandatory. Returns a wrapped error suitable for surfacing as
-// HTTP 400.
-func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest, error) {
+// parameter is mandatory. defaultTimeRange is the per-tenant metadata default
+// time range; 0 keeps the one hour default. Returns a wrapped error suitable
+// for surfacing as HTTP 400.
+func parseSearchRequest(r *http.Request, requireLabelName bool, defaultTimeRange time.Duration) (*searchRequest, error) {
 	if err := r.ParseForm(); err != nil {
 		return nil, fmt.Errorf("parse form: %w", err)
 	}
@@ -293,20 +300,29 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 	// Time range. Defaults match Prometheus PR #18573: start defaults to one
 	// hour before now, end defaults to now. Keeps the default window narrow
 	// enough that searches over an unspecified range stay cheap.
+	// A non-zero defaultTimeRange (-querier.metadata-default-time-range)
+	// replaces these defaults.
 	now := model.Now()
 	startMs := int64(now.Add(-time.Hour))
-	if v := q.Get("start"); v != "" {
-		startMs, err = util.ParseTime(v)
+	hasStart := q.Get("start") != ""
+	if hasStart {
+		startMs, err = util.ParseTime(q.Get("start"))
 		if err != nil {
 			return nil, fmt.Errorf("invalid start: %w", err)
 		}
 	}
 	endMs := int64(now)
-	if v := q.Get("end"); v != "" {
-		endMs, err = util.ParseTime(v)
+	hasEnd := q.Get("end") != ""
+	if hasEnd {
+		endMs, err = util.ParseTime(q.Get("end"))
 		if err != nil {
 			return nil, fmt.Errorf("invalid end: %w", err)
 		}
+	}
+	var rangeWarning error
+	if defaultTimeRange > 0 && (!hasStart || !hasEnd) {
+		startMs, endMs = applyMetadataDefaultTimeRange(startMs, endMs, hasStart, hasEnd, int64(now), defaultTimeRange)
+		rangeWarning = newMetadataDefaultTimeRangeWarning(startMs, endMs)
 	}
 	// end == start is permitted (zero-duration snapshot); only strictly
 	// inverted ranges are rejected, mirroring Prometheus PR #18573.
@@ -353,6 +369,7 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		limit:           limit,
 		startMs:         startMs,
 		endMs:           endMs,
+		rangeWarning:    rangeWarning,
 		batchSize:       batchSize,
 		includeScore:    includeScore,
 		includeMetadata: includeMetadata,
@@ -436,13 +453,13 @@ func dispatchSearchOverMatcherSets(matcherSets [][]*labels.Matcher, hints *stora
 }
 
 // SearchLabelNamesHandler returns the handler for GET/POST /api/v1/search/label_names.
-func SearchLabelNamesHandler(queryable storage.Queryable, querierCfg Config, _ *validation.Overrides) http.Handler {
+func SearchLabelNamesHandler(queryable storage.Queryable, querierCfg Config, limits *validation.Overrides) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !querierCfg.ExperimentalSearchAPIEnabled {
 			writeSearchFeatureDisabled(w)
 			return
 		}
-		req, err := parseSearchRequest(r, false)
+		req, err := parseSearchRequest(r, false, MetadataDefaultTimeRange(r.Context(), limits))
 		if err != nil {
 			writeSearchBadRequest(w, err)
 			return
@@ -474,13 +491,13 @@ func SearchLabelNamesHandler(queryable storage.Queryable, querierCfg Config, _ *
 }
 
 // SearchLabelValuesHandler returns the handler for GET/POST /api/v1/search/label_values.
-func SearchLabelValuesHandler(queryable storage.Queryable, querierCfg Config, _ *validation.Overrides) http.Handler {
+func SearchLabelValuesHandler(queryable storage.Queryable, querierCfg Config, limits *validation.Overrides) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !querierCfg.ExperimentalSearchAPIEnabled {
 			writeSearchFeatureDisabled(w)
 			return
 		}
-		req, err := parseSearchRequest(r, true)
+		req, err := parseSearchRequest(r, true, MetadataDefaultTimeRange(r.Context(), limits))
 		if err != nil {
 			writeSearchBadRequest(w, err)
 			return
@@ -512,14 +529,14 @@ func SearchLabelValuesHandler(queryable storage.Queryable, querierCfg Config, _ 
 }
 
 // SearchMetricNamesHandler returns the handler for /api/v1/search/metric_names.
-func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ *validation.Overrides, logger log.Logger) http.Handler {
+func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, limits *validation.Overrides, logger log.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !querierCfg.ExperimentalSearchAPIEnabled {
 			writeSearchFeatureDisabled(w)
 			return
 		}
 
-		req, err := parseSearchRequest(r, false)
+		req, err := parseSearchRequest(r, false, MetadataDefaultTimeRange(r.Context(), limits))
 		if err != nil {
 			writeSearchBadRequest(w, err)
 			return
@@ -744,11 +761,15 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 	// Prometheus' respondPreStreamSearchError.
 	if err := rs.Err(); err != nil {
 		if flushedAny {
-			_ = enc.Encode(searchErrorEnvelope{
+			errEnv := searchErrorEnvelope{
 				Status:    "error",
 				ErrorType: searchErrorType(err),
 				Error:     err.Error(),
-			})
+			}
+			if req.rangeWarning != nil {
+				errEnv.Warnings = []string{req.rangeWarning.Error()}
+			}
+			_ = enc.Encode(errEnv)
 			if flusher != nil {
 				flusher.Flush()
 			}
@@ -766,6 +787,9 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 		w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
 	}
 	trailer := searchTrailerEnvelope{Status: "success", Returned: emitted}
+	if req.rangeWarning != nil {
+		trailer.Warnings = append(trailer.Warnings, req.rangeWarning.Error())
+	}
 	// clampEnforcedMin tracks the smallest post-clamp cap observed across
 	// per-source warnings. -1 means "no clamp fired".
 	clampEnforcedMin := -1

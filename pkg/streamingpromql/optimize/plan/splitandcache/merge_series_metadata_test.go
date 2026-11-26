@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
@@ -135,29 +136,70 @@ func TestMergeSeriesMetadata_SingleSourceFastPath(t *testing.T) {
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
-func TestMergeSeriesMetadata_ConflictingDropNameValuesForSameSeries(t *testing.T) {
-	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-
-	source1 := &operators.TestOperator{
-		Series:                   []labels.Labels{labelsForIdx(0)},
-		DropName:                 []bool{true},
-		MemoryConsumptionTracker: memoryConsumptionTracker,
+func TestMergeSeriesMetadata_DifferentDropNameValuesForSameSeries(t *testing.T) {
+	testCases := map[string]struct {
+		series        labels.Labels
+		dropName      []bool
+		expectedError string
+	}{
+		"series with metric name, first source drops name": {
+			series:        labels.FromStrings(model.MetricNameLabel, "foo", "idx", "0"),
+			dropName:      []bool{true, false},
+			expectedError: `series with labels {__name__="foo", idx="0"} has conflicting drop name values in different ranges / extents`,
+		},
+		"series with metric name, second source drops name": {
+			series:        labels.FromStrings(model.MetricNameLabel, "foo", "idx", "0"),
+			dropName:      []bool{false, true},
+			expectedError: `series with labels {__name__="foo", idx="0"} has conflicting drop name values in different ranges / extents`,
+		},
+		"series without metric name, first source drops name": {
+			series:   labelsForIdx(0),
+			dropName: []bool{true, false},
+		},
+		"series without metric name, second source drops name": {
+			series:   labelsForIdx(0),
+			dropName: []bool{false, true},
+		},
 	}
 
-	source2 := &operators.TestOperator{
-		Series:                   []labels.Labels{labelsForIdx(0)},
-		DropName:                 []bool{false},
-		MemoryConsumptionTracker: memoryConsumptionTracker,
-	}
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	sources := []*splitRange{
-		newSplitRange(source1, memoryConsumptionTracker),
-		newSplitRange(source2, memoryConsumptionTracker),
-	}
+			source1 := &operators.TestOperator{
+				Series:                   []labels.Labels{testCase.series},
+				DropName:                 []bool{testCase.dropName[0]},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
 
-	_, _, err := mergeSeriesMetadataFromMultipleSources(ctx, sources, nil, memoryConsumptionTracker)
-	require.EqualError(t, err, `series with labels {idx="0"} has conflicting drop name values in different ranges / extents`)
+			source2 := &operators.TestOperator{
+				Series:                   []labels.Labels{testCase.series},
+				DropName:                 []bool{testCase.dropName[1]},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+
+			sources := []*splitRange{
+				newSplitRange(source1, memoryConsumptionTracker),
+				newSplitRange(source2, memoryConsumptionTracker),
+			}
+
+			series, outputSeries, err := mergeSeriesMetadataFromMultipleSources(ctx, sources, nil, memoryConsumptionTracker)
+			if testCase.expectedError != "" {
+				require.EqualError(t, err, testCase.expectedError)
+				return
+			}
+
+			require.NoError(t, err)
+			// The merged series keeps the DropName value of the first source. The value has no effect on a series without
+			// __name__, so either value is correct.
+			require.Equal(t, []types.SeriesMetadata{{Labels: testCase.series, DropName: testCase.dropName[0]}}, series, "expected sources to be merged into one series")
+			require.Equal(t, []splitOrCacheOutputSeries{{sourceSeriesIndices: []int{0, 0}}}, outputSeries)
+
+			releaseMergeSeriesMetadata(&series, outputSeries, memoryConsumptionTracker)
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+		})
+	}
 }
 
 func TestMergeSeriesMetadata_PassesMatchersToSources(t *testing.T) {

@@ -4,16 +4,22 @@ package querymiddleware
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	mimirtest "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestLabelsQueryCache_RoundTrip(t *testing.T) {
@@ -31,6 +37,241 @@ func TestLabelsQueryCache_RoundTrip(t *testing.T) {
 			hashedCacheKey: labelValuesQueryCachePrefix + hashCacheKey("user-1:1688515200000\x001688544000000\x00test\x00{job!=\"test_2\"},{job=\"test_1\"}"),
 		},
 	})
+}
+
+func TestLabelsQueryCache_MetadataDefaultTimeRange(t *testing.T) {
+	const userID = "user-1"
+
+	type request struct {
+		method string
+		path   string
+		params url.Values
+	}
+	newRequest := func(t *testing.T, r request) *http.Request {
+		var (
+			req *http.Request
+			err error
+		)
+		switch r.method {
+		case http.MethodGet:
+			req, err = http.NewRequest(r.method, r.path+"?"+r.params.Encode(), nil)
+		case http.MethodPost:
+			req, err = http.NewRequest(r.method, r.path, strings.NewReader(r.params.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		default:
+			t.Fatalf("unsupported HTTP method %q", r.method)
+		}
+		require.NoError(t, err)
+		return req.WithContext(user.InjectOrgID(t.Context(), userID))
+	}
+
+	const (
+		labelNamesPath  = "/prometheus/api/v1/labels"
+		labelValuesPath = "/prometheus/api/v1/label/job/values"
+	)
+	var (
+		noStartAndNoEnd = url.Values{}
+		onlyStart       = url.Values{"start": []string{"2023-07-05T01:00:00Z"}}
+		onlyEnd         = url.Values{"end": []string{"2023-07-05T08:00:00Z"}}
+		startAndEnd     = url.Values{"start": []string{"2023-07-05T01:00:00Z"}, "end": []string{"2023-07-05T08:00:00Z"}}
+	)
+
+	tests := map[string]struct {
+		metadataDefaultTimeRange time.Duration
+		requests                 []request
+		expectedDownstreamCalls  int
+		expectedCached           bool
+	}{
+		"limit disabled, no start and no end": {
+			requests: []request{
+				{method: http.MethodGet, path: labelNamesPath, params: noStartAndNoEnd},
+				{method: http.MethodGet, path: labelNamesPath, params: noStartAndNoEnd},
+			},
+			expectedDownstreamCalls: 1,
+			expectedCached:          true,
+		},
+		"limit enabled, start and end": {
+			metadataDefaultTimeRange: time.Hour,
+			requests: []request{
+				{method: http.MethodGet, path: labelValuesPath, params: startAndEnd},
+				{method: http.MethodPost, path: labelValuesPath, params: startAndEnd},
+			},
+			expectedDownstreamCalls: 1,
+			expectedCached:          true,
+		},
+		"limit enabled, no start and no end": {
+			metadataDefaultTimeRange: time.Hour,
+			requests: []request{
+				{method: http.MethodGet, path: labelNamesPath, params: noStartAndNoEnd},
+				{method: http.MethodGet, path: labelNamesPath, params: noStartAndNoEnd},
+			},
+			expectedDownstreamCalls: 2,
+		},
+		"limit enabled, only start": {
+			metadataDefaultTimeRange: time.Hour,
+			requests: []request{
+				{method: http.MethodGet, path: labelValuesPath, params: onlyStart},
+				{method: http.MethodGet, path: labelValuesPath, params: onlyStart},
+			},
+			expectedDownstreamCalls: 2,
+		},
+		"limit enabled, only end in a POST form": {
+			metadataDefaultTimeRange: time.Hour,
+			requests: []request{
+				{method: http.MethodPost, path: labelNamesPath, params: onlyEnd},
+				{method: http.MethodPost, path: labelNamesPath, params: onlyEnd},
+			},
+			expectedDownstreamCalls: 2,
+		},
+		// The next two cases send the same two requests with only end.
+		// The cache key keeps start at MinTime and rounds both ends up to the 04:00 block boundary,
+		// so both requests have the same key.
+		// Without the limit, the querier queries from MinTime to each end, and both ranges touch the same blocks.
+		// With the limit, the querier queries 01:30 to 02:30 and 02:30 to 03:30, which touch different blocks.
+		"limit disabled, only end at two times that round to the same block boundary": {
+			requests: []request{
+				{method: http.MethodGet, path: labelValuesPath, params: url.Values{"end": []string{"2023-07-05T02:30:00Z"}}},
+				{method: http.MethodGet, path: labelValuesPath, params: url.Values{"end": []string{"2023-07-05T03:30:00Z"}}},
+			},
+			expectedDownstreamCalls: 1,
+			expectedCached:          true,
+		},
+		"limit enabled, only end at two times that round to the same block boundary": {
+			metadataDefaultTimeRange: time.Hour,
+			requests: []request{
+				{method: http.MethodGet, path: labelValuesPath, params: url.Values{"end": []string{"2023-07-05T02:30:00Z"}}},
+				{method: http.MethodGet, path: labelValuesPath, params: url.Values{"end": []string{"2023-07-05T03:30:00Z"}}},
+			},
+			expectedDownstreamCalls: 2,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			cacheBackend := cache.NewInstrumentedMockCache()
+			downstreamCalls := 0
+			downstream := RoundTripFunc(func(*http.Request) (*http.Response, error) {
+				downstreamCalls++
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"status":"success","data":[]}`)),
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+				}, nil
+			})
+			limits := multiTenantMockLimits{byTenant: map[string]mockLimits{
+				userID: {resultsCacheTTLForLabelsQuery: time.Minute, metadataDefaultTimeRange: tc.metadataDefaultTimeRange},
+			}}
+			generator := DefaultCacheKeyGenerator{codec: newTestCodec()}
+			rt := newLabelsQueryCacheRoundTripper(cacheBackend, generator, limits, downstream, mimirtest.NewTestingLogger(t), prometheus.NewPedanticRegistry())
+
+			for _, r := range tc.requests {
+				res, err := rt.RoundTrip(newRequest(t, r))
+				require.NoError(t, err)
+				require.Equal(t, http.StatusOK, res.StatusCode)
+				_, err = io.ReadAll(res.Body)
+				require.NoError(t, err)
+			}
+
+			assert.Equal(t, tc.expectedDownstreamCalls, downstreamCalls)
+			if !tc.expectedCached {
+				assert.Empty(t, cacheBackend.GetItems())
+				return
+			}
+			// The limit does not change the cache key of a request that the cache stores.
+			key, err := generator.LabelValues(newRequest(t, tc.requests[0]))
+			require.NoError(t, err)
+			_, hashedCacheKey := generateGenericQueryRequestCacheKey([]string{userID}, key)
+			items := cacheBackend.GetItems()
+			assert.Len(t, items, 1)
+			assert.Contains(t, items, hashedCacheKey)
+		})
+	}
+}
+
+func TestLabelsQueryCache_ExplicitZeroStartOrEnd(t *testing.T) {
+	const userID = "user-1"
+
+	tests := map[string]struct {
+		matcher                 string
+		requests                []url.Values
+		expectedDownstreamCalls int
+	}{
+		"end of 0, then no end": {
+			matcher:                 `{job="test"}`,
+			requests:                []url.Values{{"start": {"-3600"}, "end": {"0"}}, {"start": {"-3600"}}},
+			expectedDownstreamCalls: 2,
+		},
+		"no end, then end of 0": {
+			matcher:                 `{job="test"}`,
+			requests:                []url.Values{{"start": {"-3600"}}, {"start": {"-3600"}, "end": {"0"}}},
+			expectedDownstreamCalls: 2,
+		},
+		"end of 0, then no end, with a matcher that the optimizer removes": {
+			matcher:                 `{__name__!="", job="test"}`,
+			requests:                []url.Values{{"start": {"-3600"}, "end": {"0"}}, {"start": {"-3600"}}},
+			expectedDownstreamCalls: 2,
+		},
+		"start of 0 in RFC3339, then no start": {
+			matcher:                 `{job="test"}`,
+			requests:                []url.Values{{"start": {"1970-01-01T00:00:00Z"}, "end": {"3600"}}, {"end": {"3600"}}},
+			expectedDownstreamCalls: 2,
+		},
+		"same request twice, with a matcher that the optimizer removes": {
+			matcher:                 `{__name__!="", job="test"}`,
+			requests:                []url.Values{{"start": {"-3600"}}, {"start": {"-3600"}}},
+			expectedDownstreamCalls: 1,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				t.Run(method, func(t *testing.T) {
+					downstreamCalls := 0
+					downstream := RoundTripFunc(func(*http.Request) (*http.Response, error) {
+						downstreamCalls++
+						return &http.Response{
+							StatusCode: http.StatusOK,
+							Body:       io.NopCloser(strings.NewReader(`{"status":"success","data":[]}`)),
+							Header:     http.Header{"Content-Type": []string{"application/json"}},
+						}, nil
+					})
+					limits := multiTenantMockLimits{byTenant: map[string]mockLimits{
+						userID: {resultsCacheTTLForLabelsQuery: time.Minute, labelsQueryOptimizerEnabled: true},
+					}}
+					codec := newTestCodec()
+					logger := mimirtest.NewTestingLogger(t)
+					// The optimizer runs before the cache, in the same order as the query-frontend.
+					rt := newLabelsQueryCacheRoundTripper(cache.NewInstrumentedMockCache(), DefaultCacheKeyGenerator{codec: codec}, limits, downstream, logger, prometheus.NewPedanticRegistry())
+					rt = newLabelsQueryOptimizer(codec, limits, rt, logger, prometheus.NewPedanticRegistry())
+
+					for _, params := range tc.requests {
+						params["match[]"] = []string{tc.matcher}
+						var (
+							req *http.Request
+							err error
+						)
+						switch method {
+						case http.MethodGet:
+							req, err = http.NewRequest(method, "/prometheus/api/v1/labels?"+params.Encode(), nil)
+							require.NoError(t, err)
+						case http.MethodPost:
+							req, err = http.NewRequest(method, "/prometheus/api/v1/labels", strings.NewReader(params.Encode()))
+							require.NoError(t, err)
+							req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+						}
+						res, err := rt.RoundTrip(req.WithContext(user.InjectOrgID(t.Context(), userID)))
+						require.NoError(t, err)
+						require.Equal(t, http.StatusOK, res.StatusCode)
+						_, err = io.ReadAll(res.Body)
+						require.NoError(t, err)
+					}
+
+					assert.Equal(t, tc.expectedDownstreamCalls, downstreamCalls)
+				})
+			}
+		})
+	}
 }
 
 func TestDefaultCacheKeyGenerator_LabelValuesCacheKey(t *testing.T) {

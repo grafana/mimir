@@ -2727,6 +2727,7 @@ func TestMQEQueueReservation_OneReservationPerEvaluation(t *testing.T) {
 		instant        bool
 		spinOffEnabled bool
 		querierError   bool
+		oneGroup       bool
 	}{
 		"sharding and splitting": {
 			expr: "sum(foo)",
@@ -2739,6 +2740,11 @@ func TestMQEQueueReservation_OneReservationPerEvaluation(t *testing.T) {
 		"evaluation fails": {
 			expr:         "sum(foo)",
 			querierError: true,
+		},
+		"one group": {
+			expr:     "foo",
+			instant:  true,
+			oneGroup: true,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -2804,6 +2810,17 @@ func TestMQEQueueReservation_OneReservationPerEvaluation(t *testing.T) {
 
 			handler := querymiddleware.NewEngineQueryRequestRoundTripperHandler(engine, codec, true, logger)
 			_, err = handler.Do(ctx, request)
+			if testCase.oneGroup {
+				require.NoError(t, err)
+				enqueues := scheduler.messages(schedulerpb.ENQUEUE)
+				require.Len(t, enqueues, 1)
+				require.Empty(t, enqueues[0].ReservationID, "an evaluation with one group must use the plain path")
+				require.Empty(t, scheduler.messages(schedulerpb.RESERVE))
+				require.Empty(t, scheduler.completes())
+				require.Empty(t, scheduler.aborts())
+				return
+			}
+
 			reserves := scheduler.messages(schedulerpb.RESERVE)
 			require.Len(t, reserves, 1, "one MQE evaluation must send one reservation")
 			for _, m := range scheduler.messages(schedulerpb.ENQUEUE) {

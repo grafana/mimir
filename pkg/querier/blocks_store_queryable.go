@@ -326,16 +326,15 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		//
 		// With compartments each compartment reads a different bucket but the cache could be shared, so its
 		// keys must be scoped by a compartment-specific ID to avoid collisions and subtle bugs.
-		cacheBucketID := ""
+		cacheBucketID := compartmentsCfg.BlocksCacheBucketID(idx)
 
 		if compartmentsCfg.Enabled {
 			// Each read compartment has its own bucket and store-gateway ring within this single process.
 			// The finder's metrics are scoped by bucket, so all compartments share one "component"; the ring
 			// name/key have no such scope and are suffixed instead.
-			bucketCfg = storageCfg.Bucket.ReadCompartmentConfig(idx)
-			cacheBucketID = compartments.WithReadCompartmentSuffix("blocks", idx)
-			ringName = compartments.WithReadCompartmentSuffix(ringName, idx)
-			ringKey = compartments.WithReadCompartmentSuffix(ringKey, idx)
+			bucketCfg = storageCfg.ReadCompartmentBucketConfig(idx)
+			ringName = compartmentsCfg.ReadCompartmentName(ringName, idx)
+			ringKey = compartmentsCfg.ReadCompartmentName(ringKey, idx)
 		}
 
 		finder, err := newBlocksStoreQueryableFinder(cacheBucketID, metadataCache, bucketCfg, storageCfg, limits, logger, reg)

@@ -421,12 +421,12 @@ func (a *API) RegisterIngesterRing(r http.Handler) {
 // RegisterIngesterPartitionRings registers the ring UI page(s) for the ingester partition ring(s).
 // When compartments are disabled it registers a single page. When enabled it registers an index page
 // linking to one page per read compartment.
-func (a *API) RegisterIngesterPartitionRings(compartmentsEnabled bool, partitionRings *ring.PartitionRingWatchers, ringKey string, kvClient kv.Client) {
+func (a *API) RegisterIngesterPartitionRings(compartmentsCfg compartments.Config, partitionRings *ring.PartitionRingWatchers, ringKey string, kvClient kv.Client) {
 	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
 		{Desc: "Partition ring status", Path: "ingester/partition-ring"},
 	})
 
-	if !compartmentsEnabled {
+	if !compartmentsCfg.Enabled {
 		handler := ring.NewPartitionRingPageHandler(partitionRings.Watcher(0), ring.NewPartitionRingEditor(ringKey, kvClient))
 		a.RegisterRoute("/ingester/partition-ring", handler, false, true, "GET", "POST")
 		return
@@ -436,7 +436,7 @@ func (a *API) RegisterIngesterPartitionRings(compartmentsEnabled bool, partition
 	a.RegisterRoute("/ingester/partition-ring", index, false, true, "GET")
 
 	for compartmentID, partitionRing := range partitionRings.All() {
-		key := compartments.WithReadCompartmentSuffix(ringKey, compartmentID)
+		key := compartmentsCfg.ReadCompartmentName(ringKey, compartmentID)
 		handler := ring.NewPartitionRingPageHandler(partitionRing, ring.NewPartitionRingEditor(key, kvClient))
 		a.RegisterRoute(fmt.Sprintf("/ingester/partition-ring/compartment-%d", compartmentID), handler, false, true, "GET", "POST")
 	}
@@ -515,6 +515,8 @@ func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handl
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/read"), handler, true, true, maxBodySizeIfAny, "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query_range"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query_cost"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query_range_cost"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query_exemplars"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/labels"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/label/{name}/values"), handler, true, true, maxBodySizeIfAny, "GET")

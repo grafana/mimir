@@ -340,6 +340,8 @@ func (c *Config) Validate(log log.Logger) error {
 				return fmt.Errorf("when compartments are enabled, the blocks storage bucket name must end with the %q placeholder for the querier", compartments.ReadCompartmentIDPlaceholder)
 			}
 		}
+	} else if c.IngestStorage.KafkaConfig.Overrides.Configured() {
+		return errors.New("the -ingest-storage.kafka.overrides.* settings require compartments to be enabled")
 	}
 	if c.isIngesterEnabled() {
 		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
@@ -349,7 +351,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.MemberlistKV.Validate(); err != nil {
 		return errors.Wrap(err, "invalid memberlist config")
 	}
-	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics); err != nil {
+	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics, c.Compartments); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
 	}
 	if err := c.Distributor.Validate(c.LimitsConfig, c.Compartments); err != nil {

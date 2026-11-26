@@ -588,6 +588,8 @@ func (l limiterMock) localSeriesLimit(userID string) uint64 { return l[userID] }
 
 func (l limiterMock) zonesCount() uint64 { return 2 }
 
+func (l limiterMock) receivedSeriesEstimationEnabled(string) bool { return true }
+
 type noopEvents struct{}
 
 func (n noopEvents) publishCreatedSeries(_ context.Context, _ string, _ []uint64, _ time.Time) error {

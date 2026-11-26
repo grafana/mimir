@@ -2544,6 +2544,28 @@
         },
         {
           "kind": "field",
+          "name": "experimental_query_cost_api_enabled",
+          "required": false,
+          "desc": "Enable the experimental /api/v1/query_cost and /api/v1/query_range_cost endpoints to estimate query storage input without evaluating the query.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.experimental-query-cost-api-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "query_cost_estimated_scrape_interval",
+          "required": false,
+          "desc": "Assumed scrape interval for experimental query cost estimates. Mimir cannot determine the actual scrape interval or native histogram size through bounded storage sampling.",
+          "fieldValue": null,
+          "fieldDefaultValue": 60000000000,
+          "fieldFlag": "querier.query-cost-estimated-scrape-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent_remote_read_queries",
           "required": false,
           "desc": "Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency.",
@@ -5645,6 +5667,17 @@
           "fieldFlag": "ingester.label-churn-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "log_series_with_floats_and_histograms",
+          "required": false,
+          "desc": "When enabled, the ingester logs the tenant and labels of series in write requests that have both float samples and native histograms. Logs are sampled according to -ingester.error-sample-rate.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.log-series-with-floats-and-histograms",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -6285,6 +6318,17 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "store.max-labels-query-length",
           "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "metadata_default_time_range",
+          "required": false,
+          "desc": "Default time range for series, label names, label values and search requests that do not specify both start and end. A request with neither start nor end queries from now minus this value to now. A request with only end queries from end minus this value to end. A request with only start queries from start to now. A request with both start and end does not change. The response to a changed request includes a warning that shows the default range. Other limits, such as -store.max-labels-query-length and -querier.max-query-lookback, can make the queried range shorter. 0 to disable. When disabled, the series, label names and label values endpoints use the earliest possible time for a missing start, and the latest possible time for a missing end. The search endpoints then use a default start of one hour before now and a default end of now.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.metadata-default-time-range",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -9004,7 +9048,7 @@
           "kind": "field",
           "name": "queue_reservation_enabled",
           "required": false,
-          "desc": "Reserve query-scheduler queue slots for the remote execution sub-requests of a query evaluation, before the query-frontend sends them. A reservation holds the smaller of -querier.max-query-parallelism and the number of sub-requests. Requires -query-frontend.enable-remote-execution and -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results, and -query-frontend.use-mimir-query-engine-for-sharding when sharding is enabled. A sub-request that waits for -querier.max-query-parallelism can fail the query when the query-frontend reads the response of another sub-request for longer than -query-scheduler.queue-reservation-timeout. Set the timeout longer than the longest such read. Only query-schedulers with -query-scheduler.queue-reservation-enabled receive reservations.",
+          "desc": "Reserve query-scheduler queue slots for the remote execution sub-requests of a query evaluation, before the query-frontend sends them. A reservation holds the smaller of -querier.max-query-parallelism and the number of sub-requests. An evaluation with one sub-request does not reserve, and its sub-request uses the plain enqueue. Requires -query-frontend.enable-remote-execution and -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results, and -query-frontend.use-mimir-query-engine-for-sharding when sharding is enabled. A sub-request that waits for -querier.max-query-parallelism can fail the query when the query-frontend reads the response of another sub-request for longer than -query-scheduler.queue-reservation-timeout. Set the timeout longer than the longest such read. Only query-schedulers with -query-scheduler.queue-reservation-enabled receive reservations.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.queue-reservation-enabled",
@@ -13178,12 +13222,12 @@
                   "kind": "field",
                   "name": "max_idle_file_handles",
                   "required": false,
-                  "desc": "Maximum number of idle file handles the store-gateway keeps open for each index-header file.",
+                  "desc": "Maximum number of idle file handles the store-gateway keeps open for each index-header file. Deprecated: has no effect (the store-gateway keeps a single shared file handle open for each loaded index-header).",
                   "fieldValue": null,
                   "fieldDefaultValue": 1,
                   "fieldFlag": "blocks-storage.bucket-store.index-header.max-idle-file-handles",
                   "fieldType": "int",
-                  "fieldCategory": "advanced"
+                  "fieldCategory": "deprecated"
                 },
                 {
                   "kind": "field",
@@ -18240,6 +18284,17 @@
           "fieldValue": null,
           "fieldDefaultValue": 15000000000,
           "fieldFlag": "ruler.ring-change-max-debounce",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "shutdown_handover_period",
+          "required": false,
+          "desc": "How long the ruler keeps evaluating its rule groups on shutdown after leaving the ring, so other rulers can take them over without skipping an evaluation. Set it longer than the ring check (up to 6s) plus two full rule syncs. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.shutdown-handover-period",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },

@@ -32,7 +32,6 @@ import (
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/time/rate"
 
-	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -272,6 +271,8 @@ type Limits struct {
 	ActiveSeriesAdditionalCustomTrackersConfig asmodel.CustomTrackersConfig                  `yaml:"active_series_additional_custom_trackers" json:"active_series_additional_custom_trackers" doc:"description=Additional custom trackers for active metrics merged on top of the base custom trackers. You can use this configuration option to define the base custom trackers globally for all tenants, and then use the additional trackers to add extra trackers on a per-tenant basis." category:"advanced"`
 	activeSeriesMergedCustomTrackersConfig     *atomic.Pointer[asmodel.CustomTrackersConfig] `yaml:"-" json:"-"`
 	MaxActiveSeriesAdditionalCustomTrackers    int                                           `yaml:"max_active_series_additional_custom_trackers" json:"max_active_series_additional_custom_trackers" category:"experimental"`
+	// UsageTrackerReceivedSeriesEstimationEnabled is not merged from the overrides of tenant metadata: the tenant's value applies to all its metadata. Read compartments use their own overrides.
+	UsageTrackerReceivedSeriesEstimationEnabled bool `yaml:"usage_tracker_received_series_estimation_enabled" json:"usage_tracker_received_series_estimation_enabled" category:"experimental" doc:"hidden"`
 
 	// Max allowed time window for out-of-order samples.
 	OutOfOrderTimeWindow                 model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window"`
@@ -291,6 +292,7 @@ type Limits struct {
 	MaxPartialQueryLength                 model.Duration `yaml:"max_partial_query_length" json:"max_partial_query_length"`
 	MaxQueryParallelism                   int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
 	MaxLabelsQueryLength                  model.Duration `yaml:"max_labels_query_length" json:"max_labels_query_length"`
+	MetadataDefaultTimeRange              model.Duration `yaml:"metadata_default_time_range" json:"metadata_default_time_range" category:"experimental"`
 	MaxSeriesQueryLimit                   int            `yaml:"max_series_query_limit" json:"max_series_query_limit"`
 	MaxLabelNamesLimit                    int            `yaml:"max_label_names_limit" json:"max_label_names_limit"`
 	MaxLabelValuesLimit                   int            `yaml:"max_label_values_limit" json:"max_label_values_limit"`
@@ -425,6 +427,7 @@ type Limits struct {
 func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxActiveSeriesPerUser, MaxActiveSeriesPerUserFlag, 0, "Maximum number of active series per user. 0 means no limit. This limit only applies with ingest storage enabled.")
 	f.IntVar(&l.ActiveSeriesLimitResponseCode, ActiveSeriesLimitResponseCodeFlag, 429, "HTTP response code to use when rejecting series due to the active series limit.")
+	f.BoolVar(&l.UsageTrackerReceivedSeriesEstimationEnabled, "usage-tracker.tenant-received-series-estimation-enabled", true, "Set to false to disable the usage-tracker received series estimation for a tenant. It only applies when the received series estimation is enabled with -usage-tracker.received-series-estimation-enabled.")
 	f.IntVar(&l.IngestionTenantShardSize, "distributor.ingestion-tenant-shard-size", 0, "The tenant's shard size used by shuffle-sharding. This value is the total size of the shard (ie. it is not the number of ingesters in the shard per zone, but the number of ingesters in the shard across all zones, if zone-awareness is enabled). Must be set both on ingesters and distributors. 0 disables shuffle sharding.")
 	f.Float64Var(&l.RequestRate, RequestRateFlag, 0, "Per-tenant push request rate limit in requests per second. 0 to disable.")
 	f.IntVar(&l.RequestBurstSize, RequestBurstSizeFlag, 0, "Per-tenant allowed push request burst size. 0 to disable.")
@@ -513,6 +516,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler for instant, range and remote read queries. For metadata queries like series, label names, label values queries the limit is enforced in the querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers.")
 	f.Var(&l.MaxLabelsQueryLength, "store.max-labels-query-length", "Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
+	f.Var(&l.MetadataDefaultTimeRange, "querier.metadata-default-time-range", "Default time range for series, label names, label values and search requests that do not specify both start and end. A request with neither start nor end queries from now minus this value to now. A request with only end queries from end minus this value to end. A request with only start queries from start to now. A request with both start and end does not change. The response to a changed request includes a warning that shows the default range. Other limits, such as -store.max-labels-query-length and -querier.max-query-lookback, can make the queried range shorter. 0 to disable. When disabled, the series, label names and label values endpoints use the earliest possible time for a missing start, and the latest possible time for a missing end. The search endpoints then use a default start of one hour before now and a default end of now.")
 
 	f.IntVar(&l.MaxSeriesQueryLimit, MaxSeriesQueryLimitFlag, 0, "Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.")
 	f.IntVar(&l.MaxLabelNamesLimit, MaxLabelNamesLimitFlag, 0, "Maximum number of names the label names endpoint returns. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.")
@@ -1131,6 +1135,13 @@ func (o *Overrides) MaxActiveOrGlobalSeriesPerUser(limitsKey string) int {
 	return overrides.MaxGlobalSeriesPerUser
 }
 
+// UsageTrackerReceivedSeriesEstimationEnabled returns whether the usage-tracker estimates the number of distinct
+// series received from the tenant, including the rejected ones. The value of the tenant applies to its tenant
+// metadata, but not to its read compartments, which use their own overrides.
+func (o *Overrides) UsageTrackerReceivedSeriesEstimationEnabled(limitsKey string) bool {
+	return o.getOverridesForLimitsKey(limitsKey).UsageTrackerReceivedSeriesEstimationEnabled
+}
+
 // ActiveSeriesLimitResponseCode returns the HTTP status code to use when rejecting series due to the active series limit.
 func (o *Overrides) ActiveSeriesLimitResponseCode(limitsKey string) int {
 	return o.getOverridesForLimitsKey(limitsKey).ActiveSeriesLimitResponseCode
@@ -1230,6 +1241,12 @@ func (o *Overrides) BlockedRequests(userID string) []BlockedRequest {
 // MaxLabelsQueryLength returns the limit of the length (in time) of a label names or values request.
 func (o *Overrides) MaxLabelsQueryLength(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).MaxLabelsQueryLength)
+}
+
+// MetadataDefaultTimeRange returns the default time range for series, label names, label values and search requests
+// that do not specify both start and end. A missing end becomes now, and a missing start becomes end minus this range.
+func (o *Overrides) MetadataDefaultTimeRange(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).MetadataDefaultTimeRange)
 }
 
 // MaxSeriesQueryLimit returns the query limit of a series request.
@@ -1985,8 +2002,7 @@ func (o *Overrides) getOverridesForLimitsKey(limitsKey string) *Limits {
 	if o.tenantLimits == nil {
 		return limits
 	}
-	// A read compartment suffix stays in userID, so only the overrides of that read compartment apply.
-	userID, tenantMd, err := compartments.ParseTenantIDWithMetadata(limitsKey)
+	userID, tenantMd, err := tenant.ParseWithMetadata(limitsKey)
 	if err != nil {
 		return limits
 	}
