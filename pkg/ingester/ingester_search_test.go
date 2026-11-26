@@ -542,6 +542,10 @@ func TestIngesterSearchMetricsMetadataRejectsInvalidRequestsAsInvalidArgument(t 
 			req:     &client.SearchMetricsMetadataRequest{Filter: &client.SearchFilter{Terms: []string{"cpu"}, FuzzAlg: client.FUZZ_ALG_SUBSTRING}, Ordering: client.ORDER_BY_SCORE_DESC},
 			wantMsg: "ORDER_BY_SCORE_DESC is not supported by metric metadata search, because every match scores 1.0",
 		},
+		"unknown ordering": {
+			req:     &client.SearchMetricsMetadataRequest{Filter: &client.SearchFilter{Terms: []string{"cpu"}, FuzzAlg: client.FUZZ_ALG_SUBSTRING}, Ordering: client.SearchOrdering(99)},
+			wantMsg: "unknown search ordering 99",
+		},
 		"other fuzz algorithm": {
 			req:     &client.SearchMetricsMetadataRequest{Filter: &client.SearchFilter{Terms: []string{"cpu"}, FuzzAlg: client.FUZZ_ALG_JARO_WINKLER}},
 			wantMsg: "metric metadata search requires fuzz algorithm FUZZ_ALG_SUBSTRING, got FUZZ_ALG_JARO_WINKLER",

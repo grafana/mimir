@@ -188,8 +188,14 @@ func (i *Ingester) SearchMetricsMetadata(req *client.SearchMetricsMetadataReques
 // carries no cursor; userMetricsMetadata.search applies the cursor to the
 // name.
 func buildMetadataSearchFilter(wf *client.SearchFilter, ord client.SearchOrdering) (*streaminglabelvalues.Params, storage.Filter, error) {
-	if ord == client.ORDER_BY_SCORE_DESC {
+	// protoToOrdering maps an unknown ordering to ascending, so a sender that is
+	// newer than this server would get pages in the wrong order.
+	switch ord {
+	case client.ORDER_BY_VALUE_ASC, client.ORDER_BY_VALUE_DESC:
+	case client.ORDER_BY_SCORE_DESC:
 		return nil, nil, errors.New("ORDER_BY_SCORE_DESC is not supported by metric metadata search, because every match scores 1.0")
+	default:
+		return nil, nil, fmt.Errorf("unknown search ordering %d", ord)
 	}
 	if wf.GetFuzzAlg() != client.FUZZ_ALG_SUBSTRING {
 		return nil, nil, fmt.Errorf("metric metadata search requires fuzz algorithm FUZZ_ALG_SUBSTRING, got %s", wf.GetFuzzAlg())
