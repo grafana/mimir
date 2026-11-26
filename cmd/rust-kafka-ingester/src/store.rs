@@ -358,14 +358,23 @@ struct SeriesByName {
     // selectors every minute, and a sharded query sends each in every shard, while finding the
     // few series that match among a group's thousands was most of what a query cost. Candidates
     // from here are still checked against every matcher.
-    selections: RwLock<hashbrown::HashMap<Box<str>, CachedSelection>>,
+    selections: RwLock<SelectionCache>,
 }
 
+type SelectionCache =
+    hashbrown::HashMap<u64, CachedSelection, std::hash::BuildHasherDefault<PrehashedKey>>;
+
 struct CachedSelection {
+    // The selector's matchers but the query shard's: its key is only their hash.
+    matchers: Box<[SelectorPart]>,
     group: u32,
     version: u64,
-    hashes: Arc<[u64]>,
+    // Each series' label hash and query shard hash: a query shard's own series are picked out
+    // without looking the others up.
+    series: Arc<[(u64, u64)]>,
 }
+
+type SelectorPart = (u8, Box<str>, Box<str>);
 
 // A group with fewer series is scanned each time.
 const MIN_CACHED_GROUP: usize = 8;
@@ -375,23 +384,41 @@ const MAX_CACHED_SERIES: usize = 256;
 // How many selectors are kept; at this many, they are all dropped, and the ones in use come back.
 const MAX_CACHED_SELECTIONS: usize = 8192;
 
-/// The matchers of a selector but the query shard's, so the shards of a query share a key.
-fn selector_key(matchers: &[CompiledMatcher]) -> Box<str> {
-    let mut parts = matchers
+/// A matcher of a selector but the query shard's, as (kind, label, value or pattern).
+fn selector_part(matcher: &CompiledMatcher) -> Option<(u8, &str, &str)> {
+    match matcher {
+        CompiledMatcher::Equal(name, value) => Some((0, name, value)),
+        CompiledMatcher::NotEqual(name, value) => Some((1, name, value)),
+        CompiledMatcher::Regex(name, regex) => Some((2, name, regex.as_str())),
+        CompiledMatcher::NotRegex(name, regex) => Some((3, name, regex.as_str())),
+        CompiledMatcher::Shard(..) => None,
+    }
+}
+
+/// The key of a selector's matchers but the query shard's, in any order, so the shards of a query
+/// share it. Computed for every store shard a query reads, so it allocates nothing; a kept
+/// selection checks its matchers too.
+fn selector_key(matchers: &[CompiledMatcher]) -> u64 {
+    matchers
         .iter()
-        .filter_map(|matcher| {
-            let (kind, name, value) = match matcher {
-                CompiledMatcher::Equal(name, value) => (0, name, value.as_str()),
-                CompiledMatcher::NotEqual(name, value) => (1, name, value.as_str()),
-                CompiledMatcher::Regex(name, regex) => (2, name, regex.as_str()),
-                CompiledMatcher::NotRegex(name, regex) => (3, name, regex.as_str()),
-                CompiledMatcher::Shard(..) => return None,
-            };
-            Some(format!("{name}\0{kind}\0{value}"))
+        .filter_map(selector_part)
+        .map(|(kind, name, value)| {
+            stable_hash_pairs([(name, value)].into_iter()).wrapping_mul(2 * u64::from(kind) + 1)
         })
-        .collect::<Vec<_>>();
-    parts.sort_unstable();
-    parts.join("\u{1}").into()
+        .fold(0, u64::wrapping_add)
+}
+
+fn same_selector(kept: &[SelectorPart], matchers: &[CompiledMatcher]) -> bool {
+    let mut count = 0;
+    matchers
+        .iter()
+        .filter_map(selector_part)
+        .all(|(kind, name, value)| {
+            count += 1;
+            kept.iter()
+                .any(|part| part.0 == kind && &*part.1 == name && &*part.2 == value)
+        })
+        && count == kept.len()
 }
 
 // A name matcher other than an equality, by type and pattern.
@@ -716,17 +743,20 @@ impl SeriesByName {
             selections
                 .get(key)
                 .filter(|cached| {
-                    cached.group == *group && cached.version == self.group_versions[*group as usize]
+                    cached.group == *group
+                        && cached.version == self.group_versions[*group as usize]
+                        && same_selector(&cached.matchers, matchers)
                 })
-                .map(|cached| Arc::clone(&cached.hashes))
+                .map(|cached| Arc::clone(&cached.series))
         });
         let building = match (&cached, cache_key) {
             (None, Some((group, key))) => Some(Building {
                 selections: &self.selections,
                 key,
+                matchers,
                 group,
                 version: self.group_versions[group as usize],
-                hashes: Vec::new(),
+                series: Vec::new(),
                 overflowed: false,
             }),
             _ => None,
@@ -737,15 +767,26 @@ impl SeriesByName {
         let candidates: Box<dyn Iterator<Item = (&SeriesKey, &Series)>> = match (best, name_group) {
             (_, Some(group)) if cached.is_some() => {
                 source = "cached";
-                let hashes = cached.expect("checked");
+                let kept = cached.expect("checked");
                 let table = &self.groups[group as usize];
-                Box::new((0..hashes.len()).flat_map(move |index| {
-                    let hash = hashes[index];
-                    table
-                        .iter_hash(hash)
-                        .filter(move |((entry_hash, _), _)| *entry_hash == hash)
-                        .map(|(key, series)| (key, &**series))
-                }))
+                Box::new(
+                    (0..kept.len())
+                        .map(move |index| kept[index])
+                        .filter(move |(_, shard_hash)| {
+                            matchers.iter().all(|matcher| match matcher {
+                                CompiledMatcher::Shard(index, count) => {
+                                    shard_hash % count == *index
+                                }
+                                _ => true,
+                            })
+                        })
+                        .flat_map(move |(hash, _)| {
+                            table
+                                .iter_hash(hash)
+                                .filter(move |((entry_hash, _), _)| *entry_hash == hash)
+                                .map(|(key, series)| (key, &**series))
+                        }),
+                )
             }
             _ if present.is_some() => {
                 name_matched = false;
@@ -1499,11 +1540,12 @@ struct CountedCandidates<'a, I, F> {
 
 /// A selection being kept: the series of its group matching its matchers but the query shard's.
 struct Building<'a> {
-    selections: &'a RwLock<hashbrown::HashMap<Box<str>, CachedSelection>>,
-    key: Box<str>,
+    selections: &'a RwLock<SelectionCache>,
+    key: u64,
+    matchers: &'a [CompiledMatcher],
     group: u32,
     version: u64,
-    hashes: Vec<u64>,
+    series: Vec<(u64, u64)>,
     overflowed: bool,
 }
 
@@ -1516,9 +1558,15 @@ impl Building<'_> {
         selections.insert(
             self.key,
             CachedSelection {
+                matchers: self
+                    .matchers
+                    .iter()
+                    .filter_map(selector_part)
+                    .map(|(kind, name, value)| (kind, name.into(), value.into()))
+                    .collect(),
                 group: self.group,
                 version: self.version,
-                hashes: self.hashes.into(),
+                series: self.series.into(),
             },
         );
     }
@@ -1536,8 +1584,10 @@ where
             self.visited += 1;
             let (rest, all) = (self.keep)(&candidate);
             if rest && let Some(building) = &mut self.building {
-                if building.hashes.len() < MAX_CACHED_SERIES {
-                    building.hashes.push(candidate.0.0);
+                if building.series.len() < MAX_CACHED_SERIES {
+                    building
+                        .series
+                        .push((candidate.0.0, candidate.1.shard_hash));
                 } else {
                     building.overflowed = true;
                 }
