@@ -142,8 +142,9 @@ jobs:
           
           echo "Dependencies updated successfully"
 
-      # Committed here so that the re-synced test cases below get a commit of their own. create-pull-request
-      # recreates both commits as signed commits by the app, so the identity used here is replaced.
+      # Commit dependency updates here, and separately commit the re-synced test cases
+      # in a later step.
+      # create-pull-request recreates both commits as signed commits by the app, so the identity used here is replaced.
       - name: Commit the dependency update
         env:
           SHORT_HASH: ${{ steps.get-commit-info.outputs.short_hash }}
@@ -222,6 +223,17 @@ jobs:
           fi
           finish
 
+      # Its own commit so that reviewers can see the test case changes apart from the dependency update.
+      - name: Commit the re-synced test cases
+        run: |
+          git add -- pkg/streamingpromql/testdata/upstream
+          if git diff --cached --quiet; then
+            echo "No re-synced test cases to commit."
+          else
+            git -c user.name='mimir-vendoring[bot]' -c user.email='mimir-vendoring[bot]@users.noreply.github.com' \
+              commit -q -m "Re-sync upstream PromQL test cases"
+          fi
+
       - name: Create Pull Request
         id: create_pull_request
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
@@ -241,8 +253,6 @@ jobs:
             - **Changes**: ${{ format('[`{0}...{1}`](https://github.com/grafana/mimir-prometheus/compare/{0}...{1})', steps.get-commit-info.outputs.old_hash, steps.get-commit-info.outputs.new_hash) }}
 
             ${{ steps.sync.outputs.summary }}
-          # The dependency update is already committed, so this is only used for the re-synced test cases.
-          commit-message: Re-sync upstream PromQL test cases
           branch: bot/${{ steps.branch-names.outputs.mimir_branch }}/update-mimir-prometheus-${{ steps.get-commit-info.outputs.short_hash }}-${{ steps.get-commit-info.outputs.timestamp }}
           base: ${{ steps.branch-names.outputs.mimir_branch }}
           labels: vendored-mimir-prometheus-update
