@@ -751,9 +751,27 @@ func RunCorrectnessTests(t *testing.T, runTestCase func(t *testing.T, testCase C
 }
 
 func AssertShardingMetrics(t *testing.T, reg *prometheus.Registry, expectedShardedQueries int, numShards int) {
+	t.Helper()
+	AssertShardingMetricsForStrategy(t, reg, expectedShardedQueries, numShards, "ordinary")
+}
+
+func AssertShardingMetricsForStrategy(t *testing.T, reg *prometheus.Registry, expectedShardedQueries int, numShards int, strategy string) {
+	t.Helper()
 	expectedSharded := 0
 	if expectedShardedQueries > 0 {
 		expectedSharded = 1
+	}
+
+	ordinarySuccesses, ordinaryQueries, singleSuccesses, singleQueries, multipleSuccesses, multipleQueries := 0, 0, 0, 0, 0, 0
+	switch strategy {
+	case "ordinary":
+		ordinarySuccesses, ordinaryQueries = expectedSharded, expectedShardedQueries*numShards
+	case "subset_labels_single":
+		singleSuccesses, singleQueries = expectedSharded, expectedShardedQueries*numShards
+	case "subset_labels_multiple":
+		multipleSuccesses, multipleQueries = expectedSharded, expectedShardedQueries*numShards
+	default:
+		t.Fatalf("unexpected sharding strategy %q", strategy)
 	}
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
@@ -762,11 +780,15 @@ func AssertShardingMetrics(t *testing.T, reg *prometheus.Registry, expectedShard
 			cortex_frontend_query_sharding_rewrites_attempted_total 1
 			# HELP cortex_frontend_query_sharding_rewrites_succeeded_total Total number of queries the query-frontend successfully rewritten in a shardable way.
 			# TYPE cortex_frontend_query_sharding_rewrites_succeeded_total counter
-			cortex_frontend_query_sharding_rewrites_succeeded_total %d
+			cortex_frontend_query_sharding_rewrites_succeeded_total{strategy="ordinary"} %d
+			cortex_frontend_query_sharding_rewrites_succeeded_total{strategy="subset_labels_single"} %d
+			cortex_frontend_query_sharding_rewrites_succeeded_total{strategy="subset_labels_multiple"} %d
 			# HELP cortex_frontend_sharded_queries_total Total number of sharded queries.
 			# TYPE cortex_frontend_sharded_queries_total counter
-			cortex_frontend_sharded_queries_total %d
-		`, expectedSharded, expectedShardedQueries*numShards)),
+			cortex_frontend_sharded_queries_total{strategy="ordinary"} %d
+			cortex_frontend_sharded_queries_total{strategy="subset_labels_single"} %d
+			cortex_frontend_sharded_queries_total{strategy="subset_labels_multiple"} %d
+		`, ordinarySuccesses, singleSuccesses, multipleSuccesses, ordinaryQueries, singleQueries, multipleQueries)),
 		"cortex_frontend_query_sharding_rewrites_attempted_total",
 		"cortex_frontend_query_sharding_rewrites_succeeded_total",
 		"cortex_frontend_sharded_queries_total",
