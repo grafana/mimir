@@ -45,7 +45,7 @@ func TestIngester_IngestRecord(t *testing.T) {
 		req := mockWriteRequest(t, labels.FromStrings("__name__", "direct"), 1, time.Now().UnixMilli())
 		defer mimirpb.ReuseSlice(req.Timeseries)
 
-		db, err := i.createTSDB(tenant, 0)
+		db, err := i.createTSDB(tenant, 0, true)
 		require.NoError(t, err)
 		record := &testDirectIngestRecord{decoded: req, engine: db.engine()}
 		db.db = testDirectIngestEngine{tenantEngine: db.engine(), record: record}

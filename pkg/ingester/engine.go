@@ -60,10 +60,6 @@ type tenantEngine interface {
 	RenderDiagnosticsPage(w http.ResponseWriter, req *http.Request, tenant string, labelChurnEnabled bool)
 }
 
-func newTenantEngine() *prometheusEngine {
-	return &prometheusEngine{}
-}
-
 // directIngestEngine recognizes records it can ingest in full. ReadRecord only examines the record
 // bytes because it runs before the tenant's append lock is acquired. A nil result requests decoding.
 type directIngestEngine interface {

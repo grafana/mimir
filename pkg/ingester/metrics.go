@@ -79,6 +79,13 @@ type ingesterMetrics struct {
 	appenderCommitDuration                 prometheus.Histogram
 	idleTsdbChecks                         *prometheus.CounterVec
 
+	// MimirEngine head snapshots metrics.
+	mimirengineSnapshots             *prometheus.CounterVec
+	mimirengineSnapshotRoundDuration prometheus.Histogram
+	mimirengineLastSnapshotRound     prometheus.Gauge
+	mimirengineShardLockWait         *prometheus.HistogramVec
+	mimirengineShardLockHeld         *prometheus.HistogramVec
+
 	// Reference counter for forced/idle compactions across all user TSDBs.
 	// Used to set forcedCompactionInProgress to 1 when any compaction is running, 0 when all complete.
 	forcedCompactionsCount int64
@@ -414,6 +421,36 @@ func newIngesterMetrics(
 
 		idleTsdbChecks: idleTsdbChecks,
 
+		mimirengineSnapshots: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_mimirengine_head_snapshots_total",
+			Help: "Total number of tenants' heads the MimirEngine snapshotted while ingesting, by outcome.",
+		}, []string{"outcome"}),
+		mimirengineSnapshotRoundDuration: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_ingester_mimirengine_head_snapshot_round_duration_seconds",
+			Help:    "The time it takes the MimirEngine to snapshot the heads of every tenant, paced to use little CPU and disk.",
+			Buckets: prometheus.ExponentialBuckets(10, 2, 9),
+		}),
+		mimirengineLastSnapshotRound: promauto.With(r).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_ingester_mimirengine_head_snapshot_last_round_timestamp_seconds",
+			Help: "Unix timestamp of the end of the last round of the MimirEngine's head snapshots.",
+		}),
+		mimirengineShardLockWait: promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_ingester_mimirengine_shard_lock_wait_seconds",
+			Help:                            "Time the MimirEngine's writers waited for a store shard's write lock, by what then held it, for a sample of the waits: cortex_ingester_mimirengine_shard_lock_write_wait_seconds_total has them all.",
+			Buckets:                         prometheus.ExponentialBuckets(0.0001, 4, 9),
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: time.Hour,
+		}, []string{"phase"}),
+		mimirengineShardLockHeld: promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_ingester_mimirengine_shard_lock_held_seconds",
+			Help:                            "Time the MimirEngine held a store shard's lock, by phase and mode, for a sample of the holds: cortex_ingester_mimirengine_shard_lock_write_held_seconds_total has every write hold.",
+			Buckets:                         prometheus.ExponentialBuckets(0.0001, 4, 9),
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: time.Hour,
+		}, []string{"phase", "mode"}),
+
 		openExistingTSDB: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_tsdb_open_duration_seconds_total",
 			Help: "The total time it takes to open all existing TSDBs at ingester startup. This time also includes the TSDBs WAL replay duration.",
@@ -441,6 +478,8 @@ func newIngesterMetrics(
 
 	// Initialize expected rejected request labels
 	m.rejected.WithLabelValues(reasonIngesterMaxIngestionRate)
+	m.mimirengineSnapshots.WithLabelValues(snapshotOutcomeSuccess)
+	m.mimirengineSnapshots.WithLabelValues(snapshotOutcomeFailure)
 	m.rejected.WithLabelValues(reasonIngesterMaxTenants)
 	m.rejected.WithLabelValues(reasonIngesterMaxInMemorySeries)
 	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests)
@@ -449,6 +488,9 @@ func newIngesterMetrics(
 
 	if activeSeriesEnabled {
 		m.activeSeriesLoading.Set(1)
+	}
+	if r != nil {
+		r.MustRegister(mimirengineLockTotals{}, mimirengineColdCandidates{})
 	}
 
 	return m

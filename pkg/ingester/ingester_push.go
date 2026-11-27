@@ -36,9 +36,6 @@ type extendedAppender interface {
 	storage.AppenderV2
 	storage.GetRef
 	storage.ExemplarAppenderV2
-	// Part of extendedAppender so a wrapper that fails to forward it breaks loudly
-	// at appender creation instead of silently zeroing the duplicate accounting.
-	storage.CommitStatsReporter
 }
 
 type pushStats struct {
@@ -544,6 +541,7 @@ func (i *Ingester) pushSamplesToAppender(
 	minAppendTimeAvailable bool,
 	minAppendTime int64,
 	isOTLP bool,
+	seriesIngested func(storage.SeriesRef, int),
 ) error {
 	// Fetch limits once per push request both to avoid processing half the request differently.
 	var (
@@ -782,8 +780,13 @@ func (i *Ingester) pushSamplesToAppender(
 			}
 		}
 
-		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
-			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, isOTLP, idx)
+		if stats.succeededSamplesCount > oldSucceededSamplesCount {
+			if activeSeries != nil {
+				activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, isOTLP, idx)
+			}
+			if seriesIngested != nil {
+				seriesIngested(ref, numNativeHistogramBuckets)
+			}
 		}
 
 		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {

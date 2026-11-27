@@ -215,6 +215,7 @@
 * [ENHANCEMENT] Ingester: Route raw Kafka records through the ingester write path when the selected engine supports direct ingest. #17521
 * [ENHANCEMENT] Ingester: Allow tenant storage engines to track active series in their head and provide active-series counts and membership. #17524
 * [ENHANCEMENT] Ingester: Allow tenant storage engines to provide fast paths for streaming queries, active-series lookups, and label cardinality. #17525
+* [FEATURE] Ingester: Add the experimental MimirEngine ingester storage engine with direct Kafka ingestion and snapshot recovery. MimirEngine checkpoints tenant heads after startup replay before reporting ready. #17526
 
 ### Mixin
 
