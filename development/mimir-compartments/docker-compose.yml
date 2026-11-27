@@ -488,7 +488,7 @@ services:
       test: "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
       timeout: "2s"
     hostname: "kafka-wc-0"
-    image: "confluentinc/cp-kafka:8.3.2"
+    image: "confluentinc/cp-kafka:8.4.1@sha256:aacc720b6b59b90ca1e27676dc4524e45e1cf60ae23fe6a149c7958eac2af3f5"
     ports:
       - "29092:29092"
   kafka-wc-1:
@@ -515,7 +515,7 @@ services:
       test: "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
       timeout: "2s"
     hostname: "kafka-wc-1"
-    image: "confluentinc/cp-kafka:8.3.2"
+    image: "confluentinc/cp-kafka:8.4.1@sha256:aacc720b6b59b90ca1e27676dc4524e45e1cf60ae23fe6a149c7958eac2af3f5"
     ports:
       - "29093:29093"
   memcached:
