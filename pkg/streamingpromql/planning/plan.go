@@ -108,6 +108,11 @@ const QueryPlanV20 = QueryPlanVersion(20)
 // to range vector selectors.
 const QueryPlanV21 = QueryPlanVersion(21)
 
+// QueryPlanV22 introduces support for the fill, fill_left and fill_right modifiers in group_left
+// and group_right binary expressions. Queriers that do not support this version would silently
+// ignore the fill modifier and produce incorrect results.
+const QueryPlanV22 = QueryPlanVersion(22)
+
 var MaximumSupportedQueryPlanVersion = QueryPlanV21
 
 type QueryPlan struct {

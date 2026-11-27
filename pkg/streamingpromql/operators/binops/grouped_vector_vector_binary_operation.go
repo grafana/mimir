@@ -256,7 +256,12 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	// with "on(...)" that's MatchingLabels (so "on()" forwards none), and Include labels are never
 	// forwarded (they come from the many side). Other matchers go to the many side instead;
 	// forwarding them to the one side would incorrectly filter it to empty (see separateIncludeLabelMatchers).
-	oneSideMatchers, includeMatchers := separateIncludeLabelMatchers(matchers, g.VectorMatching.Include, g.VectorMatching.On, g.VectorMatching.MatchingLabels)
+	// Grouped fill disables all matchers because unmatched series can produce output.
+	fillActive := g.VectorMatching.FillValues.LHS != nil || g.VectorMatching.FillValues.RHS != nil
+	var oneSideMatchers, includeMatchers types.Matchers
+	if !fillActive {
+		oneSideMatchers, includeMatchers = separateIncludeLabelMatchers(matchers, g.VectorMatching.Include, g.VectorMatching.On, g.VectorMatching.MatchingLabels)
+	}
 
 	var err error
 	g.oneSideMetadata, err = g.oneSide.SeriesMetadata(ctx, oneSideMatchers)
@@ -265,8 +270,7 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	}
 
 	if len(g.oneSideMetadata) == 0 {
-		// No series on the "one" side. With fill, the "many" side could still produce output,
-		// but grouped fill is not yet implemented — the planner rejects it before reaching here.
+		// The current grouped evaluator cannot produce output when the one side is empty.
 		return false, nil
 	}
 
@@ -275,8 +279,11 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	// metadata and merge them with any outer matchers for included labels (which belong to the
 	// many side). Otherwise fall back to the same outer matchers used for the "one" side, plus those
 	// that apply to the included labels (derived from the "many" side).
-	manySideMatchers := matchers
-	if g.hints != nil {
+	var manySideMatchers types.Matchers
+	if !fillActive {
+		manySideMatchers = matchers
+	}
+	if !fillActive && g.hints != nil {
 		manySideMatchers = append(BuildMatchers(ctx, g.logger, g.oneSideMetadata, g.hints), includeMatchers...)
 	}
 

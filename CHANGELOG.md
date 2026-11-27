@@ -134,6 +134,7 @@
 * [ENHANCEMENT] Ingester: Add the experimental `-ingester.log-series-with-floats-and-histograms` flag. When enabled, the ingester logs at info level the tenant and labels of series in write requests that have both float samples and native histograms, sampled according to `-ingester.error-sample-rate`. #17504
 * [ENHANCEMENT] All: Reduce the CPU time that YAML encoding uses, for example in the ruler list rules API. #17522
 * [ENHANCEMENT] Usage-tracker: Reuse the temporary series buffer when loading snapshots, instead of allocating one for every tenant in every snapshot. #14904
+* [ENHANCEMENT] MQE: Add experimental support for `fill`, `fill_left`, and `fill_right` for `group_left` and `group_right` binary operation expressions. #16695 #16696 #16697 #16698
 * [BUGFIX] Ruler: Count write requests rejected by the tenant request-rate, ingestion-rate or active-series limits as `client_error` in `cortex_ruler_write_requests_failed_total`, so they no longer trigger `MimirRulerTooManyFailedPushes`. Ingester overload is still counted as `server_error`. #17302
 * [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
 * [BUGFIX] Distributor: When a tenant has OTLP native delta ingestion disabled, drop only the delta metrics from an OTLP request and log a warning, instead of rejecting the whole request. #17506

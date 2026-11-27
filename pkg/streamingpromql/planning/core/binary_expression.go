@@ -312,11 +312,16 @@ func (b *BinaryExpression) ExpressionPosition() (posrange.PositionRange, error) 
 }
 
 func (b *BinaryExpression) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
-	if vm := b.GetVectorMatching(); vm != nil && (vm.FillValues.LhsSet || vm.FillValues.RhsSet) {
-		// Queriers that do not understand QueryPlanV20 would silently ignore the fill modifier
-		// and produce incorrect results.
-		return planning.QueryPlanV20, nil
+	vm := b.GetVectorMatching()
+	if vm == nil || (!vm.FillValues.LhsSet && !vm.FillValues.RhsSet) {
+		return planning.QueryPlanVersionZero, nil
 	}
 
-	return planning.QueryPlanVersionZero, nil
+	// Queriers that do not understand these versions would silently ignore the fill modifier
+	// and produce incorrect results.
+	if vm.Card == parser.CardOneToMany || vm.Card == parser.CardManyToOne {
+		return planning.QueryPlanV22, nil
+	}
+
+	return planning.QueryPlanV20, nil
 }
