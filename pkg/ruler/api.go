@@ -10,11 +10,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"runtime/debug"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -26,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"go.yaml.in/yaml/v3"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -415,19 +421,77 @@ func marshalAndSend(output interface{}, w http.ResponseWriter, logger log.Logger
 		return
 	}
 
+	sendYAML(w, logger, [][]byte{d}, headers)
+}
+
+// sendYAML writes parts in order as one YAML response with the given headers.
+func sendYAML(w http.ResponseWriter, logger log.Logger, parts [][]byte, headers []http.Header) {
 	w.Header().Set("Content-Type", "application/yaml")
-	if len(headers) > 0 {
-		for _, v := range headers {
-			for headerKey, headerValue := range v {
-				w.Header().Set(headerKey, strings.Join(headerValue, ","))
-			}
+	for _, v := range headers {
+		for headerKey, headerValue := range v {
+			w.Header().Set(headerKey, strings.Join(headerValue, ","))
 		}
 	}
 
-	if _, err := w.Write(d); err != nil {
-		level.Error(logger).Log("msg", "error writing yaml response", "err", err)
+	for _, d := range parts {
+		if _, err := w.Write(d); err != nil {
+			level.Error(logger).Log("msg", "error writing yaml response", "err", err)
+			return
+		}
+	}
+}
+
+// marshalNamespacesAndSend writes the same bytes as marshalAndSend(formatted, ...).
+// If concurrency is more than 1 and formatted has 2 or more namespaces, it encodes each namespace with a separate yaml.Marshal call.
+// Up to concurrency goroutines take the namespaces in turn.
+// Each goroutine encodes many namespaces, so its stack grows only once.
+// Otherwise it calls marshalAndSend.
+func marshalNamespacesAndSend[V any](formatted map[string]V, concurrency int, w http.ResponseWriter, logger log.Logger, headers ...http.Header) {
+	if concurrency <= 1 || len(formatted) < 2 {
+		marshalAndSend(formatted, w, logger, headers...)
 		return
 	}
+
+	namespaces := slices.Collect(maps.Keys(formatted))
+	sort.Slice(namespaces, func(i, j int) bool { return yamlKeyLess(namespaces[i], namespaces[j]) })
+
+	parts := make([][]byte, len(namespaces))
+	encode := func(i int) (err error) {
+		ns := namespaces[i]
+		defer func() {
+			if r := recover(); r != nil {
+				level.Error(logger).Log("msg", "panic while marshalling yaml rule groups", "namespace", ns, "panic", r, "stack", string(debug.Stack()))
+				err = fmt.Errorf("namespace %q: panic while marshalling yaml: %v", ns, r)
+			}
+		}()
+		d, err := yaml.Marshal(map[string]V{ns: formatted[ns]})
+		if err != nil {
+			return fmt.Errorf("namespace %q: %w", ns, err)
+		}
+		parts[i] = d
+		return nil
+	}
+
+	var next atomic.Int64
+	g := errgroup.Group{}
+	for range min(concurrency, len(namespaces)) {
+		g.Go(func() error {
+			for i := int(next.Add(1)) - 1; i < len(namespaces); i = int(next.Add(1)) - 1 {
+				if err := encode(i); err != nil {
+					next.Store(int64(len(namespaces)))
+					return err
+				}
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		level.Error(logger).Log("msg", "error marshalling yaml rule groups", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	sendYAML(w, logger, parts, headers)
 }
 
 func respondAccepted(w http.ResponseWriter, logger log.Logger, headers ...http.Header) {
@@ -618,7 +682,7 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 	level.Debug(logger).Log("msg", "retrieved rules for rule groups from rule store", "userID", userID, "num_groups", len(rgs), "num_rules", numRules)
 
 	formatted := rgs.Formatted()
-	marshalAndSend(formatted, w, logger, ProtectedNamespacesHeaderFromSet(protectedNamespaces))
+	marshalNamespacesAndSend(formatted, a.ruler.cfg.ListRulesEncodeConcurrency, w, logger, ProtectedNamespacesHeaderFromSet(protectedNamespaces))
 }
 
 func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {

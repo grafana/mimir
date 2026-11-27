@@ -175,6 +175,8 @@ type Config struct {
 	IndependentRuleEvaluationConcurrencyMinDurationPercentage float64 `yaml:"independent_rule_evaluation_concurrency_min_duration_percentage" category:"experimental"`
 
 	RuleEvaluationWriteEnabled bool `yaml:"rule_evaluation_write_enabled" category:"experimental"`
+
+	ListRulesEncodeConcurrency int `yaml:"list_rules_encode_concurrency" category:"experimental"`
 }
 
 type ClientConfig struct {
@@ -253,6 +255,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Float64Var(&cfg.IndependentRuleEvaluationConcurrencyMinDurationPercentage, "ruler.independent-rule-evaluation-concurrency-min-duration-percentage", 50.0, "Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval.")
 
 	f.BoolVar(&cfg.RuleEvaluationWriteEnabled, "ruler.rule-evaluation-write-enabled", true, "Writes the results of rule evaluation to ingesters or ingest storage when enabled. Use this option for testing purposes. To disable, set to false.")
+	f.IntVar(&cfg.ListRulesEncodeConcurrency, "ruler.list-rules-encode-concurrency", 0, "Maximum number of namespaces that one list rule groups API request encodes at the same time. Each request that runs at the same time uses its own workers. A value of 1 or less encodes all namespaces in one pass.")
 
 	f.DurationVar(&cfg.OutboundSyncQueuePollInterval, "ruler.outbound-sync-queue-poll-interval", defaultRulerSyncPollFrequency, `Interval between sending queued rule sync requests to ruler replicas.`)
 	f.DurationVar(&cfg.InboundSyncQueuePollInterval, "ruler.inbound-sync-queue-poll-interval", defaultRulerSyncPollFrequency, `Interval between applying queued incoming rule sync requests.`)

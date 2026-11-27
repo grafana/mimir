@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -154,6 +155,20 @@ func BenchmarkListRulesEncode(b *testing.B) {
 		b.ReportMetric(float64(n), "out-bytes")
 	})
 
+	// Concurrency 0 is the default path with one yaml.Marshal call.
+	for _, concurrency := range []int{0, 2, 4, 8} {
+		b.Run(fmt.Sprintf("encode/concurrency=%d", concurrency), func(b *testing.B) {
+			b.ReportAllocs()
+			var n int
+			for b.Loop() {
+				rec := httptest.NewRecorder()
+				marshalNamespacesAndSend(rgs.Formatted(), concurrency, rec, logger)
+				n = rec.Body.Len()
+			}
+			b.ReportMetric(float64(n), "out-bytes")
+		})
+	}
+
 	b.Run("encoder_discard", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
@@ -199,4 +214,108 @@ func BenchmarkListRulesEncode(b *testing.B) {
 		}
 		b.ReportMetric(float64(n), "out-bytes")
 	})
+}
+
+// listRulesShapeFixture builds groups rule groups in namespaces namespaces, with rulesPerGroup rules in each group.
+// If largestShare is more than 0, the first namespace gets that share of the groups.
+// The other namespaces share the rest.
+func listRulesShapeFixture(groups, namespaces, rulesPerGroup int, largestShare float64) map[string][]rulefmt.RuleGroup {
+	first := groups / namespaces
+	if largestShare > 0 {
+		first = int(float64(groups) * largestShare)
+	}
+	rest := groups - first
+	out := make(map[string][]rulefmt.RuleGroup, namespaces)
+	r := 0
+	for n := 0; n < namespaces; n++ {
+		count := first
+		if n > 0 {
+			count = rest / (namespaces - 1)
+			if n <= rest%(namespaces-1) {
+				count++
+			}
+		}
+		gs := make([]rulefmt.RuleGroup, 0, count)
+		for g := 0; g < count; g++ {
+			rg := rulefmt.RuleGroup{Name: fmt.Sprintf("group-%d", g), Interval: model.Duration(time.Minute)}
+			for j := 0; j < rulesPerGroup; j++ {
+				r++
+				if r%2 == 0 {
+					rg.Rules = append(rg.Rules, rulefmt.Rule{
+						Record: fmt.Sprintf("job_instance:http_requests_errors:ratio_rate5m_%d", r),
+						Expr:   fmt.Sprintf(`sum by (job, instance) (rate(http_requests_total{job="api-%d", status=~"5.."}[5m])) / sum by (job, instance) (rate(http_requests_total{job="api-%d"}[5m]))`, r, r),
+					})
+					continue
+				}
+				rg.Rules = append(rg.Rules, rulefmt.Rule{
+					Alert:       fmt.Sprintf("HighErrorRate%d", r),
+					Expr:        fmt.Sprintf(`job_instance:http_requests_errors:ratio_rate5m_%d > 0.05`, r-1),
+					For:         model.Duration(5 * time.Minute),
+					Labels:      map[string]string{"severity": "warning", "team": fmt.Sprintf("team-%d", r%40)},
+					Annotations: map[string]string{"summary": "{{ $labels.job }} on {{ $labels.instance }} is above threshold"},
+				})
+			}
+			gs = append(gs, rg)
+		}
+		out[fmt.Sprintf("namespace-%05d", n)] = gs
+	}
+	return out
+}
+
+// discardResponseWriter counts the body bytes and keeps none of them.
+type discardResponseWriter struct {
+	header http.Header
+	n      int
+}
+
+func (w *discardResponseWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = http.Header{}
+	}
+	return w.header
+}
+
+func (w *discardResponseWriter) Write(b []byte) (int, error) {
+	w.n += len(b)
+	return len(b), nil
+}
+
+func (w *discardResponseWriter) WriteHeader(int) {}
+
+// BenchmarkListRulesEncodeShapes encodes synthetic tenants of different sizes with each value of concurrency.
+// One iteration of the largest shape takes seconds.
+// Run it with -benchtime=1x and a -count of 6 or more.
+// The cpu-ns/op metric is the CPU time of the process.
+// More goroutines can use more CPU in total.
+func BenchmarkListRulesEncodeShapes(b *testing.B) {
+	large := []int{0, 2, 4, 8, 16}
+	for _, shape := range []struct {
+		name                              string
+		groups, namespaces, rulesPerGroup int
+		largestShare                      float64
+		concurrency                       []int
+	}{
+		{name: "g100k_ns10k", groups: 100_000, namespaces: 10_000, rulesPerGroup: 20, concurrency: large},
+		{name: "g75k_ns2k", groups: 75_000, namespaces: 2_000, rulesPerGroup: 20, concurrency: large},
+		{name: "g50k_ns1k", groups: 50_000, namespaces: 1_000, rulesPerGroup: 20, concurrency: large},
+		{name: "g10k_ns50", groups: 10_000, namespaces: 50, rulesPerGroup: 20, concurrency: large},
+		{name: "g10k_ns50_skew", groups: 10_000, namespaces: 50, rulesPerGroup: 20, largestShare: 0.4, concurrency: large},
+		{name: "g200_ns20", groups: 200, namespaces: 20, rulesPerGroup: 20, concurrency: []int{0, 2, 4}},
+	} {
+		b.Run("shape="+shape.name, func(b *testing.B) {
+			formatted := listRulesShapeFixture(shape.groups, shape.namespaces, shape.rulesPerGroup, shape.largestShare)
+			for _, concurrency := range shape.concurrency {
+				b.Run(fmt.Sprintf("concurrency=%d", concurrency), func(b *testing.B) {
+					b.ReportAllocs()
+					start := processCPUTime()
+					for b.Loop() {
+						marshalNamespacesAndSend(formatted, concurrency, &discardResponseWriter{}, log.NewNopLogger())
+					}
+					if cpu := processCPUTime() - start; cpu > 0 {
+						b.ReportMetric(float64(cpu.Nanoseconds())/float64(b.N), "cpu-ns/op")
+					}
+				})
+			}
+		})
+	}
 }
