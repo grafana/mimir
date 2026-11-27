@@ -650,17 +650,7 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 		seriesBefore := db.Head().NumSeries()
 		level.Info(i.logger).Log("msg", "triggering per-tenant early head compaction of non-owned series", "user", userID, "trigger", trigger, "before_in_memory_series", seriesBefore, "num_refs", len(refs))
 
-		// Step 1: compact the OOO head to persist all out-of-order data before any
-		// series are evicted in step 2. CompactOOOHead is a no-op for tenants that
-		// have never ingested out-of-order samples.
-		if err := db.prometheusDB().CompactOOOHead(ctx); err != nil {
-			level.Warn(i.logger).Log("msg", "OOO head compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
-			// Fall through: CompactSelectedSeries still helps for non-owned series without OOO data.
-		}
-
-		// Step 2: persist the queued non-owned series in a block and evict them from
-		// the head.
-		err := db.prometheusDB().CompactSelectedSeries(refs)
+		err := db.engine().Evict(ctx, refs)
 		db.updateLastSeriesRemoval()
 		if err != nil {
 			level.Warn(i.logger).Log("msg", "selected series compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
@@ -668,17 +658,15 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 		}
 
 		seriesAfter := db.Head().NumSeries()
-		// CompactSelectedSeries returns nil when no series were compacted (e.g., all
-		// series have OOO state). Verify that series were actually evicted before
-		// treating this as success.
+		// Evict can return nil without removing any series (e.g. when they all still
+		// have out-of-order data). Verify that series were actually evicted.
 		if seriesBefore == seriesAfter {
 			level.Warn(i.logger).Log("msg", "selected series compaction returned success during per-tenant early compaction of non-owned series but no series were evicted; this may indicate that OOO state was not cleared before eviction", "user", userID, "in_memory_series", seriesBefore, "num_refs", len(refs))
 			continue
 		}
 
 		// Note: lastEarlyCompaction is intentionally not updated here. It is only
-		// updated by compactions that advance HeadMinTime. The compactions performed
-		// here (CompactOOOHead + CompactSelectedSeries) do not advance HeadMinTime.
+		// updated by compactions that advance HeadMinTime. Eviction does not advance it.
 		db.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonEarlyCompaction)
 
 		i.metrics.earlyCompactionNonOwnedSeriesTriggered.WithLabelValues(userID).Inc()

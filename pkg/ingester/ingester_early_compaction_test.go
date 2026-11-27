@@ -3,8 +3,11 @@
 package ingester
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -19,9 +22,11 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -1421,6 +1426,60 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *tes
 
 	assert.Equal(t, expected(ownedName), queryStream(ownedName))
 	assert.Equal(t, expected(nonOwnedName), queryStream(nonOwnedName))
+}
+
+func TestPrometheusEngineEvictsInOrderSeriesAfterOOOCompactionFails(t *testing.T) {
+	opts := tsdb.DefaultOptions()
+	opts.OutOfOrderTimeWindow = time.Hour.Milliseconds()
+	opts.NewCompactorFunc = func(ctx context.Context, reg prometheus.Registerer, logger *slog.Logger, ranges []int64, pool chunkenc.Pool, _ *tsdb.Options) (tsdb.Compactor, error) {
+		compactor, err := tsdb.NewLeveledCompactor(ctx, reg, logger, ranges, pool, nil)
+		if err != nil {
+			return nil, err
+		}
+		return oooFailingCompactor{Compactor: compactor}, nil
+	}
+
+	db, err := tsdb.Open(t.TempDir(), promslog.NewNopLogger(), nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	db.DisableCompactions()
+
+	ctx := t.Context()
+	app := db.Appender(ctx)
+	inOrder, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "in_order"), 1000, 1)
+	require.NoError(t, err)
+	outOfOrder, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "out_of_order"), 1000, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	app = db.Appender(ctx)
+	_, err = app.Append(outOfOrder, labels.EmptyLabels(), 999, 2)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	var logs bytes.Buffer
+	engine := &prometheusEngine{db: db, logger: log.NewLogfmtLogger(&logs)}
+	require.NoError(t, engine.Evict(ctx, []storage.SeriesRef{inOrder, outOfOrder}))
+
+	require.Contains(t, logs.String(), "level=warn")
+	require.Contains(t, logs.String(), "injected OOO compaction failure")
+	require.Equal(t, uint64(1), engine.Head().NumSeries())
+	blocks := db.Blocks()
+	require.Len(t, blocks, 1)
+	meta := blocks[0].Meta()
+	require.True(t, meta.Compaction.FromSelectedSeries())
+	require.NotEmpty(t, readMetricSamplesFromBlockDir(t, filepath.Join(db.Dir(), meta.ULID.String()), "in_order"))
+}
+
+type oooFailingCompactor struct {
+	tsdb.Compactor
+}
+
+func (c oooFailingCompactor) Write(dest string, b tsdb.BlockReader, mint, maxt int64, base *tsdb.BlockMeta) ([]ulid.ULID, error) {
+	if base != nil && base.Compaction.FromOutOfOrder() {
+		return nil, errors.New("injected OOO compaction failure")
+	}
+	return c.Compactor.Write(dest, b, mint, maxt, base)
 }
 
 // TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod
