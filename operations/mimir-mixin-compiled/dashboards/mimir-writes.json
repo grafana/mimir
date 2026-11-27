@@ -2502,7 +2502,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Scaling metric (CPU): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                  "description": "### Desired replicas (CPU)\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2546,12 +2546,12 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "Scaling metric (CPU): Desired replicas",
+                  "title": "Desired replicas (CPU)",
                   "type": "timeseries"
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Scaling metric (memory): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                  "description": "### Desired replicas (memory)\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2595,7 +2595,7 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "Scaling metric (memory): Desired replicas",
+                  "title": "Desired replicas (memory)",
                   "type": "timeseries"
                },
                {
@@ -2940,7 +2940,7 @@
                         "refId": "C_classic"
                      }
                   ],
-                  "title": "Latency",
+                  "title": "Request latency",
                   "type": "timeseries",
                   "yaxes": [
                      {
@@ -3254,7 +3254,7 @@
                         "refId": "C_classic"
                      }
                   ],
-                  "title": "Latency",
+                  "title": "Request latency",
                   "type": "timeseries",
                   "yaxes": [
                      {
@@ -3568,7 +3568,7 @@
                         "refId": "C_classic"
                      }
                   ],
-                  "title": "Latency",
+                  "title": "Request latency",
                   "type": "timeseries",
                   "yaxes": [
                      {

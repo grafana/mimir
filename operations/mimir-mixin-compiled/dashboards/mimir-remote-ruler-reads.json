@@ -63,7 +63,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Evaluations per second\nRate of rule expressions evaluated per second.\n\n",
+                  "description": "### Evaluations / sec\nRate of rule expressions evaluated per second.\n\n",
                   "fill": 1,
                   "format": "reqps",
                   "id": 2,
@@ -432,7 +432,7 @@
                         "refId": "C_native"
                      }
                   ],
-                  "title": "Latency",
+                  "title": "Request latency",
                   "type": "timeseries"
                },
                {
@@ -489,7 +489,7 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "Per pod p99 latency",
+                  "title": "Per pod p99 request latency",
                   "type": "timeseries"
                }
             ],
@@ -634,7 +634,7 @@
                         "refId": "C_classic"
                      }
                   ],
-                  "title": "Latency (Time in Queue)",
+                  "title": "Queue latency",
                   "type": "timeseries",
                   "yaxes": [
                      {
@@ -719,7 +719,7 @@
             "panels": [
                {
                   "datasource": "$datasource",
-                  "description": "### 99th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
+                  "description": "### p99 queue latency\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -770,12 +770,12 @@
                         "refId": "A_classic"
                      }
                   ],
-                  "title": "99th Percentile Latency by Expected Query Component",
+                  "title": "p99 queue latency",
                   "type": "timeseries"
                },
                {
                   "datasource": "$datasource",
-                  "description": "### 50th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
+                  "description": "### p50 queue latency\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -826,12 +826,12 @@
                         "refId": "A_classic"
                      }
                   ],
-                  "title": "50th Percentile Latency by Expected Query Component",
+                  "title": "p50 queue latency",
                   "type": "timeseries"
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Average Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
+                  "description": "### Mean queue latency\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -882,7 +882,7 @@
                         "refId": "C_classic"
                      }
                   ],
-                  "title": "Average Latency by Expected Query Component",
+                  "title": "Mean queue latency",
                   "type": "timeseries"
                }
             ],
@@ -890,7 +890,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Ruler-query-scheduler Latency (Time in Queue) Breakout by Expected Query Component",
+            "title": "Ruler-query-scheduler – queue latency by expected query component",
             "titleSize": "h6"
          },
          {
@@ -899,7 +899,7 @@
             "panels": [
                {
                   "datasource": "$datasource",
-                  "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query-scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p>\n\n",
+                  "description": "### p99 inflight requests vs. connected queriers\n<p>\n  The query-scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p>\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -949,7 +949,7 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers",
+                  "title": "p99 inflight requests vs. connected queriers",
                   "type": "timeseries"
                }
             ],
@@ -957,7 +957,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Ruler-query-scheduler <-> Querier Inflight Requests",
+            "title": "Ruler-query-scheduler – inflight requests by query component",
             "titleSize": "h6"
          },
          {
@@ -1245,7 +1245,7 @@
                         "refId": "C_native"
                      }
                   ],
-                  "title": "Latency",
+                  "title": "Request latency",
                   "type": "timeseries"
                },
                {
@@ -1302,7 +1302,7 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "Per pod p99 latency",
+                  "title": "Per pod p99 request latency",
                   "type": "timeseries"
                }
             ],
@@ -1525,7 +1525,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Latency\nThis panel shows ingester query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by ingesters.\n",
+                  "description": "### Request latency\nThis panel shows ingester query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by ingesters.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -1600,12 +1600,12 @@
                         "refId": "C_native"
                      }
                   ],
-                  "title": "Latency",
+                  "title": "Request latency",
                   "type": "timeseries"
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Per ingester pod p99 latency\nThis panel shows ingester query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by ingesters.\n",
+                  "description": "### Per pod p99 request latency\nThis panel shows ingester query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by ingesters.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -1658,7 +1658,7 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "Per ingester pod p99 latency",
+                  "title": "Per pod p99 request latency",
                   "type": "timeseries"
                }
             ],
@@ -1881,7 +1881,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Latency\nThis panel shows ingester query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
+                  "description": "### Request latency\nThis panel shows ingester query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -1956,7 +1956,7 @@
                         "refId": "C_classic"
                      }
                   ],
-                  "title": "Latency",
+                  "title": "Request latency",
                   "type": "timeseries",
                   "yaxes": [
                      {
@@ -1979,7 +1979,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Per querier pod p99 latency\nThis panel shows ingester query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
+                  "description": "### Per querier pod p99 request latency\nThis panel shows ingester query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2032,7 +2032,7 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "Per querier pod p99 latency",
+                  "title": "Per querier pod p99 request latency",
                   "type": "timeseries"
                }
             ],
@@ -2255,7 +2255,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Latency\nThis panel shows store-gateway query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by store-gateways.\n",
+                  "description": "### Request latency\nThis panel shows store-gateway query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by store-gateways.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2330,12 +2330,12 @@
                         "refId": "C_native"
                      }
                   ],
-                  "title": "Latency",
+                  "title": "Request latency",
                   "type": "timeseries"
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Per store-gateway pod p99 latency\nThis panel shows store-gateway query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by store-gateways.\n",
+                  "description": "### Per pod p99 request latency\nThis panel shows store-gateway query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by store-gateways.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2388,7 +2388,7 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "Per store-gateway pod p99 latency",
+                  "title": "Per pod p99 request latency",
                   "type": "timeseries"
                }
             ],
@@ -2611,7 +2611,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Latency\nThis panel shows store-gateway query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
+                  "description": "### Request latency\nThis panel shows store-gateway query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2686,7 +2686,7 @@
                         "refId": "C_classic"
                      }
                   ],
-                  "title": "Latency",
+                  "title": "Request latency",
                   "type": "timeseries",
                   "yaxes": [
                      {
@@ -2709,7 +2709,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Per querier pod p99 latency\nThis panel shows store-gateway query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
+                  "description": "### Per querier pod p99 request latency\nThis panel shows store-gateway query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2762,7 +2762,7 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "Per querier pod p99 latency",
+                  "title": "Per querier pod p99 request latency",
                   "type": "timeseries"
                }
             ],
@@ -2950,7 +2950,7 @@
             "panels": [
                {
                   "datasource": "$datasource",
-                  "description": "### Scaling metric (CPU): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                  "description": "### Desired replicas (CPU)\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2994,12 +2994,12 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "Scaling metric (CPU): Desired replicas",
+                  "title": "Desired replicas (CPU)",
                   "type": "timeseries"
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Scaling metric (memory): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                  "description": "### Desired replicas (memory)\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -3043,12 +3043,12 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "Scaling metric (memory): Desired replicas",
+                  "title": "Desired replicas (memory)",
                   "type": "timeseries"
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Scaling metric (in-flight queries): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                  "description": "### Desired replicas (in-flight queries)\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -3092,7 +3092,7 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "Scaling metric (in-flight queries): Desired replicas",
+                  "title": "Desired replicas (in-flight queries)",
                   "type": "timeseries"
                }
             ],
