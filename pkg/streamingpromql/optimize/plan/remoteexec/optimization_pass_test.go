@@ -1373,4 +1373,5 @@ func (m *mockLimits) QueryShardingMaxRegexpSizeBytes(userID string) int  { retur
 func (m *mockLimits) QueryShardingMaxShardedQueries(userID string) int   { return 0 }
 func (m *mockLimits) NativeResourcesEnabled(userID string) bool          { return false }
 func (m *mockLimits) NativeInfoQueryShardingDisabled(userID string) bool { return false }
+func (m *mockLimits) NativeInfoOwnResourcesEnabled(userID string) bool   { return false }
 func (m *mockLimits) CompactorSplitAndMergeShards(userID string) int     { return 0 }

@@ -193,6 +193,10 @@ func (m *mockLimits) NativeInfoQueryShardingDisabled(userID string) bool {
 	return false
 }
 
+func (m *mockLimits) NativeInfoOwnResourcesEnabled(userID string) bool {
+	return false
+}
+
 func (m *mockLimits) CompactorSplitAndMergeShards(userID string) int {
 	return m.splitAndMergeShards
 }

@@ -120,6 +120,9 @@ type Limits interface {
 	// natively aren't sharded.
 	NativeInfoQueryShardingDisabled(userID string) bool
 
+	// NativeInfoOwnResourcesEnabled returns whether the tenant's info() takes its inner series' own native resources.
+	NativeInfoOwnResourcesEnabled(userID string) bool
+
 	// EnabledPromQLExperimentalFunctions returns the names of PromQL experimental functions allowed for the tenant.
 	EnabledPromQLExperimentalFunctions(userID string) []string
 

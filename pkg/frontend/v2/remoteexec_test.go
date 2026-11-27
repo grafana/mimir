@@ -2428,6 +2428,10 @@ func (m mockLimitedParallelismLimits) NativeInfoQueryShardingDisabled(_ string) 
 	return false
 }
 
+func (m mockLimitedParallelismLimits) NativeInfoOwnResourcesEnabled(_ string) bool {
+	return false
+}
+
 func (m mockLimitedParallelismLimits) CardinalityShardingMaxShardedQueries(_ string) int {
 	return 0
 }

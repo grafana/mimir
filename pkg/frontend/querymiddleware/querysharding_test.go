@@ -533,6 +533,7 @@ func TestQuerySharder_Shard_NativeInfo(t *testing.T) {
 		query           string
 		switchOn        bool
 		nativeResources bool
+		ownResources    bool
 		// The request's choice of native target_info or the join, if any.
 		requested *bool
 		sharded   bool
@@ -543,10 +544,12 @@ func TestQuerySharder_Shard_NativeInfo(t *testing.T) {
 		"the switch off":                          {query: aggregatedInfo, nativeResources: true, sharded: true},
 		"a query without info()":                  {query: `sum by (k8s_node_name) (container_memory_working_set_bytes{container!=""})`, switchOn: true, nativeResources: true, sharded: true},
 		"info() below the query's root":           {query: `sum(info(up)) / sum(up)`, switchOn: true, nativeResources: true},
+		// Own mode looks up by series, as sharded as the selects.
+		"info()'s own mode": {query: aggregatedInfo, switchOn: true, nativeResources: true, ownResources: true, sharded: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			shard := func(switchOn bool) parser.Expr {
-				limits := mockLimits{totalShards: 16, nativeResourcesEnabled: tc.nativeResources, nativeInfoQueryShardingDisabled: switchOn}
+				limits := mockLimits{totalShards: 16, nativeResourcesEnabled: tc.nativeResources, nativeInfoQueryShardingDisabled: switchOn, nativeInfoOwnResourcesEnabled: tc.ownResources}
 				sharder := NewQuerySharder(astmapper.EmbeddedQueriesSquasher, limits, 0, nil, log.NewNopLogger())
 				ctx := t.Context()
 				if tc.requested != nil {

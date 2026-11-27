@@ -269,6 +269,7 @@ type ShardingLimits interface {
 	// the join.
 	NativeResourcesEnabled(userID string) bool
 	NativeInfoQueryShardingDisabled(userID string) bool
+	NativeInfoOwnResourcesEnabled(userID string) bool
 }
 
 func NewQuerySharder(
@@ -362,14 +363,15 @@ func (s *QuerySharder) shardQuery(ctx context.Context, expr parser.Expr, totalSh
 // keepsNativeInfoUnsharded reports whether expr calls info() and finds target_info natively for a tenant that doesn't
 // shard such queries. Sharding splits info()'s inner series by series, so each shard's info() looks up every target
 // its share has: with targets of a few dozen series, nearly all of them, so that the shards together look up every
-// target about as many times as there are shards.
+// target about as many times as there are shards. info()'s own mode looks up by series instead, as sharded as its
+// selects, so a tenant with it keeps its sharding.
 func (s *QuerySharder) keepsNativeInfoUnsharded(ctx context.Context, tenantIDs []string, expr parser.Expr) bool {
 	native, set := querierapi.NativeTargetInfoFromContext(ctx)
 	if set && !native {
 		return false
 	}
 	keeps := func(tenantID string) bool {
-		return s.limit.NativeInfoQueryShardingDisabled(tenantID) && (native || s.limit.NativeResourcesEnabled(tenantID))
+		return s.limit.NativeInfoQueryShardingDisabled(tenantID) && !s.limit.NativeInfoOwnResourcesEnabled(tenantID) && (native || s.limit.NativeResourcesEnabled(tenantID))
 	}
 	return slices.ContainsFunc(tenantIDs, keeps) && callsInfo(expr)
 }
