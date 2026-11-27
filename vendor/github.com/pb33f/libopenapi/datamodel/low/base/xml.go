@@ -52,8 +52,7 @@ func (x *XML) Build(root *yaml.Node, idx *index.SpecIndex) error {
 		x.Extensions = nil
 		return nil
 	}
-	root = utils.NodeAlias(root)
-	utils.CheckForMergeNodes(root)
+	root = utils.ResolveMergeNodes(root)
 	x.RootNode = root
 	if len(root.Content) > 0 {
 		x.NodeMap.ExtractNodes(root, false)

@@ -43,10 +43,6 @@ func TestCompartmentTokens_WriteRequestIndexes(t *testing.T) {
 func TestGetCompartmentTokensForWriteRequest(t *testing.T) {
 	userID := "user-1"
 
-	newTestCompartmentRouter := func(numCompartments int) *compartments.TopicRouter {
-		return compartments.NewTopicRouter(numCompartments, "comp-<read-compartment-id>")
-	}
-
 	req := &mimirpb.WriteRequest{
 		Timeseries: []mimirpb.PreallocTimeseries{
 			makeTimeseries([]string{model.MetricNameLabel, "metric_a"}, makeSamples(1000, 1), nil, nil),
@@ -60,7 +56,7 @@ func TestGetCompartmentTokensForWriteRequest(t *testing.T) {
 	}
 
 	t.Run("groups items by compartment, keeping series+metadata of a metric together", func(t *testing.T) {
-		router := newTestCompartmentRouter(3)
+		router := compartmentsTestRouter(3)
 
 		cts, initialMetadataIndex := getCompartmentTokensForWriteRequest(router, userID, req)
 		assert.Equal(t, 3, initialMetadataIndex)
@@ -94,7 +90,7 @@ func TestGetCompartmentTokensForWriteRequest(t *testing.T) {
 			},
 		}
 
-		cts, _ := getCompartmentTokensForWriteRequest(newTestCompartmentRouter(3), userID, noNameReq)
+		cts, _ := getCompartmentTokensForWriteRequest(compartmentsTestRouter(3), userID, noNameReq)
 
 		total := 0
 		for _, ct := range cts {
@@ -110,7 +106,7 @@ func TestGroupSeriesHashesByReadCompartment(t *testing.T) {
 		numCompartments = 5
 	)
 	metadata := tenant.NewMetadata(":source=test")
-	router := compartments.NewTopicRouter(numCompartments, "comp-<read-compartment-id>")
+	router := compartmentsTestRouter(numCompartments)
 
 	metricNames := []string{"metric_a", "metric_b", "metric_a", "metric_c", "metric_d", "metric_b"}
 	timeseries := make([]mimirpb.PreallocTimeseries, 0, len(metricNames))
@@ -128,7 +124,7 @@ func TestGroupSeriesHashesByReadCompartment(t *testing.T) {
 	for compartment := range numCompartments {
 		if hashes, ok := expectedHashes[compartment]; ok {
 			expectedGroups = append(expectedGroups, usagetrackerclient.UserSeries{
-				UserID: userID + "/rc/" + strconv.Itoa(compartment) + ":source=test",
+				UserID: userID + ":rc=" + strconv.Itoa(compartment) + ":source=test",
 				Series: hashes,
 			})
 		}
@@ -137,7 +133,7 @@ func TestGroupSeriesHashesByReadCompartment(t *testing.T) {
 	require.Greater(t, len(expectedGroups), 1)
 	require.Less(t, len(expectedGroups), numCompartments)
 
-	assert.Equal(t, expectedGroups, groupSeriesHashesByReadCompartment(router, userID, metadata, timeseries, seriesHashes))
+	assert.Equal(t, expectedGroups, groupSeriesHashesByReadCompartment(router, compartments.Config{}, userID, metadata, timeseries, seriesHashes))
 	// The second call can get the scratch buffers that the first call returned to the pool.
-	assert.Equal(t, expectedGroups, groupSeriesHashesByReadCompartment(router, userID, metadata, timeseries, seriesHashes))
+	assert.Equal(t, expectedGroups, groupSeriesHashesByReadCompartment(router, compartments.Config{}, userID, metadata, timeseries, seriesHashes))
 }

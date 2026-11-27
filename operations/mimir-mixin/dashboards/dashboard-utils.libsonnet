@@ -758,7 +758,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.qpsPanelNativeHistogram('cortex_kv_request_duration_seconds', '%s, kv_name=~"%s"' % [$.jobMatcher($._config.job_names[jobName]), kvName])
     )
     .addPanel(
-      $.timeseriesPanel('Latency') +
+      $.timeseriesPanel('Request latency') +
       $.ncLatencyPanel('cortex_kv_request_duration_seconds', '%s, kv_name=~"%s"' % [$.jobMatcher($._config.job_names[jobName]), kvName])
     ),
 
@@ -1127,27 +1127,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { fieldConfig: { defaults: { noValue: '0', unit: 'percentunit', min: 0, max: 1 } } }
     )
     .addPanel(
-      $.timeseriesPanel('Latency of op: Attributes') +
+      $.timeseriesPanel('Attributes latency') +
       $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component=~"%s",operation="attributes"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.timeseriesPanel('Latency of op: Exists') +
+      $.timeseriesPanel('Exists latency') +
       $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component=~"%s",operation="exists"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.timeseriesPanel('Latency of op: Get') +
+      $.timeseriesPanel('Get latency') +
       $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component=~"%s",operation="get"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.timeseriesPanel('Latency of op: GetRange') +
+      $.timeseriesPanel('GetRange latency') +
       $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component=~"%s",operation="get_range"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.timeseriesPanel('Latency of op: Upload') +
+      $.timeseriesPanel('Upload latency') +
       $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component=~"%s",operation="upload"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.timeseriesPanel('Latency of op: Delete') +
+      $.timeseriesPanel('Delete latency') +
       $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component=~"%s",operation="delete"' % [$.namespaceMatcher(), component]),
     )
     .splitIntoLines([4, 4]),
@@ -1178,7 +1178,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { fieldConfig+: { defaults+: { unit: 'ops' } } }
     )
     .addPanel(
-      $.timeseriesPanel('Latency (getmulti)') +
+      $.timeseriesPanel('GetMulti latency') +
       $.ncLatencyPanel(
         'thanos_cache_operation_duration_seconds',
         |||
@@ -1513,11 +1513,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.qpsPanelNativeHistogram($.queries.query_frontend.requestsPerSecondMetric, utils.toPrometheusSelectorNaked($.jobSelector(queryFrontendJobName) + [utils.selector.re('route', queryRoutesRegex)]))
       )
       .addPanel(
-        $.timeseriesPanel('Latency') +
+        $.timeseriesPanel('Request latency') +
         $.latencyRecordingRulePanelNativeHistogram($.queries.query_frontend.requestsPerSecondMetric, $.jobSelector(queryFrontendJobName) + [utils.selector.re('route', queryRoutesRegex)])
       )
       .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.timeseriesPanel('Per %s p99 request latency' % $._config.per_instance_label) +
         $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.query_frontend.requestsPerSecondMetric, $.jobSelector(queryFrontendJobName) + [utils.selector.re('route', queryRoutesRegex)])
       ),
       $.row($.capitalize(rowTitlePrefix + 'query-scheduler'))
@@ -1537,7 +1537,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         { fieldConfig+: { defaults+: { unit: 'reqps' } } },
       )
       .addPanel(
-        local title = 'Latency (Time in Queue)';
+        local title = 'Queue latency';
         $.timeseriesPanel(title) +
         $.ncLatencyPanel('cortex_query_scheduler_queue_duration_seconds', $.jobMatcher(querySchedulerJobName))
       )
@@ -1577,9 +1577,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
           regex: '^$',
         },
       ];
-      $.row($.capitalize(rowTitlePrefix + 'query-scheduler Latency (Time in Queue) Breakout by Expected Query Component'))
+      $.row($.capitalize(rowTitlePrefix + 'query-scheduler – queue latency by expected query component'))
       .addPanel(
-        local title = '99th Percentile Latency by Expected Query Component';
+        local title = 'p99 queue latency';
         $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.latencyPanelLabelBreakout(
@@ -1592,7 +1592,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
       )
       .addPanel(
-        local title = '50th Percentile Latency by Expected Query Component';
+        local title = 'p50 queue latency';
         $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.latencyPanelLabelBreakout(
@@ -1605,7 +1605,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
       )
       .addPanel(
-        local title = 'Average Latency by Expected Query Component';
+        local title = 'Mean queue latency';
         $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.latencyPanelLabelBreakout(
@@ -1641,9 +1641,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
           regex: '^$',
         },
       ];
-      $.row($.capitalize(rowTitlePrefix + 'query-scheduler <-> Querier Inflight Requests'))
+      $.row($.capitalize(rowTitlePrefix + 'query-scheduler – inflight requests by query component'))
       .addPanel(
-        local title = $.capitalize('99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers');
+        local title = 'p99 inflight requests vs. connected queriers';
         $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.queryPanel(
@@ -1683,11 +1683,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.qpsPanelNativeHistogram('cortex_querier_request_duration_seconds', '%s, route=~"%s"' % [$.jobMatcher(querierJobName), $.queries.querier_read_routes_regex])
       )
       .addPanel(
-        $.timeseriesPanel('Latency') +
+        $.timeseriesPanel('Request latency') +
         $.latencyRecordingRulePanelNativeHistogram('cortex_querier_request_duration_seconds', $.jobSelector(querierJobName) + [utils.selector.re('route', $.queries.querier_read_routes_regex)])
       )
       .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.timeseriesPanel('Per %s p99 request latency' % $._config.per_instance_label) +
         $.perInstanceLatencyPanelNativeHistogram(
           '0.99',
           'cortex_querier_request_duration_seconds',
@@ -1738,13 +1738,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.qpsPanelNativeHistogram(ingesterStoreGatewayRequestsPerSecondMetric, ingesterStoreGatewayRequestsPerSecondSelector)
     )
     .addPanel(
-      $.timeseriesPanel('Latency') +
-      $.panelDescription('Latency', description) +
+      $.timeseriesPanel('Request latency') +
+      $.panelDescription('Request latency', description) +
       $.latencyRecordingRulePanelNativeHistogram(ingesterStoreGatewayRequestsPerSecondMetric, $.jobSelector(ingesterStoreGatewayJobNames) + [utils.selector.re('route', ingesterStoreGatewayRoutesRegex)])
     )
     .addPanel(
-      $.timeseriesPanel('Per %s %s p99 latency' % [ingesterStoreGatewayComponentName, $._config.per_instance_label]) +
-      $.panelDescription('Per %s %s p99 latency' % [ingesterStoreGatewayComponentName, $._config.per_instance_label], description) +
+      $.timeseriesPanel('Per %s p99 request latency' % $._config.per_instance_label) +
+      $.panelDescription('Per %s p99 request latency' % $._config.per_instance_label, description) +
       $.perInstanceLatencyPanelNativeHistogram(
         '0.99',
         ingesterStoreGatewayRequestsPerSecondMetric,
@@ -1766,13 +1766,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.qpsPanelNativeHistogram(querierRequestsPerSecondMetric, utils.toPrometheusSelectorNaked(selectors))
     )
     .addPanel(
-      $.timeseriesPanel('Latency') +
-      $.panelDescription('Latency', description) +
+      $.timeseriesPanel('Request latency') +
+      $.panelDescription('Request latency', description) +
       $.ncLatencyPanel(querierRequestsPerSecondMetric, utils.toPrometheusSelectorNaked(selectors))
     )
     .addPanel(
-      $.timeseriesPanel('Per querier %s p99 latency' % $._config.per_instance_label) +
-      $.panelDescription('Per querier %s p99 latency' % $._config.per_instance_label, description) +
+      $.timeseriesPanel('Per querier %s p99 request latency' % $._config.per_instance_label) +
+      $.panelDescription('Per querier %s p99 request latency' % $._config.per_instance_label, description) +
       $.perInstanceLatencyPanelNativeHistogram('0.99', querierRequestsPerSecondMetric, selectors),
     ),
   ],

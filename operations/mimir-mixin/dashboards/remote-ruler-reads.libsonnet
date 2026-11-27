@@ -32,7 +32,7 @@ local filename = 'mimir-remote-ruler-reads.json';
         $.panel('Evaluations / sec') +
         $.statPanel(utils.ncHistogramSumBy(utils.ncHistogramCountRate($.queries.ruler_query_frontend.requestsPerSecondMetric, $.queries.ruler_query_frontend.readRequestsPerSecondSelector)), format='reqps') +
         $.panelDescription(
-          'Evaluations per second',
+          'Evaluations / sec',
           |||
             Rate of rule expressions evaluated per second.
           |||

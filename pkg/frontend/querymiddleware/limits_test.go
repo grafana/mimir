@@ -742,6 +742,10 @@ func (m multiTenantMockLimits) ResultsCacheTTLForLabelsQuery(userID string) time
 	return m.byTenant[userID].resultsCacheTTLForLabelsQuery
 }
 
+func (m multiTenantMockLimits) MetadataDefaultTimeRange(userID string) time.Duration {
+	return m.byTenant[userID].metadataDefaultTimeRange
+}
+
 func (m multiTenantMockLimits) ResultsCacheTTLForErrors(userID string) time.Duration {
 	return m.byTenant[userID].resultsCacheTTLForErrors
 }
@@ -823,6 +827,7 @@ type mockLimits struct {
 	resultsCacheOutOfOrderWindowTTL       time.Duration
 	resultsCacheTTLForCardinalityQuery    time.Duration
 	resultsCacheTTLForLabelsQuery         time.Duration
+	metadataDefaultTimeRange              time.Duration
 	resultsCacheTTLForErrors              time.Duration
 	resultsCacheForUnalignedQueryEnabled  bool
 	enabledPromQLExperimentalFunctions    []string
@@ -922,6 +927,10 @@ func (m mockLimits) LimitedQueries(userID string) []validation.LimitedQuery {
 
 func (m mockLimits) ResultsCacheTTLForLabelsQuery(string) time.Duration {
 	return m.resultsCacheTTLForLabelsQuery
+}
+
+func (m mockLimits) MetadataDefaultTimeRange(string) time.Duration {
+	return m.metadataDefaultTimeRange
 }
 
 func (m mockLimits) ResultsCacheForUnalignedQueryEnabled(string) bool {

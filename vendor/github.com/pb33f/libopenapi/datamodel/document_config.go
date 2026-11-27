@@ -55,6 +55,8 @@ type DocumentConfiguration struct {
 	BasePath string // set the Base Path for resolving relative references if the spec is exploded.
 
 	// SpecFilePath is the name of the root specification file (usually named "openapi.yaml").
+	// For OpenAPI 3, an absolute HTTP(S) URL supplies the root retrieval identity and
+	// relative-reference base when neither BaseURL nor $self supplies a base.
 	SpecFilePath string
 
 	// FileFilter is a list of specific files to be included by the rolodex when looking up references. If this value
@@ -80,6 +82,11 @@ type DocumentConfiguration struct {
 	// it will suck in and index everything from the current working directory, down... so be warned
 	// FileFilter should be used to limit the scope of the rolodex.
 	AllowFileReferences bool
+
+	// AllowExcessiveAliases disables the YAML alias expansion limit during indexing.
+	// Use it for trusted documents with large amounts of shared YAML content.
+	// The limit remains enabled by default; cycle detection is always enabled.
+	AllowExcessiveAliases bool
 
 	// SkipExternalRefResolution will skip resolving external $ref references (those not starting with #).
 	// When enabled, external references will be left as-is during model building. Schema proxies will

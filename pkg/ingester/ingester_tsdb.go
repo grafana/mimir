@@ -19,12 +19,10 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/tenant"
-	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
@@ -149,7 +147,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		instanceLimitsFn:        i.getInstanceLimits,
 		instanceSeriesCount:     &i.seriesCount,
 		instanceErrors:          i.metrics.rejected,
-		blockMinRetention:       i.cfg.BlocksStorageConfig.TSDB.Retention,
 		useOwnedSeriesForLimits: i.cfg.UseIngesterOwnedSeriesForLimits,
 		seriesRefHistory:        newSeriesRefHistory(labelChurnRecords),
 
@@ -165,13 +162,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		userDB.plannerProvider = newPlannerProvider(plannerFactory)
 	}
 
-	userDBReady := atomic.NewBool(false)
-	blocksToDelete := func(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
-		if !userDBReady.Load() {
-			return nil
-		}
-		return userDB.blocksToDelete(blocks)
-	}
 	blockGeneration := blockGenerationCalculator(userDB, blockRanges[0])
 
 	if i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled {
@@ -179,6 +169,12 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
+	engine := &prometheusEngine{
+		blockDuration:     blockRanges[0],
+		logger:            userLogger,
+		blockMinRetention: i.cfg.BlocksStorageConfig.TSDB.Retention,
+	}
+
 	// Create a new user database
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                    i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
@@ -192,11 +188,12 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		WALSegmentSize:                       i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
 		WALReplayConcurrency:                 walReplayConcurrency,
 		SeriesLifecycleCallback:              userDB,
-		BlocksToDelete:                       blocksToDelete,
+		BlocksToDelete:                       engine.blocksToDelete,
 		EnableExemplarStorage:                true, // enable for everyone so we can raise the limit later
 		MaxExemplars:                         int64(i.limiter.maxExemplarsPerUser(userID)),
 		SeriesHashCache:                      i.seriesHashCache,
 		EnableMemorySnapshotOnShutdown:       i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
+		EnableCommitStats:                    true,
 		EnableBiggerOOOBlockForOldSamples:    i.cfg.BlocksStorageConfig.TSDB.BiggerOutOfOrderBlocksForOldSamples,
 		IsolationDisabled:                    true,
 		HeadChunksWriteQueueSize:             i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
@@ -230,7 +227,8 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	level.Info(userLogger).Log("msg", "Running compaction after WAL replay")
 	// Note that we want to let TSDB creation finish without being interrupted by eventual context cancellation,
 	// so passing an independent context here
-	err = (prometheusEngine{db: db}).Compact(context.Background())
+	engine.db = db
+	err = engine.Compact(context.Background())
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to compact TSDB: %s", udir)
 	}
@@ -238,7 +236,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	// so they do not make a record invalid.
 	userDB.pendingSeriesRemovals.Store(0)
 
-	userDB.db = db
+	userDB.db = engine
 	// We set the limiter here because we don't want to limit
 	// series during WAL replay.
 	userDB.limiter = i.limiter
@@ -250,13 +248,13 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	// If head is empty (eg. new TSDB), don't close it right after.
 	lastUpdateTime := time.Now()
-	if db.Head().NumSeries() > 0 {
+	if engine.Head().NumSeries() > 0 {
 		// If there are series in the head, use the newest data time. If this time is too old,
 		// TSDB will be eligible for flushing and closing sooner, unless more data is pushed to it quickly.
 		//
 		// If TSDB's maxTime is in the future, ignore it. If we set "lastUpdate" to very distant future, it would prevent
 		// us from detecting TSDB as idle for a very long time.
-		if t := newestDataTime(db); t > math.MinInt64 {
+		if t := engine.NewestDataTime(); t > math.MinInt64 {
 			if tt := time.UnixMilli(t); tt.Before(lastUpdateTime) {
 				lastUpdateTime = tt
 			}
@@ -266,7 +264,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	// Create a new shipper for this database
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
-		userDB.shipper = newShipper(
+		engine.shipper = newShipper(
 			userLogger,
 			i.limits,
 			userID,
@@ -277,7 +275,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		)
 
 		// Initialise the shipper blocks cache.
-		if err := userDB.updateCachedShippedBlocks(); err != nil {
+		if err := engine.updateCachedShippedBlocks(); err != nil {
 			level.Error(userLogger).Log("msg", "failed to update cached shipped blocks after shipper initialisation", "err", err)
 		}
 	}
@@ -291,27 +289,11 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		}
 	}
 
-	// Must be the last statement: once flipped, blocksToDelete can run against userDB from
-	// the goroutine tsdb.Open started, so every field it reads must already be initialised.
-	userDBReady.Store(true)
+	// tsdb.Open starts a goroutine that can call blocksToDelete. Enable it only after
+	// the engine and its shipper have been initialized.
+	engine.blockDeletionReady.Store(true)
 
 	return userDB, nil
-}
-
-// newestDataTime returns the max time of the head (in-order and out-of-order) and of the local blocks,
-// or math.MinInt64 if the TSDB has no data.
-//
-// Head().MaxTime() alone is not enough. On open, it is raised to the max time of the newest in-order block,
-// but blocks written from out-of-order data or by CompactSelectedSeries are skipped. After early compaction
-// of non-owned series and a restart, the head can have series without any in-order sample, so its max time is
-// math.MinInt64 while local blocks hold recent data. Block max times are aligned to the block range, so the
-// result can be up to one block range newer than the newest sample.
-func newestDataTime(db *tsdb.DB) int64 {
-	t := max(db.Head().MaxTime(), db.Head().MaxOOOTime())
-	for _, b := range db.Blocks() {
-		t = max(t, b.Meta().MaxTime)
-	}
-	return t
 }
 
 // createBlockChunkQuerier creates a BlockChunkQuerier that wraps the default querier with stats tracking
@@ -617,7 +599,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 		return tsdbShippingDisabled
 	}
 
-	if userDB.shipper == nil && !i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBWhenShippingDisabled {
+	if !userDB.engine().BlockShippingEnabled() && !i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBWhenShippingDisabled {
 		// We will not delete local data when not using shipping to storage unless explicitly configured.
 		return tsdbShippingDisabled
 	}
@@ -651,7 +633,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	// We need to remove these series from series count.
 	i.seriesCount.Sub(int64(userDB.Head().NumSeries()))
 
-	dir := userDB.db.Dir()
+	dir := userDB.prometheusDB().Dir()
 
 	if err := userDB.Close(); err != nil {
 		level.Error(i.logger).Log("msg", "failed to close idle TSDB", "user", userID, "err", err)

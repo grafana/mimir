@@ -241,7 +241,8 @@ func NewQuerierHandler(
 	newAPI := func(queryEngine promql.QueryEngine, reg prometheus.Registerer, enableQueryCost bool) *v1.API {
 		return v1.NewAPI(
 			queryEngine,
-			querier.NewErrorTranslateSampleAndChunkQueryable(queryable), // Translate errors to errors expected by API.
+			// Translate errors to errors expected by API, and add the warning of the metadata default time range.
+			querier.NewMetadataDefaultTimeRangeQueryable(querier.NewErrorTranslateSampleAndChunkQueryable(queryable)),
 			nil, // No remote write support.
 			exemplarQueryable,
 			func(context.Context) v1.ScrapePoolsRetriever { return &querier.DummyTargetRetriever{} },
@@ -288,7 +289,7 @@ func NewQuerierHandler(
 			promqlext.NewPromQLParser(),
 			enableQueryCost,
 			querierCfg.EngineConfig.Timeout,
-			0, // Disable the default time range for metadata requests that omit start or end.
+			0, // Disable the default time range for metadata requests that omit start or end. Mimir applies it per tenant with querier.NewMetadataDefaultTimeRangeMiddleware.
 		)
 	}
 
@@ -348,15 +349,17 @@ func NewQuerierHandler(
 		}
 	}
 
+	metadataDefaultTimeRangeMiddleware := querier.NewMetadataDefaultTimeRangeMiddleware(limits)
+
 	// TODO(gotjosh): This custom handler is temporary until we're able to vendor the changes in:
 	// https://github.com/prometheus/prometheus/pull/7125/files
 	router.Path(path.Join(promPrefix, "/read")).Methods("POST").Handler(remoteReadStats.Wrap(unlimitedMemoryTrackerMiddleware.Wrap(querier.RemoteReadHandler(queryable, logger, querierCfg))))
 	router.Path(path.Join(promPrefix, "/query")).Methods("GET", "POST").Handler(instantQueryStats.Wrap(promRouter))
 	router.Path(path.Join(promPrefix, "/query_range")).Methods("GET", "POST").Handler(rangeQueryStats.Wrap(promRouter))
 	router.Path(path.Join(promPrefix, "/query_exemplars")).Methods("GET", "POST").Handler(exemplarsQueryStats.Wrap(promRouter))
-	router.Path(path.Join(promPrefix, "/labels")).Methods("GET", "POST").Handler(labelsQueryStats.Wrap(promRouter))
-	router.Path(path.Join(promPrefix, "/label/{name}/values")).Methods("GET").Handler(labelsQueryStats.Wrap(promRouter))
-	router.Path(path.Join(promPrefix, "/series")).Methods("GET", "POST", "DELETE").Handler(seriesQueryStats.Wrap(unlimitedMemoryTrackerMiddleware.Wrap(promRouter)))
+	router.Path(path.Join(promPrefix, "/labels")).Methods("GET", "POST").Handler(labelsQueryStats.Wrap(metadataDefaultTimeRangeMiddleware.Wrap(promRouter)))
+	router.Path(path.Join(promPrefix, "/label/{name}/values")).Methods("GET").Handler(labelsQueryStats.Wrap(metadataDefaultTimeRangeMiddleware.Wrap(promRouter)))
+	router.Path(path.Join(promPrefix, "/series")).Methods("GET", "POST", "DELETE").Handler(seriesQueryStats.Wrap(unlimitedMemoryTrackerMiddleware.Wrap(metadataDefaultTimeRangeMiddleware.Wrap(promRouter))))
 	router.Path(path.Join(promPrefix, "/metadata")).Methods("GET").Handler(metadataQueryStats.Wrap(querier.NewMetadataHandler(metadataSupplier)))
 	router.Path(path.Join(promPrefix, "/cardinality/label_names")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelNamesCardinalityHandler(distributor, limits)))
 	router.Path(path.Join(promPrefix, "/cardinality/label_values")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelValuesCardinalityHandler(distributor, limits)))

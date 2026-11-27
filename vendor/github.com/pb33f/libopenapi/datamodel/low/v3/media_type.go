@@ -21,19 +21,20 @@ import (
 // Each Media Type Object provides schema and examples for the media type identified by its key.
 //   - https://spec.openapis.org/oas/v3.1.0#media-type-object
 type MediaType struct {
-	Schema       low.NodeReference[*base.SchemaProxy]
-	ItemSchema   low.NodeReference[*base.SchemaProxy]
-	Example      low.NodeReference[*yaml.Node]
-	Examples     low.NodeReference[*orderedmap.Map[low.KeyReference[string], low.ValueReference[*base.Example]]]
-	Encoding     low.NodeReference[*orderedmap.Map[low.KeyReference[string], low.ValueReference[*Encoding]]]
-	ItemEncoding low.NodeReference[*orderedmap.Map[low.KeyReference[string], low.ValueReference[*Encoding]]]
-	Extensions   *orderedmap.Map[low.KeyReference[string], low.ValueReference[*yaml.Node]]
-	KeyNode      *yaml.Node
-	RootNode     *yaml.Node
-	index        *index.SpecIndex
-	context      context.Context
-	nodeStore    low.NodeLines
-	reference    low.Reference
+	Schema         low.NodeReference[*base.SchemaProxy]
+	ItemSchema     low.NodeReference[*base.SchemaProxy]
+	Example        low.NodeReference[*yaml.Node]
+	Examples       low.NodeReference[*orderedmap.Map[low.KeyReference[string], low.ValueReference[*base.Example]]]
+	Encoding       low.NodeReference[*orderedmap.Map[low.KeyReference[string], low.ValueReference[*Encoding]]]
+	PrefixEncoding low.NodeReference[[]low.ValueReference[*Encoding]] // OpenAPI 3.2+
+	ItemEncoding   low.NodeReference[*Encoding]                       // OpenAPI 3.2+
+	Extensions     *orderedmap.Map[low.KeyReference[string], low.ValueReference[*yaml.Node]]
+	KeyNode        *yaml.Node
+	RootNode       *yaml.Node
+	index          *index.SpecIndex
+	context        context.Context
+	nodeStore      low.NodeLines
+	reference      low.Reference
 	*low.Reference
 	low.NodeMap
 }
@@ -86,9 +87,8 @@ func (mt *MediaType) GetKeyNode() *yaml.Node {
 // Build will extract examples, extensions, schema and encoding from node.
 func (mt *MediaType) Build(ctx context.Context, keyNode, root *yaml.Node, idx *index.SpecIndex) error {
 	mt.KeyNode = keyNode
-	root = utils.NodeAlias(root)
+	root = utils.ResolveMergeNodes(root)
 	mt.RootNode = root
-	utils.CheckForMergeNodes(root)
 	mt.reference = low.Reference{}
 	mt.Reference = &mt.reference
 	mt.nodeStore = low.NodeLines{}
@@ -139,21 +139,9 @@ func (mt *MediaType) Build(ctx context.Context, keyNode, root *yaml.Node, idx *i
 
 	}
 
-	// handle encoding
-	encs, encsL, encsN, encErr := low.ExtractMap[*Encoding](ctx, EncodingLabel, root, idx)
-	if encErr != nil {
-		return encErr
-	}
-	if encs != nil {
-		mt.Encoding = low.NodeReference[*orderedmap.Map[low.KeyReference[string], low.ValueReference[*Encoding]]]{
-			Value:     encs,
-			KeyNode:   encsL,
-			ValueNode: encsN,
-		}
-		mt.Nodes.Store(encsL.Line, encsL)
-		for k, v := range encs.FromOldest() {
-			v.Value.Nodes.Store(k.KeyNode.Line, k.KeyNode)
-		}
+	// handle encoding, prefixEncoding and itemEncoding
+	if err := extractEncodingFields(ctx, root, idx, mt.Nodes, &mt.Encoding, &mt.PrefixEncoding, &mt.ItemEncoding); err != nil {
+		return err
 	}
 
 	// handle itemSchema
@@ -167,23 +155,6 @@ func (mt *MediaType) Build(ctx context.Context, keyNode, root *yaml.Node, idx *i
 			ValueNode: itemSchNode,
 		}
 		mt.Nodes.Store(itemSchLabel.Line, itemSchLabel)
-	}
-
-	// handle itemEncoding
-	itemEncs, itemEncsL, itemEncsN, itemEncErr := low.ExtractMap[*Encoding](ctx, ItemEncodingLabel, root, idx)
-	if itemEncErr != nil {
-		return itemEncErr
-	}
-	if itemEncs != nil {
-		mt.ItemEncoding = low.NodeReference[*orderedmap.Map[low.KeyReference[string], low.ValueReference[*Encoding]]]{
-			Value:     itemEncs,
-			KeyNode:   itemEncsL,
-			ValueNode: itemEncsN,
-		}
-		mt.Nodes.Store(itemEncsL.Line, itemEncsL)
-		for k, v := range itemEncs.FromOldest() {
-			v.Value.Nodes.Store(k.KeyNode.Line, k.KeyNode)
-		}
 	}
 
 	return nil
@@ -203,7 +174,7 @@ func (mt *MediaType) Hash() uint64 {
 		}
 		low.HashMap(h, "examples", mt.Examples.Value)
 		low.HashMap(h, "encoding", mt.Encoding.Value)
-		low.HashMap(h, "itemEncoding", mt.ItemEncoding.Value)
+		hashEncodingFields(h, mt.PrefixEncoding, mt.ItemEncoding.Value)
 		for _, ext := range low.HashExtensions(mt.Extensions) {
 			h.WriteString(ext)
 			h.WriteByte(low.HASH_PIPE)

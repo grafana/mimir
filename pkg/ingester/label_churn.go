@@ -124,7 +124,7 @@ func (i *Ingester) recordLabelChurnSeriesRefs(now time.Time) {
 		if db == nil {
 			continue
 		}
-		db.seriesRefHistory.record(now.UnixMilli(), db.db.Head().LastSeriesRef())
+		db.seriesRefHistory.record(now.UnixMilli(), db.prometheusDB().Head().LastSeriesRef())
 	}
 }
 
@@ -258,7 +258,7 @@ func (u *userTSDB) labelChurn(ctx context.Context, sinceMs int64, limit int) (*l
 		return nil, errLabelChurnNoRecord
 	}
 
-	head := u.db.Head()
+	head := u.prometheusDB().Head()
 	idx, err := head.Index()
 	if err != nil {
 		return nil, err

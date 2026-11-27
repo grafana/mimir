@@ -19,6 +19,8 @@ local dblib = import 'grafana-databases-lib/main.libsonnet';
       ruler_querier: cpuAndMemory { queries: { title: 'in-flight queries' } },
     };
 
+    local componentScalers(name) = std.get(scalers, name, {}) + std.get($._config.autoscaling[name], 'scalers', {});
+
     // Series added to a component's replicas panel. The ingester's also show the spec and status
     // replicas of the ReplicaTemplate its HPA scales.
     local replicaTemplateQuery(field) =
@@ -56,7 +58,7 @@ local dblib = import 'grafana-databases-lib/main.libsonnet';
       components: {
         [name]: {
           hpaName: $._config.autoscaling[name].hpa_name,
-          scalers: std.get(scalers, name, {}) + std.get($._config.autoscaling[name], 'scalers', {}),
+          scalers: componentScalers(name),
           extraReplicaQueries: std.get(extraReplicaQueries, name, []),
         }
         for name in std.objectFields($._config.autoscaling)
@@ -75,5 +77,14 @@ local dblib = import 'grafana-databases-lib/main.libsonnet';
       Rollout-operator will keep ingester replicas updated based on the ReplicaTemplate spec field, and then update the template's status field once the ingester count changes.
     |||))
     + dblib.autoscaling.withPanelMixin('ingester', 'desiredReplicas', retitle('Desired replicas (ReplicaTemplate)'))
-    + dblib.autoscaling.withPanelMixin('ingester', 'failures', retitle('Autoscaler failures rate (ReplicaTemplate)')),
+    + dblib.autoscaling.withPanelMixin('ingester', 'failures', retitle('Autoscaler failures rate (ReplicaTemplate)'))
+    // Mimir titles a scaler's desired replicas panel like its other panels, with the qualifier last.
+    + std.foldl(
+      function(acc, name) acc + dblib.autoscaling.withPanelMixin(name, 'desiredReplicasByScaler', {
+        [scaler]+: retitle('Desired replicas (%s)' % std.get(componentScalers(name)[scaler], 'title', scaler))
+        for scaler in std.objectFields(componentScalers(name))
+      }),
+      std.objectFields($._config.autoscaling),
+      {},
+    ),
 }

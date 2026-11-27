@@ -11,6 +11,7 @@ const (
 	EncodingLabel              = "encoding"
 	ItemSchemaLabel            = "itemSchema"
 	ItemEncodingLabel          = "itemEncoding"
+	PrefixEncodingLabel        = "prefixEncoding"
 	HeadersLabel               = "headers"
 	ExpressionLabel            = "expression"
 	InfoLabel                  = "info"

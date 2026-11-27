@@ -5,7 +5,6 @@ package index
 
 import (
 	"net/url"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -21,16 +20,13 @@ func (resolver *Resolver) buildDefPath(ref *Reference, l string) string {
 		if exp[0] != "" {
 			// Has a file/URL portion before the fragment.
 			if !strings.HasPrefix(exp[0], "http") {
-				if !filepath.IsAbs(exp[0]) {
+				if !filepath.IsAbs(exp[0]) || strings.HasPrefix(ref.FullDefinition, "http") {
 					// Relative file path — resolve against the parent ref's location.
 					if strings.HasPrefix(ref.FullDefinition, "http") {
 						// Parent is a remote URL: resolve relative path against the URL's directory.
-						u, _ := url.Parse(ref.FullDefinition)
-						p, _ := filepath.Abs(utils.CheckPathOverlap(path.Dir(u.Path), exp[0], string(filepath.Separator)))
-						u.Path = utils.ReplaceWindowsDriveWithLinuxPath(p)
 						def = l
 						if len(exp[1]) > 0 {
-							def = u.String() + "#/" + exp[1]
+							def = resolveRefWithSchemaBase(l, ref.FullDefinition)
 						}
 					} else {
 						// Parent is a local file path: resolve relative to the parent's directory.
@@ -49,12 +45,9 @@ func (resolver *Resolver) buildDefPath(ref *Reference, l string) string {
 						}
 					}
 				}
-			} else if len(exp[1]) > 0 {
-				// Absolute HTTP URL with a fragment — use as-is.
-				def = l
 			} else {
-				// HTTP URL with no fragment content — use just the URL part.
-				def = exp[0]
+				// Preserve the complete pointer: a trailing slash selects an empty-name member.
+				def = l
 			}
 		} else if strings.HasPrefix(ref.FullDefinition, "http") {
 			// Fragment-only ref (e.g. "#/components/schemas/Foo") with a remote parent.
@@ -74,11 +67,7 @@ func (resolver *Resolver) buildDefPath(ref *Reference, l string) string {
 		def = l
 	} else if strings.HasPrefix(ref.FullDefinition, "http") {
 		// No fragment, relative path with a remote parent — resolve against the URL.
-		u, _ := url.Parse(ref.FullDefinition)
-		abs, _ := filepath.Abs(utils.CheckPathOverlap(path.Dir(u.Path), l, string(filepath.Separator)))
-		u.Path = utils.ReplaceWindowsDriveWithLinuxPath(abs)
-		u.Fragment = ""
-		def = u.String()
+		def = resolveRefWithSchemaBase(l, ref.FullDefinition)
 	} else {
 		// No fragment, local relative path — resolve against the parent's directory.
 		lookupRef := strings.Split(ref.FullDefinition, "#/")

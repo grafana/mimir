@@ -378,7 +378,7 @@ func plainRune(r rune, size int) bool {
 	return true
 }
 
-// decodeEscape decodes the JSON escape at p.pos into p.buf. yaml has no "\\/" escape, so that one is declined.
+// decodeEscape decodes the JSON escape at p.pos into p.buf.
 func (p *parser) decodeEscape() bool {
 	if p.pos+1 >= len(p.data) {
 		return false
@@ -389,6 +389,8 @@ func (p *parser) decodeEscape() bool {
 		b = '"'
 	case '\\':
 		b = '\\'
+	case '/':
+		b = '/'
 	case 'b':
 		b = '\b'
 	case 'f':

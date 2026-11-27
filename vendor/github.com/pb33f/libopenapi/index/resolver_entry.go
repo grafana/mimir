@@ -12,6 +12,9 @@ import (
 	"github.com/pb33f/libopenapi/utils"
 )
 
+// ErrReferenceChainCycle indicates a reference-only chain with no terminal value.
+var ErrReferenceChainCycle = errors.New("circular reference chain detected")
+
 // ResolvingError represents an issue the resolver had trying to stitch the tree together.
 type ResolvingError struct {
 	ErrorRef error

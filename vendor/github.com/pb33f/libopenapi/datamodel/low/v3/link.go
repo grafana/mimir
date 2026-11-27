@@ -87,9 +87,8 @@ func (l *Link) Build(ctx context.Context, keyNode, root *yaml.Node, idx *index.S
 	if ok, _, ref := utils.IsNodeRefValue(root); ok {
 		l.SetReference(ref, root)
 	}
-	root = utils.NodeAlias(root)
+	root = utils.ResolveMergeNodes(root)
 	l.RootNode = root
-	utils.CheckForMergeNodes(root)
 	l.nodeStore = low.NodeLines{}
 	l.Nodes = &l.nodeStore
 	if len(root.Content) > 0 {

@@ -469,6 +469,9 @@ func TestGetRules(t *testing.T) {
 		rulerState           map[string]ring.InstanceState
 		expectedRulesByRuler map[string]map[string]rulespb.RuleGroupList
 
+		// Rulers in the ring that the clients pool cannot get a client for.
+		rulersWithoutClient []string
+
 		// If not set for a user, call count assumed to be total number of rulers if shuffle sharding is disabled, and
 		// shuffle shard size if shuffle sharding is enabled.
 		expectedPoolClientCallsByUser map[string]int32
@@ -694,162 +697,179 @@ func TestGetRules(t *testing.T) {
 			},
 			expectedErr: "empty ring",
 		},
+		"Shuffle Shard Size 0 with 1 ruler without client": {
+			shuffleShardSize: 0,
+			tokensByRuler: map[string][]uint32{
+				"ruler1": generateTokenForGroups(1, rules[0], rules[1], rules[3]),
+				"ruler2": generateTokenForGroups(1, rules[2], rules[4], rules[5]),
+				"ruler3": generateTokenForGroups(1, rules[6], rules[7], rules[8]),
+			},
+			rulersWithoutClient: []string{"ruler3"},
+			expectedErr:         "unable to get client for ruler ruler3 ruler3:0: unable to find ruler for addr ruler3 ruler3:0",
+		},
 	}
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			var (
-				registryByRuler = map[string]*prometheus.Registry{}
-				rulerAddrMap    = map[string]*Ruler{}
-				storage         = newMockRuleStore(allRulesByUser)
-				ctx             = context.Background()
-			)
+			synctest.Test(t, func(t *testing.T) {
+				var (
+					registryByRuler = map[string]*prometheus.Registry{}
+					rulerAddrMap    = map[string]*Ruler{}
+					storage         = newMockRuleStore(allRulesByUser)
+					ctx             = context.Background()
+				)
 
-			kvStore, cleanUp := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-			t.Cleanup(func() { assert.NoError(t, cleanUp.Close()) })
+				kvStore, cleanUp := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+				t.Cleanup(func() { assert.NoError(t, cleanUp.Close()) })
 
-			createAndStartRuler := func(id string) *Ruler {
-				cfg := defaultRulerConfig(t)
-				cfg.Ring.Common.InstanceID = id
-				cfg.Ring.Common.InstanceAddr = id
-				cfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
-				cfg.Ring.NumTokens = 0          // Join the ring with no tokens because they will be injected later.
-				cfg.PollInterval = time.Hour    // No periodic syncing because we want to trigger it.
-				cfg.RingCheckPeriod = time.Hour // No syncing on ring change because we want to trigger it.
+				createAndStartRuler := func(id string) *Ruler {
+					cfg := defaultRulerConfig(t)
+					cfg.Ring.Common.InstanceID = id
+					cfg.Ring.Common.InstanceAddr = id
+					cfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
+					cfg.Ring.NumTokens = 0          // Join the ring with no tokens because they will be injected later.
+					cfg.PollInterval = time.Hour    // No periodic syncing because we want to trigger it.
+					cfg.RingCheckPeriod = time.Hour // No syncing on ring change because we want to trigger it.
 
-				reg := prometheus.NewPedanticRegistry()
-				registryByRuler[id] = reg
+					reg := prometheus.NewPedanticRegistry()
+					registryByRuler[id] = reg
 
-				return prepareRuler(t, cfg, storage, withStart(), withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withPrometheusRegisterer(reg), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
-					defaults.RulerEvaluationDelay = 0
-					defaults.RulerTenantShardSize = tc.shuffleShardSize
-				})))
-			}
-
-			activeRulers := 0
-			for rID := range tc.tokensByRuler {
-				createAndStartRuler(rID)
-				state, ok := tc.rulerState[rID]
-				if (ok && state == ring.ACTIVE) || !ok {
-					activeRulers++
+					return prepareRuler(t, cfg, storage, withStart(), withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withPrometheusRegisterer(reg), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+						defaults.RulerEvaluationDelay = 0
+						defaults.RulerTenantShardSize = tc.shuffleShardSize
+					})))
 				}
-			}
 
-			// Pre-condition check: we expect rulers have done the initial sync (but they have no tokens in the ring at this point).
-			for _, reg := range registryByRuler {
-				verifySyncRulesMetrics(t, reg, 1, 0)
-			}
-
-			// Inject the tokens for each ruler.
-			require.NoError(t, kvStore.CAS(ctx, RulerRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
-				d, _ := in.(*ring.Desc)
-				if d == nil {
-					d = ring.NewDesc()
-				}
-				for rID, tokens := range tc.tokensByRuler {
+				activeRulers := 0
+				for rID := range tc.tokensByRuler {
+					createAndStartRuler(rID)
 					state, ok := tc.rulerState[rID]
-					if !ok {
-						state = ring.ACTIVE
+					if (ok && state == ring.ACTIVE) || !ok {
+						activeRulers++
 					}
-					d.AddIngester(rID, rulerAddrMap[rID].lifecycler.GetInstanceAddr(), "", tokens, state, time.Now(), false, time.Time{}, nil)
-				}
-				return d, true, nil
-			}))
-
-			// Wait a bit to make sure ruler's ring is updated.
-			time.Sleep(100 * time.Millisecond)
-
-			// Sync rules on each ruler.
-			for rID, r := range rulerAddrMap {
-				if tc.rulerState[rID] == ring.JOINING {
-					// Use rulerSyncReasonInitial for JOINING rulers to simulate what happens on ruler startup.
-					err := r.syncRules(ctx, nil, rulerSyncReasonInitial, true)
-					require.NoError(t, err)
-				} else {
-					err := r.syncRules(ctx, nil, rulerSyncReasonPeriodic, true)
-					require.NoError(t, err)
-				}
-			}
-
-			// Call GetRules() on each ruler.
-			for u, userRules := range allRulesByUser {
-				ctx := user.InjectOrgID(ctx, u)
-				var expectedRuleDescs []*rulespb.RuleGroupDesc
-				for _, userRule := range userRules {
-					// getLocalRules() doesn't set the Rules field, therefore doing the same with the expected rules.
-					expectedRuleDescs = append(expectedRuleDescs, &rulespb.RuleGroupDesc{
-						Namespace:     userRule.Namespace,
-						Name:          userRule.Name,
-						User:          u,
-						Interval:      userRule.Interval,
-						SourceTenants: userRule.SourceTenants,
-					})
 				}
 
+				// Pre-condition check: we expect rulers have done the initial sync (but they have no tokens in the ring at this point).
+				for _, reg := range registryByRuler {
+					verifySyncRulesMetrics(t, reg, 1, 0)
+				}
+
+				// Inject the tokens for each ruler.
+				require.NoError(t, kvStore.CAS(ctx, RulerRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+					d, _ := in.(*ring.Desc)
+					if d == nil {
+						d = ring.NewDesc()
+					}
+					for rID, tokens := range tc.tokensByRuler {
+						state, ok := tc.rulerState[rID]
+						if !ok {
+							state = ring.ACTIVE
+						}
+						d.AddIngester(rID, rulerAddrMap[rID].lifecycler.GetInstanceAddr(), "", tokens, state, time.Now(), false, time.Time{}, nil)
+					}
+					return d, true, nil
+				}))
+
+				// Wait until the ring of each ruler has the injected tokens.
+				synctest.Wait()
+
+				// The mock clients pool cannot get a client for a ruler that is not in rulerAddrMap.
+				for _, rID := range tc.rulersWithoutClient {
+					delete(rulerAddrMap, rID)
+				}
+
+				// Sync rules on each ruler.
 				for rID, r := range rulerAddrMap {
-					actualRules, _, err := r.GetRules(ctx, RulesRequest{Filter: AnyRule})
-					if tc.expectedErr != "" {
-						require.EqualError(t, err, tc.expectedErr)
-						continue
-					}
-					require.NoError(t, err)
-
-					require.Equal(t, len(userRules), len(actualRules.Groups), "rules are not equal for %s, %s", u, rID)
-
-					var actualRuleDescs []*rulespb.RuleGroupDesc
-					for _, g := range actualRules.Groups {
-						actualRuleDescs = append(actualRuleDescs, g.Group)
-					}
-					require.ElementsMatch(t, expectedRuleDescs, actualRuleDescs)
-
-					// Check call count for rulers (this verifies that JOINING rulers should be ignored).
-					mockPoolClient := r.clientsPool.(*mockRulerClientsPool)
-					if expectedCalls, ok := tc.expectedPoolClientCallsByUser[u]; ok {
-						require.Equal(t, expectedCalls, mockPoolClient.numberOfRulesCalls.Load())
-					} else if tc.shuffleShardSize > 0 {
-						require.Equal(t, int32(tc.shuffleShardSize), mockPoolClient.numberOfRulesCalls.Load(), "Unexpected call count when calling GetRules on %s for user %s", rID, u)
+					if tc.rulerState[rID] == ring.JOINING {
+						// Use rulerSyncReasonInitial for JOINING rulers to simulate what happens on ruler startup.
+						err := r.syncRules(ctx, nil, rulerSyncReasonInitial, true)
+						require.NoError(t, err)
 					} else {
-						require.Equal(t, int32(activeRulers), mockPoolClient.numberOfRulesCalls.Load())
+						err := r.syncRules(ctx, nil, rulerSyncReasonPeriodic, true)
+						require.NoError(t, err)
 					}
-					mockPoolClient.numberOfRulesCalls.Store(0)
 				}
-			}
 
-			// Don't do additional checks if GetRules() is expected to return an error.
-			if tc.expectedErr != "" {
-				return
-			}
-
-			// Ensure rule groups have been sharded among rulers.
-			totalLoadedRules := 0
-			totalConfiguredRules := len(rules)
-
-			for rID, r := range rulerAddrMap {
-				localRules, err := r.listRuleGroupsToSyncForAllUsers(ctx, rulerSyncReasonPeriodic, true)
-				require.NoError(t, err)
-
-				expectedRules := map[string]rulespb.RuleGroupList{}
-				for user, groups := range tc.expectedRulesByRuler[rID] {
-					expectedRules[user] = rulespb.RuleGroupList{}
-					for _, group := range groups {
-						// The mock store only sets a few RuleGroupDesc fields, therefore doing the same with the expected rules.
-						expectedRules[user] = append(expectedRules[user], &rulespb.RuleGroupDesc{
-							Namespace:     group.Namespace,
-							Name:          group.Name,
-							User:          user,
-							Interval:      group.Interval,
-							SourceTenants: group.SourceTenants,
+				// Call GetRules() on each ruler.
+				for u, userRules := range allRulesByUser {
+					ctx := user.InjectOrgID(ctx, u)
+					var expectedRuleDescs []*rulespb.RuleGroupDesc
+					for _, userRule := range userRules {
+						// getLocalRules() doesn't set the Rules field, therefore doing the same with the expected rules.
+						expectedRuleDescs = append(expectedRuleDescs, &rulespb.RuleGroupDesc{
+							Namespace:     userRule.Namespace,
+							Name:          userRule.Name,
+							User:          u,
+							Interval:      userRule.Interval,
+							SourceTenants: userRule.SourceTenants,
 						})
 					}
+
+					for rID, r := range rulerAddrMap {
+						actualRules, _, err := r.GetRules(ctx, RulesRequest{Filter: AnyRule})
+						if tc.expectedErr != "" {
+							require.EqualError(t, err, tc.expectedErr)
+							continue
+						}
+						require.NoError(t, err)
+
+						require.Equal(t, len(userRules), len(actualRules.Groups), "rules are not equal for %s, %s", u, rID)
+
+						var actualRuleDescs []*rulespb.RuleGroupDesc
+						for _, g := range actualRules.Groups {
+							actualRuleDescs = append(actualRuleDescs, g.Group)
+						}
+						require.ElementsMatch(t, expectedRuleDescs, actualRuleDescs)
+
+						// Check call count for rulers (this verifies that JOINING rulers should be ignored).
+						mockPoolClient := r.clientsPool.(*mockRulerClientsPool)
+						if expectedCalls, ok := tc.expectedPoolClientCallsByUser[u]; ok {
+							require.Equal(t, expectedCalls, mockPoolClient.numberOfRulesCalls.Load())
+						} else if tc.shuffleShardSize > 0 {
+							require.Equal(t, int32(tc.shuffleShardSize), mockPoolClient.numberOfRulesCalls.Load(), "Unexpected call count when calling GetRules on %s for user %s", rID, u)
+						} else {
+							require.Equal(t, int32(activeRulers), mockPoolClient.numberOfRulesCalls.Load())
+						}
+						mockPoolClient.numberOfRulesCalls.Store(0)
+					}
 				}
 
-				require.Equal(t, expectedRules, localRules, "rules not equal for %s", rID)
-				for _, rules := range localRules {
-					totalLoadedRules += len(rules)
+				// Don't do additional checks if GetRules() is expected to return an error.
+				if tc.expectedErr != "" {
+					return
 				}
-			}
 
-			require.Equal(t, totalConfiguredRules, totalLoadedRules)
+				// Ensure rule groups have been sharded among rulers.
+				totalLoadedRules := 0
+				totalConfiguredRules := len(rules)
+
+				for rID, r := range rulerAddrMap {
+					localRules, err := r.listRuleGroupsToSyncForAllUsers(ctx, rulerSyncReasonPeriodic, true)
+					require.NoError(t, err)
+
+					expectedRules := map[string]rulespb.RuleGroupList{}
+					for user, groups := range tc.expectedRulesByRuler[rID] {
+						expectedRules[user] = rulespb.RuleGroupList{}
+						for _, group := range groups {
+							// The mock store only sets a few RuleGroupDesc fields, therefore doing the same with the expected rules.
+							expectedRules[user] = append(expectedRules[user], &rulespb.RuleGroupDesc{
+								Namespace:     group.Namespace,
+								Name:          group.Name,
+								User:          user,
+								Interval:      group.Interval,
+								SourceTenants: group.SourceTenants,
+							})
+						}
+					}
+
+					require.Equal(t, expectedRules, localRules, "rules not equal for %s", rID)
+					for _, rules := range localRules {
+						totalLoadedRules += len(rules)
+					}
+				}
+
+				require.Equal(t, totalConfiguredRules, totalLoadedRules)
+			})
 		})
 	}
 }
@@ -2023,6 +2043,219 @@ func TestRuler_RunRingChangeMaxDebounce(t *testing.T) {
 	})
 }
 
+// syncHookManager calls afterFirstFullSync once, after the first full sync.
+// The first full sync is the initial sync.
+type syncHookManager struct {
+	MultiTenantManager
+	once               sync.Once
+	afterFirstFullSync func(ruleGroupsByUser map[string]rulespb.RuleGroupList)
+}
+
+func (m *syncHookManager) SyncFullRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList) {
+	m.MultiTenantManager.SyncFullRuleGroups(ctx, ruleGroupsByUser)
+	m.once.Do(func() { m.afterFirstFullSync(ruleGroupsByUser) })
+}
+
+// listHookRuleStore calls beforeFirstListAllUsers once, before the first ListAllUsers.
+// The first ListAllUsers is in the initial sync, before the ownership check.
+type listHookRuleStore struct {
+	rulestore.RuleStore
+	once                    sync.Once
+	beforeFirstListAllUsers func()
+}
+
+func (s *listHookRuleStore) ListAllUsers(ctx context.Context, opts ...rulestore.Option) ([]string, error) {
+	s.once.Do(func() {
+		if s.beforeFirstListAllUsers != nil {
+			s.beforeFirstListAllUsers()
+		}
+	})
+	return s.RuleStore.ListAllUsers(ctx, opts...)
+}
+
+func TestRuler_RingChangeAfterInitialSync(t *testing.T) {
+	const (
+		ringCheckPeriod = 20 * time.Millisecond
+		userID          = "user-1"
+	)
+
+	testCases := map[string]struct {
+		otherRulerAtStart       bool
+		otherRulerState         ring.InstanceState
+		otherRulerChanges       bool
+		otherRulerBecomesActive bool
+		// The other ruler registers after the start of the initial sync and before its ownership check.
+		otherRulerRegistersDuringInitialSync bool
+		// An ACTIVE ruler with no tokens owns no rule groups.
+		// It only adds an ACTIVE ruler to the ring.
+		activeRulerWithoutTokens bool
+		keepsInitialAssignment   bool
+		expectedFirstRunSyncs    float64
+	}{
+		"another ruler joins after the initial sync": {
+			otherRulerAtStart:     false,
+			otherRulerState:       ring.ACTIVE,
+			otherRulerChanges:     true,
+			expectedFirstRunSyncs: 1,
+		},
+		"another ruler leaves after the initial sync": {
+			otherRulerAtStart:     true,
+			otherRulerState:       ring.ACTIVE,
+			otherRulerChanges:     true,
+			expectedFirstRunSyncs: 1,
+		},
+		"another ruler stays JOINING throughout startup": {
+			otherRulerAtStart:        true,
+			otherRulerState:          ring.JOINING,
+			activeRulerWithoutTokens: true,
+			expectedFirstRunSyncs:    1,
+		},
+		"another ruler registers during the initial sync and stays JOINING": {
+			otherRulerState:                      ring.JOINING,
+			otherRulerRegistersDuringInitialSync: true,
+			activeRulerWithoutTokens:             true,
+			expectedFirstRunSyncs:                1,
+		},
+		"cold start: another ruler stays JOINING and no other ruler is ACTIVE": {
+			otherRulerAtStart:      true,
+			otherRulerState:        ring.JOINING,
+			keepsInitialAssignment: true,
+			expectedFirstRunSyncs:  0,
+		},
+		"another ruler becomes ACTIVE before run() starts": {
+			otherRulerAtStart:       true,
+			otherRulerState:         ring.JOINING,
+			otherRulerBecomesActive: true,
+			expectedFirstRunSyncs:   0,
+		},
+		"no ring change after the initial sync": {
+			otherRulerAtStart:     true,
+			otherRulerState:       ring.ACTIVE,
+			otherRulerChanges:     false,
+			expectedFirstRunSyncs: 0,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var groups rulespb.RuleGroupList
+				for i := range 20 {
+					groups = append(groups, createRuleGroup(fmt.Sprintf("group-%d", i), userID, createRecordingRule("UP_RULE", "up")))
+				}
+				storage := newMockRuleStore(map[string]rulespb.RuleGroupList{userID: groups})
+
+				cfg := defaultRulerConfig(t)
+				cfg.Ring.NumTokens = 128
+				cfg.PollInterval = time.Hour // Isolate ring-change syncing from periodic syncing.
+				cfg.RingCheckPeriod = ringCheckPeriod
+
+				setOtherRuler := func(inRing bool, state ring.InstanceState) error {
+					return cfg.Ring.Common.KVStore.Mock.CAS(t.Context(), RulerRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+						d, _ := in.(*ring.Desc)
+						if d == nil {
+							d = ring.NewDesc()
+						}
+						if !inRing {
+							d.RemoveIngester("other")
+							return d, true, nil
+						}
+						// Give the peer the next token after each group hash so it owns
+						// those groups while it is eligible for initial assignment.
+						tokens := make([]uint32, 0, len(groups))
+						for _, group := range groups {
+							tokens = append(tokens, tokenForGroup(group)+1)
+						}
+						slices.Sort(tokens)
+						d.AddIngester("other", "other", "", tokens, state, time.Now(), false, time.Time{}, nil)
+						return d, true, nil
+					})
+				}
+				if tc.otherRulerAtStart {
+					require.NoError(t, setOtherRuler(true, tc.otherRulerState))
+				}
+				if tc.activeRulerWithoutTokens {
+					require.NoError(t, cfg.Ring.Common.KVStore.Mock.CAS(t.Context(), RulerRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+						d, _ := in.(*ring.Desc)
+						if d == nil {
+							d = ring.NewDesc()
+						}
+						d.AddIngester("active", "active", "", nil, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
+						return d, true, nil
+					}))
+				}
+
+				store := &listHookRuleStore{RuleStore: storage}
+				r := prepareRuler(t, cfg, store)
+				if tc.otherRulerRegistersDuringInitialSync {
+					store.beforeFirstListAllUsers = func() {
+						// The hook runs on the ruler goroutine.
+						// Thus it must not call t.FailNow.
+						assert.NoError(t, setOtherRuler(true, tc.otherRulerState))
+						assert.NoError(t, ring.WaitInstanceState(t.Context(), r.ring, "other", tc.otherRulerState))
+					}
+				}
+
+				// The other ruler joins, leaves or becomes ACTIVE after the initial sync and before this ruler becomes ACTIVE.
+				var initialSyncGroups int
+				r.manager = &syncHookManager{
+					MultiTenantManager: r.manager,
+					afterFirstFullSync: func(ruleGroupsByUser map[string]rulespb.RuleGroupList) {
+						initialSyncGroups = len(ruleGroupsByUser[userID])
+						// The hook runs on the ruler goroutine.
+						// Thus it must not call t.FailNow.
+						switch {
+						case tc.otherRulerChanges:
+							assert.NoError(t, setOtherRuler(!tc.otherRulerAtStart, tc.otherRulerState))
+						case tc.otherRulerBecomesActive:
+							assert.NoError(t, setOtherRuler(true, ring.ACTIVE))
+						}
+					},
+				}
+
+				require.NoError(t, services.StartAndAwaitRunning(t.Context(), r))
+				t.Cleanup(func() {
+					require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r))
+				})
+
+				time.Sleep(2 * ringCheckPeriod)
+				synctest.Wait()
+
+				var expected, actual []string
+				for _, g := range groups {
+					owned, err := instanceOwnsRuleGroup(r.ring, g, r.lifecycler.GetInstanceAddr(), rulerSyncReasonRingChange)
+					require.NoError(t, err)
+					if owned {
+						expected = append(expected, g.Name)
+					}
+				}
+				for _, g := range r.manager.GetRules(userID) {
+					actual = append(actual, g.Name())
+				}
+				if tc.otherRulerState == ring.JOINING {
+					// The initial sync counted the JOINING ruler as the owner of all rule groups.
+					require.Zero(t, initialSyncGroups)
+				}
+				if tc.otherRulerState == ring.JOINING && !tc.otherRulerBecomesActive {
+					state, err := r.ring.GetInstanceState("other")
+					require.NoError(t, err)
+					require.Equal(t, ring.JOINING, state)
+					require.Len(t, expected, len(groups))
+				}
+				if tc.expectedFirstRunSyncs > 0 {
+					require.NotEqual(t, initialSyncGroups, len(expected), "ownership changes for at least one group")
+				}
+				if tc.keepsInitialAssignment {
+					require.Len(t, actual, initialSyncGroups)
+				} else {
+					require.ElementsMatch(t, expected, actual)
+				}
+				require.Equal(t, tc.expectedFirstRunSyncs, prom_testutil.ToFloat64(r.metrics.rulerSync.WithLabelValues(string(rulerSyncReasonFirstRun))))
+			})
+		})
+	}
+}
+
 // User shuffle shard token.
 func userToken(user string, skip int) uint32 {
 	r := rand.New(rand.NewSource(util.ShuffleShardSeed(user, "")))
@@ -2178,6 +2411,7 @@ func verifySyncRulesMetrics(t *testing.T, reg prometheus.Gatherer, initialCount,
 			cortex_ruler_sync_rules_total{reason="api-change"} %d
 			cortex_ruler_sync_rules_total{reason="periodic"} 0
 			cortex_ruler_sync_rules_total{reason="ring-change"} 0
+			cortex_ruler_sync_rules_total{reason="first-run"} 0
 		`, initialCount, apiChangeCount)), "cortex_ruler_sync_rules_total")
 	})
 	test.Poll(t, time.Second, nil, func() interface{} {

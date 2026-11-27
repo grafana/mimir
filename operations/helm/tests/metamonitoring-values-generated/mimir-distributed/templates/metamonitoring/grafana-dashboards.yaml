@@ -1891,7 +1891,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Attributes",
+                      "title": "Attributes latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -1988,7 +1988,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Exists",
+                      "title": "Exists latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -2085,7 +2085,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Get",
+                      "title": "Get latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -2182,7 +2182,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: GetRange",
+                      "title": "GetRange latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -2279,7 +2279,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Upload",
+                      "title": "Upload latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -2376,7 +2376,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Delete",
+                      "title": "Delete latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -5880,7 +5880,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Attributes",
+                      "title": "Attributes latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -5977,7 +5977,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Exists",
+                      "title": "Exists latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -6074,7 +6074,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Get",
+                      "title": "Get latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -6171,7 +6171,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: GetRange",
+                      "title": "GetRange latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -6268,7 +6268,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Upload",
+                      "title": "Upload latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -6365,7 +6365,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Delete",
+                      "title": "Delete latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -6679,7 +6679,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Request latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -14306,25 +14306,25 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(\n  sum(rate(cortex_ingest_storage_strong_consistency_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n  -\n  sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n)\n / (sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(\n  sum(rate(cortex_ingest_storage_strong_consistency_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n  -\n  sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n)\n / (sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "successful",
                             "legendLink": null
                          },
                          {
-                            "expr": "(\n  sum(rate(cortex_ingest_storage_strong_consistency_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n  -\n  sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n)\n / (sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(\n  sum(rate(cortex_ingest_storage_strong_consistency_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n  -\n  sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n)\n / (sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "successful",
                             "legendLink": null
                          },
                          {
-                            "expr": "sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n / (sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n / (sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "failed",
                             "legendLink": null
                          },
                          {
-                            "expr": "sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n / (sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n / (sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "failed",
                             "legendLink": null
@@ -21339,7 +21339,7 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
-                      "description": "### Instant queries per second\nRate of instant queries per second being made to the system.\nIncludes both queries made to the <tt>/prometheus</tt> API as\nwell as queries from the ruler.\n\n",
+                      "description": "### Instant queries / sec\nRate of instant queries per second being made to the system.\nIncludes both queries made to the <tt>/prometheus</tt> API as\nwell as queries from the ruler.\n\n",
                       "fill": 1,
                       "format": "reqps",
                       "id": 2,
@@ -21421,7 +21421,7 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
-                      "description": "### Range queries per second\nRate of range queries per second being made to\nMimir via the <tt>/prometheus</tt> API.\n\n",
+                      "description": "### Range queries / sec\nRate of range queries per second being made to\nMimir via the <tt>/prometheus</tt> API.\n\n",
                       "fill": 1,
                       "format": "reqps",
                       "id": 3,
@@ -21503,7 +21503,7 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
-                      "description": "### \"Label names\" queries per second\nRate of \"label names\" endpoint queries per second being made to\nMimir via the <tt>/prometheus</tt> API.\n\n",
+                      "description": "### Label names queries / sec\nRate of \"label names\" endpoint queries per second being made to\nMimir via the <tt>/prometheus</tt> API.\n\n",
                       "fill": 1,
                       "format": "reqps",
                       "id": 4,
@@ -21585,7 +21585,7 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
-                      "description": "### \"Label values\" queries per second\nRate of specific \"label values\" endpoint queries per second being made to\nMimir via the <tt>/prometheus</tt> API.\n\n",
+                      "description": "### Label values queries / sec\nRate of specific \"label values\" endpoint queries per second being made to\nMimir via the <tt>/prometheus</tt> API.\n\n",
                       "fill": 1,
                       "format": "reqps",
                       "id": 5,
@@ -21667,7 +21667,7 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
-                      "description": "### Series queries per second\nRate of series queries per second being made to\nMimir via the <tt>/prometheus</tt> API.\n\n",
+                      "description": "### Series queries / sec\nRate of series queries per second being made to\nMimir via the <tt>/prometheus</tt> API.\n\n",
                       "fill": 1,
                       "format": "reqps",
                       "id": 6,
@@ -22036,7 +22036,7 @@ data:
                             "refId": "C_native"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Request latency",
                       "type": "timeseries"
                    },
                    {
@@ -22093,7 +22093,7 @@ data:
                             "legendLink": null
                          }
                       ],
-                      "title": "Per pod p99 latency",
+                      "title": "Per pod p99 request latency",
                       "type": "timeseries"
                    }
                 ],
@@ -22238,7 +22238,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency (Time in Queue)",
+                      "title": "Queue latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -22323,7 +22323,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### 99th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
+                      "description": "### p99 queue latency\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -22374,12 +22374,12 @@ data:
                             "refId": "A_classic"
                          }
                       ],
-                      "title": "99th Percentile Latency by Expected Query Component",
+                      "title": "p99 queue latency",
                       "type": "timeseries"
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### 50th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
+                      "description": "### p50 queue latency\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -22430,12 +22430,12 @@ data:
                             "refId": "A_classic"
                          }
                       ],
-                      "title": "50th Percentile Latency by Expected Query Component",
+                      "title": "p50 queue latency",
                       "type": "timeseries"
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Average Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
+                      "description": "### Mean queue latency\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -22486,7 +22486,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Average Latency by Expected Query Component",
+                      "title": "Mean queue latency",
                       "type": "timeseries"
                    }
                 ],
@@ -22494,7 +22494,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Query-scheduler Latency (Time in Queue) Breakout by Expected Query Component",
+                "title": "Query-scheduler – queue latency by expected query component",
                 "titleSize": "h6"
              },
              {
@@ -22503,7 +22503,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query-scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p>\n\n",
+                      "description": "### p99 inflight requests vs. connected queriers\n<p>\n  The query-scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -22553,7 +22553,7 @@ data:
                             "legendLink": null
                          }
                       ],
-                      "title": "99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers",
+                      "title": "p99 inflight requests vs. connected queriers",
                       "type": "timeseries"
                    }
                 ],
@@ -22561,7 +22561,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Query-scheduler <-> Querier Inflight Requests",
+                "title": "Query-scheduler – inflight requests by query component",
                 "titleSize": "h6"
              },
              {
@@ -22692,7 +22692,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency (getmulti)",
+                      "title": "GetMulti latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -23054,7 +23054,7 @@ data:
                             "refId": "C_native"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Request latency",
                       "type": "timeseries"
                    },
                    {
@@ -23111,7 +23111,7 @@ data:
                             "legendLink": null
                          }
                       ],
-                      "title": "Per pod p99 latency",
+                      "title": "Per pod p99 request latency",
                       "type": "timeseries"
                    }
                 ],
@@ -23317,13 +23317,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "{{status}}",
                             "refId": "A_classic"
                          },
                          {
-                            "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "{{status}}",
                             "refId": "A"
@@ -23334,7 +23334,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Latency\nThis panel shows ingester query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by ingesters.\n",
+                      "description": "### Request latency\nThis panel shows ingester query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by ingesters.\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -23373,48 +23373,48 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "refId": "A_classic"
                          },
                          {
-                            "expr": "(histogram_quantile(0.99, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(histogram_quantile(0.99, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "refId": "A_native"
                          },
                          {
-                            "expr": "(histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
                             "refId": "B_classic"
                          },
                          {
-                            "expr": "(histogram_quantile(0.50, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(histogram_quantile(0.50, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
                             "refId": "B_native"
                          },
                          {
-                            "expr": "(sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}) /\nsum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"})\n) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}) /\nsum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"})\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C_classic"
                          },
                          {
-                            "expr": "(sum(histogram_sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"})) /\nsum(histogram_count(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}))\n) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(sum(histogram_sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"})) /\nsum(histogram_count(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C_native"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Request latency",
                       "type": "timeseries"
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Per ingester pod p99 latency\nThis panel shows ingester query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by ingesters.\n",
+                      "description": "### Per pod p99 request latency\nThis panel shows ingester query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by ingesters.\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -23454,20 +23454,20 @@ data:
                       "targets": [
                          {
                             "exemplar": true,
-                            "expr": "(histogram_quantile(0.99, sum by (le,pod) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(histogram_quantile(0.99, sum by (le,pod) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "",
                             "legendLink": null
                          },
                          {
                             "exemplar": true,
-                            "expr": "(histogram_quantile(0.99, sum by (pod) (rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(histogram_quantile(0.99, sum by (pod) (rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "",
                             "legendLink": null
                          }
                       ],
-                      "title": "Per ingester pod p99 latency",
+                      "title": "Per pod p99 request latency",
                       "type": "timeseries"
                    }
                 ],
@@ -23673,13 +23673,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "{{status}}",
                             "refId": "A_classic"
                          },
                          {
-                            "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "{{status}}",
                             "refId": "A"
@@ -23690,7 +23690,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Latency\nThis panel shows ingester query requests from just the main query path (ie. excluding the ruler query path, if enabled). The data shown is as reported by queriers.\n",
+                      "description": "### Request latency\nThis panel shows ingester query requests from just the main query path (ie. excluding the ruler query path, if enabled). The data shown is as reported by queriers.\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -23729,43 +23729,43 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "refId": "A_classic"
                          },
                          {
-                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
                             "refId": "B_classic"
                          },
                          {
-                            "expr": "(sum(histogram_sum(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(sum(histogram_sum(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
                          },
                          {
-                            "expr": "(sum(rate(cortex_ingester_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])) /\nsum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(sum(rate(cortex_ingester_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])) /\nsum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Request latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -23788,7 +23788,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Per querier pod p99 latency\nThis panel shows ingester query requests from just the main query path (ie. excluding the ruler query path, if enabled). The data shown is as reported by queriers.\n",
+                      "description": "### Per querier pod p99 request latency\nThis panel shows ingester query requests from just the main query path (ie. excluding the ruler query path, if enabled). The data shown is as reported by queriers.\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -23828,20 +23828,20 @@ data:
                       "targets": [
                          {
                             "exemplar": true,
-                            "expr": "(histogram_quantile(0.99, sum by (le,pod) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(histogram_quantile(0.99, sum by (le,pod) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "",
                             "legendLink": null
                          },
                          {
                             "exemplar": true,
-                            "expr": "(histogram_quantile(0.99, sum by (pod) (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(histogram_quantile(0.99, sum by (pod) (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "",
                             "legendLink": null
                          }
                       ],
-                      "title": "Per querier pod p99 latency",
+                      "title": "Per querier pod p99 request latency",
                       "type": "timeseries"
                    }
                 ],
@@ -24064,7 +24064,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Latency\nThis panel shows store-gateway query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by store-gateways.\n",
+                      "description": "### Request latency\nThis panel shows store-gateway query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by store-gateways.\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -24139,12 +24139,12 @@ data:
                             "refId": "C_native"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Request latency",
                       "type": "timeseries"
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Per store-gateway pod p99 latency\nThis panel shows store-gateway query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by store-gateways.\n",
+                      "description": "### Per pod p99 request latency\nThis panel shows store-gateway query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by store-gateways.\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -24197,7 +24197,7 @@ data:
                             "legendLink": null
                          }
                       ],
-                      "title": "Per store-gateway pod p99 latency",
+                      "title": "Per pod p99 request latency",
                       "type": "timeseries"
                    }
                 ],
@@ -24420,7 +24420,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Latency\nThis panel shows store-gateway query requests from just the main query path (ie. excluding the ruler query path, if enabled). The data shown is as reported by queriers.\n",
+                      "description": "### Request latency\nThis panel shows store-gateway query requests from just the main query path (ie. excluding the ruler query path, if enabled). The data shown is as reported by queriers.\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -24495,7 +24495,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Request latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -24518,7 +24518,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Per querier pod p99 latency\nThis panel shows store-gateway query requests from just the main query path (ie. excluding the ruler query path, if enabled). The data shown is as reported by queriers.\n",
+                      "description": "### Per querier pod p99 request latency\nThis panel shows store-gateway query requests from just the main query path (ie. excluding the ruler query path, if enabled). The data shown is as reported by queriers.\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -24571,7 +24571,7 @@ data:
                             "legendLink": null
                          }
                       ],
-                      "title": "Per querier pod p99 latency",
+                      "title": "Per querier pod p99 request latency",
                       "type": "timeseries"
                    }
                 ],
@@ -25091,7 +25091,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Request latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -25248,7 +25248,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency (getmulti)",
+                      "title": "GetMulti latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -25454,7 +25454,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency (getmulti)",
+                      "title": "GetMulti latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -25659,7 +25659,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency (getmulti)",
+                      "title": "GetMulti latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -25864,7 +25864,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency (getmulti)",
+                      "title": "GetMulti latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -26102,7 +26102,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Attributes",
+                      "title": "Attributes latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -26199,7 +26199,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Exists",
+                      "title": "Exists latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -26296,7 +26296,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Get",
+                      "title": "Get latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -26393,7 +26393,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: GetRange",
+                      "title": "GetRange latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -26490,7 +26490,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Upload",
+                      "title": "Upload latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -26587,7 +26587,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Delete",
+                      "title": "Delete latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -26777,7 +26777,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Attributes",
+                      "title": "Attributes latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -26874,7 +26874,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Exists",
+                      "title": "Exists latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -26971,7 +26971,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Get",
+                      "title": "Get latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -27068,7 +27068,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: GetRange",
+                      "title": "GetRange latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -27165,7 +27165,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Upload",
+                      "title": "Upload latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -27262,7 +27262,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Delete",
+                      "title": "Delete latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -30005,7 +30005,7 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
-                      "description": "### Evaluations per second\nRate of rule expressions evaluated per second.\n\n",
+                      "description": "### Evaluations / sec\nRate of rule expressions evaluated per second.\n\n",
                       "fill": 1,
                       "format": "reqps",
                       "id": 2,
@@ -30374,7 +30374,7 @@ data:
                             "refId": "C_native"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Request latency",
                       "type": "timeseries"
                    },
                    {
@@ -30431,7 +30431,7 @@ data:
                             "legendLink": null
                          }
                       ],
-                      "title": "Per pod p99 latency",
+                      "title": "Per pod p99 request latency",
                       "type": "timeseries"
                    }
                 ],
@@ -30576,7 +30576,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency (Time in Queue)",
+                      "title": "Queue latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -30661,7 +30661,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### 99th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
+                      "description": "### p99 queue latency\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -30712,12 +30712,12 @@ data:
                             "refId": "A_classic"
                          }
                       ],
-                      "title": "99th Percentile Latency by Expected Query Component",
+                      "title": "p99 queue latency",
                       "type": "timeseries"
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### 50th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
+                      "description": "### p50 queue latency\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -30768,12 +30768,12 @@ data:
                             "refId": "A_classic"
                          }
                       ],
-                      "title": "50th Percentile Latency by Expected Query Component",
+                      "title": "p50 queue latency",
                       "type": "timeseries"
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Average Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
+                      "description": "### Mean queue latency\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -30824,7 +30824,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Average Latency by Expected Query Component",
+                      "title": "Mean queue latency",
                       "type": "timeseries"
                    }
                 ],
@@ -30832,7 +30832,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Ruler-query-scheduler Latency (Time in Queue) Breakout by Expected Query Component",
+                "title": "Ruler-query-scheduler – queue latency by expected query component",
                 "titleSize": "h6"
              },
              {
@@ -30841,7 +30841,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query-scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p>\n\n",
+                      "description": "### p99 inflight requests vs. connected queriers\n<p>\n  The query-scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -30891,7 +30891,7 @@ data:
                             "legendLink": null
                          }
                       ],
-                      "title": "99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers",
+                      "title": "p99 inflight requests vs. connected queriers",
                       "type": "timeseries"
                    }
                 ],
@@ -30899,7 +30899,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Ruler-query-scheduler <-> Querier Inflight Requests",
+                "title": "Ruler-query-scheduler – inflight requests by query component",
                 "titleSize": "h6"
              },
              {
@@ -31187,7 +31187,7 @@ data:
                             "refId": "C_native"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Request latency",
                       "type": "timeseries"
                    },
                    {
@@ -31244,7 +31244,7 @@ data:
                             "legendLink": null
                          }
                       ],
-                      "title": "Per pod p99 latency",
+                      "title": "Per pod p99 request latency",
                       "type": "timeseries"
                    }
                 ],
@@ -31450,13 +31450,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "{{status}}",
                             "refId": "A_classic"
                          },
                          {
-                            "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "{{status}}",
                             "refId": "A"
@@ -31467,7 +31467,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Latency\nThis panel shows ingester query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by ingesters.\n",
+                      "description": "### Request latency\nThis panel shows ingester query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by ingesters.\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -31506,48 +31506,48 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "refId": "A_classic"
                          },
                          {
-                            "expr": "(histogram_quantile(0.99, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(histogram_quantile(0.99, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "refId": "A_native"
                          },
                          {
-                            "expr": "(histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
                             "refId": "B_classic"
                          },
                          {
-                            "expr": "(histogram_quantile(0.50, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(histogram_quantile(0.50, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
                             "refId": "B_native"
                          },
                          {
-                            "expr": "(sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}) /\nsum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"})\n) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}) /\nsum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"})\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C_classic"
                          },
                          {
-                            "expr": "(sum(histogram_sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"})) /\nsum(histogram_count(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}))\n) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(sum(histogram_sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"})) /\nsum(histogram_count(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C_native"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Request latency",
                       "type": "timeseries"
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Per ingester pod p99 latency\nThis panel shows ingester query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by ingesters.\n",
+                      "description": "### Per pod p99 request latency\nThis panel shows ingester query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by ingesters.\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -31587,20 +31587,20 @@ data:
                       "targets": [
                          {
                             "exemplar": true,
-                            "expr": "(histogram_quantile(0.99, sum by (le,pod) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(histogram_quantile(0.99, sum by (le,pod) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "",
                             "legendLink": null
                          },
                          {
                             "exemplar": true,
-                            "expr": "(histogram_quantile(0.99, sum by (pod) (rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(histogram_quantile(0.99, sum by (pod) (rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "",
                             "legendLink": null
                          }
                       ],
-                      "title": "Per ingester pod p99 latency",
+                      "title": "Per pod p99 request latency",
                       "type": "timeseries"
                    }
                 ],
@@ -31806,13 +31806,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "{{status}}",
                             "refId": "A_classic"
                          },
                          {
-                            "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "{{status}}",
                             "refId": "A"
@@ -31823,7 +31823,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Latency\nThis panel shows ingester query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
+                      "description": "### Request latency\nThis panel shows ingester query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -31862,43 +31862,43 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "refId": "A_classic"
                          },
                          {
-                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
                             "refId": "B_classic"
                          },
                          {
-                            "expr": "(sum(histogram_sum(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(sum(histogram_sum(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
                          },
                          {
-                            "expr": "(sum(rate(cortex_ingester_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])) /\nsum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(sum(rate(cortex_ingester_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])) /\nsum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Request latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -31921,7 +31921,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Per querier pod p99 latency\nThis panel shows ingester query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
+                      "description": "### Per querier pod p99 request latency\nThis panel shows ingester query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -31961,20 +31961,20 @@ data:
                       "targets": [
                          {
                             "exemplar": true,
-                            "expr": "(histogram_quantile(0.99, sum by (le,pod) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(histogram_quantile(0.99, sum by (le,pod) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "",
                             "legendLink": null
                          },
                          {
                             "exemplar": true,
-                            "expr": "(histogram_quantile(0.99, sum by (pod) (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(histogram_quantile(0.99, sum by (pod) (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues|SearchMetricsMetadata)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "",
                             "legendLink": null
                          }
                       ],
-                      "title": "Per querier pod p99 latency",
+                      "title": "Per querier pod p99 request latency",
                       "type": "timeseries"
                    }
                 ],
@@ -32197,7 +32197,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Latency\nThis panel shows store-gateway query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by store-gateways.\n",
+                      "description": "### Request latency\nThis panel shows store-gateway query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by store-gateways.\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -32272,12 +32272,12 @@ data:
                             "refId": "C_native"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Request latency",
                       "type": "timeseries"
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Per store-gateway pod p99 latency\nThis panel shows store-gateway query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by store-gateways.\n",
+                      "description": "### Per pod p99 request latency\nThis panel shows store-gateway query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by store-gateways.\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -32330,7 +32330,7 @@ data:
                             "legendLink": null
                          }
                       ],
-                      "title": "Per store-gateway pod p99 latency",
+                      "title": "Per pod p99 request latency",
                       "type": "timeseries"
                    }
                 ],
@@ -32553,7 +32553,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Latency\nThis panel shows store-gateway query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
+                      "description": "### Request latency\nThis panel shows store-gateway query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -32628,7 +32628,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Request latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -32651,7 +32651,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Per querier pod p99 latency\nThis panel shows store-gateway query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
+                      "description": "### Per querier pod p99 request latency\nThis panel shows store-gateway query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -32704,7 +32704,7 @@ data:
                             "legendLink": null
                          }
                       ],
-                      "title": "Per querier pod p99 latency",
+                      "title": "Per querier pod p99 request latency",
                       "type": "timeseries"
                    }
                 ],
@@ -32940,7 +32940,7 @@ data:
                             "legendFormat": "{{ scaler }}"
                          }
                       ],
-                      "title": "Scaling metric (CPU): Desired replicas",
+                      "title": "Desired replicas (CPU)",
                       "type": "timeseries"
                    },
                    {
@@ -32982,7 +32982,7 @@ data:
                             "legendFormat": "{{ scaler }}"
                          }
                       ],
-                      "title": "Scaling metric (memory): Desired replicas",
+                      "title": "Desired replicas (memory)",
                       "type": "timeseries"
                    },
                    {
@@ -33024,7 +33024,7 @@ data:
                             "legendFormat": "{{ scaler }}"
                          }
                       ],
-                      "title": "Scaling metric (in-flight queries): Desired replicas",
+                      "title": "Desired replicas (in-flight queries)",
                       "type": "timeseries"
                    }
                 ],
@@ -37206,7 +37206,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Request latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -38062,7 +38062,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Attributes",
+                      "title": "Attributes latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -38159,7 +38159,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Exists",
+                      "title": "Exists latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -38256,7 +38256,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Get",
+                      "title": "Get latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -38353,7 +38353,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: GetRange",
+                      "title": "GetRange latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -38450,7 +38450,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Upload",
+                      "title": "Upload latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -38547,7 +38547,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency of op: Delete",
+                      "title": "Delete latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -51617,7 +51617,7 @@ data:
                             "legendFormat": "{{ scaler }}"
                          }
                       ],
-                      "title": "Scaling metric (CPU): Desired replicas",
+                      "title": "Desired replicas (CPU)",
                       "type": "timeseries"
                    },
                    {
@@ -51659,7 +51659,7 @@ data:
                             "legendFormat": "{{ scaler }}"
                          }
                       ],
-                      "title": "Scaling metric (memory): Desired replicas",
+                      "title": "Desired replicas (memory)",
                       "type": "timeseries"
                    },
                    {
@@ -51997,7 +51997,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Request latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -52311,7 +52311,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Request latency",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -52625,7 +52625,7 @@ data:
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Request latency",
                       "type": "timeseries",
                       "yaxes": [
                          {

@@ -44,7 +44,6 @@ import (
 	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
 	compactorscheduler "github.com/grafana/mimir/pkg/compactor/scheduler"
-	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -415,7 +414,7 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 		return nil, errors.Wrap(err, "creating ingester partition token table")
 	}
 
-	t.IngesterPartitionRingWatchers, err = ingest.NewPartitionRingWatchers(t.Cfg.Compartments.Enabled, t.Cfg.Compartments.Read.NumCompartments, ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, tokenTable, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+	t.IngesterPartitionRingWatchers, err = ingest.NewPartitionRingWatchers(t.Cfg.Compartments, ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, tokenTable, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
 	if err != nil {
 		return nil, errors.Wrap(err, "creating ingester partition rings watcher")
 	}
@@ -426,7 +425,7 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 
 	// Expose a web page to view the partition ring state. With compartments enabled there's one page
 	// per read compartment, linked from an index page.
-	t.API.RegisterIngesterPartitionRings(t.Cfg.Compartments.Enabled, t.IngesterPartitionRingWatchers, ingester.PartitionRingKey, kvClient)
+	t.API.RegisterIngesterPartitionRings(t.Cfg.Compartments, t.IngesterPartitionRingWatchers, ingester.PartitionRingKey, kvClient)
 
 	// Track anonymous usage statistics.
 	usagestats.SetMode(usagestats.ModeIngestStorage)
@@ -918,7 +917,7 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 		topics := make([]string, t.Cfg.Compartments.Read.NumCompartments)
 		getPartitionIDsByCompartment := make([]ingest.GetPartitionIDsFunc, t.Cfg.Compartments.Read.NumCompartments)
 		for readCompartmentID := range topics {
-			topics[readCompartmentID] = compartments.ReplaceReadCompartment(t.Cfg.IngestStorage.KafkaConfig.Topic, readCompartmentID)
+			topics[readCompartmentID] = t.Cfg.IngestStorage.KafkaConfig.ReadCompartmentTopic(readCompartmentID)
 			getPartitionIDsByCompartment[readCompartmentID] = getPartitionIDs(readCompartmentID)
 		}
 

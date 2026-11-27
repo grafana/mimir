@@ -2557,7 +2557,7 @@
                         "legendFormat": "{{ scaler }}"
                      }
                   ],
-                  "title": "Scaling metric (CPU): Desired replicas",
+                  "title": "Desired replicas (CPU)",
                   "type": "timeseries"
                },
                {
@@ -2599,7 +2599,7 @@
                         "legendFormat": "{{ scaler }}"
                      }
                   ],
-                  "title": "Scaling metric (memory): Desired replicas",
+                  "title": "Desired replicas (memory)",
                   "type": "timeseries"
                },
                {
@@ -2937,7 +2937,7 @@
                         "refId": "C_classic"
                      }
                   ],
-                  "title": "Latency",
+                  "title": "Request latency",
                   "type": "timeseries",
                   "yaxes": [
                      {
@@ -3251,7 +3251,7 @@
                         "refId": "C_classic"
                      }
                   ],
-                  "title": "Latency",
+                  "title": "Request latency",
                   "type": "timeseries",
                   "yaxes": [
                      {
@@ -3565,7 +3565,7 @@
                         "refId": "C_classic"
                      }
                   ],
-                  "title": "Latency",
+                  "title": "Request latency",
                   "type": "timeseries",
                   "yaxes": [
                      {

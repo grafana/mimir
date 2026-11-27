@@ -31,10 +31,9 @@ import (
 
 	"github.com/coreos/go-systemd/v22/activation"
 	"github.com/mdlayher/vsock"
-	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/config/secret"
 	"go.yaml.in/yaml/v2"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/time/rate"
 )
 
 var (
@@ -44,24 +43,24 @@ var (
 )
 
 type Config struct {
-	TLSConfig         TLSConfig                     `yaml:"tls_server_config"`
-	HTTPConfig        HTTPConfig                    `yaml:"http_server_config"`
-	RateLimiterConfig RateLimiterConfig             `yaml:"rate_limit"`
-	Users             map[string]config_util.Secret `yaml:"basic_auth_users"`
+	TLSConfig         TLSConfig                `yaml:"tls_server_config"`
+	HTTPConfig        HTTPConfig               `yaml:"http_server_config"`
+	RateLimiterConfig RateLimiterConfig        `yaml:"rate_limit"`
+	Users             map[string]secret.Secret `yaml:"basic_auth_users"`
 }
 
 type TLSConfig struct {
-	TLSCert          string             `yaml:"cert"`
-	TLSKey           config_util.Secret `yaml:"key"`
-	ClientCAsText    string             `yaml:"client_ca"`
-	TLSCertPath      string             `yaml:"cert_file"`
-	TLSKeyPath       string             `yaml:"key_file"`
-	ClientAuth       string             `yaml:"client_auth_type"`
-	ClientCAs        string             `yaml:"client_ca_file"`
-	CipherSuites     []Cipher           `yaml:"cipher_suites"`
-	CurvePreferences []Curve            `yaml:"curve_preferences"`
-	MinVersion       TLSVersion         `yaml:"min_version"`
-	MaxVersion       TLSVersion         `yaml:"max_version"`
+	TLSCert          string        `yaml:"cert"`
+	TLSKey           secret.Secret `yaml:"key"`
+	ClientCAsText    string        `yaml:"client_ca"`
+	TLSCertPath      string        `yaml:"cert_file"`
+	TLSKeyPath       string        `yaml:"key_file"`
+	ClientAuth       string        `yaml:"client_auth_type"`
+	ClientCAs        string        `yaml:"client_ca_file"`
+	CipherSuites     []Cipher      `yaml:"cipher_suites"`
+	CurvePreferences []Curve       `yaml:"curve_preferences"`
+	MinVersion       TLSVersion    `yaml:"min_version"`
+	MaxVersion       TLSVersion    `yaml:"max_version"`
 	// PreferServerCipherSuites is parsed and ignored.
 	//
 	// Deprecated: it used to be passed to tls.Config, whose field of the same
@@ -115,11 +114,20 @@ func (t *TLSConfig) IsEnabled() bool {
 		t.ClientAuth != ""
 }
 
+// joinDir joins dir and path if path is relative. An empty or absolute path
+// is returned unchanged.
+func joinDir(dir, path string) string {
+	if path == "" || filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(dir, path)
+}
+
 // SetDirectory joins any relative file paths with dir.
 func (t *TLSConfig) SetDirectory(dir string) {
-	t.TLSCertPath = config_util.JoinDir(dir, t.TLSCertPath)
-	t.TLSKeyPath = config_util.JoinDir(dir, t.TLSKeyPath)
-	t.ClientCAs = config_util.JoinDir(dir, t.ClientCAs)
+	t.TLSCertPath = joinDir(dir, t.TLSCertPath)
+	t.TLSKeyPath = joinDir(dir, t.TLSKeyPath)
+	t.ClientCAs = joinDir(dir, t.ClientCAs)
 }
 
 // VerifyPeerCertificate will check the SAN entries of the client cert if there is configuration for it
@@ -127,7 +135,7 @@ func (t *TLSConfig) VerifyPeerCertificate(rawCerts [][]byte, _ [][]*x509.Certifi
 	// sender cert comes first, see https://www.rfc-editor.org/rfc/rfc5246#section-7.4.2
 	cert, err := x509.ParseCertificate(rawCerts[0])
 	if err != nil {
-		return fmt.Errorf("error parsing client certificate: %s", err)
+		return fmt.Errorf("error parsing client certificate: %w", err)
 	}
 
 	// Build up a slice of strings with all Subject Alternate Name values
@@ -218,7 +226,7 @@ func ConfigToTLSConfig(c *TLSConfig) (*tls.Config, error) {
 		if c.TLSCertPath != "" {
 			certData, err = os.ReadFile(c.TLSCertPath)
 			if err != nil {
-				return nil, fmt.Errorf("failed to read cert_file (%s): %s", c.TLSCertPath, err)
+				return nil, fmt.Errorf("failed to read cert_file (%s): %w", c.TLSCertPath, err)
 			}
 		} else {
 			certData = []byte(c.TLSCert)
@@ -227,7 +235,7 @@ func ConfigToTLSConfig(c *TLSConfig) (*tls.Config, error) {
 		if c.TLSKeyPath != "" {
 			keyData, err = os.ReadFile(c.TLSKeyPath)
 			if err != nil {
-				return nil, fmt.Errorf("failed to read key_file (%s): %s", c.TLSKeyPath, err)
+				return nil, fmt.Errorf("failed to read key_file (%s): %w", c.TLSKeyPath, err)
 			}
 		} else {
 			keyData = []byte(c.TLSKey)
@@ -248,8 +256,8 @@ func ConfigToTLSConfig(c *TLSConfig) (*tls.Config, error) {
 	// c.PreferServerCipherSuites is deliberately not passed on: the tls.Config
 	// field of that name has had no effect since Go 1.17.
 	cfg := &tls.Config{
-		MinVersion: (uint16)(c.MinVersion),
-		MaxVersion: (uint16)(c.MaxVersion),
+		MinVersion: uint16(c.MinVersion),
+		MaxVersion: uint16(c.MaxVersion),
 	}
 
 	cfg.GetCertificate = func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
@@ -258,7 +266,7 @@ func ConfigToTLSConfig(c *TLSConfig) (*tls.Config, error) {
 
 	var cf []uint16
 	for _, c := range c.CipherSuites {
-		cf = append(cf, (uint16)(c))
+		cf = append(cf, uint16(c))
 	}
 	if len(cf) > 0 {
 		cfg.CipherSuites = cf
@@ -266,7 +274,7 @@ func ConfigToTLSConfig(c *TLSConfig) (*tls.Config, error) {
 
 	var cp []tls.CurveID
 	for _, c := range c.CurvePreferences {
-		cp = append(cp, (tls.CurveID)(c))
+		cp = append(cp, tls.CurveID(c))
 	}
 	if len(cp) > 0 {
 		cfg.CurvePreferences = cp
@@ -313,13 +321,20 @@ func ConfigToTLSConfig(c *TLSConfig) (*tls.Config, error) {
 	return cfg, nil
 }
 
-// ServeMultiple starts the server on the given listeners. The FlagConfig is
-// also passed on to Serve.
+// ServeMultiple starts the server on the given listeners. It configures the
+// server once before serving any listener.
 func ServeMultiple(listeners []net.Listener, server *http.Server, flags *FlagConfig, logger *slog.Logger) error {
+	if len(listeners) == 0 {
+		return errors.New("no listeners provided")
+	}
+	tlsHTTP, err := configureServer(server, flags, logger)
+	if err != nil {
+		return err
+	}
 	errs := new(errgroup.Group)
 	for _, l := range listeners {
 		errs.Go(func() error {
-			return Serve(l, server, flags, logger)
+			return serveListener(l, server, tlsHTTP, logger)
 		})
 	}
 	return errs.Wait()
@@ -389,18 +404,31 @@ func parseVsockPort(address string) (uint32, error) {
 	return uint32(port), nil
 }
 
-// Server starts the server on the given listener. Based on the file path
+// Serve starts the server on the given listener. Based on the file path
 // WebConfigFile in the FlagConfig, TLS or basic auth could be enabled.
+//
+// Serve changes the server configuration. Do not call it concurrently
+// for the same server or while that server is serving requests.
+// Use ServeMultiple to serve multiple listeners with one server.
+// If server.ErrorLog is nil, Serve sends HTTP server errors to logger at
+// warn level.
 func Serve(l net.Listener, server *http.Server, flags *FlagConfig, logger *slog.Logger) error {
-	logger.Info("Listening on", "address", l.Addr().String())
+	tlsHTTP, err := configureServer(server, flags, logger)
+	if err != nil {
+		return err
+	}
+	return serveListener(l, server, tlsHTTP, logger)
+}
+
+func configureServer(server *http.Server, flags *FlagConfig, logger *slog.Logger) (*HTTPConfig, error) {
+	setErrorLog(server, logger)
 	tlsConfigPath := *flags.WebConfigFile
 	if tlsConfigPath == "" {
-		logger.Info("TLS is disabled.", "http2", false, "address", l.Addr().String())
-		return server.Serve(l)
+		return nil, nil
 	}
 
 	if err := validateUsers(tlsConfigPath); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Setup basic authentication.
@@ -411,38 +439,33 @@ func Serve(l net.Listener, server *http.Server, flags *FlagConfig, logger *slog.
 
 	c, err := getConfig(tlsConfigPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	var limiter *rate.Limiter
-	if c.RateLimiterConfig.Interval != 0 {
-		limiter = rate.NewLimiter(rate.Every(c.RateLimiterConfig.Interval), c.RateLimiterConfig.Burst)
-		logger.Info("Rate Limiter is enabled.", "burst", c.RateLimiterConfig.Burst, "interval", c.RateLimiterConfig.Interval)
-	}
-
-	server.Handler = &webHandler{
+	h := &webHandler{
 		tlsConfigPath: tlsConfigPath,
 		logger:        logger,
 		handler:       handler,
 		cache:         newCache(),
-		limiter:       limiter,
 	}
+	// Log the initial rate limiter state at startup. The handler updates the
+	// limiter whenever the file changes.
+	h.rateLimiter(c.RateLimiterConfig)
+	server.Handler = h
 
 	config, err := ConfigToTLSConfig(&c.TLSConfig)
-	switch err {
-	case nil:
+	switch {
+	case err == nil:
+		// Valid TLS config.
 		if !c.HTTPConfig.HTTP2 {
 			server.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
 		}
-		// Valid TLS config.
-		logger.Info("TLS is enabled.", "http2", c.HTTPConfig.HTTP2, "address", l.Addr().String())
-	case errNoTLSConfig:
+	case errors.Is(err, errNoTLSConfig):
 		// No TLS config, back to plain HTTP.
-		logger.Info("TLS is disabled.", "http2", false, "address", l.Addr().String())
-		return server.Serve(l)
+		return nil, nil
 	default:
 		// Invalid TLS config.
-		return err
+		return nil, err
 	}
 
 	server.TLSConfig = config
@@ -457,7 +480,25 @@ func Serve(l net.Listener, server *http.Server, flags *FlagConfig, logger *slog.
 		config.NextProtos = tlsNextProtos(server, c.HTTPConfig.HTTP2)
 		return config, nil
 	}
+	return &c.HTTPConfig, nil
+}
+
+func serveListener(l net.Listener, server *http.Server, tlsHTTP *HTTPConfig, logger *slog.Logger) error {
+	logger.Info("Listening on", "address", l.Addr().String())
+	if tlsHTTP == nil {
+		logger.Info("TLS is disabled.", "http2", false, "address", l.Addr().String())
+		return server.Serve(l)
+	}
+	logger.Info("TLS is enabled.", "http2", tlsHTTP.HTTP2, "address", l.Addr().String())
 	return server.ServeTLS(l, "", "")
+}
+
+// setErrorLog sends the errors that net/http logs through server.ErrorLog to
+// the new logger if no existing server.ErrorLog is set.
+func setErrorLog(server *http.Server, logger *slog.Logger) {
+	if server.ErrorLog == nil {
+		server.ErrorLog = slog.NewLogLogger(logger.Handler(), slog.LevelWarn)
+	}
 }
 
 // tlsNextProtos preserves the server's ALPN policy on reloaded TLS configs.
@@ -501,7 +542,7 @@ func Validate(tlsConfigPath string) error {
 		return err
 	}
 	_, err = ConfigToTLSConfig(&c.TLSConfig)
-	if err == errNoTLSConfig {
+	if errors.Is(err, errNoTLSConfig) {
 		return nil
 	}
 	return err
@@ -517,7 +558,7 @@ func (c *Cipher) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 	for _, cs := range tls.CipherSuites() {
 		if cs.Name == s {
-			*c = (Cipher)(cs.ID)
+			*c = Cipher(cs.ID)
 			return nil
 		}
 	}
@@ -525,16 +566,16 @@ func (c *Cipher) UnmarshalYAML(unmarshal func(any) error) error {
 }
 
 func (c Cipher) MarshalYAML() (any, error) {
-	return tls.CipherSuiteName((uint16)(c)), nil
+	return tls.CipherSuiteName(uint16(c)), nil
 }
 
 type Curve tls.CurveID
 
 var curves = map[string]Curve{
-	"CurveP256": (Curve)(tls.CurveP256),
-	"CurveP384": (Curve)(tls.CurveP384),
-	"CurveP521": (Curve)(tls.CurveP521),
-	"X25519":    (Curve)(tls.X25519),
+	"CurveP256": Curve(tls.CurveP256),
+	"CurveP384": Curve(tls.CurveP384),
+	"CurveP521": Curve(tls.CurveP521),
+	"X25519":    Curve(tls.X25519),
 }
 
 func (c *Curve) UnmarshalYAML(unmarshal func(any) error) error {
@@ -562,10 +603,10 @@ func (c *Curve) MarshalYAML() (any, error) {
 type TLSVersion uint16
 
 var tlsVersions = map[string]TLSVersion{
-	"TLS13": (TLSVersion)(tls.VersionTLS13),
-	"TLS12": (TLSVersion)(tls.VersionTLS12),
-	"TLS11": (TLSVersion)(tls.VersionTLS11),
-	"TLS10": (TLSVersion)(tls.VersionTLS10),
+	"TLS13": TLSVersion(tls.VersionTLS13),
+	"TLS12": TLSVersion(tls.VersionTLS12),
+	"TLS11": TLSVersion(tls.VersionTLS11),
+	"TLS10": TLSVersion(tls.VersionTLS10),
 }
 
 func (tv *TLSVersion) UnmarshalYAML(unmarshal func(any) error) error {

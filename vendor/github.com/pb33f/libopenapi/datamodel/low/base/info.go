@@ -75,9 +75,8 @@ func (i *Info) Build(ctx context.Context, keyNode, root *yaml.Node, idx *index.S
 		i.Extensions = nil
 		return nil
 	}
-	root = utils.NodeAlias(root)
+	root = utils.ResolveMergeNodes(root)
 	i.RootNode = root
-	utils.CheckForMergeNodes(root)
 	if len(root.Content) > 0 {
 		i.NodeMap.ExtractNodes(root, false)
 	} else {

@@ -85,6 +85,9 @@ func (rm *ReferenceMapped) MarshalJSON() ([]byte, error) {
 // allowing or disallowing remote or local file lookups.
 //   - https://github.com/pb33f/libopenapi/issues/73
 type SpecIndexConfig struct {
+	// AllowExcessiveAliases disables the YAML alias expansion limit for trusted
+	// documents with extensive shared content. Cycle detection remains enabled.
+	AllowExcessiveAliases bool
 	// The BaseURL will be the root from which relative references will be resolved from if they can't be found locally.
 	//
 	// For example:
@@ -282,6 +285,7 @@ func (s *SpecIndexConfig) ToDocumentConfiguration() *datamodel.DocumentConfigura
 		BasePath:                              s.BasePath,
 		SpecFilePath:                          s.SpecFilePath,
 		AllowFileReferences:                   s.AllowFileLookup,
+		AllowExcessiveAliases:                 s.AllowExcessiveAliases,
 		AllowRemoteReferences:                 s.AllowRemoteLookup,
 		BypassDocumentCheck:                   s.SkipDocumentCheck,
 		IgnorePolymorphicCircularReferences:   s.IgnorePolymorphicCircularReferences,
@@ -405,6 +409,7 @@ type SpecIndex struct {
 	allExternalDocuments                map[string]*Reference                         // all external documents
 	externalSpecIndex                   map[string]*SpecIndex                         // create a primary index of all external specs and componentIds
 	refErrors                           []error                                       // errors when indexing references
+	refOpenErrors                       sync.Map                                      // why a referenced document could not be opened, keyed by its location
 	operationParamErrors                []error                                       // errors when indexing parameters
 	allDescriptions                     []*DescriptionReference                       // every single description found in the spec.
 	allSummaries                        []*DescriptionReference                       // every single summary found in the spec.
@@ -627,6 +632,7 @@ func (index *SpecIndex) releaseDerivedState() {
 	index.arrayCircularReferences = nil
 	index.tagCircularReferences = nil
 	index.refErrors = nil
+	index.refOpenErrors.Clear()
 	index.operationParamErrors = nil
 	index.cache = nil
 	index.highModelCache = nil

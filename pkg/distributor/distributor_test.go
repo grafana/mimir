@@ -6655,7 +6655,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		// Init the partition rings component used by the write path (1 ring when compartments are
 		// disabled, N when enabled).
 		var err error
-		partitionRings, err = ingest.NewPartitionRingWatchers(compartmentsEnabled, cfg.numCompartments, ingester.PartitionRingName, ingester.PartitionRingKey, partitionsStore, nil, logger, nil)
+		partitionRings, err = ingest.NewPartitionRingWatchers(compartments.Config{Enabled: compartmentsEnabled, Read: compartments.ReadConfig{NumCompartments: cfg.numCompartments}}, ingester.PartitionRingName, ingester.PartitionRingKey, partitionsStore, nil, logger, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, partitionRings))
 		t.Cleanup(func() {

@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -240,10 +241,10 @@ func TestApi_RegisterIngesterPartitionRings(t *testing.T) {
 
 	t.Run("compartments disabled", func(t *testing.T) {
 		api, serverCfg, kvClient := newAPI(t)
-		watcher, err := ingest.NewPartitionRingWatchers(false, 0, ringKey, ringKey, kvClient, nil, log.NewNopLogger(), nil)
+		watcher, err := ingest.NewPartitionRingWatchers(compartments.Config{}, ringKey, ringKey, kvClient, nil, log.NewNopLogger(), nil)
 		require.NoError(t, err)
 
-		api.RegisterIngesterPartitionRings(false, watcher, ringKey, kvClient)
+		api.RegisterIngesterPartitionRings(compartments.Config{}, watcher, ringKey, kvClient)
 
 		// /ingester/partition-ring is the actual ring status page (not the compartments index page):
 		// the status page has the partition table, the index page only lists per-compartment links.
@@ -259,10 +260,11 @@ func TestApi_RegisterIngesterPartitionRings(t *testing.T) {
 
 	t.Run("compartments enabled", func(t *testing.T) {
 		api, serverCfg, kvClient := newAPI(t)
-		watcher, err := ingest.NewPartitionRingWatchers(true, 2, ringKey, ringKey, kvClient, nil, log.NewNopLogger(), nil)
+		compartmentsCfg := compartments.Config{Enabled: true, Read: compartments.ReadConfig{NumCompartments: 2}}
+		watcher, err := ingest.NewPartitionRingWatchers(compartmentsCfg, ringKey, ringKey, kvClient, nil, log.NewNopLogger(), nil)
 		require.NoError(t, err)
 
-		api.RegisterIngesterPartitionRings(true, watcher, ringKey, kvClient)
+		api.RegisterIngesterPartitionRings(compartmentsCfg, watcher, ringKey, kvClient)
 
 		// The index page lists all read compartments.
 		status, body := get(t, serverCfg, "/ingester/partition-ring")

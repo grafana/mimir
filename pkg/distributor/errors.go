@@ -62,6 +62,10 @@ var (
 		"the request has been rejected because the tenant exceeded the active series limit in one or more read compartments. %d series were rejected from this request of a total of %d",
 		validation.MaxActiveSeriesPerUserFlag,
 	)
+
+	tenantMetadataTooLongMsgFormat = globalerror.TenantMetadataTooLong.Message(
+		"the request has been rejected because the tenant metadata is %d bytes long, but it can be at most %d bytes long when read compartments are enabled",
+	)
 )
 
 // Error is a marker interface for the errors returned by distributor.
@@ -166,6 +170,12 @@ func (e validationError) IsSoft() bool {
 
 // Ensure that validationError implements Error.
 var _ Error = validationError{}
+
+// newTenantMetadataTooLongError returns a validationError for tenant metadata that leaves no room for
+// the read compartment key-value pair.
+func newTenantMetadataTooLongError(length, limit int) validationError {
+	return newValidationError(fmt.Errorf(tenantMetadataTooLongMsgFormat, length, limit))
+}
 
 type reactiveLimiterExceededError struct {
 	error

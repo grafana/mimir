@@ -636,6 +636,44 @@ func BenchmarkBuildFilterCaseInsensitiveAccept(b *testing.B) {
 	}
 }
 
+func TestBuildFilterExpression(t *testing.T) {
+	tests := []struct {
+		name          string
+		expression    string
+		alg           FuzzAlg
+		threshold     int
+		caseSensitive bool
+		value         string
+		wantAccepted  bool
+		wantScore     float64
+	}{
+		{name: "AND accepts when both terms match", expression: "kube AND prod", alg: FuzzAlgSubstring, value: "kube-prod", wantAccepted: true, wantScore: 1.0},
+		{name: "AND rejects when one term misses", expression: "kube AND prod", alg: FuzzAlgSubstring, value: "kube-dev", wantAccepted: false},
+		{name: "OR accepts either term", expression: "foo OR bar", alg: FuzzAlgSubstring, value: "bar_total", wantAccepted: true, wantScore: 1.0},
+		{name: "NOT excludes a literal substring", expression: "kube AND NOT test", alg: FuzzAlgSubstring, value: "kube-test", wantAccepted: false},
+		// Jaro-Winkler scores "tesz" against "test" at or above the 0.8 threshold,
+		// so a fuzzy NOT would exclude the value. NOT must stay literal.
+		{name: "NOT does not exclude a fuzzy near-match", expression: "tes AND NOT test", alg: FuzzAlgJaroWinkler, threshold: 80, value: "tesz", wantAccepted: true, wantScore: 1.0},
+		// Each row below passes only if the value is folded: unfolded, "kube"
+		// misses "KUBE-prod", and "test" does not exclude "kube-TEST".
+		{name: "case-insensitive folds the value for a positive term", expression: "kube", alg: FuzzAlgSubstring, value: "KUBE-prod", wantAccepted: true, wantScore: 1.0},
+		{name: "case-insensitive folds the value for a negated term", expression: "kube AND NOT test", alg: FuzzAlgSubstring, value: "kube-TEST", wantAccepted: false},
+		{name: "case-sensitive keeps case", expression: "Kube", alg: FuzzAlgSubstring, caseSensitive: true, value: "kube", wantAccepted: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := NewExpressionParams(tc.expression, tc.caseSensitive, tc.alg, tc.threshold)
+			require.NoError(t, err)
+			f, err := BuildFilter(p)
+			require.NoError(t, err)
+			require.NotNil(t, f)
+			gotAccepted, gotScore := f.Accept(tc.value)
+			assert.Equal(t, tc.wantAccepted, gotAccepted)
+			assert.InDelta(t, tc.wantScore, gotScore, 1e-9)
+		})
+	}
+}
+
 type mapScoreFilter map[string]float64
 
 func (m mapScoreFilter) Accept(value string) (bool, float64) {
@@ -756,6 +794,27 @@ func TestApplyCursor(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// TestBuildFilterExpressionRoundsScores checks that an expression filter
+// rounds scores like a terms filter, which score cursors rely on; see
+// scoreScale.
+func TestBuildFilterExpressionRoundsScores(t *testing.T) {
+	const term, value = "kubernetes", "kubrnetes"
+	leaf, err := buildPerTermFilter(term, true, FuzzAlgJaroWinkler, 50, 0.5)
+	require.NoError(t, err)
+	accepted, raw := leaf.Accept(value)
+	require.True(t, accepted)
+	rounded := math.Round(raw*scoreScale) / scoreScale
+	require.NotEqual(t, rounded, raw, "the raw score must need rounding")
+
+	p, err := NewExpressionParams(term, true, FuzzAlgJaroWinkler, 50)
+	require.NoError(t, err)
+	f, err := BuildFilter(p)
+	require.NoError(t, err)
+	accepted, got := f.Accept(value)
+	require.True(t, accepted)
+	assert.Equal(t, rounded, got)
 }
 
 func TestBuildSortedSearch(t *testing.T) {

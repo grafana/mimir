@@ -253,7 +253,8 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			expectedError:           nil,
 		},
 		"closed broker": {
-			err:              errors.New(chosenBrokerDied),
+			// Use the literal franz-go message, as wrapped by the fetcher, so the test fails if the constant drifts from franz-go.
+			err:              errors.New("fetching from kafka: the broker connection has died and the request will be retried on a new connection"),
 			lso:              5,
 			rangeErrorPolicy: OnRangeErrorResumeFromStart,
 			fw: fetchWant{

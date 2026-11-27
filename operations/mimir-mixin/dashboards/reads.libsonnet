@@ -47,7 +47,7 @@ local filename = 'mimir-reads.json';
         $.panel('Instant queries / sec') +
         $.statPanel(addRuleEvalRate($.queries.query_frontend.ncInstantQueriesPerSecond), format='reqps') +
         $.panelDescription(
-          'Instant queries per second',
+          'Instant queries / sec',
           |||
             Rate of instant queries per second being made to the system.
             Includes both queries made to the <tt>/prometheus</tt> API as
@@ -59,7 +59,7 @@ local filename = 'mimir-reads.json';
         $.panel('Range queries / sec') +
         $.statPanel($.queries.query_frontend.ncRangeQueriesPerSecond, format='reqps') +
         $.panelDescription(
-          'Range queries per second',
+          'Range queries / sec',
           |||
             Rate of range queries per second being made to
             %(product)s via the <tt>/prometheus</tt> API.
@@ -70,7 +70,7 @@ local filename = 'mimir-reads.json';
         $.panel('Label names queries / sec') +
         $.statPanel($.queries.query_frontend.ncLabelNamesQueriesPerSecond, format='reqps') +
         $.panelDescription(
-          '"Label names" queries per second',
+          'Label names queries / sec',
           |||
             Rate of "label names" endpoint queries per second being made to
             %(product)s via the <tt>/prometheus</tt> API.
@@ -81,7 +81,7 @@ local filename = 'mimir-reads.json';
         $.panel('Label values queries / sec') +
         $.statPanel($.queries.query_frontend.ncLabelValuesQueriesPerSecond, format='reqps') +
         $.panelDescription(
-          '"Label values" queries per second',
+          'Label values queries / sec',
           |||
             Rate of specific "label values" endpoint queries per second being made to
             %(product)s via the <tt>/prometheus</tt> API.
@@ -92,7 +92,7 @@ local filename = 'mimir-reads.json';
         $.panel('Series queries / sec') +
         $.statPanel($.queries.query_frontend.ncSeriesQueriesPerSecond, format='reqps') +
         $.panelDescription(
-          'Series queries per second',
+          'Series queries / sec',
           |||
             Rate of series queries per second being made to
             %(product)s via the <tt>/prometheus</tt> API.
@@ -108,11 +108,11 @@ local filename = 'mimir-reads.json';
         $.qpsPanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.queries.gateway.readRequestsPerSecondSelector)
       )
       .addPanel(
-        $.timeseriesPanel('Latency') +
+        $.timeseriesPanel('Request latency') +
         $.latencyRecordingRulePanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
       )
       .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.timeseriesPanel('Per %s p99 request latency' % $._config.per_instance_label) +
         $.perInstanceLatencyPanelNativeHistogram(
           '0.99',
           $.queries.gateway.requestsPerSecondMetric,
@@ -190,7 +190,7 @@ local filename = 'mimir-reads.json';
         { fieldConfig+: { defaults+: { unit: 'ops' } } }
       )
       .addPanel(
-        $.timeseriesPanel('Latency (getmulti)') +
+        $.timeseriesPanel('GetMulti latency') +
         $.ncLatencyPanel(
           'thanos_cache_operation_duration_seconds',
           |||
@@ -269,9 +269,9 @@ local filename = 'mimir-reads.json';
     )
     .addRowIf(
       $._config.show_reactive_limiter_panels,
-      $.row('Instance Limits')
+      $.row('Instance limits')
       .addPanel(
-        $.timeseriesPanel('Ingester per %s queued requests' % $._config.per_instance_label) +
+        $.timeseriesPanel('Per %s ingester queued requests' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'sum by (%s) (cortex_ingester_reactive_limiter_queued_requests{%s, request_type="read"})'
           % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
@@ -279,7 +279,7 @@ local filename = 'mimir-reads.json';
         { fieldConfig+: { defaults+: { unit: 'req' } } }
       )
       .addPanel(
-        $.timeseriesPanel('Ingester per %s inflight requests' % $._config.per_instance_label) +
+        $.timeseriesPanel('Per %s ingester inflight requests' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'sum by (%s) (cortex_ingester_reactive_limiter_inflight_requests{%s, request_type="read"})'
           % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
@@ -287,7 +287,7 @@ local filename = 'mimir-reads.json';
         { fieldConfig+: { defaults+: { unit: 'req' } } }
       )
       .addPanel(
-        $.timeseriesPanel('Ingester per %s inflight request limit' % $._config.per_instance_label) +
+        $.timeseriesPanel('Per %s ingester inflight request limit' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'sum by (%s) (cortex_ingester_reactive_limiter_inflight_limit{%s, request_type="read"})'
           % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
@@ -295,7 +295,7 @@ local filename = 'mimir-reads.json';
         { fieldConfig+: { defaults+: { unit: 'req' } } }
       )
       .addPanel(
-        $.timeseriesPanel('Rejected ingester requests') +
+        $.timeseriesPanel('Rejected ingester requests / sec') +
         $.queryPanel(
           'sum by (reason) (rate(cortex_ingester_instance_rejected_requests_total{%s, reason="ingester_max_inflight_read_requests"}[$__rate_interval]))'
           % $.jobMatcher($._config.job_names.ingester),

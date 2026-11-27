@@ -90,6 +90,7 @@ const (
 	reasonSampleTooOld           = "sample-too-old"
 	reasonSampleTooFarInFuture   = "sample-too-far-in-future"
 	reasonNewValueForTimestamp   = "new-value-for-timestamp"
+	reasonSameValueForTimestamp  = "same-value-for-timestamp"
 	reasonSampleTimestampTooOld  = "sample-timestamp-too-old"
 	reasonPerUserSeriesLimit     = "per_user_series_limit"
 	reasonPerMetricSeriesLimit   = "per_metric_series_limit"
@@ -202,6 +203,8 @@ type Config struct {
 
 	LabelChurnEnabled bool `yaml:"label_churn_enabled" category:"experimental"`
 
+	LogSeriesWithFloatsAndHistograms bool `yaml:"log_series_with_floats_and_histograms" category:"experimental"`
+
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
 	// ReadCompartmentID is the read compartment this ingester serves. It selects which partition ring
@@ -246,6 +249,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.ComputeWorkers, "ingester.compute-workers", 0, "Number of worker goroutines in the ingester's shared tenant-fair compute worker pool, used to parallelize CPU-bound work (currently label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.")
 	cfg.LabelValuesCount.RegisterFlags(f)
 	f.BoolVar(&cfg.LabelChurnEnabled, "ingester.label-churn-enabled", false, "Enable label churn detection. The ingester records the newest series reference of each tenant every minute, and returns a score for each label name that shows how many new series the new values of the label create.")
+	f.BoolVar(&cfg.LogSeriesWithFloatsAndHistograms, "ingester.log-series-with-floats-and-histograms", false, "When enabled, the ingester logs the tenant and labels of series in write requests that have both float samples and native histograms. Logs are sampled according to -ingester.error-sample-rate.")
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
 	f.IntVar(&cfg.ReadCompartmentID, "ingester.read-compartment-id", 0, "The read compartment this ingester serves. Only used when compartments are enabled.")
 
@@ -595,22 +599,20 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		// Here we use it so that pushes from kafka also get a tenant assigned since the PartitionReader invokes the ingester.
 		profilingIngester := NewIngesterProfilingWrapper(i)
 
+		// The offset file is always stored in the TSDB directory alongside the ingester's data.
+		offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset.json")
+
 		if cfg.Compartments.Enabled {
 			// With compartments enabled the ingester consumes its read compartment's topic from every
-			// write compartment's Kafka cluster. The per-cluster offset files live in the TSDB directory
-			// alongside the ingester's data, one per write compartment.
-			readCompartmentTopic := compartments.ReplaceReadCompartment(kafkaCfg.Topic, cfg.ReadCompartmentID)
+			// write compartment's Kafka cluster, with one offset file per write compartment.
+			readCompartmentTopic := kafkaCfg.ReadCompartmentTopic(cfg.ReadCompartmentID)
 			kafkaCfgs := ingest.WriteCompartmentConfigs(kafkaCfg, cfg.Compartments.Write.NumCompartments, readCompartmentTopic)
-			offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset-wc-"+compartments.WriteCompartmentIDPlaceholder+".json")
 
-			i.ingestReader, err = ingest.NewMultiClusterPartitionReader(kafkaCfgs, ingestCfg.OrderedConsumption, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
+			i.ingestReader, err = ingest.NewMultiClusterPartitionReader(kafkaCfgs, ingestCfg.OrderedConsumption, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, cfg.Compartments, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
 			if err != nil {
 				return nil, errors.Wrap(err, "creating ingest storage reader")
 			}
 		} else {
-			// The offset file is always stored in the TSDB directory alongside the ingester's data.
-			offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset.json")
-
 			i.ingestReader, err = ingest.NewSingleClusterPartitionReader(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
 			if err != nil {
 				return nil, errors.Wrap(err, "creating ingest storage reader")
@@ -630,8 +632,8 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		// validated by Config.Validate.
 		partitionRingName, partitionRingKey := PartitionRingName, PartitionRingKey
 		if cfg.Compartments.Enabled {
-			partitionRingName = compartments.WithReadCompartmentSuffix(PartitionRingName, cfg.ReadCompartmentID)
-			partitionRingKey = compartments.WithReadCompartmentSuffix(PartitionRingKey, cfg.ReadCompartmentID)
+			partitionRingName = cfg.Compartments.ReadCompartmentName(PartitionRingName, cfg.ReadCompartmentID)
+			partitionRingKey = cfg.Compartments.ReadCompartmentName(PartitionRingKey, cfg.ReadCompartmentID)
 		}
 
 		i.ingestPartitionLifecycler, err = ring.NewPartitionInstanceLifecycler(

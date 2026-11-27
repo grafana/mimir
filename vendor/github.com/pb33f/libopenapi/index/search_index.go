@@ -14,14 +14,20 @@ import (
 type ContextKey string
 
 const (
-	CurrentPathKey   ContextKey = "currentPath"
-	FoundIndexKey    ContextKey = "foundIndex"
-	RootIndexKey     ContextKey = "currentIndex"
-	IndexingFilesKey ContextKey = "indexingFiles" // Tracks files being indexed in current call chain
+	CurrentPathKey ContextKey = "currentPath"
+	FoundIndexKey  ContextKey = "foundIndex"
+	RootIndexKey   ContextKey = "currentIndex"
+	// IndexingFilesKey holds the set used by AddIndexingFile and GetIndexingFiles.
+	//
+	// Deprecated: the library no longer tracks the files it is indexing.
+	IndexingFilesKey ContextKey = "indexingFiles"
 )
 
 // GetIndexingFiles returns the set of files currently being indexed in the call chain.
 // Returns nil if not set.
+//
+// Deprecated: the library no longer tracks the files it is indexing, so this only
+// returns what the caller added with AddIndexingFile.
 func GetIndexingFiles(ctx context.Context) map[string]bool {
 	if v := ctx.Value(IndexingFilesKey); v != nil {
 		return v.(map[string]bool)
@@ -31,6 +37,8 @@ func GetIndexingFiles(ctx context.Context) map[string]bool {
 
 // AddIndexingFile adds a file to the indexing set in the context.
 // Returns a new context with the updated set.
+//
+// Deprecated: the library no longer reads this set when indexing.
 func AddIndexingFile(ctx context.Context, filePath string) context.Context {
 	existing := GetIndexingFiles(ctx)
 	newSet := make(map[string]bool)
@@ -45,6 +53,9 @@ func AddIndexingFile(ctx context.Context, filePath string) context.Context {
 // For HTTP URLs, it also checks if the PATH portion matches any indexed file,
 // since the same file might be referenced with different hostnames (which get normalized
 // to a common server).
+//
+// Deprecated: the library no longer tracks the files it is indexing, so this only
+// sees what the caller added with AddIndexingFile.
 func IsFileBeingIndexed(ctx context.Context, filePath string) bool {
 	files := GetIndexingFiles(ctx)
 	if files == nil {
@@ -156,6 +167,14 @@ func (index *SpecIndex) SearchIndexForReferenceByReferenceWithContext(ctx contex
 		}
 	}
 
+	// use the same remote base as extraction so relative lookups find the
+	// absolute keys already stored in the reference map.
+	if index.config != nil && index.config.BaseURL != nil && !strings.HasPrefix(normalizedRef, "#") && !strings.HasPrefix(normalizedRef, "http") && (!filepath.IsAbs(normalizedRef) || strings.HasPrefix(index.specAbsolutePath, "http")) {
+		if parsed, err := url.Parse(normalizedRef); err == nil && !parsed.IsAbs() && (parsed.Host == "" || strings.HasPrefix(index.specAbsolutePath, "http")) {
+			normalizedRef, _ = index.resolveReferenceTarget(normalizedRef)
+		}
+	}
+
 	// --- Step 2: Parse the ref into URI components and build lookup paths ---
 	// Split the ref on "#/" to separate the file path (uri[0]) from the JSON Pointer
 	// fragment (uri[1]). Depending on whether the ref is absolute, relative, or HTTP,
@@ -177,7 +196,7 @@ func (index *SpecIndex) SearchIndexForReferenceByReferenceWithContext(ctx contex
 	if singleFragment {
 		if uriFile != "" {
 			if strings.HasPrefix(uriFile, "http") {
-				roloLookup = searchRef.FullDefinition
+				roloLookup = ref
 			} else {
 				if filepath.IsAbs(uriFile) {
 					roloLookup = uriFile
@@ -215,10 +234,26 @@ func (index *SpecIndex) SearchIndexForReferenceByReferenceWithContext(ctx contex
 		}
 		ref = uriFile
 	}
-	if strings.Contains(ref, "%") {
-		// decode the url.
-		ref, _ = url.QueryUnescape(ref)
-		refAlt, _ = url.QueryUnescape(refAlt)
+	encodedRef, prefix := ref, ""
+	if strings.HasPrefix(ref, "http") {
+		// remote path and query escapes are part of the retrieval identity.
+		prefix, encodedRef, _ = strings.Cut(ref, "#")
+		if encodedRef != "" {
+			encodedRef = "#" + encodedRef
+		}
+	}
+	if strings.Contains(encodedRef, "%") {
+		// Decode URI escaping without treating literal plus signs as spaces.
+		decodedRef, err := url.PathUnescape(encodedRef)
+		if err != nil {
+			return nil, index, ctx
+		}
+		ref = prefix + decodedRef
+		refAlt = ref
+		if singleFragment && uriFile == "" {
+			// absPath is a native path, not another URI-escaped fragment.
+			refAlt = absPath + decodedRef
+		}
 	}
 
 	// --- Step 3: Local index lookup ---
@@ -429,12 +464,19 @@ func (index *SpecIndex) SearchIndexForReferenceByReferenceWithContext(ctx contex
 
 func (index *SpecIndex) extractIndex(r *Reference) *SpecIndex {
 	idx := r.Index
-	if idx != nil && r.Index.GetSpecAbsolutePath() != r.RemoteLocation {
-		for i := range r.Index.rolodex.indexes {
-			if r.Index.rolodex.indexes[i].GetSpecAbsolutePath() == r.RemoteLocation {
-				idx = r.Index.rolodex.indexes[i]
-				break
-			}
+	// A whole-file reference can be cached before its target index is ready.
+	// Use the caller's rolodex to find that target, without using its index.
+	sourceIndex := idx
+	if sourceIndex == nil {
+		sourceIndex = index
+	}
+	if sourceIndex.rolodex != nil && (idx == nil || sourceIndex.GetSpecAbsolutePath() != r.RemoteLocation) {
+		rolo := sourceIndex.rolodex
+		rolo.indexLock.Lock()
+		target := rolo.indexMap[r.RemoteLocation]
+		rolo.indexLock.Unlock()
+		if target != nil {
+			idx = target
 		}
 	}
 	return idx

@@ -47,9 +47,8 @@ func (l *License) Build(ctx context.Context, keyNode, root *yaml.Node, idx *inde
 		l.Extensions = nil
 		return nil
 	}
-	root = utils.NodeAlias(root)
+	root = utils.ResolveMergeNodes(root)
 	l.RootNode = root
-	utils.CheckForMergeNodes(root)
 	if len(root.Content) > 0 {
 		l.NodeMap.ExtractNodes(root, false)
 	} else {

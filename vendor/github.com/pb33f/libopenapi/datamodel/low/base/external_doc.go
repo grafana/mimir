@@ -63,9 +63,8 @@ func (ex *ExternalDoc) Build(ctx context.Context, keyNode, root *yaml.Node, idx 
 		ex.Extensions = nil
 		return nil
 	}
-	root = utils.NodeAlias(root)
+	root = utils.ResolveMergeNodes(root)
 	ex.RootNode = root
-	utils.CheckForMergeNodes(root)
 	if len(root.Content) > 0 {
 		ex.NodeMap.ExtractNodes(root, false)
 	} else {

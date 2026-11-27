@@ -2340,7 +2340,7 @@
                         "refId": "C_classic"
                      }
                   ],
-                  "title": "Latency",
+                  "title": "Request latency",
                   "type": "timeseries",
                   "yaxes": [
                      {
@@ -3196,7 +3196,7 @@
                         "refId": "C_classic"
                      }
                   ],
-                  "title": "Latency of op: Attributes",
+                  "title": "Attributes latency",
                   "type": "timeseries",
                   "yaxes": [
                      {
@@ -3293,7 +3293,7 @@
                         "refId": "C_classic"
                      }
                   ],
-                  "title": "Latency of op: Exists",
+                  "title": "Exists latency",
                   "type": "timeseries",
                   "yaxes": [
                      {
@@ -3390,7 +3390,7 @@
                         "refId": "C_classic"
                      }
                   ],
-                  "title": "Latency of op: Get",
+                  "title": "Get latency",
                   "type": "timeseries",
                   "yaxes": [
                      {
@@ -3487,7 +3487,7 @@
                         "refId": "C_classic"
                      }
                   ],
-                  "title": "Latency of op: GetRange",
+                  "title": "GetRange latency",
                   "type": "timeseries",
                   "yaxes": [
                      {
@@ -3584,7 +3584,7 @@
                         "refId": "C_classic"
                      }
                   ],
-                  "title": "Latency of op: Upload",
+                  "title": "Upload latency",
                   "type": "timeseries",
                   "yaxes": [
                      {
@@ -3681,7 +3681,7 @@
                         "refId": "C_classic"
                      }
                   ],
-                  "title": "Latency of op: Delete",
+                  "title": "Delete latency",
                   "type": "timeseries",
                   "yaxes": [
                      {

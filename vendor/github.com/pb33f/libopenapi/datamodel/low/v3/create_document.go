@@ -49,7 +49,7 @@ func selectDocumentNode(root *yaml.Node, preferred documentTopLevelNode, label s
 	if root == nil {
 		return documentTopLevelNode{}
 	}
-	utils.CheckForMergeNodes(root)
+	root = utils.ResolveMergeNodes(root)
 	if topOnly {
 		_, key, value := utils.FindKeyNodeFullTop(label, root.Content)
 		return documentTopLevelNode{key: key, value: value}
@@ -64,7 +64,7 @@ func collectDocumentTopLevelNodes(root *yaml.Node) documentTopLevelNodes {
 	if root == nil {
 		return nodes
 	}
-	utils.CheckForMergeNodes(root)
+	root = utils.ResolveMergeNodes(root)
 
 	content := root.Content
 	for i := 0; i+1 < len(content); i += 2 {
@@ -135,7 +135,7 @@ func CreateDocumentFromConfig(info *datamodel.SpecInfo, config *datamodel.Docume
 }
 
 func createDocument(info *datamodel.SpecInfo, config *datamodel.DocumentConfiguration) (*Document, error) {
-	rootNode := utils.NodeAlias(info.RootNode.Content[0])
+	rootNode := utils.ResolveMergeNodes(info.RootNode.Content[0])
 	topNodes := collectDocumentTopLevelNodes(rootNode)
 	versionNodeRef := selectDocumentNode(rootNode, topNodes.version, OpenAPILabel, false)
 	labelNode, versionNode := versionNodeRef.key, versionNodeRef.value
@@ -157,6 +157,7 @@ func createDocument(info *datamodel.SpecInfo, config *datamodel.DocumentConfigur
 	idxConfig.AllowUnknownExtensionContentDetection = config.AllowUnknownExtensionContentDetection
 	idxConfig.TransformSiblingRefs = config.TransformSiblingRefs
 	idxConfig.SkipExternalRefResolution = config.SkipExternalRefResolution
+	idxConfig.AllowExcessiveAliases = config.AllowExcessiveAliases
 	idxConfig.ResolveNestedRefsWithDocumentContext = config.ResolveNestedRefsWithDocumentContext
 	idxConfig.AvoidCircularReferenceCheck = true
 
@@ -196,6 +197,14 @@ func createDocument(info *datamodel.SpecInfo, config *datamodel.DocumentConfigur
 			} else {
 				baseURL = selfURL
 			}
+		}
+	}
+
+	// a retrieval URL supplies a resolution base without overriding remote hosts.
+	if baseURL == nil {
+		if sourceURL, err := url.Parse(config.SpecFilePath); err == nil && sourceURL.Host != "" && (sourceURL.Scheme == "http" || sourceURL.Scheme == "https") {
+			idxConfig.SpecAbsolutePath = sourceURL.String()
+			baseURL = sourceURL.ResolveReference(&url.URL{Path: "."})
 		}
 	}
 
@@ -251,8 +260,11 @@ func createDocument(info *datamodel.SpecInfo, config *datamodel.DocumentConfigur
 	// Only create a remote filesystem when the caller explicitly allows remote references.
 	if config.AllowRemoteReferences {
 
-		// create a remote filesystem
-		remoteFS, _ := index.NewRemoteFSWithConfig(idxConfig)
+		// $self resolves relative references; only an explicit BaseURL overrides remote hosts.
+		remoteConfig := *idxConfig
+		remoteConfig.BaseURL = config.BaseURL
+		remoteFS, _ := index.NewRemoteFSWithConfig(&remoteConfig)
+		remoteFS.SetIndexConfig(idxConfig)
 		if config.RemoteURLHandler != nil {
 			remoteFS.RemoteHandlerFunc = config.RemoteURLHandler
 		}
@@ -301,6 +313,12 @@ func createDocument(info *datamodel.SpecInfo, config *datamodel.DocumentConfigur
 
 	// set root index.
 	doc.Index = rolodex.GetRootIndex()
+	for _, err := range roloErrs {
+		var resolvingErr *index.ResolvingError
+		if errors.As(err, &resolvingErr) && errors.Is(resolvingErr.ErrorRef, index.ErrReferenceChainCycle) {
+			return &doc, errors.Join(errs...)
+		}
+	}
 	var wg sync.WaitGroup
 
 	var cacheMap sync.Map

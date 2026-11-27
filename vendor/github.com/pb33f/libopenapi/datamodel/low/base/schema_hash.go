@@ -10,7 +10,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/pb33f/go-yaml"
 	"github.com/pb33f/libopenapi/datamodel/low"
+	"github.com/pb33f/libopenapi/index"
 	"github.com/pb33f/libopenapi/orderedmap"
 )
 
@@ -84,6 +86,10 @@ func (s *Schema) hash(quick bool) uint64 {
 // keywords holding the same value never hash the same: {minimum: 5} is not {maximum: 5}, and a oneOf is not an allOf
 // over the same schemas.
 func (s *Schema) hashProperties(h *maphash.Hash) {
+	if !s.BooleanSchema.IsEmpty() {
+		hashSchemaBool(h, "booleanSchema", s.BooleanSchema.Value)
+		return
+	}
 	var scratch []string
 
 	if !s.SchemaTypeRef.IsEmpty() {
@@ -412,26 +418,29 @@ func hashSchemaDependentRequired(h *maphash.Hash, label string, m *orderedmap.Ma
 }
 
 func (s *Schema) quickHashKey() string {
-	// The key identifies a node by file plus position, so the path must come from the file
-	// RootNode is in. GetIndex() may have been re-attributed to the file a $ref resolves to,
-	// which would pair a resolved-file path with a referring-file line and column: two
-	// different $refs at the same position in different files pointing into one shared file
-	// would then collide and return each other's hash.
-	// refIndex is assigned unconditionally in Build alongside Index, so it is nil only when
-	// the schema was never built, in which case Index is nil too and there is no path either way.
-	idx := s.refIndex
+	return quickHashKeyOf(s.refIndex, s.Index, s.RootNode)
+}
+
+// quickHashKeyOf builds the quick-hash key for a schema whose root node is root, read from the file of
+// refIndex, in the document of idx. The key identifies a node by file plus position, so the path must come
+// from the file root is in. Index may have been re-attributed to the file a $ref resolves to, which would
+// pair a resolved-file path with a referring-file line and column: two different $refs at the same position
+// in different files pointing into one shared file would then collide and return each other's hash.
+// refIndex is assigned unconditionally in Build alongside Index, so it is nil only when the schema was never
+// built, in which case Index is nil too and there is no path either way.
+func quickHashKeyOf(refIndex, idx *index.SpecIndex, root *yaml.Node) string {
 	path := ""
-	if idx != nil {
-		path = idx.GetSpecAbsolutePath()
+	if refIndex != nil {
+		path = refIndex.GetSpecAbsolutePath()
 	}
 	cfID := "root"
-	if s.Index != nil {
-		if s.Index.GetRolodex() != nil {
-			if s.Index.GetRolodex().GetId() != "" {
-				cfID = s.Index.GetRolodex().GetId()
+	if idx != nil {
+		if idx.GetRolodex() != nil {
+			if idx.GetRolodex().GetId() != "" {
+				cfID = idx.GetRolodex().GetId()
 			}
 		} else {
-			cfID = s.Index.GetConfig().GetId()
+			cfID = idx.GetConfig().GetId()
 		}
 	}
 
@@ -439,9 +448,9 @@ func (s *Schema) quickHashKey() string {
 	keyBuf.Grow(len(path) + len(cfID) + 16)
 	keyBuf.WriteString(path)
 	keyBuf.WriteByte(':')
-	keyBuf.WriteString(strconv.Itoa(s.RootNode.Line))
+	keyBuf.WriteString(strconv.Itoa(root.Line))
 	keyBuf.WriteByte(':')
-	keyBuf.WriteString(strconv.Itoa(s.RootNode.Column))
+	keyBuf.WriteString(strconv.Itoa(root.Column))
 	keyBuf.WriteByte(':')
 	keyBuf.WriteString(cfID)
 	return keyBuf.String()

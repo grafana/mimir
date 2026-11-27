@@ -1,12 +1,12 @@
 {
-  "$id": "https://spec.openapis.org/oas/3.2/schema/2025-09-17",
+  "$id": "https://spec.openapis.org/oas/3.2/schema/2026-11-12",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "The description of OpenAPI v3.2.x Documents without Schema Object validation",
   "type": "object",
   "properties": {
     "openapi": {
       "type": "string",
-      "pattern": "^3\\.2\\.\\d+(-.+)?$"
+      "pattern": "^3\\.2\\.[0-9]+(-.+)?$"
     },
     "$self": {
       "type": "string",
@@ -20,7 +20,7 @@
     "jsonSchemaDialect": {
       "type": "string",
       "format": "uri-reference",
-      "default": "https://spec.openapis.org/oas/3.2/dialect/2025-09-17"
+      "default": "https://spec.openapis.org/oas/3.2/dialect/2026-02-26"
     },
     "servers": {
       "type": "array",
@@ -341,7 +341,7 @@
           },
           "propertyNames": {
             "$comment": "RFC9110 restricts methods to \"1*tchar\" in ABNF",
-            "pattern": "^[a-zA-Z0-9!#$%&'*+.^_`|~-]+$",
+            "$ref": "#/$defs/token",
             "not": {
               "enum": [
                 "GET",
@@ -601,6 +601,40 @@
               "content"
             ]
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "in": {
+                "const": "path"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "name": {
+                "$comment": "see OAS 3.2.0 §4.8.2",
+                "pattern": "^[^{}]+$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "in": {
+                "const": "header"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "name": {
+                "$comment": "see RFC9110 §5.1",
+                "$ref": "#/$defs/token"
+              }
+            }
+          }
         }
       ],
       "dependentSchemas": {
@@ -610,10 +644,6 @@
               "type": "string"
             },
             "explode": {
-              "type": "boolean"
-            },
-            "allowReserved": {
-              "default": false,
               "type": "boolean"
             }
           },
@@ -629,9 +659,6 @@
             },
             {
               "$ref": "#/$defs/parameter/dependentSchemas/schema/$defs/styles-for-cookie"
-            },
-            {
-              "$ref": "#/$defs/styles-for-form"
             }
           ],
           "$defs": {
@@ -645,6 +672,9 @@
               },
               "then": {
                 "properties": {
+                  "name": {
+                    "pattern": "^[^{}]+$"
+                  },
                   "style": {
                     "default": "simple",
                     "enum": [
@@ -655,6 +685,13 @@
                   },
                   "required": {
                     "const": true
+                  },
+                  "explode": {
+                    "default": false
+                  },
+                  "allowReserved": {
+                    "type": "boolean",
+                    "default": false
                   }
                 },
                 "required": [
@@ -675,6 +712,9 @@
                   "style": {
                     "default": "simple",
                     "const": "simple"
+                  },
+                  "explode": {
+                    "default": false
                   }
                 }
               }
@@ -697,8 +737,13 @@
                       "pipeDelimited",
                       "deepObject"
                     ]
+                  },
+                  "allowReserved": {
+                    "type": "boolean",
+                    "default": false
                   }
-                }
+                },
+                "$ref": "#/$defs/explode-for-form"
               }
             },
             "styles-for-cookie": {
@@ -717,6 +762,24 @@
                       "form",
                       "cookie"
                     ]
+                  },
+                  "explode": {
+                    "default": true
+                  }
+                },
+                "if": {
+                  "properties": {
+                    "style": {
+                      "const": "form"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "allowReserved": {
+                      "type": "boolean",
+                      "default": false
+                    }
                   }
                 }
               }
@@ -776,7 +839,7 @@
       }
     },
     "content": {
-      "$comment": "https://spec.openapis.org/oas/v3.2#fixed-fields-10",
+      "$comment": "The `content` object is a property of:\nParameter Object: https://spec.openapis.org/oas/v3.2#parameter-object\nRequest Body Object: https://spec.openapis.org/oas/v3.2#request-body-object\nResponse Object: https://spec.openapis.org/oas/v3.2#response-object\nHeader Object: https://spec.openapis.org/oas/v3.2#header-object\n",
       "type": "object",
       "additionalProperties": {
         "$ref": "#/$defs/media-type-or-reference"
@@ -789,9 +852,6 @@
       "$comment": "https://spec.openapis.org/oas/v3.2#media-type-object",
       "type": "object",
       "properties": {
-        "description": {
-          "type": "string"
-        },
         "schema": {
           "$dynamicRef": "#meta"
         },
@@ -851,11 +911,14 @@
       "type": "object",
       "properties": {
         "contentType": {
-          "type": "string",
-          "format": "media-range"
+          "$comment": "one or more comma-separated media-ranges",
+          "type": "string"
         },
         "headers": {
           "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/token"
+          },
           "additionalProperties": {
             "$ref": "#/$defs/header-or-reference"
           }
@@ -902,7 +965,8 @@
             "allowReserved": {
               "default": false
             }
-          }
+          },
+          "$ref": "#/$defs/explode-for-form"
         },
         "explode": {
           "properties": {
@@ -919,17 +983,11 @@
             "style": {
               "default": "form"
             }
-          }
+          },
+          "$ref": "#/$defs/explode-for-form"
         }
       },
-      "allOf": [
-        {
-          "$ref": "#/$defs/specification-extensions"
-        },
-        {
-          "$ref": "#/$defs/styles-for-form"
-        }
-      ],
+      "$ref": "#/$defs/specification-extensions",
       "unevaluatedProperties": false
     },
     "responses": {
@@ -972,6 +1030,9 @@
         },
         "headers": {
           "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/token"
+          },
           "additionalProperties": {
             "$ref": "#/$defs/header-or-reference"
           }
@@ -1191,10 +1252,6 @@
               "const": "simple"
             },
             "explode": {
-              "default": false,
-              "type": "boolean"
-            },
-            "allowReserved": {
               "default": false,
               "type": "boolean"
             }
@@ -1636,16 +1693,14 @@
         "type": "string"
       }
     },
-    "styles-for-form": {
+    "explode-for-form": {
+      "$comment": "for encoding objects, and query and cookie parameters, style=form is the default",
       "if": {
         "properties": {
           "style": {
             "const": "form"
           }
-        },
-        "required": [
-          "style"
-        ]
+        }
       },
       "then": {
         "properties": {
@@ -1661,6 +1716,11 @@
           }
         }
       }
+    },
+    "token": {
+      "$comment": "see https://www.rfc-editor.org/rfc/rfc9110.html#section-5.6.2",
+      "type": "string",
+      "pattern": "^[0-9A-Za-z!#$%&'*+.^_`|~-]+$"
     }
   }
 }

@@ -39,7 +39,7 @@ func ValidateDiscriminatorMappingValueNodes(discriminatorNode *yaml.Node) error 
 	if discriminatorNode == nil || discriminatorNode.Kind != yaml.MappingNode {
 		return nil
 	}
-	utils.CheckForMergeNodes(discriminatorNode)
+	discriminatorNode = utils.ResolveMergeNodes(discriminatorNode)
 
 	for i := 0; i < len(discriminatorNode.Content); i += 2 {
 		keyNode := utils.NodeAlias(discriminatorNode.Content[i])
@@ -54,7 +54,7 @@ func ValidateDiscriminatorMappingValueNodes(discriminatorNode *yaml.Node) error 
 		if mappingNode == nil || mappingNode.Kind != yaml.MappingNode {
 			return fmt.Errorf("discriminator.mapping must be an object")
 		}
-		utils.CheckForMergeNodes(mappingNode)
+		mappingNode = utils.ResolveMergeNodes(mappingNode)
 
 		for j := 0; j < len(mappingNode.Content); j += 2 {
 			keyNode := utils.NodeAlias(mappingNode.Content[j])

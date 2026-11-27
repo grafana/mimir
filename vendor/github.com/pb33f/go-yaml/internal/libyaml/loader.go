@@ -4,7 +4,7 @@
 // This file contains the Loader API for reading YAML documents.
 //
 // Primary functions:
-// - Load: Decode YAML document(s) into a value (use WithAll for multi-doc)
+// - Load: Decode YAML document(s) into a value (use WithAllDocuments for multi-doc)
 // - NewLoader: Create a streaming loader from io.Reader
 
 package libyaml
@@ -51,12 +51,12 @@ func NewLoader(r io.Reader, opts ...Option) (*Loader, error) {
 // If zero documents are found, it returns an error.
 // If multiple documents are found, it returns an error.
 //
-// Use WithAllDocuments() to load all documents into a slice:
+// Use [WithAllDocuments] to load all documents into a slice:
 //
 //	var configs []Config
 //	yaml.Load(multiDocYAML, &configs, yaml.WithAllDocuments())
 //
-// When WithAllDocuments is used, out must be a pointer to a slice.
+// When [WithAllDocuments] is used, out must be a pointer to a slice.
 // Each document is loaded into the slice element type.
 // Zero documents results in an empty slice (no error).
 //
@@ -107,7 +107,7 @@ func Load(in []byte, out any, opts ...Option) error {
 // in the value pointed to by v.
 //
 // Returns [io.EOF] when there are no more documents to read.
-// If WithSingleDocument option was set and a document was already read,
+// If the [WithSingleDocument] option was set and a document was already read,
 // subsequent calls return [io.EOF].
 //
 // Maps and pointers (to a struct, string, int, etc) are accepted as v
@@ -121,7 +121,7 @@ func Load(in []byte, out any, opts ...Option) error {
 // tag: the content preceding the first comma is used as the key, and the
 // following comma-separated options control the loading and dumping behavior.
 //
-// See the documentation of the package-level Load function for more details
+// See the documentation of the package-level [Load] function for more details
 // about YAML to Go conversion and tag options.
 func (l *Loader) Load(v any) (err error) {
 	defer handleErr(&err)

@@ -20,14 +20,15 @@ import (
 // Each Media Type Object provides schema and examples for the media type identified by its key.
 //   - https://spec.openapis.org/oas/v3.1.0#media-type-object
 type MediaType struct {
-	Schema       *base.SchemaProxy                      `json:"schema,omitempty" yaml:"schema,omitempty"`
-	ItemSchema   *base.SchemaProxy                      `json:"itemSchema,omitempty" yaml:"itemSchema,omitempty"`
-	Example      *yaml.Node                             `json:"example,omitempty" yaml:"example,omitempty"`
-	Examples     *orderedmap.Map[string, *base.Example] `json:"examples,omitempty" yaml:"examples,omitempty"`
-	Encoding     *orderedmap.Map[string, *Encoding]     `json:"encoding,omitempty" yaml:"encoding,omitempty"`
-	ItemEncoding *orderedmap.Map[string, *Encoding]     `json:"itemEncoding,omitempty" yaml:"itemEncoding,omitempty"`
-	Extensions   *orderedmap.Map[string, *yaml.Node]    `json:"-" yaml:"-"`
-	low          *low.MediaType
+	Schema         *base.SchemaProxy                      `json:"schema,omitempty" yaml:"schema,omitempty"`
+	ItemSchema     *base.SchemaProxy                      `json:"itemSchema,omitempty" yaml:"itemSchema,omitempty"`
+	Example        *yaml.Node                             `json:"example,omitempty" yaml:"example,omitempty"`
+	Examples       *orderedmap.Map[string, *base.Example] `json:"examples,omitempty" yaml:"examples,omitempty"`
+	Encoding       *orderedmap.Map[string, *Encoding]     `json:"encoding,omitempty" yaml:"encoding,omitempty"`
+	PrefixEncoding []*Encoding                            `json:"prefixEncoding,omitempty" yaml:"prefixEncoding,omitempty"` // OpenAPI 3.2+
+	ItemEncoding   *Encoding                              `json:"itemEncoding,omitempty" yaml:"itemEncoding,omitempty"`     // OpenAPI 3.2+
+	Extensions     *orderedmap.Map[string, *yaml.Node]    `json:"-" yaml:"-"`
+	low            *low.MediaType
 }
 
 // NewMediaType will create a new high-level MediaType instance from a low-level one.
@@ -44,8 +45,9 @@ func NewMediaType(mediaType *low.MediaType) *MediaType {
 	m.Examples = base.ExtractExamples(mediaType.Examples.Value)
 	m.Extensions = high.ExtractExtensions(mediaType.Extensions)
 	m.Encoding = ExtractEncoding(mediaType.Encoding.Value)
+	m.PrefixEncoding = extractEncodingSlice(mediaType.PrefixEncoding)
 	if !mediaType.ItemEncoding.IsEmpty() {
-		m.ItemEncoding = ExtractEncoding(mediaType.ItemEncoding.Value)
+		m.ItemEncoding = NewEncoding(mediaType.ItemEncoding.Value)
 	}
 	return m
 }

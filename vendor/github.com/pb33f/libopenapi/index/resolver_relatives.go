@@ -6,7 +6,6 @@ package index
 import (
 	"fmt"
 	"net/url"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -24,14 +23,50 @@ func (resolver *Resolver) extractRelatives(
 	schemaIDBase string,
 ) []*Reference {
 	state := newRelativeWalkState(foundRelatives, journey, resolve, depth, schemaIDBase)
-	return resolver.extractRelativesWithState(ref, node, parent, state)
+	// Keep ordinary paths on this walk's stack. Child walks reuse capacity;
+	// unusually deep paths grow normally without changing the traversal limit.
+	var pathBuffer [32]string
+	walkPath := pathBuffer[:0]
+	if ref != nil {
+		if strings.HasPrefix(ref.Definition, "#/") {
+			for segment := range strings.SplitSeq(strings.TrimPrefix(ref.Definition, "#/"), "/") {
+				walkPath = append(walkPath, segment)
+			}
+		} else {
+			walkPath = append(walkPath, ref.SourcePath...)
+		}
+		if len(walkPath) > 0 && (walkPath[0] == "example" || walkPath[0] == "examples") && ref.Index != nil {
+			root := ref.Index.GetRootNode()
+			if root != nil {
+				if root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
+					root = root.Content[0]
+				}
+				_, openapi := utils.FindKeyNodeTop("openapi", root.Content)
+				_, swagger := utils.FindKeyNodeTop("swagger", root.Content)
+				if openapi == nil && swagger == nil {
+					// An external fragment identifies the object being resolved. Its
+					// top-level name is not a keyword in the referencing document.
+					// Example fields encountered inside that object still mark payloads.
+					walkPath = append(pathBuffer[:0], ref.SourcePath...)
+				}
+			}
+		}
+	}
+	return resolver.extractRelativesWithState(ref, node, parent, state, walkPath)
 }
 
 func (resolver *Resolver) extractRelativesWithState(
 	ref *Reference,
 	node, parent *yaml.Node,
 	state relativeWalkState,
+	walkPath []string,
 ) []*Reference {
+	if underOpenAPIExamplePayloadPath(walkPath) {
+		return nil
+	}
+	if isDirectOpenAPIExampleValuePath(walkPath) && !isDirectOpenAPIExampleRefNode(node) {
+		return nil
+	}
 	// Guard against stack overflow from deeply nested or circular specs.
 	// Journey tracks the reference chain (100 max); depth tracks recursive calls (500 max).
 	if len(state.journey) > 100 {
@@ -53,7 +88,14 @@ func (resolver *Resolver) extractRelativesWithState(
 			}
 
 			if utils.IsNodeMap(n) || utils.IsNodeArray(n) {
-				found = append(found, resolver.extractNestedRelatives(ref, node, n, state)...)
+				childState := state
+				childPath := walkPath
+				if node.Kind == yaml.MappingNode && i%2 == 1 {
+					childPath = append(walkPath, node.Content[i-1].Value)
+				} else if node.Kind == yaml.SequenceNode {
+					childPath = append(walkPath, "[]")
+				}
+				found = append(found, resolver.extractNestedRelatives(ref, node, n, childState, childPath)...)
 			}
 
 			if i%2 == 0 && n.Value == "$ref" && len(node.Content) > i%2+1 {
@@ -67,7 +109,7 @@ func (resolver *Resolver) extractRelativesWithState(
 			}
 
 			if i%2 == 0 && shouldExtractPolymorphicRelatives(parent, n) {
-				found = append(found, resolver.extractPolymorphicRelatives(ref, node, n, state, i)...)
+				found = append(found, resolver.extractPolymorphicRelatives(ref, node, n, state, i, walkPath)...)
 				skip = true
 			}
 		}
@@ -88,7 +130,7 @@ func (resolver *Resolver) handleRelativeDepthLimit(ref *Reference, state relativ
 			"reference", def)
 	}
 
-	loop := append(state.journey, ref)
+	loop := append(state.journey[:len(state.journey):len(state.journey)], ref)
 	circRef := &CircularReferenceResult{
 		Journey:        loop,
 		Start:          ref,
@@ -107,6 +149,7 @@ func (resolver *Resolver) extractNestedRelatives(
 	ref *Reference,
 	parent, node *yaml.Node,
 	state relativeWalkState,
+	walkPath []string,
 ) []*Reference {
 	childState := state.descend()
 	foundRef, _, _ := resolver.searchReferenceWithContext(ref, ref)
@@ -114,9 +157,9 @@ func (resolver *Resolver) extractNestedRelatives(
 		if foundRef.Circular {
 			return nil
 		}
-		return resolver.extractRelativesWithState(foundRef, node, parent, childState)
+		return resolver.extractRelativesWithState(foundRef, node, parent, childState, walkPath)
 	}
-	return resolver.extractRelativesWithState(ref, node, parent, childState)
+	return resolver.extractRelativesWithState(ref, node, parent, childState, walkPath)
 }
 
 func (resolver *Resolver) extractRelativeReference(
@@ -209,6 +252,17 @@ func isInsidePropertiesNode(parent *yaml.Node) bool {
 func (resolver *Resolver) buildRelativeLookupDefinitions(ref *Reference, value, currentBase string) (string, string) {
 	definition := value
 	fullDef := ""
+	// a BaseURL-only root has no physical file path. Its external references
+	// must use the remote base, just as they do during initial extraction.
+	if resolver.specIndex != nil && resolver.specIndex.config != nil && resolver.specIndex.config.BaseURL != nil && resolver.specIndex.specAbsolutePath == "" && strings.HasPrefix(ref.FullDefinition, "#") && utils.IsExternalRef(value) {
+		if parsed, err := url.Parse(value); err == nil && !parsed.IsAbs() && parsed.Host == "" && !filepath.IsAbs(value) {
+			fullDef, definition = resolver.specIndex.resolveReferenceTarget(value)
+			if currentBase != "" {
+				fullDef = resolveRefWithSchemaBase(value, currentBase)
+			}
+			return definition, fullDef
+		}
+	}
 	exp := strings.Split(value, "#/")
 	if len(exp) == 2 {
 		// Reference contains a fragment (e.g. "other.yaml#/components/schemas/Foo").
@@ -220,12 +274,7 @@ func (resolver *Resolver) buildRelativeLookupDefinitions(ref *Reference, value, 
 				fullDef = value
 			} else if strings.HasPrefix(ref.FullDefinition, "http") {
 				// Relative file path, but the parent ref is remote — resolve against the URL.
-				httpExp := strings.Split(ref.FullDefinition, "#/")
-				u, _ := url.Parse(httpExp[0])
-				abs, _ := filepath.Abs(utils.CheckPathOverlap(path.Dir(u.Path), exp[0], string(filepath.Separator)))
-				u.Path = utils.ReplaceWindowsDriveWithLinuxPath(abs)
-				u.Fragment = ""
-				fullDef = fmt.Sprintf("%s#/%s", u.String(), exp[1])
+				fullDef = resolveRefWithSchemaBase(value, ref.FullDefinition)
 			} else {
 				// Relative file path with a local parent — resolve against the parent's directory.
 				fileDef := strings.Split(ref.FullDefinition, "#/")
@@ -258,10 +307,7 @@ func (resolver *Resolver) buildRelativeLookupDefinitions(ref *Reference, value, 
 		}
 		fileDef := strings.Split(baseLocation, "#/")
 		if strings.HasPrefix(fileDef[0], "http") {
-			u, _ := url.Parse(fileDef[0])
-			absPath, _ := filepath.Abs(utils.CheckPathOverlap(path.Dir(u.Path), exp[0], string(filepath.Separator)))
-			u.Path = utils.ReplaceWindowsDriveWithLinuxPath(absPath)
-			fullDef = u.String()
+			fullDef = resolveRefWithSchemaBase(value, fileDef[0])
 		} else {
 			fullDef = resolver.resolveLocalRefPath(filepath.Dir(fileDef[0]), exp[0])
 		}

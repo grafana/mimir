@@ -126,6 +126,25 @@ func (l *labelsQueryOptimizer) optimizeRequest(ctx context.Context, req *http.Re
 		return l.next.RoundTrip(req)
 	}
 
+	// The codec does not encode a start or end of 0, because 0 also means that the parameter is not set. The querier
+	// applies the metadata default time range to a request without start or end, so keep the value that the client sent.
+	if parsedReq.GetStart() == 0 || parsedReq.GetEnd() == 0 {
+		params, err := util.ParseRequestFormWithoutConsumingBody(req)
+		if err != nil {
+			level.Error(l.logger).Log("msg", "failed to parse labels request form", "err", err)
+			l.failedQueries.Inc()
+			return l.next.RoundTrip(req)
+		}
+		query := optimizedReq.URL.Query()
+		for _, name := range []string{"start", "end"} {
+			if value := params.Get(name); value != "" && query.Get(name) == "" {
+				query.Set(name, value)
+			}
+		}
+		optimizedReq.URL.RawQuery = query.Encode()
+		optimizedReq.RequestURI = optimizedReq.URL.String()
+	}
+
 	// Track successful optimization.
 	l.rewrittenQueries.Inc()
 	spanLog.DebugLog("msg", "optimized labels query", "original_matchers", strings.Join(parsedReq.GetLabelMatcherSets(), " "), "optimized_matchers", strings.Join(optimizedParsedReq.GetLabelMatcherSets(), " "))

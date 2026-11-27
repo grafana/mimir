@@ -175,6 +175,81 @@ func TestIngesterSearchLabelValues(t *testing.T) {
 	}
 }
 
+// TestIngesterSearchLabelValuesWithFilterAndMatchers covers searches that
+// have both a filter and a matcher for another label. Only these searches let
+// TSDB drop the values that the filter rejects before it intersects postings.
+func TestIngesterSearchLabelValuesWithFilterAndMatchers(t *testing.T) {
+	series := []util_test.Series{
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric_a", "status", "200"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric_a", "status", "201"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric_a", "status", "500"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric_b", "status", "202"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric_b", "status", "404"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+	}
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(t.Context(), "test")
+	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
+
+	metricA := &client.LabelMatcher{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "metric_a"}
+	tests := []struct {
+		name        string
+		filterTerms []string
+		matchers    []*client.LabelMatcher
+		ordering    client.SearchOrdering
+		limit       int64
+		resumeAfter string
+		want        []string
+	}{
+		{name: "no filter", matchers: []*client.LabelMatcher{metricA}, want: []string{"200", "201", "500"}},
+		{name: "filter and matcher each reject values", filterTerms: []string{"20"}, matchers: []*client.LabelMatcher{metricA}, want: []string{"200", "201"}},
+		{name: "matcher selects other series", filterTerms: []string{"20"}, matchers: []*client.LabelMatcher{{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "metric_b"}}, want: []string{"202"}},
+		{name: "not-equal matcher", filterTerms: []string{"20"}, matchers: []*client.LabelMatcher{{Type: client.NOT_EQUAL, Name: model.MetricNameLabel, Value: "metric_a"}}, want: []string{"202"}},
+		{name: "filter accepts only values of unmatched series", filterTerms: []string{"40"}, matchers: []*client.LabelMatcher{metricA}},
+		{name: "filter rejects every value", filterTerms: []string{"9"}, matchers: []*client.LabelMatcher{metricA}},
+		{name: "matcher for the searched label too", filterTerms: []string{"1"}, matchers: []*client.LabelMatcher{metricA, {Type: client.REGEX_MATCH, Name: "status", Value: "2.."}}, want: []string{"201"}},
+		{name: "score desc", filterTerms: []string{"20"}, matchers: []*client.LabelMatcher{metricA}, ordering: client.ORDER_BY_SCORE_DESC, want: []string{"200", "201"}},
+		{name: "value desc applies the filter before the limit", filterTerms: []string{"20"}, matchers: []*client.LabelMatcher{metricA}, ordering: client.ORDER_BY_VALUE_DESC, limit: 1, want: []string{"201"}},
+		{name: "resume after", matchers: []*client.LabelMatcher{metricA}, resumeAfter: "200", want: []string{"201", "500"}},
+	}
+
+	runAll := func(t *testing.T) {
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				req := &client.SearchLabelValuesRequest{
+					StartTimestampMs: 0,
+					EndTimestampMs:   200_000,
+					Name:             "status",
+					Matchers:         tc.matchers,
+					Filter:           &client.SearchFilter{Terms: tc.filterTerms, ResumeAfter: tc.resumeAfter},
+					Ordering:         tc.ordering,
+					Limit:            tc.limit,
+				}
+				s := &mockSearchLabelValuesStream{ctx: ctx}
+				require.NoError(t, i.SearchLabelValues(req, s))
+
+				var got []string
+				for _, b := range s.sent {
+					for _, r := range b.Results {
+						got = append(got, r.Value)
+					}
+				}
+				assert.Equal(t, tc.want, got)
+			})
+		}
+	}
+
+	// The head and a persistent block read label values through different
+	// index readers.
+	t.Run("head", runAll)
+
+	i.compactBlocks(t.Context(), true, math.MaxInt64, nil)
+	db := i.getTSDB("test")
+	require.Equal(t, uint64(0), db.Head().NumSeries())
+	require.Len(t, db.Blocks(), 1)
+
+	t.Run("block", runAll)
+}
+
 // fakeSearchResultSet is a test SearchResultSet backed by an in-memory slice
 // plus an optional terminal error and pre-populated annotations. Used to
 // exercise streamSearchResults without spinning up a real TSDB.
@@ -395,6 +470,216 @@ func TestIngesterSearchRejectsInvalidCursorAsInvalidArgument(t *testing.T) {
 	}
 }
 
+type mockSearchMetricsMetadataStream struct {
+	client.Ingester_SearchMetricsMetadataServer
+	ctx  context.Context
+	sent []*client.SearchResultBatch
+}
+
+func (m *mockSearchMetricsMetadataStream) Send(b *client.SearchResultBatch) error {
+	m.sent = append(m.sent, b)
+	return nil
+}
+func (m *mockSearchMetricsMetadataStream) Context() context.Context { return m.ctx }
+
+func (m *mockSearchMetricsMetadataStream) values() []string {
+	var values []string
+	for _, b := range m.sent {
+		for _, r := range b.Results {
+			values = append(values, r.Value)
+		}
+	}
+	return values
+}
+
+func pushMetadataToIngester(ctx context.Context, t testing.TB, i *Ingester, metadata []*mimirpb.MetricMetadata) {
+	t.Helper()
+	_, err := i.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, metadata, mimirpb.API))
+	require.NoError(t, err)
+}
+
+func TestIngesterSearchMetricsMetadata(t *testing.T) {
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(t.Context(), "test")
+	pushMetadataToIngester(ctx, t, i, []*mimirpb.MetricMetadata{
+		{MetricFamilyName: "compression_ratio", Help: "Compression ratio of requests.", Type: mimirpb.HISTOGRAM},
+		{MetricFamilyName: "discarded_series_ratio", Help: "Ratio of dropped series in the ingester.", Type: mimirpb.HISTOGRAM},
+		{MetricFamilyName: "discarded_series_ratio", Help: "Deprecated: ratio of dropped series.", Type: mimirpb.HISTOGRAM},
+		{MetricFamilyName: "sync_duration_seconds", Help: "Duration of the sync operations.", Type: mimirpb.HISTOGRAM},
+	})
+
+	tests := map[string]struct {
+		filter   *client.SearchFilter
+		ordering client.SearchOrdering
+		limit    int64
+		want     []string
+	}{
+		"term matches inside a word": {
+			filter: &client.SearchFilter{Terms: []string{"ratio"}, CaseInsensitive: true},
+			want:   []string{"compression_ratio", "discarded_series_ratio", "sync_duration_seconds"},
+		},
+		"case-sensitive term matches a HELP word in the same case": {
+			filter: &client.SearchFilter{Terms: []string{"Deprecated"}},
+			want:   []string{"discarded_series_ratio"},
+		},
+		"case-sensitive term does not match a HELP word in another case": {
+			filter: &client.SearchFilter{Terms: []string{"deprecated"}},
+		},
+		"term matches the metric name": {
+			filter: &client.SearchFilter{Terms: []string{"seconds"}},
+			want:   []string{"sync_duration_seconds"},
+		},
+		"AND across name and HELP": {
+			filter: &client.SearchFilter{Expression: "compression AND requests", CaseInsensitive: true},
+			want:   []string{"compression_ratio"},
+		},
+		"NOT rejects a metric when any of its HELP texts holds the term": {
+			filter: &client.SearchFilter{Expression: "ratio AND NOT deprecated", CaseInsensitive: true},
+			want:   []string{"compression_ratio", "sync_duration_seconds"},
+		},
+		"descending with limit": {
+			filter:   &client.SearchFilter{Terms: []string{"of"}},
+			ordering: client.ORDER_BY_VALUE_DESC,
+			limit:    2,
+			want:     []string{"sync_duration_seconds", "discarded_series_ratio"},
+		},
+		"no match": {
+			filter: &client.SearchFilter{Terms: []string{"absent"}},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			tc.filter.FuzzAlg = client.FUZZ_ALG_SUBSTRING
+			s := &mockSearchMetricsMetadataStream{ctx: ctx}
+			require.NoError(t, i.SearchMetricsMetadata(&client.SearchMetricsMetadataRequest{Filter: tc.filter, Ordering: tc.ordering, Limit: tc.limit}, s))
+			assert.Equal(t, tc.want, s.values())
+			for _, b := range s.sent {
+				assert.False(t, b.CursorApplied)
+			}
+		})
+	}
+}
+
+func TestIngesterSearchMetricsMetadataCursorPagination(t *testing.T) {
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(t.Context(), "test")
+	pushMetadataToIngester(ctx, t, i, []*mimirpb.MetricMetadata{
+		{MetricFamilyName: "metric_a", Help: "alpha help", Type: mimirpb.COUNTER},
+		{MetricFamilyName: "metric_b", Help: "beta help", Type: mimirpb.COUNTER},
+		{MetricFamilyName: "metric_c", Help: "gamma", Type: mimirpb.COUNTER},
+		{MetricFamilyName: "metric_d", Help: "delta help", Type: mimirpb.COUNTER},
+	})
+
+	for ordering, want := range map[client.SearchOrdering][]string{
+		client.ORDER_BY_VALUE_ASC:  {"metric_a", "metric_b", "metric_d"},
+		client.ORDER_BY_VALUE_DESC: {"metric_d", "metric_b", "metric_a"},
+	} {
+		t.Run(ordering.String(), func(t *testing.T) {
+			var got []string
+			resumeAfter := ""
+			for {
+				req := &client.SearchMetricsMetadataRequest{
+					Filter:   &client.SearchFilter{Terms: []string{"help"}, FuzzAlg: client.FUZZ_ALG_SUBSTRING, ResumeAfter: resumeAfter},
+					Ordering: ordering,
+					Limit:    1,
+				}
+				s := &mockSearchMetricsMetadataStream{ctx: ctx}
+				require.NoError(t, i.SearchMetricsMetadata(req, s))
+				page := s.values()
+				if len(page) == 0 {
+					break
+				}
+				require.Len(t, page, 1)
+				for _, b := range s.sent {
+					assert.Equal(t, resumeAfter != "", b.CursorApplied)
+				}
+				got = append(got, page...)
+				resumeAfter = page[0]
+			}
+			assert.Equal(t, want, got)
+		})
+	}
+}
+
+func TestIngesterSearchMetricsMetadataRejectsInvalidRequestsAsInvalidArgument(t *testing.T) {
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(t.Context(), "test")
+	pushMetadataToIngester(ctx, t, i, []*mimirpb.MetricMetadata{
+		{MetricFamilyName: "cpu_seconds_total", Help: "Total CPU time", Type: mimirpb.COUNTER},
+	})
+	const noTerms = "metric metadata search requires search terms or an expression"
+
+	tests := map[string]struct {
+		req     *client.SearchMetricsMetadataRequest
+		wantMsg string
+	}{
+		"score ordering": {
+			req:     &client.SearchMetricsMetadataRequest{Filter: &client.SearchFilter{Terms: []string{"cpu"}, FuzzAlg: client.FUZZ_ALG_SUBSTRING}, Ordering: client.ORDER_BY_SCORE_DESC},
+			wantMsg: "ORDER_BY_SCORE_DESC is not supported by metric metadata search, because every match scores 1.0",
+		},
+		"unknown ordering": {
+			req:     &client.SearchMetricsMetadataRequest{Filter: &client.SearchFilter{Terms: []string{"cpu"}, FuzzAlg: client.FUZZ_ALG_SUBSTRING}, Ordering: client.SearchOrdering(99)},
+			wantMsg: "unknown search ordering 99",
+		},
+		"other fuzz algorithm": {
+			req:     &client.SearchMetricsMetadataRequest{Filter: &client.SearchFilter{Terms: []string{"cpu"}, FuzzAlg: client.FUZZ_ALG_JARO_WINKLER}},
+			wantMsg: "metric metadata search requires fuzz algorithm FUZZ_ALG_SUBSTRING, got FUZZ_ALG_JARO_WINKLER",
+		},
+		"unknown fuzz algorithm": {
+			req:     &client.SearchMetricsMetadataRequest{Filter: &client.SearchFilter{Terms: []string{"cpu"}, FuzzAlg: client.SearchFilter_FuzzAlg(99)}},
+			wantMsg: "metric metadata search requires fuzz algorithm FUZZ_ALG_SUBSTRING, got 99",
+		},
+		"nil filter": {
+			req:     &client.SearchMetricsMetadataRequest{},
+			wantMsg: "metric metadata search requires fuzz algorithm FUZZ_ALG_SUBSTRING, got FUZZ_ALG_SUBSEQUENCE",
+		},
+		"no terms": {
+			req:     &client.SearchMetricsMetadataRequest{Filter: &client.SearchFilter{FuzzAlg: client.FUZZ_ALG_SUBSTRING}},
+			wantMsg: noTerms,
+		},
+		"cursor only": {
+			req:     &client.SearchMetricsMetadataRequest{Filter: &client.SearchFilter{FuzzAlg: client.FUZZ_ALG_SUBSTRING, ResumeAfter: "a"}},
+			wantMsg: noTerms,
+		},
+		"terms and expression": {
+			req:     &client.SearchMetricsMetadataRequest{Filter: &client.SearchFilter{Terms: []string{"cpu"}, Expression: "cpu", FuzzAlg: client.FUZZ_ALG_SUBSTRING}},
+			wantMsg: "invalid search parameters: " + streaminglabelvalues.ErrTermsAndExpression.Error(),
+		},
+		"term with a newline": {
+			req:     &client.SearchMetricsMetadataRequest{Filter: &client.SearchFilter{Expression: "cpu AND NOT \"a\nb\"", FuzzAlg: client.FUZZ_ALG_SUBSTRING}},
+			wantMsg: "a metric metadata search term must not contain a newline",
+		},
+		"negative limit": {
+			req:     &client.SearchMetricsMetadataRequest{Filter: &client.SearchFilter{Terms: []string{"cpu"}, FuzzAlg: client.FUZZ_ALG_SUBSTRING}, Limit: -1},
+			wantMsg: "limit must be >= 0, got -1",
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := &mockSearchMetricsMetadataStream{ctx: ctx}
+			st, ok := grpcutil.ErrorToStatus(i.SearchMetricsMetadata(tc.req, s))
+			require.True(t, ok, "expected gRPC status error")
+			assert.Equal(t, codes.InvalidArgument, st.Code())
+			assert.Equal(t, tc.wantMsg, st.Message())
+			assert.Empty(t, s.sent)
+		})
+	}
+}
+
+func TestIngesterSearchMetricsMetadataWithoutMetadataReturnsEmptyStream(t *testing.T) {
+	series := []util_test.Series{
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric_a"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+	}
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(t.Context(), "test")
+	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
+
+	req := &client.SearchMetricsMetadataRequest{Filter: &client.SearchFilter{Terms: []string{"metric"}, FuzzAlg: client.FUZZ_ALG_SUBSTRING}}
+	s := &mockSearchMetricsMetadataStream{ctx: ctx}
+	require.NoError(t, i.SearchMetricsMetadata(req, s))
+	assert.Empty(t, s.sent)
+}
+
 func TestProtoToParamsFuzzAlg(t *testing.T) {
 	tests := []struct {
 		wire client.SearchFilter_FuzzAlg
@@ -417,6 +702,54 @@ func TestProtoToParamsFuzzAlg(t *testing.T) {
 	t.Run("unknown value is rejected", func(t *testing.T) {
 		_, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}, FuzzAlg: client.SearchFilter_FuzzAlg(99)})
 		require.EqualError(t, err, "unknown fuzz algorithm 99")
+	})
+}
+
+func TestProtoToParamsExpression(t *testing.T) {
+	t.Run("expression is decoded", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{
+			Expression:      "kube AND NOT test",
+			CaseInsensitive: true,
+			FuzzAlg:         client.FUZZ_ALG_SUBSTRING,
+			FuzzThreshold:   10,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Empty(t, params.Terms)
+		assert.False(t, params.CaseSensitive)
+		assert.Equal(t, streaminglabelvalues.FuzzAlgSubstring, params.FuzzAlg)
+		assert.Equal(t, 10, params.FuzzThreshold)
+
+		filter, err := streaminglabelvalues.BuildFilter(params)
+		require.NoError(t, err)
+		accepted, _ := filter.Accept("KUBE-prod")
+		assert.True(t, accepted)
+		accepted, _ = filter.Accept("kube-test")
+		assert.False(t, accepted)
+	})
+
+	t.Run("terms and expression together are rejected", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}, Expression: "bar"})
+		require.ErrorIs(t, err, streaminglabelvalues.ErrTermsAndExpression)
+		require.EqualError(t, err, "invalid search parameters: search terms and search expression are mutually exclusive")
+		assert.Nil(t, params)
+	})
+
+	t.Run("expression with an unknown fuzz algorithm is rejected", func(t *testing.T) {
+		_, err := protoToParams(&client.SearchFilter{Expression: "foo", FuzzAlg: client.SearchFilter_FuzzAlg(99)})
+		require.EqualError(t, err, "unknown fuzz algorithm 99")
+	})
+
+	t.Run("expression keeps the cursor", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{Expression: "foo AND bar", ResumeAfter: "foo_bar", ScoreAfter: 0.5})
+		require.NoError(t, err)
+		assert.Equal(t, "foo_bar", params.ResumeAfter)
+		assert.Equal(t, 0.5, params.ScoreAfter)
+	})
+
+	t.Run("expression with an invalid cursor is rejected", func(t *testing.T) {
+		_, err := protoToParams(&client.SearchFilter{Expression: "foo", ScoreAfter: 0.5})
+		require.EqualError(t, err, "score after 0.5 requires resume after")
 	})
 }
 
@@ -771,4 +1104,111 @@ func BenchmarkIngester_LegacyVsSearchLabelValues(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestIngesterSearchWithExpression(t *testing.T) {
+	series := []util_test.Series{
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric", "status", "200"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric", "status", "300"), Samples: []util_test.Sample{{TS: 110000, Val: 1}}},
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric", "status", "500", "env", "prod"), Samples: []util_test.Sample{{TS: 120000, Val: 1}}},
+	}
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(t.Context(), "test")
+	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
+
+	collect := func(sent []*client.SearchResultBatch) []string {
+		var got []string
+		for _, b := range sent {
+			for _, r := range b.Results {
+				got = append(got, r.Value)
+			}
+		}
+		return got
+	}
+
+	t.Run("label values", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			expression string
+			want       []string
+		}{
+			{name: "AND NOT excludes a value", expression: "0 AND NOT 3", want: []string{"200", "500"}},
+			{name: "OR matches either term", expression: "20 OR 50", want: []string{"200", "500"}},
+			{name: "AND needs both terms", expression: "2 AND 0", want: []string{"200"}},
+			{name: "no match returns empty", expression: "9 AND 0"},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				req := &client.SearchLabelValuesRequest{
+					StartTimestampMs: 0,
+					EndTimestampMs:   200_000,
+					Name:             "status",
+					Filter:           &client.SearchFilter{Expression: tc.expression, FuzzAlg: client.FUZZ_ALG_SUBSTRING},
+				}
+				s := &mockSearchLabelValuesStream{ctx: ctx}
+				require.NoError(t, i.SearchLabelValues(req, s))
+				assert.Equal(t, tc.want, collect(s.sent))
+			})
+		}
+	})
+
+	t.Run("label names", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			expression string
+			caseInsens bool
+			want       []string
+		}{
+			{name: "OR matches either term", expression: "env OR stat", want: []string{"env", "status"}},
+			{name: "AND NOT excludes a name", expression: "a AND NOT n", want: []string{"status"}},
+			{name: "case-insensitive expression", expression: "ENV OR STAT", caseInsens: true, want: []string{"env", "status"}},
+			{name: "case-sensitive expression misses a case difference", expression: "ENV OR STAT"},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				req := &client.SearchLabelNamesRequest{
+					StartTimestampMs: 0,
+					EndTimestampMs:   200_000,
+					Filter:           &client.SearchFilter{Expression: tc.expression, CaseInsensitive: tc.caseInsens, FuzzAlg: client.FUZZ_ALG_SUBSTRING},
+				}
+				s := &mockSearchLabelNamesStream{ctx: ctx}
+				require.NoError(t, i.SearchLabelNames(req, s))
+				assert.Equal(t, tc.want, collect(s.sent))
+			})
+		}
+	})
+
+	t.Run("invalid filters are rejected as InvalidArgument", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			filter  *client.SearchFilter
+			wantMsg string
+		}{
+			{
+				name:    "unparseable expression",
+				filter:  &client.SearchFilter{Expression: "foo AND"},
+				wantMsg: "search expression: expected term or (, got end of expression at position 7",
+			},
+			{
+				name:    "terms and expression together",
+				filter:  &client.SearchFilter{Terms: []string{"foo"}, Expression: "bar"},
+				wantMsg: "invalid search parameters: search terms and search expression are mutually exclusive",
+			},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				errs := map[string]error{
+					"label names":  i.SearchLabelNames(&client.SearchLabelNamesRequest{EndTimestampMs: 200_000, Filter: tc.filter}, &mockSearchLabelNamesStream{ctx: ctx}),
+					"label values": i.SearchLabelValues(&client.SearchLabelValuesRequest{EndTimestampMs: 200_000, Name: "status", Filter: tc.filter}, &mockSearchLabelValuesStream{ctx: ctx}),
+				}
+				for rpc, err := range errs {
+					require.Error(t, err, rpc)
+					st, ok := grpcutil.ErrorToStatus(err)
+					require.True(t, ok, "%s: expected gRPC status error, got %T: %v", rpc, err, err)
+					assert.Equal(t, codes.InvalidArgument, st.Code(), rpc)
+					assert.Equal(t, tc.wantMsg, st.Message(), rpc)
+				}
+			})
+		}
+	})
 }

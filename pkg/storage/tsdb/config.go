@@ -13,12 +13,14 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
+	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -98,6 +100,9 @@ const (
 	syncIntervalFlag                           = "blocks-storage.bucket-store.sync-interval"
 	ignoreDeletionMarksInStoreGatewayDelayFlag = "blocks-storage.bucket-store.ignore-deletion-marks-delay"
 	ignoreDeletionMarksWhileQueryingDelayFlag  = "blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay"
+
+	// BucketNameMappingsFlag is the flag of BlocksStorageConfig.BucketNameMappings.
+	BucketNameMappingsFlag = "blocks-storage.bucket-name-mappings"
 )
 
 // Validation errors
@@ -115,13 +120,17 @@ var (
 	errEmptyBlockranges                             = errors.New("empty block ranges for TSDB")
 	errInvalidIgnoreDeletionMarksDelayConfig        = fmt.Errorf("value for -%s must be less than -%s", ignoreDeletionMarksWhileQueryingDelayFlag, ignoreDeletionMarksInStoreGatewayDelayFlag)
 	errIgnoreDeletionMarksDelayTooShort             = fmt.Errorf("value for -%s must be greater than %v× -%s to ensure that newly compacted blocks are queried before old blocks are ignored", ignoreDeletionMarksWhileQueryingDelayFlag, NewBlockDiscoveryDelayMultiplier, syncIntervalFlag)
+	errInvalidBucketNameMapping                     = fmt.Errorf("invalid -%s entry: each entry must have the format <generated-name>:<name>, and each generated name must appear only once", BucketNameMappingsFlag)
+	errBucketNameMappingsRequireCompartments        = fmt.Errorf("-%s requires compartments to be enabled", BucketNameMappingsFlag)
+	errReadCompartmentsShareBucket                  = fmt.Errorf("each read compartment must use a different blocks storage bucket, check -%s", BucketNameMappingsFlag)
 )
 
 // BlocksStorageConfig holds the config information for the blocks storage.
 type BlocksStorageConfig struct {
-	Bucket      bucket.Config     `yaml:",inline"`
-	BucketStore BucketStoreConfig `yaml:"bucket_store" doc:"description=This configures how the querier and store-gateway discover and synchronize blocks stored in the bucket."`
-	TSDB        TSDBConfig        `yaml:"tsdb"`
+	Bucket             bucket.Config          `yaml:",inline"`
+	BucketNameMappings flagext.StringSliceCSV `yaml:"bucket_name_mappings" category:"experimental" doc:"hidden"`
+	BucketStore        BucketStoreConfig      `yaml:"bucket_store" doc:"description=This configures how the querier and store-gateway discover and synchronize blocks stored in the bucket."`
+	TSDB               TSDBConfig             `yaml:"tsdb"`
 }
 
 // DurationList is the block ranges for a tsdb
@@ -164,14 +173,50 @@ func (d *DurationList) ToMilliseconds() []int64 {
 // RegisterFlags registers the TSDB flags
 func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("blocks-storage.", "blocks", f)
+	f.Var(&cfg.BucketNameMappings, BucketNameMappingsFlag, "Comma-separated list of bucket name mappings in the format <generated-name>:<name>. If the bucket name of a read compartment, after the read compartment ID placeholder is replaced, is <generated-name>, then <name> is used instead. Requires compartments to be enabled.")
 	cfg.BucketStore.RegisterFlags(f)
 	cfg.TSDB.RegisterFlags(f)
 }
 
+// ReadCompartmentBucketConfig returns the bucket config of the given read compartment.
+func (cfg *BlocksStorageConfig) ReadCompartmentBucketConfig(readCompartmentID int) bucket.Config {
+	bucketCfg := cfg.Bucket.ReadCompartmentConfig(readCompartmentID)
+	for _, mapping := range cfg.BucketNameMappings {
+		if generatedName, name, _ := strings.Cut(mapping, ":"); generatedName == bucketCfg.BucketName() {
+			return bucketCfg.WithBucketName(name)
+		}
+	}
+	return bucketCfg
+}
+
 // Validate the config.
-func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config) error {
+func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config, compartmentsCfg compartments.Config) error {
 	if err := cfg.Bucket.Validate(); err != nil {
 		return err
+	}
+
+	if len(cfg.BucketNameMappings) > 0 && !compartmentsCfg.Enabled {
+		return errBucketNameMappingsRequireCompartments
+	}
+	generatedNames := make(map[string]struct{}, len(cfg.BucketNameMappings))
+	for _, mapping := range cfg.BucketNameMappings {
+		generatedName, name, found := strings.Cut(mapping, ":")
+		if _, duplicate := generatedNames[generatedName]; !found || generatedName == "" || name == "" || duplicate {
+			return fmt.Errorf("%w: %q", errInvalidBucketNameMapping, mapping)
+		}
+		generatedNames[generatedName] = struct{}{}
+	}
+	// A bucket name without the read compartment ID placeholder is for a component that serves only one read compartment.
+	if compartmentsCfg.Enabled && strings.Contains(cfg.Bucket.BucketName(), compartments.ReadCompartmentIDPlaceholder) {
+		readCompartmentIDsByBucketName := make(map[string]int, compartmentsCfg.Read.NumCompartments)
+		for readCompartmentID := range compartmentsCfg.Read.NumCompartments {
+			bucketCfg := cfg.ReadCompartmentBucketConfig(readCompartmentID)
+			bucketName := bucketCfg.BucketName()
+			if otherReadCompartmentID, duplicate := readCompartmentIDsByBucketName[bucketName]; duplicate {
+				return fmt.Errorf("%w: read compartments %d and %d use %q", errReadCompartmentsShareBucket, otherReadCompartmentID, readCompartmentID, bucketName)
+			}
+			readCompartmentIDsByBucketName[bucketName] = readCompartmentID
+		}
 	}
 
 	if err := cfg.TSDB.Validate(activeSeriesCfg); err != nil {

@@ -612,7 +612,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout duration
     	If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity. (default 1h0m0s)
   -blocks-storage.bucket-store.index-header.max-idle-file-handles uint
-    	Maximum number of idle file handles the store-gateway keeps open for each index-header file. (default 1)
+    	[deprecated] Maximum number of idle file handles the store-gateway keeps open for each index-header file. Deprecated: has no effect (the store-gateway keeps a single shared file handle open for each loaded index-header). (default 1)
   -blocks-storage.bucket-store.index-header.verify-on-load
     	If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.
   -blocks-storage.bucket-store.index-header.version int
@@ -1947,6 +1947,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The total size, in bytes, of the distinct values of a single label name held in memory per tenant, across the cluster before replication, at which ingesters start reporting the label name through the cortex_ingester_label_value_bytes_over_threshold metric. Mimir doesn't reject series for label names over the threshold: to block a label name, add it to -validation.blocked-label-names-for-label-value-bytes. Only values longer than 128 bytes are counted, and each distinct value is counted once. 0 to disable.
   -ingester.label-values-count-chunk-size int
     	[experimental] Number of label values processed per work unit submitted to the ingester compute worker pool. Smaller values improve cross-tenant fairness at the cost of more scheduling overhead. (default 32)
+  -ingester.log-series-with-floats-and-histograms
+    	[experimental] When enabled, the ingester logs the tenant and labels of series in write requests that have both float samples and native histograms. Logs are sampled according to -ingester.error-sample-rate.
   -ingester.max-global-exemplars-per-user int
     	[experimental] The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
   -ingester.max-global-metadata-per-metric int
@@ -2551,6 +2553,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.max-series-query-limit int
     	Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.
+  -querier.metadata-default-time-range duration
+    	[experimental] Default time range for series, label names, label values and search requests that do not specify both start and end. A request with neither start nor end queries from now minus this value to now. A request with only end queries from end minus this value to end. A request with only start queries from start to now. A request with both start and end does not change. The response to a changed request includes a warning that shows the default range. Other limits, such as -store.max-labels-query-length and -querier.max-query-lookback, can make the queried range shorter. 0 to disable. When disabled, the series, label names and label values endpoints use the earliest possible time for a missing start, and the latest possible time for a missing end. The search endpoints then use a default start of one hour before now and a default end of now.
   -querier.mimir-query-engine.cardinality-estimation.bucket-size duration
     	[experimental] The duration of each bucket used to store cardinality estimates per selector. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true. (default 4h0m0s)
   -querier.mimir-query-engine.cardinality-estimation.estimate-update-threshold float
@@ -3000,7 +3004,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.query-stats-enabled
     	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
   -query-frontend.queue-reservation-enabled
-    	[experimental] Reserve query-scheduler queue slots for the remote execution sub-requests of a query evaluation, before the query-frontend sends them. A reservation holds the smaller of -querier.max-query-parallelism and the number of sub-requests. Requires -query-frontend.enable-remote-execution and -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results, and -query-frontend.use-mimir-query-engine-for-sharding when sharding is enabled. A sub-request that waits for -querier.max-query-parallelism can fail the query when the query-frontend reads the response of another sub-request for longer than -query-scheduler.queue-reservation-timeout. Set the timeout longer than the longest such read. Only query-schedulers with -query-scheduler.queue-reservation-enabled receive reservations.
+    	[experimental] Reserve query-scheduler queue slots for the remote execution sub-requests of a query evaluation, before the query-frontend sends them. A reservation holds the smaller of -querier.max-query-parallelism and the number of sub-requests. An evaluation with one sub-request does not reserve, and its sub-request uses the plain enqueue. Requires -query-frontend.enable-remote-execution and -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results, and -query-frontend.use-mimir-query-engine-for-sharding when sharding is enabled. A sub-request that waits for -querier.max-query-parallelism can fail the query when the query-frontend reads the response of another sub-request for longer than -query-scheduler.queue-reservation-timeout. Set the timeout longer than the longest such read. Only query-schedulers with -query-scheduler.queue-reservation-enabled receive reservations.
   -query-frontend.remote-execution-batch-size uint
     	[experimental] Maximum number of series to send in a single remote execution response from a querier. (default 128)
   -query-frontend.remote-execution-series-metadata-batch-size uint
