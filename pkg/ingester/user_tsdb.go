@@ -97,6 +97,8 @@ type userTSDB struct {
 	db             tenantEngine
 	userID         string
 	activeSeries   *activeseries.ActiveSeries
+	nativeActive   activeSeriesHead
+	activeAsOf     atomic.Int64
 	seriesInMetric *metricCounter
 	limiter        *Limiter
 
@@ -667,6 +669,9 @@ func (u *userTSDB) computeOwnedSeries() int {
 	if allNonOwned {
 		// Clearing all active series needs no per-series deactivation.
 		u.activeSeries.Clear()
+		if u.nativeActive != nil {
+			u.nativeActive.DeactivateAll()
+		}
 		if !trackNonOwned {
 			return 0
 		}
@@ -674,7 +679,7 @@ func (u *userTSDB) computeOwnedSeries() int {
 
 	head := u.Head()
 	var idx tsdb.IndexReader
-	if !allNonOwned {
+	if !allNonOwned && u.trackerActive() {
 		idx = mustIndex(head)
 		defer idx.Close()
 	}
@@ -687,15 +692,24 @@ func (u *userTSDB) computeOwnedSeries() int {
 		nonOwnedRefs = make(map[storage.SeriesRef]struct{})
 	}
 
+	var deactivate []storage.SeriesRef
 	count := head.Ownership(u.ownedTokenRanges, func(ref storage.SeriesRef) {
 		if !allNonOwned {
-			u.activeSeries.Delete(chunks.HeadSeriesRef(ref), idx)
+			if idx != nil {
+				u.activeSeries.Delete(chunks.HeadSeriesRef(ref), idx)
+			}
+			if u.nativeActive != nil {
+				deactivate = append(deactivate, ref)
+			}
 		}
 		if trackNonOwned {
 			nonOwnedRefs[ref] = struct{}{}
 		}
 	})
 
+	if len(deactivate) > 0 {
+		u.nativeActive.DeactivateSeries(deactivate)
+	}
 	if trackNonOwned {
 		u.addPendingNonOwnedRefs(nonOwnedRefs)
 	}

@@ -137,10 +137,11 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		ownedSeriedStateShardSize = i.ownedSeriesService.ringStrategy.shardSizeForUser(userID)
 	}
 
+	trackerMatchers := asmodel.NewMatchers(matchersConfig)
 	userDB := &userTSDB{
 		cfg:                     &i.cfg,
 		userID:                  userID,
-		activeSeries:            activeseries.NewActiveSeries(asmodel.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout, i.costAttributionMgr.ActiveSeriesTracker(userID)),
+		activeSeries:            activeseries.NewActiveSeries(trackerMatchers, i.cfg.ActiveSeriesMetrics.IdleTimeout, i.costAttributionMgr.ActiveSeriesTracker(userID)),
 		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:      util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples:     util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
@@ -236,6 +237,11 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	userDB.pendingSeriesRemovals.Store(0)
 
 	userDB.db = engine
+	if head, ok := engine.Head().(activeSeriesHead); ok {
+		userDB.nativeActive = head
+		head.SetActiveTrackers(trackerMatchers)
+		userDB.setCostAttribution(i.costAttributionMgr.ActiveSeriesTracker(userID))
+	}
 	// We set the limiter here because we don't want to limit
 	// series during WAL replay.
 	userDB.limiter = i.limiter

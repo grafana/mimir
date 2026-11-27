@@ -407,7 +407,7 @@ func (i *Ingester) pushWithCleanup(ctx context.Context, req pushRequest, cleanUp
 	)
 
 	var activeSeries *activeseries.ActiveSeries
-	if i.cfg.ActiveSeriesMetrics.Enabled {
+	if i.cfg.ActiveSeriesMetrics.Enabled && db.trackerActive() {
 		activeSeries = db.activeSeries
 	}
 

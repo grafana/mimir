@@ -103,27 +103,35 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		matchersChanged := userDB.activeSeries.MatchersDiffer(newMatchersConfig)
 		catChanged := userDB.activeSeries.CostAttributionDiffers(newCostAttributionActiveSeriesTracker)
 
-		idx := mustIndex(userDB.Head())
-
 		var oldMatcherNames []string
 		if matchersChanged || catChanged {
+			// Both trackers must use the same matcher order when reporting counts.
+			newMatchers := asmodel.NewMatchers(newMatchersConfig)
 			level.Debug(i.logger).Log("msg", "active series config changed, reloading", "user", userID, "matchers_changed", matchersChanged, "cost_attribution_changed", catChanged)
 			if matchersChanged {
 				// We shouldn't delete the metrics yet, just in case a metrics scrape happens while we're reloading,
 				// we don't want to trigger a staleness NaN in the metrics.
 				oldMatcherNames = userDB.activeSeries.CurrentMatcherNames()
 			}
+			idx := mustIndex(userDB.Head())
 			userDB.activeSeries.ReloadSeriesConfig(
-				asmodel.NewMatchers(newMatchersConfig),
+				newMatchers,
 				newCostAttributionActiveSeriesTracker,
 				matchersChanged, catChanged, idx,
 			)
+			_ = idx.Close()
+			if userDB.nativeActive != nil {
+				if matchersChanged {
+					userDB.nativeActive.SetActiveTrackers(newMatchers)
+				}
+				if catChanged {
+					userDB.setCostAttribution(newCostAttributionActiveSeriesTracker)
+				}
+			}
 		}
 
-		userDB.activeSeries.Purge(now, idx)
-		idx.Close()
-
-		allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
+		counts := userDB.activeSeriesCounts(now)
+		allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets := counts.Total, counts.OTLP, counts.NativeHistograms, counts.NativeHistogramBuckets
 		if allActive > 0 {
 			i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
 		} else {
@@ -152,18 +160,18 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 
 		for idx, name := range userDB.activeSeries.CurrentMatcherNames() {
 			// We only set the metrics for matchers that actually exist, to avoid increasing cardinality with zero valued metrics.
-			if activeMatching[idx] > 0 {
-				i.metrics.activeSeriesCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatching[idx]))
+			if counts.Trackers[idx].Total > 0 {
+				i.metrics.activeSeriesCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(counts.Trackers[idx].Total))
 			} else {
 				i.metrics.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
 			}
-			if activeMatchingHistograms[idx] > 0 {
-				i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.WithLabelValues(userID, name).Set(float64(activeMatchingHistograms[idx]))
+			if counts.Trackers[idx].NativeHistograms > 0 {
+				i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.WithLabelValues(userID, name).Set(float64(counts.Trackers[idx].NativeHistograms))
 			} else {
 				i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, name)
 			}
-			if activeMatchingBuckets[idx] > 0 {
-				i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatchingBuckets[idx]))
+			if counts.Trackers[idx].NativeHistogramBuckets > 0 {
+				i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(counts.Trackers[idx].NativeHistogramBuckets))
 			} else {
 				i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, name)
 			}
@@ -212,8 +220,7 @@ func (i *Ingester) updateUsageStats() {
 		memoryUsersCount++
 		memorySeriesCount += int64(numSeries)
 
-		activeSeries, _, _, _ := userDB.activeSeries.Active()
-		activeSeriesCount += int64(activeSeries)
+		activeSeriesCount += int64(userDB.activeSeriesTotal(time.Now()))
 
 		oooWindow := i.limits.OutOfOrderTimeWindow(userID)
 		if oooWindow > 0 {
