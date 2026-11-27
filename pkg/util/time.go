@@ -32,6 +32,11 @@ func FormatTimeMillis(ms int64) string {
 // ParseTime parses the string into an int64 time, unix milliseconds since epoch.
 func ParseTime(s string) (int64, error) {
 	if t, err := strconv.ParseFloat(s, 64); err == nil {
+		// NaN passes every comparison and converting an out of range float to an
+		// integer is implementation defined, so reject both before converting.
+		if ms := t * float64(time.Second/time.Millisecond); math.IsNaN(ms) || ms >= float64(math.MaxInt64) || ms < float64(math.MinInt64) {
+			return 0, fmt.Errorf("cannot parse %q to a valid timestamp. It overflows int64", s)
+		}
 		s, ns := math.Modf(t)
 		ns = math.Round(ns*1000) / 1000
 		tm := time.Unix(int64(s), int64(ns*float64(time.Second)))
@@ -47,7 +52,8 @@ func ParseTime(s string) (int64, error) {
 func ParseDurationMS(s string) (int64, error) {
 	if d, err := strconv.ParseFloat(s, 64); err == nil {
 		ts := d * float64(time.Second/time.Millisecond)
-		if ts > float64(math.MaxInt64) || ts < float64(math.MinInt64) {
+		// float64(math.MaxInt64) is 2^63, which int64 cannot hold, and NaN passes every comparison.
+		if math.IsNaN(ts) || ts >= float64(math.MaxInt64) || ts < float64(math.MinInt64) {
 			return 0, fmt.Errorf("cannot parse %q to a valid duration. It overflows int64", s)
 		}
 		return int64(ts), nil

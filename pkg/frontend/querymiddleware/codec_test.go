@@ -208,6 +208,26 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "end": cannot parse "bar" to a valid timestamp`),
 		},
 		{
+			url:         "/api/v1/query_range?start=NaN&end=456&step=2m",
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "start": cannot parse "NaN" to a valid timestamp. It overflows int64`),
+		},
+		{
+			url:         "/api/v1/query_range?start=123&end=Inf&step=2m",
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "end": cannot parse "Inf" to a valid timestamp. It overflows int64`),
+		},
+		{
+			url:         "/api/v1/query_range?start=123&end=456&step=NaN",
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "step": cannot parse "NaN" to a valid duration. It overflows int64`),
+		},
+		{
+			url:         "/api/v1/query?time=NaN",
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "time": invalid parameter "time": cannot parse "NaN" to a valid timestamp. It overflows int64`),
+		},
+		{
+			url:         "/api/v1/query?time=123&lookback_delta=NaN",
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "lookback_delta": cannot parse "NaN" to a valid duration. It overflows int64`),
+		},
+		{
 			url:         "/api/v1/query_range?start=123&end=0",
 			expectedErr: errEndBeforeStart,
 		},
