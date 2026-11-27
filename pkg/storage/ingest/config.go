@@ -65,7 +65,7 @@ var (
 	ErrMissingKafkaTopic                 = errors.New("the Kafka topic has not been configured")
 	ErrInvalidConsumePosition            = errors.New("the configured consume position is invalid")
 	ErrInvalidProducerMaxRecordSizeBytes = fmt.Errorf("the configured producer max record size bytes must be a value between %d and %d", minProducerRecordDataBytesLimit, maxProducerRecordDataBytesLimit)
-	ErrInvalidProducerSizeLimits         = errors.New("the Kafka producer size limits must reserve at least 16384 bytes between record data, record batch and produce request limits; the request limit must not exceed 1073741824 bytes")
+	ErrInvalidProducerSizeLimits         = fmt.Errorf("the Kafka producer size limits must reserve at least 16384 bytes between record data, record batch and produce request limits; the batch limit must not exceed %d bytes to leave room for fetch response framing; the request limit must not exceed 1073741824 bytes", kafkaBrokerMaxReadBytes-producerSizeOverheadBytes)
 	ErrUnsupportedWarpstreamRequestSize  = errors.New("producer-max-request-size-bytes cannot be customized with the warpstream backend")
 	ErrInconsistentConsumerLagAtStartup  = fmt.Errorf("the target and max consumer lag at startup must be either both set to 0 or to a value greater than 0")
 	ErrInvalidMaxConsumerLagAtStartup    = fmt.Errorf("the configured max consumer lag at startup must greater or equal than the configured target consumer lag")
@@ -349,7 +349,8 @@ func (cfg *KafkaConfig) Validate() error {
 	if cfg.ProducerMaxRecordSizeBytes < minProducerRecordDataBytesLimit || cfg.ProducerMaxRecordSizeBytes > maxProducerRecordDataBytesLimit {
 		return ErrInvalidProducerMaxRecordSizeBytes
 	}
-	if cfg.ProducerMaxBatchSizeBytes > 1<<30 ||
+	// Leave room for fetch response framing so a batch accepted by the producer can be read back.
+	if cfg.ProducerMaxBatchSizeBytes > kafkaBrokerMaxReadBytes-producerSizeOverheadBytes ||
 		cfg.ProducerMaxBatchSizeBytes < cfg.ProducerMaxRecordSizeBytes+producerSizeOverheadBytes ||
 		cfg.ProducerMaxRequestSizeBytes < cfg.ProducerMaxBatchSizeBytes+producerSizeOverheadBytes ||
 		cfg.ProducerMaxRequestSizeBytes > 1<<30 {

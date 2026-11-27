@@ -755,6 +755,19 @@ func TestKafkaConfig_ToWarpstreamClientOptions(t *testing.T) {
 		require.NoError(t, wsCfg.Validate())
 	})
 
+	t.Run("honors a custom batch size", func(t *testing.T) {
+		cfg := baseConfig()
+		cfg.ProducerMaxRecordSizeBytes = 900000
+		cfg.ProducerMaxBatchSizeBytes = 950000
+
+		opts, err := cfg.ToWarpstreamClientOptions()
+		require.NoError(t, err)
+
+		wsCfg := wgo.NewConfig(opts...)
+		assert.Equal(t, int32(950000), wsCfg.BatchMaxBytes)
+		require.NoError(t, wsCfg.Validate())
+	})
+
 	t.Run("honors a custom write timeout overhead", func(t *testing.T) {
 		cfg := baseConfig()
 		cfg.WriteTimeoutOverhead = time.Second
@@ -806,6 +819,9 @@ func TestKafkaConfig_ProducerSizeLimits(t *testing.T) {
 		{name: "record exceeds absolute ceiling", record: maxProducerRecordDataBytesLimit + 1, batch: producerBatchMaxBytes, request: defaultProducerMaxRequestSizeBytes, expectedErr: ErrInvalidProducerMaxRecordSizeBytes},
 		{name: "insufficient record framing", record: 950000 - 16383, batch: 950000, request: 1000000, expectedErr: ErrInvalidProducerSizeLimits},
 		{name: "insufficient request framing", record: 900000, batch: 950000, request: 950000 + 16383, expectedErr: ErrInvalidProducerSizeLimits},
+		{name: "batch at reader ceiling with framing allowance", record: 900000, batch: kafkaBrokerMaxReadBytes - producerSizeOverheadBytes, request: kafkaBrokerMaxReadBytes},
+		{name: "batch leaves insufficient fetch response framing", record: 900000, batch: kafkaBrokerMaxReadBytes - producerSizeOverheadBytes + 1, request: 1 << 30, expectedErr: ErrInvalidProducerSizeLimits},
+		{name: "batch reaches reader ceiling", record: 900000, batch: kafkaBrokerMaxReadBytes, request: 1 << 30, expectedErr: ErrInvalidProducerSizeLimits},
 		{name: "zero batch", record: 900000, batch: 0, request: 1000000, expectedErr: ErrInvalidProducerSizeLimits},
 		{name: "negative request", record: 900000, batch: 950000, request: -1, expectedErr: ErrInvalidProducerSizeLimits},
 		{name: "request exceeds franz-go ceiling", record: 900000, batch: 950000, request: 1<<30 + 1, expectedErr: ErrInvalidProducerSizeLimits},

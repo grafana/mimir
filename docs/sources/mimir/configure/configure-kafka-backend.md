@@ -44,7 +44,7 @@ Kafka-compatible backends can impose different limits on individual record batch
 Mimir exposes three separate settings:
 
 - `-ingest-storage.kafka.producer-max-record-size-bytes`: the target size of each record's data before Kafka framing. Mimir splits larger write requests between timeseries and metadata items. An individual item cannot be split and can exceed this target.
-- `-ingest-storage.kafka.producer-max-batch-size-bytes`: the maximum uncompressed record batch size for one topic-partition. The default is `16000000` bytes.
+- `-ingest-storage.kafka.producer-max-batch-size-bytes`: the maximum uncompressed record batch size for one topic-partition. The default is `16000000` bytes. The maximum is `999983616` bytes, reserving 16 KiB below the reader response limit for fetch response framing.
 - `-ingest-storage.kafka.producer-max-request-size-bytes`: the maximum complete Produce request size, including batches from multiple partitions. The default is `104857600` bytes. This setting applies to the `kafka` backend; the `warpstream` backend requires its default value.
 
 Reserve at least `16384` bytes between the record data and batch limits, and between the batch and request limits.
