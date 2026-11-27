@@ -3431,9 +3431,9 @@ How it **works**:
 
 - The distributor shards a write request into N partitions, where N is the tenant partitions shard size.
 - For each partition, the write request data is encoded into one or more Kafka records.
-- The maximum size of a Kafka record is hardcoded, so the per-partition write request data is automatically split into multiple Kafka records in order to ingest large write requests.
+- The producer automatically splits per-partition write request data into Kafka records, targeting `-ingest-storage.kafka.producer-max-record-size-bytes`. The batch and complete Produce request sizes are bounded by `-ingest-storage.kafka.producer-max-batch-size-bytes` and `-ingest-storage.kafka.producer-max-request-size-bytes`. Refer to [Producer size limits](../../configure/configure-kafka-backend/#producer-size-limits) for configuration guidance.
 - A single timeseries or metadata is the smallest splittable unit, which means that a single timeseries or metadata entry can't be split into multiple Kafka records.
-- If the write request contains a single timeseries or metadata entry whose size is bigger than the Kafka record size limit, then the ingestion of the write request will fail and the distributor will return a 4xx HTTP status code. The 4xx status code is used to ensure the client will not retry a request which will consistently fail.
+- A single timeseries or metadata entry can exceed the record size target if it still fits in a batch accepted by the producer and the broker. If the entry is too large to fit, the distributor rejects the write request with a 4xx HTTP status code so the client does not retry a request that will consistently fail.
 
 How to **fix** it:
 

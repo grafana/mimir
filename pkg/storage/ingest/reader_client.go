@@ -10,6 +10,8 @@ import (
 	"github.com/twmb/franz-go/plugin/kprom"
 )
 
+const kafkaBrokerMaxReadBytes = 1_000_000_000
+
 // NewKafkaReaderClient returns the kgo.Client that should be used by the Reader.
 func NewKafkaReaderClient(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Logger, opts ...kgo.Opt) (*kgo.Client, error) {
 	const fetchMaxBytes = 100_000_000
@@ -26,7 +28,7 @@ func NewKafkaReaderClient(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Lo
 		// Kafka. This is a safety measure to avoid OOMing on invalid responses.
 		// franz-go recommendation is to set it 2x FetchMaxBytes.
 		// With concurrent fetchers we set FetchMaxBytes and FetchMaxPartitionBytes on a per-request basis, so here we put a high enough limit that should work for those requests.
-		kgo.BrokerMaxReadBytes(1_000_000_000),
+		kgo.BrokerMaxReadBytes(kafkaBrokerMaxReadBytes),
 	)
 	client, err := kgo.NewClient(opts...)
 	if err != nil {
