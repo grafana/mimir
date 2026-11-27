@@ -8,11 +8,14 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // The merge of the ingesters' answers to a lookup: what each answers about a series merges by change points, its
@@ -106,4 +109,32 @@ func TestNativeLookupMerge_TakesNoAnswersOnceClosed(t *testing.T) {
 	require.Equal(t, coverageStart, coverageStartAgain)
 	require.Equal(t, bytes, queryStats.LoadNativeLookupResponseBytes())
 	require.Equal(t, visited, queryStats.LoadNativeLookupSeriesVisited())
+}
+
+// A lookup by series' responses count against the query's memory tracker as they arrive, so that the query's limit
+// sees them before they're all held: the response past it fails the lookup without being counted, one after the merge
+// closes isn't counted, and release gives back exactly what was counted, once.
+func TestNativeLookupMerge_CountsResponsesAgainstTheTracker(t *testing.T) {
+	tracker := limiter.NewMemoryConsumptionTracker(t.Context(), 250, prometheus.NewCounter(prometheus.CounterOpts{Name: "rejections"}), "")
+	held := func() uint64 {
+		return tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.NativeLookupResponses)
+	}
+	merge := newNativeLookupMerge[ingester_client.NativeResourceVersion]()
+	merge.tracker = tracker
+
+	require.NoError(t, merge.addResponse(t.Context(), 100, false, 1_000, 1))
+	require.NoError(t, merge.addResponse(t.Context(), 100, false, 1_000, 1))
+	require.Equal(t, uint64(200), held())
+	require.True(t, validation.IsLimitError(merge.addResponse(t.Context(), 100, false, 1_000, 1)), "past the limit")
+	require.Equal(t, uint64(200), held())
+
+	merge.close()
+	require.NoError(t, merge.addResponse(t.Context(), 10, false, 1_000, 1))
+	require.Equal(t, uint64(200), held(), "after the close")
+
+	merge.release()
+	require.Zero(t, held())
+	// A caller's release after the distributor's own, as on an error the lookup released already.
+	merge.release()
+	require.Zero(t, tracker.CurrentEstimatedMemoryConsumptionBytes())
 }

@@ -79,7 +79,10 @@ const (
 	BufferedQuerierResponses
 	CachedResponses
 	BinaryOperationOutputSeries
-	memoryConsumptionSourceCount = BinaryOperationOutputSeries + 1
+	// NativeLookupResponses are the ingesters' answers to a native resources lookup by series, which the querier keeps
+	// until info() has read them.
+	NativeLookupResponses
+	memoryConsumptionSourceCount = NativeLookupResponses + 1
 )
 
 const (
@@ -140,6 +143,8 @@ func (s MemoryConsumptionSource) String() string {
 		return "cached responses"
 	case BinaryOperationOutputSeries:
 		return "binary operation output series"
+	case NativeLookupResponses:
+		return "native lookup responses"
 	default:
 		return unknownMemorySource
 	}

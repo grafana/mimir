@@ -33,6 +33,7 @@ const (
 type NativeMetadataDistributor interface {
 	NativeMetricMetadata(ctx context.Context, matcherSets [][]*labels.Matcher, limit int) (distributor.NativeMetricMetadataResult, error)
 	NativeResources(ctx context.Context, matcherSets [][]*labels.Matcher, start, end int64, limit int, groupByTarget bool) (distributor.NativeResourcesResult, error)
+	NativeSeriesResources(ctx context.Context, matcherSets [][]*labels.Matcher, start, end int64) (distributor.NativeResourcesResult, func(), error)
 }
 
 type nativeLookupResponse[R any] struct {

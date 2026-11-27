@@ -4,6 +4,7 @@ package querier
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -70,6 +71,10 @@ func TestAppendTargetInfoSamples(t *testing.T) {
 type fakeNativeLookups struct {
 	resources distributor.NativeResourcesResult
 	err       error
+	// The lookups by series' answer and error, and how many times its release was called.
+	seriesResources distributor.NativeResourcesResult
+	seriesErr       error
+	released        int
 }
 
 func (f *fakeNativeLookups) NativeMetricMetadata(context.Context, [][]*labels.Matcher, int) (distributor.NativeMetricMetadataResult, error) {
@@ -78,6 +83,13 @@ func (f *fakeNativeLookups) NativeMetricMetadata(context.Context, [][]*labels.Ma
 
 func (f *fakeNativeLookups) NativeResources(context.Context, [][]*labels.Matcher, int64, int64, int, bool) (distributor.NativeResourcesResult, error) {
 	return f.resources, f.err
+}
+
+func (f *fakeNativeLookups) NativeSeriesResources(context.Context, [][]*labels.Matcher, int64, int64) (distributor.NativeResourcesResult, func(), error) {
+	if f.seriesErr != nil {
+		return distributor.NativeResourcesResult{}, nil, f.seriesErr
+	}
+	return f.seriesResources, func() { f.released++ }, nil
 }
 
 // storedQueryable is storage with the series, which records the matchers of each select.
@@ -213,4 +225,110 @@ func TestNativeTargetInfoQuerier_Select(t *testing.T) {
 			require.Equal(t, uint64(1), queryStats.LoadNativeTargetInfoFallbacks())
 		})
 	}
+}
+
+// info()'s own mode, as the querier offers it: the decision follows Select's gate and the tenant's switch; a select in
+// own mode is the stored series' only; and the lookup by series answers each series' versions as the target_info
+// labels the OTLP conversion writes for them, or falls back, counted as Select's fallbacks are.
+func TestNativeTargetInfoQuerier_OwnMode(t *testing.T) {
+	targetInfo := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "target_info")
+	job := labels.MustNewMatcher(labels.MatchEqual, "job", "api")
+	storedLabels := labels.FromStrings("__name__", "target_info", "host_name", "node-1", "instance", "a", "job", "api")
+	stored := []storage.Series{series.NewConcreteSeries(storedLabels, []model.SamplePair{{Timestamp: 100_000, Value: 1}, {Timestamp: 400_000, Value: 1}}, nil)}
+	hints := &storage.SelectHints{Start: 0, End: 900_000}
+	querierWith := func(t *testing.T, ownResources, nativeResources bool, lookups *fakeNativeLookups) (querierapi.NativeInfoResources, storage.Querier, *storedQueryable, *NativeTargetInfoMetrics) {
+		limits := validation.Limits{}
+		limits.NativeResourcesEnabled = nativeResources
+		limits.NativeInfoOwnResourcesEnabled = ownResources
+		next := &storedQueryable{series: stored}
+		metrics := NewNativeTargetInfoMetrics(prometheus.NewRegistry())
+		q, err := NewNativeTargetInfoQueryable(next, lookups, validation.NewOverrides(limits, nil), 5*time.Minute, metrics).Querier(hints.Start, hints.End)
+		require.NoError(t, err)
+		own, ok := q.(querierapi.NativeInfoResources)
+		require.True(t, ok, "info() finds own mode through the querier of its info series")
+		return own, q, next, metrics
+	}
+	ctx := user.InjectOrgID(context.Background(), "tenant")
+	native, join := true, false
+
+	t.Run("the decision", func(t *testing.T) {
+		for name, tc := range map[string]struct {
+			ownResources, nativeResources bool
+			// The request's choice of native target_info or the join, if any.
+			requested *bool
+			want      bool
+		}{
+			"native by the tenant's native resources": {ownResources: true, nativeResources: true, want: true},
+			"native by the request":                   {ownResources: true, requested: &native, want: true},
+			"the join by the request":                 {ownResources: true, nativeResources: true, requested: &join},
+			"without native resources":                {ownResources: true},
+			"the switch off":                          {nativeResources: true},
+		} {
+			t.Run(name, func(t *testing.T) {
+				own, _, _, _ := querierWith(t, tc.ownResources, tc.nativeResources, &fakeNativeLookups{})
+				ctx := ctx
+				if tc.requested != nil {
+					ctx = querierapi.ContextWithNativeTargetInfo(ctx, *tc.requested)
+				}
+				require.Equal(t, tc.want, own.NativeInfoOwnMode(ctx))
+			})
+		}
+	})
+
+	t.Run("a select in own mode is the stored series'", func(t *testing.T) {
+		// A lookup by target would fail the select.
+		_, q, next, metrics := querierWith(t, true, true, &fakeNativeLookups{err: errors.New("no lookup by target in own mode")})
+		got := samplesOf(t, q.Select(querierapi.ContextWithNativeInfoOwnMode(ctx), true, hints, targetInfo, job))
+		require.Equal(t, map[string][]int64{storedLabels.String(): {100_000, 400_000}}, got)
+		require.Equal(t, [][]*labels.Matcher{{targetInfo, job}}, next.selected)
+		require.Zero(t, testutil.ToFloat64(metrics.lookups))
+	})
+
+	t.Run("the lookup by series", func(t *testing.T) {
+		identifying := map[string]string{"service.name": "api", "service.instance.id": "a"}
+		seriesLabels := []mimirpb.LabelAdapter{{Name: "__name__", Value: "up"}, {Name: "instance", Value: "a"}, {Name: "job", Value: "api"}}
+		lookups := &fakeNativeLookups{seriesResources: distributor.NativeResourcesResult{
+			CoverageStart: 300_000,
+			Series: []ingester_client.NativeResourcesSeries{{
+				Labels: seriesLabels,
+				Versions: []ingester_client.NativeResourceVersion{
+					{MinTimeMs: 300_000, MaxTimeMs: 599_999, Identifying: identifying, Descriptive: map[string]string{"host.name": "node-1"}},
+					// Only identifying attributes: the conversion writes no target_info for it.
+					{MinTimeMs: 600_000, MaxTimeMs: 900_000, Identifying: identifying},
+				},
+			}},
+		}}
+		own, _, _, metrics := querierWith(t, true, true, lookups)
+		resources, ok, err := own.NativeSeriesResources(ctx, hints, job)
+		require.NoError(t, err)
+		require.True(t, ok)
+		require.Equal(t, int64(300_000), resources.CoverageStart)
+		require.Equal(t, []querierapi.NativeSeriesResource{{
+			Labels: mimirpb.FromLabelAdaptersToLabels(seriesLabels),
+			Versions: []querierapi.NativeSeriesResourceVersion{
+				{MinTime: 300_000, MaxTime: 599_999, Labels: storedLabels},
+				{MinTime: 600_000, MaxTime: 900_000, Labels: labels.EmptyLabels()},
+			},
+		}}, resources.Series)
+		require.Equal(t, 1.0, testutil.ToFloat64(metrics.lookups))
+		resources.Release()
+		require.Equal(t, 1, lookups.released, "the release is the distributor's")
+	})
+
+	t.Run("a lookup the ingesters refuse falls back", func(t *testing.T) {
+		for reason, err := range map[string]error{
+			nativeTargetInfoFallbackDisabled: ingester_client.ErrNativeMetadataDisabled,
+			nativeTargetInfoFallbackCap:      ingester_client.NativeLookupTooManySeriesError(100),
+		} {
+			t.Run(reason, func(t *testing.T) {
+				queryStats, ctx := stats.ContextWithEmptyStats(ctx)
+				own, _, _, metrics := querierWith(t, true, true, &fakeNativeLookups{seriesErr: err})
+				_, ok, err := own.NativeSeriesResources(ctx, hints, job)
+				require.NoError(t, err)
+				require.False(t, ok)
+				require.Equal(t, 1.0, testutil.ToFloat64(metrics.fallbacks.WithLabelValues(reason)))
+				require.Equal(t, uint64(1), queryStats.LoadNativeTargetInfoFallbacks())
+			})
+		}
+	})
 }

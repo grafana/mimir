@@ -6308,6 +6308,17 @@
         },
         {
           "kind": "field",
+          "name": "native_info_own_resources_enabled",
+          "required": false,
+          "desc": "Enrich each of the tenant's info() inner series that is a stored series with a native resource from that series' own resource, which a lookup by series with the inner selector's matchers finds, and every other inner series from the stored target_info, rather than from target_info built from the ingesters' native resources by target. Takes effect for queries that read target_info natively. Read on every query.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.native-info-own-resources-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "float_chunk_encoding",
           "required": false,
           "desc": "Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: xor, xor2.",

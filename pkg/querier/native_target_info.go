@@ -21,6 +21,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/distributor"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
@@ -53,6 +54,7 @@ type NativeTargetInfoLimits interface {
 	OTelTranslationStrategy(userID string) otlptranslator.TranslationStrategyOption
 	OTelLabelNameUnderscoreSanitization(userID string) bool
 	OTelLabelNamePreserveMultipleUnderscores(userID string) bool
+	NativeInfoOwnResourcesEnabled(userID string) bool
 }
 
 // The reasons a query with native target_info falls back to the join, by the fallback counter's reason label.
@@ -69,6 +71,8 @@ type NativeTargetInfoMetrics struct {
 	fallbacks *prometheus.CounterVec
 	// The target_info series with native samples, which the lookups synthesized.
 	synthesized prometheus.Counter
+	// info() inner series in own mode, by what enriched them.
+	innerSeries *prometheus.CounterVec
 }
 
 func NewNativeTargetInfoMetrics(reg prometheus.Registerer) *NativeTargetInfoMetrics {
@@ -85,6 +89,10 @@ func NewNativeTargetInfoMetrics(reg prometheus.Registerer) *NativeTargetInfoMetr
 			Name: "cortex_querier_native_target_info_series_synthesized_total",
 			Help: "Series of target_info with samples that info() synthesized from the ingesters' native resources.",
 		}),
+		innerSeries: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_querier_native_info_inner_series_total",
+			Help: "Inner series of info() in own mode, by source: own, for those enriched from their own native resources, or the reason they took the stored target_info instead.",
+		}, []string{"source"}),
 	}
 }
 
@@ -116,6 +124,11 @@ const targetInfoMetricName = "target_info"
 func (q *nativeTargetInfoQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	selectsTargetInfo, onlyTargetInfo := selectsMetricName(matchers, targetInfoMetricName)
 	if !selectsTargetInfo || hints == nil {
+		return q.Querier.Select(ctx, sortSeries, hints, matchers...)
+	}
+	if querierapi.NativeInfoOwnModeFromContext(ctx) {
+		// info()'s own mode enriches what it can from the series' own resources, which it looks up itself, and the
+		// rest by the join, from the stored series.
 		return q.Querier.Select(ctx, sortSeries, hints, matchers...)
 	}
 	tenantID, err := tenant.TenantID(ctx)
@@ -150,6 +163,81 @@ func (q *nativeTargetInfoQuerier) Select(ctx context.Context, sortSeries bool, h
 		sets = append(sets, q.Querier.Select(ctx, true, hints, others...))
 	}
 	return storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
+}
+
+// NativeInfoOwnMode reports whether the query's info() takes its inner series' own resources: the tenant's switch is
+// on, and the request reads target_info natively, as Select would.
+func (q *nativeTargetInfoQuerier) NativeInfoOwnMode(ctx context.Context) bool {
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return false
+	}
+	if native, set := querierapi.NativeTargetInfoFromContext(ctx); (set && !native) || (!set && !q.limits.NativeResourcesEnabled(tenantID)) {
+		return false
+	}
+	return q.limits.NativeInfoOwnResourcesEnabled(tenantID)
+}
+
+// NativeSeriesResources looks up the native resources of the series matchers select, over hints' range, and converts
+// each version to the labels of the target_info series the OTLP conversion writes for it. A lookup the ingesters
+// refuse, disabled or over a cap, counts as a fallback, as Select's does, and isn't ok. Its answers count against the
+// query's memory until the returned resources' Release.
+func (q *nativeTargetInfoQuerier) NativeSeriesResources(ctx context.Context, hints *storage.SelectHints, matchers ...*labels.Matcher) (querierapi.NativeSeriesResources, bool, error) {
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return querierapi.NativeSeriesResources{}, false, err
+	}
+	res, release, err := q.distributor.NativeSeriesResources(ctx, [][]*labels.Matcher{matchers}, hints.Start, hints.End)
+	fallback := func(reason string) (querierapi.NativeSeriesResources, bool, error) {
+		q.metrics.fallbacks.WithLabelValues(reason).Inc()
+		stats.FromContext(ctx).AddNativeTargetInfoFallbacks(1)
+		return querierapi.NativeSeriesResources{}, false, nil
+	}
+	switch {
+	case ingester_client.IsNativeMetadataDisabled(err):
+		return fallback(nativeTargetInfoFallbackDisabled)
+	case ingester_client.IsNativeLookupTooManySeries(err):
+		return fallback(nativeTargetInfoFallbackCap)
+	case err != nil:
+		return querierapi.NativeSeriesResources{}, false, err
+	}
+	q.metrics.lookups.Inc()
+
+	translation := distributor.TargetInfoTranslation{
+		AllowUTF8:                   !q.limits.OTelTranslationStrategy(tenantID).ShouldEscape(),
+		UnderscoreSanitization:      q.limits.OTelLabelNameUnderscoreSanitization(tenantID),
+		PreserveMultipleUnderscores: q.limits.OTelLabelNamePreserveMultipleUnderscores(tenantID),
+	}
+	keepIdentifying := q.limits.OTelKeepIdentifyingResourceAttributes(tenantID)
+	// A resource's versions repeat over its series, and each takes a conversion to label.
+	labeled := map[string]labels.Labels{}
+	out := make([]querierapi.NativeSeriesResource, 0, len(res.Series))
+	for _, s := range res.Series {
+		versions := make([]querierapi.NativeSeriesResourceVersion, 0, len(s.Versions))
+		for _, v := range s.Versions {
+			key := resourceKey(v)
+			lbls, ok := labeled[key]
+			if !ok {
+				l, written, err := distributor.TargetInfoLabels(ctx, v.Identifying, v.Descriptive, keepIdentifying, translation)
+				if err != nil {
+					release()
+					return querierapi.NativeSeriesResources{}, false, err
+				}
+				if !written {
+					l = labels.EmptyLabels()
+				}
+				labeled[key], lbls = l, l
+			}
+			versions = append(versions, querierapi.NativeSeriesResourceVersion{MinTime: v.MinTimeMs, MaxTime: v.MaxTimeMs, Labels: lbls})
+		}
+		out = append(out, querierapi.NativeSeriesResource{Labels: mimirpb.FromLabelAdaptersToLabels(s.Labels), Versions: versions})
+	}
+	return querierapi.NativeSeriesResources{Series: out, CoverageStart: res.CoverageStart, Release: release}, true, nil
+}
+
+// ObserveNativeInfoInnerSeries counts count of info()'s inner series in own mode by what enriched them.
+func (q *nativeTargetInfoQuerier) ObserveNativeInfoInnerSeries(source string, count int) {
+	q.metrics.innerSeries.WithLabelValues(source).Add(float64(count))
 }
 
 // selectsMetricName reports whether matchers select series named name, and whether only those.

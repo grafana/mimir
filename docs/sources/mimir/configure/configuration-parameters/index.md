@@ -4975,6 +4975,15 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.native-info-query-sharding-disabled
 [native_info_query_sharding_disabled: <boolean> | default = false]
 
+# (experimental) Enrich each of the tenant's info() inner series that is a
+# stored series with a native resource from that series' own resource, which a
+# lookup by series with the inner selector's matchers finds, and every other
+# inner series from the stored target_info, rather than from target_info built
+# from the ingesters' native resources by target. Takes effect for queries that
+# read target_info natively. Read on every query.
+# CLI flag: -querier.native-info-own-resources-enabled
+[native_info_own_resources_enabled: <boolean> | default = false]
+
 # (experimental) Encoding used for float chunks written for this tenant by the
 # ingester and block-builder, and by the compactor when it re-encodes
 # overlapping chunks. Supported values are: xor, xor2.

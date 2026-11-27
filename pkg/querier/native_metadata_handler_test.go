@@ -38,6 +38,10 @@ func (f *fakeNativeMetadataDistributor) NativeResources(_ context.Context, match
 	return f.resources, f.err
 }
 
+func (f *fakeNativeMetadataDistributor) NativeSeriesResources(context.Context, [][]*labels.Matcher, int64, int64) (distributor.NativeResourcesResult, func(), error) {
+	return distributor.NativeResourcesResult{}, func() {}, nil
+}
+
 func serveNativeLookup(t *testing.T, handler http.Handler, target string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, target, nil).WithContext(user.InjectOrgID(t.Context(), "tenant"))
 	rec := httptest.NewRecorder()

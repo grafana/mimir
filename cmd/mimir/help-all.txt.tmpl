@@ -2673,6 +2673,8 @@ Usage of ./cmd/mimir/mimir:
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
     	Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Set to 0 to disable hedging. Ignored if -querier.minimize-ingester-requests is not enabled.
+  -querier.native-info-own-resources-enabled
+    	[experimental] Enrich each of the tenant's info() inner series that is a stored series with a native resource from that series' own resource, which a lookup by series with the inner selector's matchers finds, and every other inner series from the stored target_info, rather than from target_info built from the ingesters' native resources by target. Takes effect for queries that read target_info natively. Read on every query.
   -querier.prefer-availability-zones comma-separated-list-of-strings
     	[experimental] Comma-separated list of availability zones to prefer when querying ingesters and store-gateways. All zones in the list are given equal priority.
   -querier.query-engine string

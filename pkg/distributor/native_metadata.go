@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -68,7 +69,9 @@ func (d *Distributor) NativeMetricMetadata(ctx context.Context, matcherSets [][]
 			if err != nil {
 				return err
 			}
-			merge.addResponse(ctx, msg.Size(), msg.Limited, msg.CoverageStartMs, msg.SeriesVisited)
+			if err := merge.addResponse(ctx, msg.Size(), msg.Limited, msg.CoverageStartMs, msg.SeriesVisited); err != nil {
+				return err
+			}
 			for _, s := range msg.Series {
 				merge.addSeries(s.Labels, s.Versions, s.Truncated, s.Coalesced)
 			}
@@ -92,12 +95,30 @@ func (d *Distributor) NativeMetricMetadata(ctx context.Context, matcherSets [][]
 // matcher sets, or with groupByTarget, of their targets, in the ingesters, and merges their answers. It fails like
 // NativeMetricMetadata does.
 func (d *Distributor) NativeResources(ctx context.Context, matcherSets [][]*labels.Matcher, start, end int64, limit int, groupByTarget bool) (NativeResourcesResult, error) {
+	result, _, err := d.nativeResources(ctx, matcherSets, start, end, limit, groupByTarget, nil)
+	return result, err
+}
+
+// NativeSeriesResources is NativeResources by series, whose answers count against the query's memory tracker, from
+// ctx, as each ingester's response arrives, so that the query's memory limit sees them before they're all held. Its
+// caller calls release once it no longer needs them; on an error they're already released.
+func (d *Distributor) NativeSeriesResources(ctx context.Context, matcherSets [][]*labels.Matcher, start, end int64) (result NativeResourcesResult, release func(), err error) {
+	tracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+	if err != nil {
+		return NativeResourcesResult{}, nil, err
+	}
+	return d.nativeResources(ctx, matcherSets, start, end, 0, false, tracker)
+}
+
+// nativeResources is NativeResources, whose answers count against tracker when it's set, until release.
+func (d *Distributor) nativeResources(ctx context.Context, matcherSets [][]*labels.Matcher, start, end int64, limit int, groupByTarget bool, tracker *limiter.MemoryConsumptionTracker) (NativeResourcesResult, func(), error) {
 	req := &ingester_client.NativeResourcesRequest{StartTimestampMs: start, EndTimestampMs: end, Limit: int64(limit), GroupByTarget: groupByTarget}
 	var err error
 	if req.MatcherSets, err = toLabelMatcherSets(matcherSets); err != nil {
-		return NativeResourcesResult{}, err
+		return NativeResourcesResult{}, nil, err
 	}
 	merge := newNativeLookupMerge[ingester_client.NativeResourceVersion]()
+	merge.tracker = tracker
 	err = d.nativeLookup(ctx, "Distributor.NativeResources", matcherSets, func(ctx context.Context, client ingester_client.IngesterClient) error {
 		stream, err := client.NativeResources(ctx, req)
 		if err != nil {
@@ -112,7 +133,9 @@ func (d *Distributor) NativeResources(ctx context.Context, matcherSets [][]*labe
 			if err != nil {
 				return err
 			}
-			merge.addResponse(ctx, msg.Size(), msg.Limited, msg.CoverageStartMs, msg.SeriesVisited)
+			if err := merge.addResponse(ctx, msg.Size(), msg.Limited, msg.CoverageStartMs, msg.SeriesVisited); err != nil {
+				return err
+			}
 			for _, s := range msg.Series {
 				merge.addSeries(s.Labels, s.Versions, false, s.Coalesced)
 			}
@@ -122,14 +145,15 @@ func (d *Distributor) NativeResources(ctx context.Context, matcherSets [][]*labe
 	})
 	merge.close()
 	if err != nil {
-		return NativeResourcesResult{}, err
+		merge.release()
+		return NativeResourcesResult{}, nil, err
 	}
 	merged, limited, coverageStart := merge.result(limit, ingester_client.MergeNativeResourceVersions)
 	result := NativeResourcesResult{Series: make([]ingester_client.NativeResourcesSeries, 0, len(merged)), Limited: limited, CoverageStart: coverageStart}
 	for _, s := range merged {
 		result.Series = append(result.Series, ingester_client.NativeResourcesSeries{Labels: s.labels, Versions: s.versions, Coalesced: s.coalesced})
 	}
-	return result, nil
+	return result, merge.release, nil
 }
 
 // nativeLookup runs lookup on the ingesters of every partition, or replication set, that the matcher sets' series may
@@ -182,6 +206,9 @@ type nativeLookupMerge[V any] struct {
 	series        map[string]*mergedNativeSeries[V]
 	limited       bool
 	coverageStart int64
+	// The memory tracker the responses count against, if any, and how many bytes of them it holds.
+	tracker *limiter.MemoryConsumptionTracker
+	counted uint64
 }
 
 type mergedNativeSeries[V any] struct {
@@ -196,12 +223,18 @@ func newNativeLookupMerge[V any]() *nativeLookupMerge[V] {
 }
 
 // addResponse adds a response's lookup-wide fields, and counts its bytes and the series its ingester visited for the
-// query's stats.
-func (m *nativeLookupMerge[V]) addResponse(ctx context.Context, size int, limited bool, coverageStart, seriesVisited int64) {
+// query's stats, and its bytes against the merge's memory tracker, if any, failing past the query's limit.
+func (m *nativeLookupMerge[V]) addResponse(ctx context.Context, size int, limited bool, coverageStart, seriesVisited int64) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 	if m.closed {
-		return
+		return nil
+	}
+	if m.tracker != nil {
+		if err := m.tracker.IncreaseMemoryConsumption(uint64(size), limiter.NativeLookupResponses); err != nil {
+			return err
+		}
+		m.counted += uint64(size)
 	}
 	queryStats := stats.FromContext(ctx)
 	queryStats.AddNativeLookupResponseBytes(uint64(size))
@@ -209,6 +242,7 @@ func (m *nativeLookupMerge[V]) addResponse(ctx context.Context, size int, limite
 	m.limited = m.limited || limited
 	// The merged lookup covers the series' changes from when every ingester's native metadata has started.
 	m.coverageStart = max(m.coverageStart, coverageStart)
+	return nil
 }
 
 func (m *nativeLookupMerge[V]) addSeries(lbls []mimirpb.LabelAdapter, versions []V, truncated, coalesced bool) {
@@ -237,6 +271,17 @@ func (m *nativeLookupMerge[V]) close() {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 	m.closed = true
+}
+
+// release gives back what the responses were counted for. Once closed, no response counts any more, so a second call
+// has nothing to give back.
+func (m *nativeLookupMerge[V]) release() {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	if m.tracker != nil && m.counted > 0 {
+		m.tracker.DecreaseMemoryConsumption(m.counted, limiter.NativeLookupResponses)
+		m.counted = 0
+	}
 }
 
 // result is the merged series in label order, at most limit of them when positive, whether more matched, here or in
