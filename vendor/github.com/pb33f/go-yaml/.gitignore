@@ -4,3 +4,4 @@
 /.cache/
 /yts/testdata/
 /go-yaml
+*.so

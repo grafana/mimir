@@ -11,6 +11,7 @@ import (
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/index"
 	"github.com/pb33f/libopenapi/orderedmap"
+	"github.com/pb33f/libopenapi/utils"
 )
 
 // Contact represents a low-level representation of the Contact definitions found at
@@ -34,6 +35,7 @@ type Contact struct {
 
 func (c *Contact) Build(ctx context.Context, keyNode, root *yaml.Node, idx *index.SpecIndex) error {
 	c.KeyNode = keyNode
+	root = utils.ResolveMergeNodes(root)
 	c.RootNode = root
 	c.reference = low.Reference{}
 	c.Reference = &c.reference

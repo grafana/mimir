@@ -7,15 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/pb33f/go-yaml"
-	"github.com/pb33f/libopenapi/datamodel"
-	"github.com/pb33f/libopenapi/index"
-	"github.com/pb33f/libopenapi/internal/weakcache"
-	"github.com/pb33f/libopenapi/orderedmap"
-	"github.com/pb33f/libopenapi/utils"
 	"hash/maphash"
 	"math/big"
-	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -23,6 +16,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/pb33f/go-yaml"
+	"github.com/pb33f/libopenapi/datamodel"
+	"github.com/pb33f/libopenapi/index"
+	"github.com/pb33f/libopenapi/internal/weakcache"
+	"github.com/pb33f/libopenapi/orderedmap"
+	"github.com/pb33f/libopenapi/utils"
 )
 
 // stringBuilderPool is a sync.Pool that reuses strings.Builder instances to reduce memory allocations
@@ -233,27 +233,13 @@ func LocateRefNodeWithContext(ctx context.Context, root *yaml.Node, idx *index.S
 			// The ref points to a component within either this file or another file.
 			if !strings.HasPrefix(explodedRefValue[0], "http") {
 				// The ref is not an absolute URL.
-				if !filepath.IsAbs(explodedRefValue[0]) {
+				if !filepath.IsAbs(explodedRefValue[0]) || strings.HasPrefix(specPath, "http") {
 					// The ref is not an absolute local file path.
 					if strings.HasPrefix(specPath, "http") {
 						// The schema containing the ref is itself a remote file.
-						u, _ := url.Parse(specPath)
-						// p is the directory the referenced file is expected to be in.
-						p := ""
-						if u.Path != "" && explodedRefValue[0] != "" {
-							// We are using the path of the resolved URL from the rolodex to
-							// obtain the "folder" or base of the file URL.
-							p = filepath.Dir(u.Path)
+						if absolute, err := index.ResolveRefAgainstSchemaId(rv, &index.SchemaIdScope{BaseUri: specPath}); err == nil {
+							rv = absolute
 						}
-						if p != "" && explodedRefValue[0] != "" {
-							// We are resolving the relative URL against the absolute URL of
-							// the spec containing the reference.
-							u.Path = utils.ReplaceWindowsDriveWithLinuxPath(utils.CheckPathOverlap(p, explodedRefValue[0], string(os.PathSeparator)))
-						}
-						u.Fragment = ""
-						// Turn the reference value [rv] into the absolute filepath/URL we
-						// resolved.
-						rv = fmt.Sprintf("%s#%s", u.String(), explodedRefValue[1])
 					} else {
 						// The schema containing the ref is a local file or doesn't have an
 						// absolute URL.
@@ -295,14 +281,11 @@ func LocateRefNodeWithContext(ctx context.Context, root *yaml.Node, idx *index.S
 			}
 		} else {
 			if !strings.HasPrefix(explodedRefValue[0], "http") {
-				if !filepath.IsAbs(explodedRefValue[0]) {
+				if !filepath.IsAbs(explodedRefValue[0]) || strings.HasPrefix(specPath, "http") {
 					if strings.HasPrefix(specPath, "http") {
-						u, _ := url.Parse(specPath)
-						p := filepath.Dir(u.Path)
-						abs, _ := filepath.Abs(utils.CheckPathOverlap(p, rv, string(os.PathSeparator)))
-						u.Path = utils.ReplaceWindowsDriveWithLinuxPath(abs)
-						rv = u.String()
-
+						if absolute, err := index.ResolveRefAgainstSchemaId(rv, &index.SchemaIdScope{BaseUri: specPath}); err == nil {
+							rv = absolute
+						}
 					} else {
 						if specPath != "" {
 
@@ -313,7 +296,12 @@ func LocateRefNodeWithContext(ctx context.Context, root *yaml.Node, idx *index.S
 							// check for a config baseURL and use that if it exists.
 							if idx.GetConfig().BaseURL != nil {
 								u := *idx.GetConfig().BaseURL
-								abs, _ := filepath.Abs(utils.CheckPathOverlap(u.Path, rv, string(os.PathSeparator)))
+								// an empty base path would otherwise resolve against the working directory.
+								basePath := u.Path
+								if basePath == "" {
+									basePath = string(os.PathSeparator)
+								}
+								abs, _ := filepath.Abs(utils.CheckPathOverlap(basePath, rv, string(os.PathSeparator)))
 								u.Path = utils.ReplaceWindowsDriveWithLinuxPath(abs)
 								rv = u.String()
 							}
@@ -746,15 +734,23 @@ func ExtractMapNoLookupExtensions[PT Buildable[N], N any](
 ) (*orderedmap.Map[KeyReference[string], ValueReference[PT]], error) {
 	valueMap := orderedmap.New[KeyReference[string], ValueReference[PT]]()
 	var circError error
-	root = utils.NodeAlias(root)
-	utils.CheckForMergeNodes(root)
+	root = utils.ResolveMergeNodes(root)
 	if utils.IsNodeMap(root) {
 		var currentKey *yaml.Node
+		var currentKeyValue string
 		skip := false
 		for i := 0; i < len(root.Content); i++ {
 			node := root.Content[i]
-			if !includeExtensions {
-				if len(node.Value) >= 2 && (node.Value[0] == 'x' || node.Value[0] == 'X') && node.Value[1] == '-' {
+			keyValue := node.Value
+			if i%2 == 0 {
+				// An aliased key (*name) takes its value from the anchored scalar, for the map key and
+				// the extension check. The authored key node is kept, so source locations point at the
+				// key rather than at the anchor declaration.
+				keyValue = utils.NodeAlias(node).Value
+			}
+			// only keys are checked; an x- value (x-owner: x-team) must not skip the next entry.
+			if !includeExtensions && i%2 == 0 {
+				if len(keyValue) >= 2 && (keyValue[0] == 'x' || keyValue[0] == 'X') && keyValue[1] == '-' {
 					skip = true
 					continue
 				}
@@ -765,6 +761,7 @@ func ExtractMapNoLookupExtensions[PT Buildable[N], N any](
 			}
 			if i%2 == 0 {
 				currentKey = node
+				currentKeyValue = keyValue
 				continue
 			}
 
@@ -796,7 +793,7 @@ func ExtractMapNoLookupExtensions[PT Buildable[N], N any](
 					SetReference(n, rv, node)
 					v := ValueReference[PT]{Value: n, ValueNode: node}
 					v.SetReference(rv, node)
-					valueMap.Set(KeyReference[string]{Value: currentKey.Value, KeyNode: currentKey}, v)
+					valueMap.Set(KeyReference[string]{Value: currentKeyValue, KeyNode: currentKey}, v)
 					continue
 				} else {
 					if err != nil {
@@ -825,7 +822,7 @@ func ExtractMapNoLookupExtensions[PT Buildable[N], N any](
 
 				valueMap.Set(
 					KeyReference[string]{
-						Value:   currentKey.Value,
+						Value:   currentKeyValue,
 						KeyNode: currentKey,
 					},
 					v,
@@ -1094,10 +1091,13 @@ func ExtractExtensions(root *yaml.Node) *orderedmap.Map[KeyReference[string], Va
 	content := root.Content
 	for i := 0; i+1 < len(content); i += 2 {
 		key := content[i]
-		if strings.HasPrefix(key.Value, "x-") {
+		// an aliased key (*name) is an extension when the anchored scalar is; the authored key node
+		// is kept for source locations.
+		keyValue := utils.NodeAlias(key).Value
+		if strings.HasPrefix(keyValue, "x-") {
 			value := utils.NodeAlias(content[i+1])
 			extensionMap.Set(KeyReference[string]{
-				Value:   key.Value,
+				Value:   keyValue,
 				KeyNode: key,
 			}, ValueReference[*yaml.Node]{Value: value, ValueNode: value})
 		}

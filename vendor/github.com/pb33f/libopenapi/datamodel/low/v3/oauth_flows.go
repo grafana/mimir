@@ -66,9 +66,8 @@ func (o *OAuthFlows) GetKeyNode() *yaml.Node {
 // Build will extract extensions and all OAuthFlow types from the supplied node.
 func (o *OAuthFlows) Build(ctx context.Context, keyNode, root *yaml.Node, idx *index.SpecIndex) error {
 	o.KeyNode = keyNode
-	root = utils.NodeAlias(root)
+	root = utils.ResolveMergeNodes(root)
 	o.RootNode = root
-	utils.CheckForMergeNodes(root)
 	o.reference = low.Reference{}
 	o.Reference = &o.reference
 	o.nodeStore = low.NodeLines{}
@@ -190,6 +189,7 @@ func (o *OAuthFlow) GetRootNode() *yaml.Node {
 
 // Build will extract extensions from the node.
 func (o *OAuthFlow) Build(ctx context.Context, _, root *yaml.Node, idx *index.SpecIndex) error {
+	root = utils.ResolveMergeNodes(root)
 	o.reference = low.Reference{}
 	o.Reference = &o.reference
 	o.nodeStore = low.NodeLines{}

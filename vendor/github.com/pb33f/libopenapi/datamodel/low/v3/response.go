@@ -89,9 +89,8 @@ func (r *Response) Build(ctx context.Context, keyNode, root *yaml.Node, idx *ind
 	if ok, _, ref := utils.IsNodeRefValue(root); ok {
 		r.SetReference(ref, root)
 	}
-	root = utils.NodeAlias(root)
+	root = utils.ResolveMergeNodes(root)
 	r.RootNode = root
-	utils.CheckForMergeNodes(root)
 	r.nodeStore = low.NodeLines{}
 	r.Nodes = &r.nodeStore
 	if len(root.Content) > 0 {

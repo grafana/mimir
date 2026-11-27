@@ -134,9 +134,8 @@ func (h *Header) Build(ctx context.Context, keyNode, root *yaml.Node, idx *index
 	if ok, _, ref := utils.IsNodeRefValue(root); ok {
 		h.SetReference(ref, root)
 	}
-	root = utils.NodeAlias(root)
+	root = utils.ResolveMergeNodes(root)
 	h.RootNode = root
-	utils.CheckForMergeNodes(root)
 	h.nodeStore = low.NodeLines{}
 	h.Nodes = &h.nodeStore
 	if len(root.Content) > 0 {
@@ -150,7 +149,7 @@ func (h *Header) Build(ctx context.Context, keyNode, root *yaml.Node, idx *index
 
 	low.ExtractExtensionNodes(ctx, h.Extensions, h.Nodes)
 	// handle example if set.
-	_, expLabel, expNode := utils.FindKeyNodeFull(base.ExampleLabel, root.Content)
+	_, expLabel, expNode := utils.FindKeyNodeFullTop(base.ExampleLabel, root.Content)
 	if expNode != nil {
 		h.Example = low.NodeReference[*yaml.Node]{
 			Value:     expNode,

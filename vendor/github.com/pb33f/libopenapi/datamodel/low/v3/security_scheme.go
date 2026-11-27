@@ -84,9 +84,8 @@ func (ss *SecurityScheme) Build(ctx context.Context, keyNode, root *yaml.Node, i
 	if ok, _, ref := utils.IsNodeRefValue(root); ok {
 		ss.SetReference(ref, root)
 	}
-	root = utils.NodeAlias(root)
+	root = utils.ResolveMergeNodes(root)
 	ss.RootNode = root
-	utils.CheckForMergeNodes(root)
 	ss.nodeStore = low.NodeLines{}
 	ss.Nodes = &ss.nodeStore
 	if len(root.Content) > 0 {

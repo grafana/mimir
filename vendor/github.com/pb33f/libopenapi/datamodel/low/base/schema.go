@@ -47,6 +47,10 @@ func (s *SchemaDynamicValue[A, B]) IsB() bool {
 //   - v3 schema: https://swagger.io/specification/#schema-object
 //   - v3.1 schema: https://spec.openapis.org/oas/v3.1.0#schema-object
 type Schema struct {
+	// BooleanSchema is present when the entire schema is a JSON Schema boolean.
+	// True accepts every instance; false rejects every instance.
+	BooleanSchema low.NodeReference[bool]
+
 	// Reference to the '$schema' dialect setting (3.1 only)
 	SchemaTypeRef low.NodeReference[string]
 

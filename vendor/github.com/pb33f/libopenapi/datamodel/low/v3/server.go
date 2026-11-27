@@ -58,9 +58,8 @@ func (s *Server) FindVariable(serverVar string) *low.ValueReference[*ServerVaria
 // Build will extract server variables from the supplied node.
 func (s *Server) Build(ctx context.Context, keyNode, root *yaml.Node, idx *index.SpecIndex) error {
 	s.KeyNode = keyNode
-	root = utils.NodeAlias(root)
+	root = utils.ResolveMergeNodes(root)
 	s.RootNode = root
-	utils.CheckForMergeNodes(root)
 	s.Reference = new(low.Reference)
 	s.Nodes = low.ExtractNodes(ctx, root)
 	s.Extensions = low.ExtractExtensions(root)
@@ -83,15 +82,16 @@ func (s *Server) Build(ctx context.Context, keyNode, root *yaml.Node, idx *index
 				localKeyNode = varNode
 				continue
 			}
+			effective := utils.ResolveMergeNodes(varNode)
 			variable := ServerVariable{}
 			variable.Reference = new(low.Reference)
-			_ = low.BuildModel(varNode, &variable)
-			variable.Nodes = low.ExtractNodesRecursive(ctx, varNode)
-			variable.Extensions = low.ExtractExtensions(varNode)
+			_ = low.BuildModel(effective, &variable)
+			variable.Nodes = low.ExtractNodesRecursive(ctx, effective)
+			variable.Extensions = low.ExtractExtensions(effective)
 			if localKeyNode != nil {
 				variable.Nodes.Store(localKeyNode.Line, localKeyNode)
 			}
-			variable.RootNode = varNode
+			variable.RootNode = effective
 			variable.KeyNode = localKeyNode
 			variablesMap.Set(
 				low.KeyReference[string]{

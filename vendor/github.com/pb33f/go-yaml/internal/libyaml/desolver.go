@@ -94,7 +94,11 @@ func (d *Desolver) desolveScalar(n *Node) (tag string, style Style) {
 	}
 
 	// What tag would this value resolve to?
-	rtag, _ := resolve("", n.Value)
+	var formatter func(*LoadError) string
+	if d.opts != nil {
+		formatter = d.opts.FormatLoadError
+	}
+	rtag, _ := resolve("", n.Value, formatter)
 
 	// If resolved tag matches current tag, we can elide the tag
 	if rtag == stag {

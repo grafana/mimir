@@ -672,6 +672,12 @@ func (sp *SchemaProxy) buildSiblingOnlySchemaView() *Schema {
 
 // BuildTransformedRefSemanticSchema returns the internal semantic allOf view for
 // an authored $ref-with-siblings proxy, using current high-level sibling values.
+// $id, $schema, $vocabulary, $anchor, $dynamicAnchor, $defs, unevaluatedProperties and
+// unevaluatedItems sit beside allOf, so when they are the only siblings, allOf holds just the
+// $ref. When the sibling is a boolean schema, $id through $defs still sit beside allOf, because
+// they belong to the object that holds the $ref, but unevaluatedProperties and unevaluatedItems
+// are dropped, because a boolean schema replaces every assertion. The low-level allOf node also
+// keeps definitions beside allOf, but Schema has no field for it.
 func (sp *SchemaProxy) BuildTransformedRefSemanticSchema(currentSibling *Schema) (*Schema, error) {
 	return sp.buildSemanticAllOfSchemaView(currentSibling)
 }
@@ -689,10 +695,58 @@ func (sp *SchemaProxy) buildSemanticAllOfSchemaView(currentSibling *Schema) (*Sc
 	if currentSibling == nil {
 		currentSibling = sp.Schema()
 	}
-	if currentSibling != nil && len(schema.AllOf) == 2 {
+	if currentSibling != nil {
 		siblingCopy := *currentSibling
 		siblingCopy.ParentProxy = nil
-		schema.AllOf[0] = CreateSchemaProxy(&siblingCopy)
+
+		// $id through $defs belong to the object that holds the $ref, so they always move beside
+		// allOf with their current values. unevaluated* are assertions, and a boolean sibling
+		// replaces every assertion, so they only move when the sibling is not boolean.
+		schema.Id, siblingCopy.Id = siblingCopy.Id, ""
+		schema.SchemaTypeRef, siblingCopy.SchemaTypeRef = siblingCopy.SchemaTypeRef, ""
+		schema.Vocabulary, siblingCopy.Vocabulary = siblingCopy.Vocabulary, nil
+		schema.Anchor, siblingCopy.Anchor = siblingCopy.Anchor, ""
+		schema.DynamicAnchor, siblingCopy.DynamicAnchor = siblingCopy.DynamicAnchor, ""
+		schema.Defs, siblingCopy.Defs = siblingCopy.Defs, nil
+		schema.UnevaluatedProperties, schema.UnevaluatedItems = nil, nil
+		if siblingCopy.BooleanSchema == nil {
+			schema.UnevaluatedProperties, siblingCopy.UnevaluatedProperties = siblingCopy.UnevaluatedProperties, nil
+			schema.UnevaluatedItems, siblingCopy.UnevaluatedItems = siblingCopy.UnevaluatedItems, nil
+		}
+
+		// The sibling's low schema still holds the keywords that moved, and a cleared high field
+		// still renders when its low field has a value, so rendering against it would bring them
+		// back into the member. The member renders against the authored allOf member instead,
+		// which never holds them, or against an empty low schema when every sibling moved. The
+		// empty low schema is built again on every call, so its RootNode differs each time.
+		var lowMember *base.Schema
+		if len(lowSchema.AllOf.Value) == 2 && lowSchema.AllOf.Value[0].Value != nil {
+			lowMember = lowSchema.AllOf.Value[0].Value.Schema()
+		}
+		if lowMember == nil {
+			// Build only fails on a nil node or on a keyword it cannot read, and an empty mapping
+			// has neither.
+			lowMember = new(base.Schema)
+			_ = lowMember.Build(sp.schema.Value.GetContext(), utils.CreateEmptyMapNode(), lowSchema.Index)
+		}
+		siblingCopy.low = lowMember
+
+		// the sibling goes in front of the $ref when it is a boolean schema or still sets a keyword,
+		// so allOf holds just the $ref once a caller clears every sibling.
+		member := siblingCopy.BooleanSchema != nil || len(high.NewNodeBuilder(&siblingCopy, nil).Render().Content) > 0
+		switch len(schema.AllOf) {
+		case 2:
+			if member {
+				schema.AllOf[0] = CreateSchemaProxy(&siblingCopy)
+			} else {
+				schema.AllOf = schema.AllOf[1:]
+			}
+		case 1:
+			// every authored sibling stayed beside allOf, so allOf only holds the $ref.
+			if member {
+				schema.AllOf = []*SchemaProxy{CreateSchemaProxy(&siblingCopy), schema.AllOf[0]}
+			}
+		}
 	}
 	return schema, nil
 }
@@ -719,33 +773,69 @@ func (sp *SchemaProxy) renderTransformedRefWithSiblings(s *Schema) (*yaml.Node, 
 	if !sp.shouldCollapseTransformedRefWithSiblings() {
 		return nil, false, nil
 	}
+	if s.BooleanSchema != nil {
+		if !sp.schemaIsTransformedSiblingView(s) {
+			return nil, false, nil
+		}
+		// the $ref form cannot hold a boolean schema, so a boolean sibling renders the allOf view.
+		// the view is nil only when the low schema is missing, and err then holds the build error
+		// if there was one.
+		semantic, err := sp.buildSemanticAllOfSchemaView(s)
+		if semantic == nil {
+			return nil, err != nil, err
+		}
+		rendered, err := semantic.MarshalYAML()
+		node, _ := yamlNodeFromRender(rendered)
+		return node, true, err
+	}
 
 	var siblingNode *yaml.Node
 	ref := sp.schema.Value.GetTransformedRefReference()
 
 	if !sp.schemaIsTransformedSiblingView(s) {
-		if len(s.AllOf) != 2 || s.AllOf[0] == nil || s.AllOf[1] == nil || !s.AllOf[1].IsReference() {
+		refMember := len(s.AllOf) - 1
+		if refMember < 0 || refMember > 1 || s.AllOf[0] == nil || !s.AllOf[refMember].IsReference() {
 			return nil, false, nil
 		}
 
-		// Only collapse the synthetic allOf created by the sibling-ref transformer.
-		// If callers add fields to the outer schema or change its composition, keep
-		// the explicit allOf so no mutations are hidden.
+		// Only collapse the synthetic allOf created by the sibling-ref transformer,
+		// which may only hold keywords that isBesideAllOfKeyword accepts beside allOf.
+		// If callers add other fields to the outer schema or change its composition,
+		// keep the explicit allOf so no mutations are hidden.
 		outerNode := high.NewNodeBuilder(s, s.low).Render()
-		if len(outerNode.Content) != 2 || outerNode.Content[0].Value != "allOf" {
-			return nil, false, nil
+		var outerSiblings []*yaml.Node
+		for i := 0; i+1 < len(outerNode.Content); i += 2 {
+			switch key := outerNode.Content[i].Value; {
+			case key == base.AllOfLabel:
+			case isBesideAllOfKeyword(key):
+				outerSiblings = append(outerSiblings, outerNode.Content[i], outerNode.Content[i+1])
+			default:
+				return nil, false, nil
+			}
 		}
 
-		siblingRender, err := s.AllOf[0].MarshalYAML()
-		if err != nil {
-			return nil, true, err
+		siblingNode = utils.CreateEmptyMapNode()
+		if refMember == 1 {
+			siblingRender, err := s.AllOf[0].MarshalYAML()
+			if err != nil {
+				return nil, true, err
+			}
+			var ok bool
+			siblingNode, ok = yamlNodeFromRender(siblingRender)
+			if !ok || !utils.IsNodeMap(siblingNode) {
+				return nil, false, nil
+			}
+			// parsing the $ref form would move a member keyword that isBesideAllOfKeyword accepts
+			// beside allOf, where it means something else, and a member $ref would clash with the
+			// collapsed $ref, so a member holding either keeps the explicit allOf.
+			for i := 0; i+1 < len(siblingNode.Content); i += 2 {
+				if key := siblingNode.Content[i].Value; key == "$ref" || isBesideAllOfKeyword(key) {
+					return nil, false, nil
+				}
+			}
 		}
-		var ok bool
-		siblingNode, ok = yamlNodeFromRender(siblingRender)
-		if !ok || !utils.IsNodeMap(siblingNode) {
-			return nil, false, nil
-		}
-		ref = s.AllOf[1].GetReference()
+		siblingNode.Content = append(siblingNode.Content, outerSiblings...)
+		ref = s.AllOf[refMember].GetReference()
 	} else {
 		siblingNode = high.NewNodeBuilder(s, s.low).Render()
 	}
@@ -787,6 +877,18 @@ func (sp *SchemaProxy) renderTransformedRefWithSiblings(s *Schema) (*yaml.Node, 
 	}
 
 	return result, true, nil
+}
+
+// isBesideAllOfKeyword reports whether the sibling-ref transformer moves a rendered Schema keyword
+// beside allOf instead of into it. The transformer also moves definitions, but Schema has no
+// field for it, so it never appears in a rendered Schema.
+func isBesideAllOfKeyword(key string) bool {
+	switch key {
+	case base.UnevaluatedPropertiesLabel, base.UnevaluatedItemsLabel, base.IdLabel, base.SchemaTypeLabel,
+		base.VocabularyLabel, base.AnchorLabel, base.DynamicAnchorLabel, base.DefsLabel:
+		return true
+	}
+	return false
 }
 
 func (sp *SchemaProxy) schemaIsTransformedSiblingView(s *Schema) bool {
@@ -838,7 +940,7 @@ func (sp *SchemaProxy) Render() ([]byte, error) {
 // MarshalYAML will create a ready to render YAML representation of the SchemaProxy object.
 func (sp *SchemaProxy) MarshalYAML() (interface{}, error) {
 	if sp.isParsedRefWithSiblings() {
-		return sp.referenceYAMLNodeForSchema(nil)
+		return sp.referenceYAMLNode()
 	}
 	if !sp.IsReference() {
 		s, err := sp.BuildSchema()
@@ -848,6 +950,9 @@ func (sp *SchemaProxy) MarshalYAML() (interface{}, error) {
 		if node, ok, renderErr := sp.renderTransformedRefWithSiblings(s); ok || renderErr != nil {
 			return node, renderErr
 		}
+		if node := s.booleanSchemaNode(); node != nil {
+			return node, nil
+		}
 		nb := high.NewNodeBuilder(s, s.low)
 		return nb.Render(), nil
 	}
@@ -855,10 +960,6 @@ func (sp *SchemaProxy) MarshalYAML() (interface{}, error) {
 		return sp.renderRefWithSiblings(), nil
 	}
 	return sp.GetReferenceNode(), nil
-}
-
-func (sp *SchemaProxy) referenceYAMLNode() (*yaml.Node, error) {
-	return sp.referenceYAMLNodeForSchema(nil)
 }
 
 func (sp *SchemaProxy) sourceIndex() *index.SpecIndex {
@@ -944,17 +1045,14 @@ func (sp *SchemaProxy) circularReferenceResult(ctx *InlineRenderContext, node *y
 	return node, errors.Join(refErr, circularErr)
 }
 
-func (sp *SchemaProxy) referenceYAMLNodeForSchema(s *Schema) (*yaml.Node, error) {
+func (sp *SchemaProxy) referenceYAMLNode() (*yaml.Node, error) {
 	if sp.isRefWithSiblings() {
 		return sp.renderRefWithSiblings(), nil
 	}
 	if sp.isParsedRefWithSiblings() {
-		if s == nil {
-			var err error
-			s, err = sp.BuildSchema()
-			if err != nil {
-				return nil, err
-			}
+		s, err := sp.BuildSchema()
+		if err != nil {
+			return nil, err
 		}
 		if node, ok, renderErr := sp.renderTransformedRefWithSiblings(s); ok || renderErr != nil {
 			return node, renderErr
@@ -1232,6 +1330,13 @@ func (sp *SchemaProxy) matchCircularReference(ctx *InlineRenderContext, idx *ind
 }
 
 func (sp *SchemaProxy) marshalParsedRefWithSiblingsInline(ctx *InlineRenderContext, currentSibling *Schema) (interface{}, error) {
+	if currentSibling != nil && !sp.schemaIsTransformedSiblingView(currentSibling) {
+		// any other schema, such as the allOf view, already holds its allOf, so it renders as it
+		// is, without ParentProxy so it does not come back here.
+		detached := *currentSibling
+		detached.ParentProxy = nil
+		return detached.MarshalYAMLInlineWithContext(ctx)
+	}
 	s, err := sp.buildSemanticAllOfSchemaView(currentSibling)
 	if err != nil {
 		return nil, err

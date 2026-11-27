@@ -630,8 +630,8 @@ func (i *RemoteFS) OpenWithContext(ctx context.Context, remoteURL string) (fs.Fi
 		i.releaseRemoteProcessingWaiter(processingWaiter, cacheKey, nil, waitErr)
 		i.logger.Error("unable to fetch remote document",
 			"file", remoteParsedURL.Path, "status", response.StatusCode, "resp", string(responseBytes))
-		return nil, fmt.Errorf("unable to fetch remote document '%s' (error %d)", remoteParsedURL.String(),
-			response.StatusCode)
+		return nil, fmt.Errorf("unable to fetch remote document '%s' (error %d %s)", remoteParsedURL.String(),
+			response.StatusCode, http.StatusText(response.StatusCode))
 	}
 
 	remoteFile := i.createRemoteFile(remoteParsedURL, fileExt, responseBytes, response.Header)
@@ -644,7 +644,7 @@ func (i *RemoteFS) OpenWithContext(ctx context.Context, remoteURL string) (fs.Fi
 	i.Files.Store(cacheKey, remoteFile)
 	i.releaseRemoteProcessingWaiter(processingWaiter, cacheKey, remoteFile, nil)
 
-	i.indexRemoteFile(ctx, remoteFile, copiedCfg, remoteParsedURL, remoteParsedURLOriginal)
+	i.indexRemoteFile(ctx, remoteFile, copiedCfg, remoteParsedURL)
 
 	return remoteFile, errors.Join(i.remoteErrors...)
 }
@@ -734,6 +734,13 @@ func (i *RemoteFS) acquireRemoteProcessingWaiter(cacheKey, legacyPath, remoteURL
 		return nil, file, err
 	}
 
+	// a completed fetch can publish and retire its waiter after our initial
+	// cache miss. Recheck under the new reservation to preserve its file/tree.
+	if cached := i.loadCachedRemoteFile(cacheKey, legacyPath); cached != nil {
+		i.releaseRemoteProcessingWaiter(processingWaiter, cacheKey, cached, nil)
+		return nil, cached, nil
+	}
+
 	return processingWaiter, nil, nil
 }
 
@@ -785,6 +792,8 @@ func (i *RemoteFS) createRemoteFile(remoteParsedURL *url.URL, fileExt FileExtens
 
 func (i *RemoteFS) createRemoteIndexConfig(remoteParsedURL, remoteParsedURLOriginal *url.URL) *SpecIndexConfig {
 	copiedCfg := *i.indexConfig
+	copiedCfg.Rolodex = i.rolodex
+	copiedCfg.SpecInfo = nil
 	newBase := fmt.Sprintf("%s://%s%s", remoteParsedURLOriginal.Scheme, remoteParsedURLOriginal.Host,
 		path.Dir(remoteParsedURL.Path))
 	newBaseURL, _ := url.Parse(newBase)
@@ -800,13 +809,9 @@ func (i *RemoteFS) indexRemoteFile(
 	ctx context.Context,
 	remoteFile *RemoteFile,
 	copiedCfg *SpecIndexConfig,
-	remoteParsedURL, remoteParsedURLOriginal *url.URL,
+	remoteParsedURL *url.URL,
 ) {
-	indexingCtx := AddIndexingFile(ctx, remoteParsedURL.Path)
-	indexingCtx = AddIndexingFile(indexingCtx, remoteParsedURL.String())
-	indexingCtx = AddIndexingFile(indexingCtx, remoteParsedURLOriginal.String())
-
-	idx, idxError := remoteFile.Index(indexingCtx, copiedCfg)
+	idx, idxError := remoteFile.Index(ctx, copiedCfg)
 	if idxError != nil && idx == nil {
 		i.appendRemoteError(idxError)
 		remoteFile.signalIndexingComplete()

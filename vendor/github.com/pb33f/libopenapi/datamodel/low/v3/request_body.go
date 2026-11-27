@@ -74,9 +74,8 @@ func (rb *RequestBody) Build(ctx context.Context, keyNode, root *yaml.Node, idx 
 	if ok, _, ref := utils.IsNodeRefValue(root); ok {
 		rb.SetReference(ref, root)
 	}
-	root = utils.NodeAlias(root)
+	root = utils.ResolveMergeNodes(root)
 	rb.RootNode = root
-	utils.CheckForMergeNodes(root)
 	rb.nodeStore = low.NodeLines{}
 	rb.Nodes = &rb.nodeStore
 	if len(root.Content) > 0 {

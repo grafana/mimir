@@ -76,7 +76,7 @@ func (r *Responses) GetExtensions() *orderedmap.Map[low.KeyReference[string], lo
 // Build will extract default response and all Response objects for each code
 func (r *Responses) Build(ctx context.Context, keyNode, root *yaml.Node, idx *index.SpecIndex) error {
 	r.KeyNode = keyNode
-	root = utils.NodeAlias(root)
+	root = utils.ResolveMergeNodes(root)
 	r.RootNode = root
 	r.reference = low.Reference{}
 	r.Reference = &r.reference
@@ -92,7 +92,6 @@ func (r *Responses) Build(ctx context.Context, keyNode, root *yaml.Node, idx *in
 	r.context = ctx
 
 	low.ExtractExtensionNodes(ctx, r.Extensions, r.Nodes)
-	utils.CheckForMergeNodes(root)
 	if utils.IsNodeMap(root) {
 		codes, err := low.ExtractMapNoLookup[*Response](ctx, root, idx)
 		if err != nil {

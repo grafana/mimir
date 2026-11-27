@@ -86,9 +86,8 @@ func (o *Operation) GetKeyNode() *yaml.Node {
 // Build will extract external docs, parameters, request body, responses, callbacks, security and servers.
 func (o *Operation) Build(ctx context.Context, keyNode, root *yaml.Node, idx *index.SpecIndex) error {
 	o.KeyNode = keyNode
-	root = utils.NodeAlias(root)
+	root = utils.ResolveMergeNodes(root)
 	o.RootNode = root
-	utils.CheckForMergeNodes(root)
 	o.reference = low.Reference{}
 	o.Reference = &o.reference
 	o.nodeStore = low.NodeLines{}

@@ -25,6 +25,7 @@ type Serializer struct {
 	explicitEnd           bool
 	flowSimpleCollections bool
 	quotePreference       QuoteStyle
+	formatDumpError       func(*DumpError) string
 	doneInit              bool
 }
 
@@ -60,6 +61,7 @@ func NewSerializer(w io.Writer, opts *Options) *Serializer {
 		explicitEnd:           opts.ExplicitEnd,
 		flowSimpleCollections: opts.FlowSimpleCollections,
 		quotePreference:       opts.QuotePreference,
+		formatDumpError:       opts.FormatDumpError,
 	}
 }
 
@@ -204,10 +206,19 @@ func (s *Serializer) node(node *Node, tail string) {
 		if !utf8.ValidString(value) {
 			stag := shortTag(tag)
 			if stag == binaryTag {
-				failDumpf(SerializerStage, "explicitly tagged !!binary data must be base64-encoded")
+				failDumpf(
+					SerializerStage,
+					s.formatDumpError,
+					"explicitly tagged !!binary data must be base64-encoded",
+				)
 			}
 			if stag != "" {
-				failDumpf(SerializerStage, "cannot marshal invalid UTF-8 data as %s", stag)
+				failDumpf(
+					SerializerStage,
+					s.formatDumpError,
+					"cannot marshal invalid UTF-8 data as %s",
+					stag,
+				)
 			}
 			// It can't be represented directly as YAML so use a binary tag
 			// and represent it as base64.
@@ -233,7 +244,12 @@ func (s *Serializer) node(node *Node, tail string) {
 
 		s.emitScalar(value, node.Anchor, tag, style, []byte(node.HeadComment), []byte(node.LineComment), []byte(node.FootComment), []byte(tail))
 	default:
-		failDumpf(SerializerStage, "cannot represent node with unknown kind %d", node.Kind)
+		failDumpf(
+			SerializerStage,
+			s.formatDumpError,
+			"cannot represent node with unknown kind %d",
+			node.Kind,
+		)
 	}
 }
 
@@ -249,7 +265,7 @@ func (s *Serializer) must(err error) {
 	}
 	var ee EmitterError
 	if errors.As(err, &ee) {
-		failDumpf(EmitterStage, "%s", ee.Message)
+		failDumpf(EmitterStage, s.formatDumpError, "%s", ee.Message)
 	}
 	var we WriterError
 	if errors.As(err, &we) {
@@ -259,13 +275,13 @@ func (s *Serializer) must(err error) {
 		if unwrapped := errors.Unwrap(we.Err); unwrapped != nil {
 			cause = unwrapped
 		}
-		failDump(WriterStage, cause)
+		failDump(WriterStage, cause, s.formatDumpError)
 	}
 	msg := err.Error()
 	if msg == "" {
 		msg = fmt.Sprintf("unknown problem generating YAML content with %T", err)
 	}
-	failDumpf(SerializerStage, "%s", msg)
+	failDumpf(SerializerStage, s.formatDumpError, "%s", msg)
 }
 
 // emitScalar emits a scalar event with the given value, anchor, tag, style,

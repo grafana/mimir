@@ -43,8 +43,7 @@ func (s *Schema) Build(ctx context.Context, root *yaml.Node, idx *index.SpecInde
 	if root == nil {
 		return fmt.Errorf("cannot build schema from a nil node")
 	}
-	root = utils.NodeAlias(root)
-	utils.CheckForMergeNodes(root)
+	root = utils.ResolveMergeNodes(root)
 
 	s.reference = low.Reference{}
 	s.Reference = &s.reference
@@ -69,9 +68,9 @@ func (s *Schema) Build(ctx context.Context, root *yaml.Node, idx *index.SpecInde
 
 	if !isTransformed {
 		if h, _, _ := utils.IsNodeRefValue(root); h {
-			ref, foundIdx, err, fctx := low.LocateRefNodeWithContext(ctx, root, idx)
+			ref, foundIdx, err, fctx := low.LocateRefEnd(ctx, root, idx, 0)
 			if ref != nil {
-				root = ref
+				root = utils.ResolveMergeNodes(ref)
 				if fctx != nil {
 					ctx = fctx
 					s.context = ctx
@@ -98,9 +97,20 @@ func (s *Schema) Build(ctx context.Context, root *yaml.Node, idx *index.SpecInde
 		}
 	}
 
+	if utils.IsNodeBoolValue(root) {
+		var value bool
+		if err := root.Decode(&value); err != nil {
+			return err
+		}
+		s.BooleanSchema = low.NodeReference[bool]{Value: value, ValueNode: utils.NodeAlias(root)}
+		return nil
+	}
+
 	if err := low.BuildModel(root, s); err != nil {
 		return err
 	}
+	// BooleanSchema describes the root shape, never an object keyword.
+	s.BooleanSchema = low.NodeReference[bool]{}
 
 	s.extractExtensions(root)
 
@@ -278,13 +288,14 @@ func (s *Schema) Build(ctx context.Context, root *yaml.Node, idx *index.SpecInde
 		if err := ValidateDiscriminatorMappingValueNodes(discNode); err != nil {
 			return err
 		}
+		effective := utils.ResolveMergeNodes(discNode)
 		var discriminator Discriminator
-		_ = low.BuildModel(discNode, &discriminator)
+		_ = low.BuildModel(effective, &discriminator)
 		discriminator.KeyNode = discLabel
-		discriminator.RootNode = discNode
-		discriminator.Nodes = low.ExtractNodes(ctx, discNode)
+		discriminator.RootNode = effective
+		discriminator.Nodes = low.ExtractNodes(ctx, effective)
 		s.Discriminator = low.NodeReference[*Discriminator]{Value: &discriminator, KeyNode: discLabel, ValueNode: discNode}
-		low.AppendRecursiveNodes(&discriminator, discNode)
+		low.AppendRecursiveNodes(&discriminator, effective)
 	}
 
 	_, extDocLabel, extDocNode := utils.FindKeyNodeFullTop(ExternalDocsLabel, root.Content)
@@ -292,7 +303,7 @@ func (s *Schema) Build(ctx context.Context, root *yaml.Node, idx *index.SpecInde
 		var exDoc ExternalDoc
 		_ = low.BuildModel(extDocNode, &exDoc)
 		_ = exDoc.Build(ctx, extDocLabel, extDocNode, idx)
-		exDoc.Nodes = low.ExtractNodes(ctx, extDocNode)
+		exDoc.Nodes = low.ExtractNodes(ctx, exDoc.RootNode)
 		s.ExternalDocs = low.NodeReference[*ExternalDoc]{Value: &exDoc, KeyNode: extDocLabel, ValueNode: extDocNode}
 	}
 
@@ -301,7 +312,7 @@ func (s *Schema) Build(ctx context.Context, root *yaml.Node, idx *index.SpecInde
 		var xml XML
 		_ = low.BuildModel(xmlNode, &xml)
 		_ = xml.Build(xmlNode, idx)
-		xml.Nodes = low.ExtractNodes(ctx, xmlNode)
+		xml.Nodes = low.ExtractNodes(ctx, xml.RootNode)
 		s.XML = low.NodeReference[*XML]{Value: &xml, KeyNode: xmlLabel, ValueNode: xmlNode}
 	}
 

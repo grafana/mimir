@@ -365,8 +365,8 @@ func extractSpecInfoInternal(spec []byte, bypass bool, skipJSON bool) (*SpecInfo
 		}
 		parsed = true
 
-		// so far there is only 2 as a major release of AsyncAPI
-		if majorVersion > 2 {
+		// Detect supported AsyncAPI versions; model construction belongs to libasyncapi.
+		if majorVersion > 3 {
 			if !bypass {
 				specInfo.Error = errors.New("spec is defined as asyncapi, but has a major version that is invalid")
 				return specInfo, specInfo.Error

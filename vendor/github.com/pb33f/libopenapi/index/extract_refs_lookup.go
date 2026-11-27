@@ -75,7 +75,7 @@ func (index *SpecIndex) ExtractComponentsFromRefs(ctx context.Context, refs []*R
 				_, path := utils.ConvertComponentIdIntoFriendlyPathSearch(ref.Definition)
 				index.errorLock.Lock()
 				index.refErrors = append(index.refErrors, &IndexingError{
-					Err:     fmt.Errorf("component `%s` does not exist in the specification", ref.Definition),
+					Err:     index.missingComponentError(ref),
 					Node:    ref.Node,
 					Path:    path,
 					KeyNode: ref.KeyNode,
@@ -178,7 +178,7 @@ func (index *SpecIndex) ExtractComponentsFromRefs(ctx context.Context, refs []*R
 			_, path := utils.ConvertComponentIdIntoFriendlyPathSearch(ref.Definition)
 			index.errorLock.Lock()
 			index.refErrors = append(index.refErrors, &IndexingError{
-				Err:     fmt.Errorf("component `%s` does not exist in the specification", ref.Definition),
+				Err:     index.missingComponentError(ref),
 				Node:    ref.Node,
 				Path:    path,
 				KeyNode: ref.KeyNode,
@@ -233,4 +233,16 @@ func (index *SpecIndex) locateRef(ctx context.Context, ref *Reference) *Referenc
 	}
 
 	return located
+}
+
+// missingComponentError explains why a reference could not be located. When the
+// document that holds the component could not be opened, that failure is the cause.
+func (index *SpecIndex) missingComponentError(ref *Reference) error {
+	document := strings.Split(ref.FullDefinition, "#/")[0]
+	if document != "" {
+		if cause, ok := index.refOpenErrors.Load(document); ok {
+			return fmt.Errorf("component `%s` cannot be resolved: %w", ref.Definition, cause.(error))
+		}
+	}
+	return fmt.Errorf("component `%s` does not exist in the specification", ref.Definition)
 }

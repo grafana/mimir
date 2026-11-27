@@ -205,8 +205,8 @@ func (p *PathItem) Build(ctx context.Context, keyNode, root *yaml.Node, idx *ind
 	}
 	root = utils.NodeAlias(root)
 	p.KeyNode = keyNode
+	root = utils.ResolveMergeNodes(root)
 	p.RootNode = root
-	utils.CheckForMergeNodes(root)
 	p.nodeStore = low.NodeLines{}
 	p.Nodes = &p.nodeStore
 	if len(root.Content) > 0 {
@@ -318,6 +318,11 @@ func (p *PathItem) Build(ctx context.Context, keyNode, root *yaml.Node, idx *ind
 		if err != nil {
 			return err
 		}
+		// an operation is a mapping. `get:`, `get: null` or any other non-mapping value
+		// holds no operation, so don't build an empty one for it.
+		if !utils.IsNodeMap(pathNode) {
+			continue
+		}
 		var op Operation
 		if err := low.BuildModel(pathNode, &op); err != nil {
 			return err
@@ -379,6 +384,9 @@ func (p *PathItem) Build(ctx context.Context, keyNode, root *yaml.Node, idx *ind
 					foundContext, opValueNode, opIsRef, opRefVal, opRefNode, err = resolveOperationReference(ctx, opValueNode, idx)
 					if err != nil {
 						return err
+					}
+					if !utils.IsNodeMap(opValueNode) {
+						continue
 					}
 					var addOp Operation
 					if err := low.BuildModel(opValueNode, &addOp); err != nil {

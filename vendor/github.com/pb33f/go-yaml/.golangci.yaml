@@ -13,6 +13,7 @@ linters:
   - modernize
   - nilnesserr
   - nolintlint
+  - perfsprint
   - staticcheck
   - thelper
   - unconvert
