@@ -166,7 +166,7 @@ func BenchmarkProcessProducerOperation(b *testing.B) {
 						// Drain outside the timer, so the queue depth stays bounded.
 						b.StopTimer()
 						for !q.queueBroker.isEmpty() {
-							_, _, _, err := q.queueBroker.dequeueItemForConsumer(NewConsumerWorkerDequeueRequest(conn, FirstTenant()))
+							_, _, _, err := q.queueBroker.dequeueItemForConsumer(NewConsumerWorkerDequeueRequest(conn, FirstTenant()), nil)
 							require.NoError(b, err)
 						}
 						b.StartTimer()
@@ -298,7 +298,7 @@ func openBenchReservations(b *testing.B, q *Queue, count, tenants, slots int, no
 // dequeueForBenchmark does the queue work of one dequeue in trySendNextItemForConsumer, without the
 // hand-off to a consumer.
 func dequeueForBenchmark(b *testing.B, q *Queue, conn *ConsumerWorkerConn) {
-	dequeued, _, _, err := q.queueBroker.dequeueItemForConsumer(NewConsumerWorkerDequeueRequest(conn, FirstTenant()))
+	dequeued, _, _, err := q.queueBroker.dequeueItemForConsumer(NewConsumerWorkerDequeueRequest(conn, FirstTenant()), nil)
 	if err != nil {
 		b.Fatal(err)
 	}

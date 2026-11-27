@@ -514,6 +514,15 @@ for the fifth `strong-read-consistency` node.
 Before a query-frontend enables `-query-frontend.strong-read-consistency-queue-enabled`,
 every querier must run with `-querier.strong-read-consistency-queue-enabled`.
 
+##### Strong Read Consistency Requests Can Hold Querier-Worker Connections
+
+A strong read consistency request waits in the ingester until the ingester consumes the requested offsets.
+A querier-worker connection falls through to the `strong-read-consistency` node when its prioritized node is empty,
+so these waits can hold most querier-worker connections.
+`-query-scheduler.strong-read-consistency-max-querier-workers-ratio` limits the dispatched requests
+of the `strong-read-consistency` node to that share of the connected querier-worker connections, and to at least 1.
+At the limit, the dequeue skips the node, and the querier-worker connection starts at the next node in the order.
+
 ##### Uneven Distribution Querier-Worker Connections Across Query Component Nodes
 
 When the total number of querier-worker connections is not evenly divisible by the number of query component nodes,

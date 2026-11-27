@@ -58,6 +58,9 @@ func newSchedulerQueue(
 		return nil, err
 	}
 
+	// Limit the querier-worker connections that run strong read consistency requests to a share of the connected ones.
+	q.LimitDimensionInflightConsumption(strongReadConsistencyQueueDimension, cfg.StrongReadConsistencyMaxQuerierWorkersRatio)
+
 	qcu, err := NewQueryComponentUtilization(querierInflightRequestsMetric)
 	if err != nil {
 		return nil, err
@@ -164,6 +167,14 @@ func (sq *schedulerQueue) CloseReservationsOfOwner(owner string) ([]queue.Closed
 // ReapReservations closes the open reservations that are idle for at least timeout.
 func (sq *schedulerQueue) ReapReservations(now time.Time, timeout time.Duration) ([]queue.ClosedReservation, error) {
 	return sq.queue.SubmitReapReservations(now, timeout)
+}
+
+// ReleaseInflight decrements the in-flight count that a dequeued strong read consistency request
+// holds. QuerierLoop calls it once for each dequeued request, after the request finished or was
+// skipped. It does nothing for other requests.
+func (sq *schedulerQueue) ReleaseInflight(req *SchedulerRequest) {
+	// The only error is ErrStopped. A stopped queue dispatches nothing, so its count does not matter.
+	_ = sq.queue.SubmitReleaseDimensionInflight(req.ExpectedQueryComponentName())
 }
 
 func (sq *schedulerQueue) AwaitRegisterQuerierWorkerConn(conn *queue.ConsumerWorkerConn) error {

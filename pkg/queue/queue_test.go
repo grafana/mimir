@@ -965,3 +965,252 @@ func TestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing.T) {
 	// And finally make sure it stops within the timeout
 	require.NoError(t, queue.AwaitTerminated(ctx))
 }
+
+func newDimensionInflightTestQueue(t *testing.T, dimension string, maxRatio float64) *Queue {
+	q, err := New(
+		log.NewNopLogger(),
+		100,
+		0,
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		nil,
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		nil,
+	)
+	require.NoError(t, err)
+	q.LimitDimensionInflightConsumption(dimension, maxRatio)
+	return q
+}
+
+func startDimensionInflightTestQueue(t *testing.T, q *Queue, workers int) []*ConsumerWorkerConn {
+	require.NoError(t, services.StartAndAwaitRunning(t.Context(), q))
+	t.Cleanup(func() {
+		// The queue does not stop while it holds items, so a failed test would block here without a timeout.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, q))
+	})
+
+	conns := make([]*ConsumerWorkerConn, 0, workers)
+	for range workers {
+		conn := NewUnregisteredConsumerWorkerConn(t.Context(), "consumer-1")
+		require.NoError(t, q.AwaitRegisterConsumerWorkerConn(conn))
+		conns = append(conns, conn)
+	}
+	return conns
+}
+
+// awaitItemAsync starts a dequeue for conn and returns a channel that gets the dequeued item.
+func awaitItemAsync(t *testing.T, q *Queue, conn *ConsumerWorkerConn) <-chan Item {
+	items := make(chan Item, 1)
+	go func() {
+		item, _, err := q.AwaitItemForConsumer(NewConsumerWorkerDequeueRequest(conn, FirstTenant()))
+		if err == nil {
+			items <- item
+		}
+	}()
+	return items
+}
+
+func requireNoItem(t *testing.T, items <-chan Item) {
+	select {
+	case item := <-items:
+		require.Fail(t, "expected the dequeue to wait", "got %v", item)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func requireItem(t *testing.T, expected Item, items <-chan Item) {
+	select {
+	case item := <-items:
+		require.Equal(t, expected, item)
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "gave up waiting for the dequeue", "expected %v", expected)
+	}
+}
+
+func TestQueue_LimitDimensionInflightConsumption(t *testing.T) {
+	const tenantID = "tenant-1"
+	q := newDimensionInflightTestQueue(t, "strong", 0.5)
+	// 4 consumer-workers with a ratio of 0.5 give a limit of 2.
+	conns := startDimensionInflightTestQueue(t, q, 4)
+
+	for _, item := range []string{"strong-1", "strong-2", "strong-3"} {
+		require.NoError(t, q.SubmitItemToEnqueue(tenantID, item, "strong", 0, nil))
+	}
+
+	requireItem(t, "strong-1", awaitItemAsync(t, q, conns[0]))
+	requireItem(t, "strong-2", awaitItemAsync(t, q, conns[1]))
+
+	// The limit is reached, so the dequeue skips the only node.
+	waiting := awaitItemAsync(t, q, conns[2])
+	requireNoItem(t, waiting)
+
+	// Items of other dimensions still dequeue while the limit is reached.
+	require.NoError(t, q.SubmitItemToEnqueue(tenantID, "ingester-1", "ingester", 0, nil))
+	requireItem(t, "ingester-1", waiting)
+
+	waiting = awaitItemAsync(t, q, conns[3])
+	requireNoItem(t, waiting)
+
+	// A release of another dimension does nothing.
+	require.NoError(t, q.SubmitReleaseDimensionInflight("ingester"))
+	requireNoItem(t, waiting)
+
+	// A release of the limited dimension lets the waiting dequeue take the item.
+	require.NoError(t, q.SubmitReleaseDimensionInflight("strong"))
+	requireItem(t, "strong-3", waiting)
+}
+
+func TestQueue_LimitDimensionInflightConsumption_NewConnectionThatRaisesTheLimitWakesWaitingDequeues(t *testing.T) {
+	const tenantID = "tenant-1"
+	q := newDimensionInflightTestQueue(t, "strong", 0.5)
+	// 2 consumer-workers with a ratio of 0.5 give a limit of 1.
+	conns := startDimensionInflightTestQueue(t, q, 2)
+
+	require.NoError(t, q.SubmitItemToEnqueue(tenantID, "strong-1", "strong", 0, nil))
+	require.NoError(t, q.SubmitItemToEnqueue(tenantID, "strong-2", "strong", 0, nil))
+
+	requireItem(t, "strong-1", awaitItemAsync(t, q, conns[0]))
+	waiting := awaitItemAsync(t, q, conns[1])
+	requireNoItem(t, waiting)
+
+	// 2 more connections of the same consumer raise the limit to 2 without a resharding. They do not
+	// dequeue, so only a retry of the waiting dequeue can take the item.
+	for range 2 {
+		require.NoError(t, q.AwaitRegisterConsumerWorkerConn(NewUnregisteredConsumerWorkerConn(t.Context(), "consumer-1")))
+	}
+	requireItem(t, "strong-2", waiting)
+}
+
+func TestQueue_LimitDimensionInflightConsumption_AtLeastOne(t *testing.T) {
+	const tenantID = "tenant-1"
+	q := newDimensionInflightTestQueue(t, "strong", 0.1)
+	// 4 consumer-workers with a ratio of 0.1 give 0, and the floor makes the limit 1.
+	conns := startDimensionInflightTestQueue(t, q, 4)
+
+	require.NoError(t, q.SubmitItemToEnqueue(tenantID, "strong-1", "strong", 0, nil))
+	require.NoError(t, q.SubmitItemToEnqueue(tenantID, "strong-2", "strong", 0, nil))
+
+	requireItem(t, "strong-1", awaitItemAsync(t, q, conns[0]))
+	waiting := awaitItemAsync(t, q, conns[1])
+	requireNoItem(t, waiting)
+
+	require.NoError(t, q.SubmitReleaseDimensionInflight("strong"))
+	requireItem(t, "strong-2", waiting)
+}
+
+func TestQueue_LimitDimensionInflightConsumption_Disabled(t *testing.T) {
+	const tenantID = "tenant-1"
+	q := newDimensionInflightTestQueue(t, "strong", 0)
+	conns := startDimensionInflightTestQueue(t, q, 2)
+
+	require.NoError(t, q.SubmitItemToEnqueue(tenantID, "strong-1", "strong", 0, nil))
+	require.NoError(t, q.SubmitItemToEnqueue(tenantID, "strong-2", "strong", 0, nil))
+
+	requireItem(t, "strong-1", awaitItemAsync(t, q, conns[0]))
+	requireItem(t, "strong-2", awaitItemAsync(t, q, conns[1]))
+}
+
+func TestQueue_LimitDimensionInflightConsumption_FailedSendDoesNotCount(t *testing.T) {
+	const consumerID = "consumer-1"
+	q := newDimensionInflightTestQueue(t, "strong", 1)
+
+	// Bypass the dispatcher loop, as TestQueue_tryDispatchRequestToConsumer_ShouldReEnqueueAfterFailedSendToConsumer does.
+	q.queueBroker.addConsumerWorkerConn(NewUnregisteredConsumerWorkerConn(t.Context(), consumerID))
+	q.connectedConsumerWorkers.Inc()
+	require.NoError(t, q.queueBroker.enqueueItemBack(&tenantItem{tenantID: "tenant-1", queueDimension: "strong", item: "strong-1"}, 0))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	failing := &ConsumerWorkerDequeueRequest{
+		ConsumerWorkerConn: &ConsumerWorkerConn{ctx: ctx, ConsumerID: consumerID},
+		lastTenantIndex:    FirstTenant(),
+		recvChan:           make(chan consumerWorkerDequeueResponse),
+	}
+	require.True(t, q.trySendNextItemForConsumer(failing))
+	require.Equal(t, 0, q.limitedDimensions["strong"].inflight)
+
+	receiving := &ConsumerWorkerDequeueRequest{
+		ConsumerWorkerConn: &ConsumerWorkerConn{ctx: t.Context(), ConsumerID: consumerID},
+		lastTenantIndex:    FirstTenant(),
+		recvChan:           make(chan consumerWorkerDequeueResponse),
+	}
+	received := make(chan Item, 1)
+	go func() { received <- (<-receiving.recvChan).item }()
+	require.True(t, q.trySendNextItemForConsumer(receiving))
+	require.Equal(t, "strong-1", <-received)
+	require.Equal(t, 1, q.limitedDimensions["strong"].inflight)
+}
+
+func TestQueue_LimitDimensionInflightConsumption_EnqueueAtTheLimitWakesAReshardedTenant(t *testing.T) {
+	const tenantID = "tenant-1"
+	q := newDimensionInflightTestQueue(t, "strong", 0.1)
+	startDimensionInflightTestQueue(t, q, 0)
+	connA := NewUnregisteredConsumerWorkerConn(t.Context(), "consumer-a")
+	require.NoError(t, q.AwaitRegisterConsumerWorkerConn(connA))
+	connB := NewUnregisteredConsumerWorkerConn(t.Context(), "consumer-b")
+	require.NoError(t, q.AwaitRegisterConsumerWorkerConn(connB))
+
+	// 2 consumer-workers with a ratio of 0.1 give a limit of 1, so strong-1 puts "strong" at its limit.
+	require.NoError(t, q.SubmitItemToEnqueue("tenant-strong", "strong-1", "strong", 0, nil))
+	requireItem(t, "strong-1", awaitItemAsync(t, q, connA))
+
+	// A maxConsumers of 1 gives the tenant 1 of the 2 consumers. The other consumer waits.
+	require.NoError(t, q.SubmitItemToEnqueue(tenantID, "ingester-1", "ingester", 1, nil))
+	consumers := q.queueBroker.tenantConsumerAssignments.queuingAlgorithm.ConsumersForTenant(tenantID)
+	require.Len(t, consumers, 1)
+	waiting := connA
+	if _, ok := consumers[tree.ConsumerID(connA.ConsumerID)]; ok {
+		waiting = connB
+	}
+	items := awaitItemAsync(t, q, waiting)
+	requireNoItem(t, items)
+
+	// The strong enqueue changes the maxConsumers of the tenant to 0, which gives the tenant every consumer.
+	// The enqueue must wake the waiting dequeue, although "strong" is at its limit.
+	require.NoError(t, q.SubmitItemToEnqueue(tenantID, "strong-2", "strong", 0, nil))
+	requireItem(t, "ingester-1", items)
+
+	// Empty the queue, so that it stops.
+	require.NoError(t, q.SubmitReleaseDimensionInflight("strong"))
+	requireItem(t, "strong-2", awaitItemAsync(t, q, connA))
+}
+
+func TestQueue_LimitDimensionInflightConsumption_ZeroRatioRemovesTheLimit(t *testing.T) {
+	q := newDimensionInflightTestQueue(t, "strong", 0.5)
+	require.Contains(t, q.limitedDimensions, "strong")
+	q.LimitDimensionInflightConsumption("strong", 0)
+	require.NotContains(t, q.limitedDimensions, "strong")
+}
+
+func TestQueue_LimitDimensionInflightConsumption_TwoDimensions(t *testing.T) {
+	const tenantID = "tenant-1"
+	q := newDimensionInflightTestQueue(t, "strong", 0.5)
+	q.LimitDimensionInflightConsumption("slow", 0.5)
+	// 2 consumer-workers with a ratio of 0.5 give a limit of 1 for each dimension.
+	conns := startDimensionInflightTestQueue(t, q, 2)
+
+	require.NoError(t, q.SubmitItemToEnqueue(tenantID, "strong-1", "strong", 0, nil))
+	requireItem(t, "strong-1", awaitItemAsync(t, q, conns[0]))
+
+	for _, item := range []string{"slow-1", "slow-2"} {
+		require.NoError(t, q.SubmitItemToEnqueue(tenantID, item, "slow", 0, nil))
+	}
+	require.NoError(t, q.SubmitItemToEnqueue(tenantID, "strong-2", "strong", 0, nil))
+	requireItem(t, "slow-1", awaitItemAsync(t, q, conns[1]))
+
+	// Both dimensions are at their limit, so the dequeue skips every node.
+	waiting := awaitItemAsync(t, q, conns[0])
+	requireNoItem(t, waiting)
+
+	// A release of "strong" ends only the skip of "strong".
+	require.NoError(t, q.SubmitReleaseDimensionInflight("strong"))
+	requireItem(t, "strong-2", waiting)
+
+	waiting = awaitItemAsync(t, q, conns[1])
+	requireNoItem(t, waiting)
+
+	require.NoError(t, q.SubmitReleaseDimensionInflight("slow"))
+	requireItem(t, "slow-2", waiting)
+}

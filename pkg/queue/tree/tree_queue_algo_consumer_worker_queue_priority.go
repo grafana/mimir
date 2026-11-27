@@ -23,6 +23,9 @@ import (
 // queue starvation: 4, or 5 when the strong-read-consistency node can exist.
 // The minimum is enforced in the consumers by overriding -querier.max-concurrent if necessary.
 //
+// DequeueArgs.SkipNodes names the nodes that the dequeue must not select, for example nodes at their in-flight limit.
+// A worker prioritized to a skipped node starts at the next node in the nodeOrder that is not skipped.
+//
 // MultiAlgorithmTreeQueue always deletes empty leaf nodes and nodes with no children after a dequeue operation,
 // and only recreates the queue nodes when a new query request is enqueued which requires that path through the tree.
 // ConsumerWorkerQueuePriorityAlgo responds by removing or re-adding the query component nodes to the nodeOrder.
@@ -61,6 +64,7 @@ import (
 type ConsumerWorkerQueuePriorityAlgo struct {
 	currentConsumerWorker int
 	currentNodeOrderIndex int
+	skipNodes             []string
 	nodeOrder             []string
 	nodeCounts            map[string]int
 }
@@ -73,6 +77,7 @@ func NewConsumerWorkerQueuePriorityAlgo() *ConsumerWorkerQueuePriorityAlgo {
 
 func (qa *ConsumerWorkerQueuePriorityAlgo) setup(dequeueArgs *DequeueArgs) {
 	qa.currentConsumerWorker = dequeueArgs.WorkerID
+	qa.skipNodes = dequeueArgs.SkipNodes
 	if len(qa.nodeOrder) == 0 {
 		qa.currentNodeOrderIndex = 0
 	} else {
@@ -116,6 +121,14 @@ func (qa *ConsumerWorkerQueuePriorityAlgo) addChildNode(parent, child *Node) {
 }
 
 func (qa *ConsumerWorkerQueuePriorityAlgo) dequeueSelectNode(node *Node) *Node {
+	// Move the index, and not only the selection: dequeueUpdateState expects that an empty
+	// child it deletes is the node at currentNodeOrderIndex.
+	for skipped := 0; slices.Contains(qa.skipNodes, qa.nodeOrder[qa.currentNodeOrderIndex]); skipped++ {
+		if skipped+1 == len(qa.nodeOrder) {
+			return nil
+		}
+		qa.wrapCurrentNodeOrderIndex(true)
+	}
 	currentNodeName := qa.nodeOrder[qa.currentNodeOrderIndex]
 	if childNode, ok := node.queueMap[currentNodeName]; ok {
 		return childNode

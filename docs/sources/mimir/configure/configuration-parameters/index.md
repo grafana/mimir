@@ -2500,6 +2500,8 @@ The `frontend` block configures the query-frontend.
 # (experimental) Send requests with strong read consistency to their own
 # query-scheduler queue, unless they query only store-gateways. Enable it only
 # after every querier runs with -querier.strong-read-consistency-queue-enabled.
+# -query-scheduler.strong-read-consistency-max-querier-workers-ratio limits the
+# querier-workers that run these requests.
 # CLI flag: -query-frontend.strong-read-consistency-queue-enabled
 [strong_read_consistency_queue_enabled: <boolean> | default = false]
 
@@ -2711,6 +2713,15 @@ The `query_scheduler` block configures the query-scheduler.
 # when -query-scheduler.queue-reservation-enabled is true.
 # CLI flag: -query-scheduler.queue-reservation-timeout
 [queue_reservation_timeout: <duration> | default = 5s]
+
+# (experimental) Maximum share of the connected querier-worker connections that
+# can run strong read consistency requests at the same time, per
+# query-scheduler. Only requests from a query-frontend with
+# -query-frontend.strong-read-consistency-queue-enabled count. At the limit,
+# querier-workers take requests from the other queues. The limit is at least 1
+# querier-worker connection. 0 disables the limit.
+# CLI flag: -query-scheduler.strong-read-consistency-max-querier-workers-ratio
+[strong_read_consistency_max_querier_workers_ratio: <float> | default = 0]
 
 # This configures the gRPC client used to report errors back to the
 # query-frontend.

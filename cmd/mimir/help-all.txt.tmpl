@@ -3078,7 +3078,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.split-queries-by-interval duration
     	Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it. (default 24h0m0s)
   -query-frontend.strong-read-consistency-queue-enabled
-    	[experimental] Send requests with strong read consistency to their own query-scheduler queue, unless they query only store-gateways. Enable it only after every querier runs with -querier.strong-read-consistency-queue-enabled.
+    	[experimental] Send requests with strong read consistency to their own query-scheduler queue, unless they query only store-gateways. Enable it only after every querier runs with -querier.strong-read-consistency-queue-enabled. -query-scheduler.strong-read-consistency-max-querier-workers-ratio limits the querier-workers that run these requests.
   -query-frontend.subquery-spin-off-enabled
     	[experimental] Enable spinning off subqueries from instant queries as range queries to optimize their performance.
   -query-frontend.subquery-spin-off-simple-subqueries
@@ -3225,6 +3225,8 @@ Usage of ./cmd/mimir/mimir:
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -query-scheduler.service-discovery-mode string
     	[experimental] Service discovery mode that query-frontends and queriers use to find query-scheduler instances. When query-scheduler ring-based service discovery is enabled, this option needs be set on query-schedulers, query-frontends and queriers. Supported values are: dns, ring. (default "dns")
+  -query-scheduler.strong-read-consistency-max-querier-workers-ratio float
+    	[experimental] Maximum share of the connected querier-worker connections that can run strong read consistency requests at the same time, per query-scheduler. Only requests from a query-frontend with -query-frontend.strong-read-consistency-queue-enabled count. At the limit, querier-workers take requests from the other queues. The limit is at least 1 querier-worker connection. 0 disables the limit.
   -ruler-storage.azure.account-key string
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -ruler-storage.azure.account-name string
