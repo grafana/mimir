@@ -245,10 +245,6 @@ func (u *userTSDB) Compact() error {
 	return u.engine().Compact(context.Background())
 }
 
-func (u *userTSDB) StartTime() (int64, error) {
-	return u.prometheusDB().StartTime()
-}
-
 // changeState atomically compare-and-swap the current state, and returns state after the operation.
 func (u *userTSDB) changeState(from, to tsdbState, updates ...func()) (bool, tsdbState) {
 	u.stateMtx.Lock()
