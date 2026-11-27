@@ -51,8 +51,9 @@ local dblib = import 'grafana-databases-lib/main.libsonnet';
     + dblib.autoscaling.withConfigMixin({
       hpaPrefix: $._config.autoscaling_hpa_prefix,
       // Mimir's ScaledObjects name their triggers (e.g. "..._cpu_hpa_..."), which reads better
-      // than the trigger metric (s0-prometheus, ...).
-      triggerLegend: '{{ scaler }}',
+      // than the trigger metric (s0-prometheus, ...). The ScaledObject tells apart the zones of a
+      // multi-zone component, whose HPAs all match its hpa_name and have the same triggers.
+      triggerLegend: '{{ scaledObject }} {{ scaler }}',
       // Mimir's dashboards start time series at 0 (see timeseriesPanel in dashboard-utils.libsonnet).
       axisMin: 0,
       components: {
