@@ -1044,6 +1044,11 @@ How to **fix** it:
 
 This alert fires when the bucket index, for a given tenant, is not updated since a long time. The bucket index is expected to be periodically updated by the compactor and is used by queriers and store-gateways to get an almost-updated view over the bucket store.
 
+The alert has two severities:
+
+- `warning`: the bucket index hasn't been updated for more than 35 minutes, which is two missed updates with the default `-compactor.cleanup-interval=15m`. This often recovers on the next cleanup run. A single failed object storage request fails the whole bucket index update for the tenant until the next run. A compactor restart or scaling event moves tenants to other compactors, which only update them on their next run.
+- `critical`: the bucket index hasn't been updated for more than 45 minutes, which is three missed updates. Queriers start failing queries for the tenant once the bucket index is older than `-blocks-storage.bucket-store.bucket-index.max-stale-period` (1 hour by default).
+
 How to **investigate**:
 
 - Ensure the compactor is successfully running
