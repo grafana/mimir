@@ -150,7 +150,11 @@ func (e *prometheusEngine) ExemplarQuerier(ctx context.Context) (storage.Exempla
 func (e *prometheusEngine) Ingest(ctx *ingestContext, timeseries []mimirpb.PreallocTimeseries) error {
 	i, userID, startAppend, stats := ctx.i, ctx.userID, ctx.startAppend, ctx.stats
 	spanlog := spanlogger.FromContext(ctx, i.logger)
-	app := e.db.AppenderV2(ctx).(extendedAppender)
+	// Require commit stats here so an appender wrapper cannot silently drop duplicate accounting.
+	app := e.db.AppenderV2(ctx).(interface {
+		extendedAppender
+		storage.CommitStatsReporter
+	})
 	spanlog.DebugLog("event", "got appender for timeseries", "series", len(timeseries))
 
 	minAppendTime, minAppendTimeAvailable := e.db.Head().AppendableMinValidTime()
@@ -168,6 +172,7 @@ func (e *prometheusEngine) Ingest(ctx *ingestContext, timeseries []mimirpb.Preal
 		minAppendTimeAvailable,
 		minAppendTime,
 		ctx.isOTLP,
+		nil,
 	); pushSamplesToAppenderErr != nil {
 		if err := app.Rollback(); err != nil {
 			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)

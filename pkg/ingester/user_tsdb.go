@@ -152,6 +152,8 @@ type userTSDB struct {
 
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 
+	seriesDeleted atomic.Bool
+
 	pendingNonOwnedRefsMtx sync.Mutex
 	// pendingNonOwnedRefs maps each ref that the last computeOwnedSeries call(s) found to be
 	// non-owned to the timestamp at which it was first observed as non-owned. The compaction
@@ -419,8 +421,10 @@ func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) 
 		u.seriesInMetric.decreaseSeriesForMetric(metricName)
 	}
 
-	// We cannot update ownedSeriesCount here, as we don't know whether deleted series were owned by this ingester or not.
-	// Instead, we recompute owned series after each compaction.
+	// Idle eviction can remove series without advancing the head's minimum timestamp.
+	if len(metrics) > 0 && u.nativeActive != nil {
+		u.seriesDeleted.Store(true)
+	}
 
 	u.activeSeries.PostDeletion(metrics)
 }
@@ -510,7 +514,12 @@ func (u *userTSDB) ownedSeriesState() ownedSeriesState {
 }
 
 func (u *userTSDB) getAndClearReasonForRecomputeOwnedSeries() string {
-	return u.requiresOwnedSeriesUpdate.Swap("")
+	deleted := u.seriesDeleted.Swap(false)
+	reason := u.requiresOwnedSeriesUpdate.Swap("")
+	if reason == "" && deleted {
+		return recomputeOwnedSeriesReasonCompaction
+	}
+	return reason
 }
 
 func (u *userTSDB) triggerRecomputeOwnedSeries(reason string) {

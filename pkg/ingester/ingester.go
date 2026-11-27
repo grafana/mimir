@@ -352,6 +352,9 @@ type Ingester struct {
 	statisticsService     services.Service
 	computeWorkerPool     *workerpool.Pool
 
+	// Snapshots the MimirEngine's heads while ingesting; nil unless it runs.
+	mimirengineSnapshotService services.Service
+
 	// Index lookup planning
 	lookupPlanMetrics lookupplan.Metrics
 
@@ -486,6 +489,11 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 
 // New returns an Ingester that uses Mimir block storage.
 func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+	if cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineMimirEngine {
+		// Index lookup planning steers the Prometheus TSDB's postings lookups; the MimirEngine
+		// plans its own, and collecting the planner's statistics would only walk its index.
+		cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled = false
+	}
 	i, err := newIngester(cfg, limits, ingestersRing, registerer, logger)
 	if err != nil {
 		return nil, err
@@ -600,7 +608,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		profilingIngester := NewIngesterProfilingWrapper(i)
 
 		// Derive delivery mode before opening any tenant databases.
-		_, useDirectIngest := any(newTenantEngine()).(directIngestEngine)
+		useDirectIngest := cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineMimirEngine
 
 		// The offset file is always stored in the TSDB directory alongside the ingester's data.
 		offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset.json")
@@ -671,6 +679,14 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.compactionService = services.NewBasicService(nil, i.compactionServiceRunning, nil).WithName("ingester-compaction")
 	i.subservicesWatcher.WatchService(i.compactionService)
 
+	if cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineMimirEngine {
+		observeMimirEngineLocks(i.metrics)
+	}
+	if cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineMimirEngine && cfg.BlocksStorageConfig.TSDB.MimirEngineSnapshotInterval > 0 {
+		i.mimirengineSnapshotService = services.NewBasicService(nil, i.mimirengineSnapshotsRunning, nil).WithName("ingester-mimirengine-snapshots")
+		i.subservicesWatcher.WatchService(i.mimirengineSnapshotService)
+	}
+
 	// Init shipping service, responsible to periodically ship TSDB blocks to long-term storage.
 	if cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
 		i.shippingService = services.NewBasicService(nil, i.shipBlocksLoop, nil).WithName("ingester-shipping")
@@ -738,6 +754,17 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 			defer shutdownCancel()
 
 			_ = services.StopAndAwaitTerminated(shutdownCtx, i.lifecycler)
+
+			// A service that fails or stops while starting never runs stopping(), which is what
+			// closes the TSDBs. The MimirEngine keeps its head only through the snapshot it
+			// writes on close, so an ingester stopped while replaying Kafka would otherwise replay
+			// from the retention period again at its next start.
+			if i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineMimirEngine {
+				if i.ingestReader != nil {
+					_ = services.StopAndAwaitTerminated(shutdownCtx, i.ingestReader)
+				}
+				i.closeAllTSDB()
+			}
 		}
 	}()
 
@@ -783,7 +810,12 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	// Start the following services before starting the ingest storage reader, in order to have them
 	// running while replaying the partition (if ingest storage is enabled).
-	i.subservicesForPartitionReplay, err = createManagerThenStartAndAwaitHealthy(ctx, i.compactionService, i.metricsUpdaterService, i.metadataPurgerService)
+	replayServices := []services.Service{i.compactionService, i.metricsUpdaterService, i.metadataPurgerService}
+	// Snapshots during the replay too: an ingester that crashes while replaying then resumes from them.
+	if i.mimirengineSnapshotService != nil {
+		replayServices = append(replayServices, i.mimirengineSnapshotService)
+	}
+	i.subservicesForPartitionReplay, err = createManagerThenStartAndAwaitHealthy(ctx, replayServices...)
 	if err != nil {
 		return errors.Wrap(err, "failed to start ingester subservices before partition reader")
 	}
@@ -794,6 +826,13 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	if i.ingestReader != nil {
 		if err := services.StartAndAwaitRunning(ctx, i.ingestReader); err != nil {
 			return errors.Wrap(err, "failed to start partition reader")
+		}
+		if i.mimirengineSnapshotService != nil {
+			// A clean-shutdown snapshot is consumed during restore. Write a reusable checkpoint
+			// before becoming active so a crash can recover even before the first periodic round.
+			if err := i.snapshotMimirEngineHeads(ctx, 0); err != nil {
+				return errors.Wrap(err, "failed to checkpoint MimirEngine after Kafka replay")
+			}
 		}
 	}
 

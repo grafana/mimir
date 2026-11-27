@@ -107,7 +107,7 @@ func (i *Ingester) getOrCreateTSDB(userID string) (*userTSDB, error) {
 	}
 
 	// Create the database and a shipper for a user
-	db, err := i.createTSDB(userID, 0)
+	db, err := i.createTSDB(userID, 0, true)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +120,7 @@ func (i *Ingester) getOrCreateTSDB(userID string) (*userTSDB, error) {
 }
 
 // createTSDB creates a TSDB for a given userID, and returns the created db.
-func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSDB, error) {
+func (i *Ingester) createTSDB(userID string, walReplayConcurrency int, checkpointOnCreate bool) (*userTSDB, error) {
 	tsdbPromReg := prometheus.NewRegistry()
 	udir := i.cfg.BlocksStorageConfig.TSDB.BlocksDir(userID)
 	userLogger := util_log.WithUserID(userID, i.logger)
@@ -170,13 +170,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
-	engine := newTenantEngine()
-	engine.blockDuration = blockRanges[0]
-	engine.logger = userLogger
-	engine.blockMinRetention = i.cfg.BlocksStorageConfig.TSDB.Retention
-
-	// Create a new user database
-	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
+	opts := &tsdb.Options{
 		RetentionDuration:                    i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
 		MinBlockDuration:                     blockRanges[0],
 		MaxBlockDuration:                     blockRanges[len(blockRanges)-1],
@@ -188,7 +182,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		WALSegmentSize:                       i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
 		WALReplayConcurrency:                 walReplayConcurrency,
 		SeriesLifecycleCallback:              userDB,
-		BlocksToDelete:                       engine.blocksToDelete,
 		EnableExemplarStorage:                true, // enable for everyone so we can raise the limit later
 		MaxExemplars:                         int64(i.limiter.maxExemplarsPerUser(userID)),
 		SeriesHashCache:                      i.seriesHashCache,
@@ -215,11 +208,37 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			i.metrics.queriedBlocks.WithLabelValues(blockGeneration(b)).Inc()
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
-	}, nil)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
 	}
-	db.DisableCompactions() // we will compact on our own schedule
+	var engine tenantEngine
+	var promEngine *prometheusEngine
+	if i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineMimirEngine {
+		checkpoints := i.cfg.BlocksStorageConfig.TSDB.MimirEngineSnapshotInterval > 0
+		var initialCheckpoint func() ([]byte, error)
+		// Only a newly created tenant may use current offsets. At startup the offsets
+		// may be ahead of the recovered tenants.
+		if checkpoints && checkpointOnCreate {
+			initialCheckpoint = i.committedKafkaOffsets
+		}
+		var err error
+		engine, err = openMimirEngine(udir, userID, tsdbPromReg, opts, mimirengineShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)), checkpoints, initialCheckpoint, i.cfg.ActiveSeriesMetrics.IdleTimeout)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to open MimirEngine: %s", udir)
+		}
+	} else {
+		promEngine = &prometheusEngine{
+			blockDuration:     blockRanges[0],
+			logger:            userLogger,
+			blockMinRetention: i.cfg.BlocksStorageConfig.TSDB.Retention,
+		}
+		opts.BlocksToDelete = promEngine.blocksToDelete
+		db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, opts, nil)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
+		}
+		db.DisableCompactions() // we will compact on our own schedule
+		promEngine.db = db
+		engine = promEngine
+	}
 
 	// Run compaction before using this TSDB. If there is data in head that needs to be put into blocks,
 	// this will actually create the blocks. If there is no data (empty TSDB), this is a no-op, although
@@ -227,9 +246,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	level.Info(userLogger).Log("msg", "Running compaction after WAL replay")
 	// Note that we want to let TSDB creation finish without being interrupted by eventual context cancellation,
 	// so passing an independent context here
-	engine.db = db
-	err = engine.Compact(context.Background())
-	if err != nil {
+	if err := engine.Compact(context.Background()); err != nil {
 		return nil, errors.Wrapf(err, "failed to compact TSDB: %s", udir)
 	}
 	// The WAL replay and the compaction can remove series. No label churn record exists before them,
@@ -247,8 +264,8 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	userDB.limiter = i.limiter
 
 	// Set a reference the head's postings for matchers cache, so that ingesters can invalidate entries
-	if i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache && i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheInvalidation {
-		userDB.postingsCache = db.Head().PostingsForMatchersCache()
+	if promEngine != nil && i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache && i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheInvalidation {
+		userDB.postingsCache = promEngine.db.Head().PostingsForMatchersCache()
 	}
 
 	// If head is empty (eg. new TSDB), don't close it right after.
@@ -268,8 +285,8 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	userDB.setLastUpdate(lastUpdateTime)
 
 	// Create a new shipper for this database
-	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
-		engine.shipper = newShipper(
+	if promEngine != nil && i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
+		promEngine.shipper = newShipper(
 			userLogger,
 			i.limits,
 			userID,
@@ -280,7 +297,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		)
 
 		// Initialise the shipper blocks cache.
-		if err := engine.updateCachedShippedBlocks(); err != nil {
+		if err := promEngine.updateCachedShippedBlocks(); err != nil {
 			level.Error(userLogger).Log("msg", "failed to update cached shipped blocks after shipper initialisation", "err", err)
 		}
 	}
@@ -296,7 +313,9 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	// tsdb.Open starts a goroutine that can call blocksToDelete. Enable it only after
 	// the engine and its shipper have been initialized.
-	engine.blockDeletionReady.Store(true)
+	if promEngine != nil {
+		promEngine.blockDeletionReady.Store(true)
+	}
 
 	return userDB, nil
 }
@@ -403,6 +422,9 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	queue := make(chan string)
 	group, groupCtx := errgroup.WithContext(ctx)
 
+	// Startup records recovered offsets under the same lock used to register each tenant.
+	var unclean []string
+	var checkpoints [][]byte
 	userIDs, err := i.findUserIDsWithTSDBOnFilesystem()
 	if err != nil {
 		level.Error(i.logger).Log("msg", "error while finding existing TSDBs", "err", err)
@@ -419,7 +441,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	for n := 0; n < tsdbOpenConcurrency; n++ {
 		group.Go(func() error {
 			for userID := range queue {
-				db, err := i.createTSDB(userID, tsdbWALReplayConcurrency)
+				db, err := i.createTSDB(userID, tsdbWALReplayConcurrency, false)
 				if err != nil {
 					level.Error(i.logger).Log("msg", "unable to open TSDB", "err", err, "user", userID)
 					return errors.Wrapf(err, "unable to open TSDB for user %s", userID)
@@ -428,6 +450,12 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 				// Add the database to the map of user databases
 				i.tsdbsMtx.Lock()
 				i.tsdbs[userID] = db
+				if uncleanlyRestored(db.engine()) {
+					unclean = append(unclean, userID)
+				}
+				if checkpoint := restoredCheckpoint(db.engine()); checkpoint != nil {
+					checkpoints = append(checkpoints, checkpoint)
+				}
 				i.tsdbsMtx.Unlock()
 				i.metrics.memUsers.Inc()
 			}
@@ -458,6 +486,14 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	if err != nil {
 		level.Error(i.logger).Log("msg", "error while opening existing TSDBs", "err", err)
 		return err
+	}
+
+	if len(unclean) > 0 {
+		if err := i.resetKafkaOffsetsAfterUncleanShutdown(unclean); err != nil {
+			return errors.Wrap(err, "resetting the Kafka offsets after an unclean shutdown")
+		}
+	} else if err := i.rewindKafkaOffsetsToCheckpoints(checkpoints); err != nil {
+		return errors.Wrap(err, "rewinding the Kafka offsets to the MimirEngine snapshots")
 	}
 
 	// Update the usage statistics once all TSDBs have been opened.
