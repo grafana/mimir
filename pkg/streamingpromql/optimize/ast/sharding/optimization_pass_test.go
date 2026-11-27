@@ -185,6 +185,14 @@ func (m *mockLimits) QueryShardingMaxShardedQueries(userID string) int {
 	return m.maxShardedQueries
 }
 
+func (m *mockLimits) NativeResourcesEnabled(userID string) bool {
+	return false
+}
+
+func (m *mockLimits) NativeInfoQueryShardingDisabled(userID string) bool {
+	return false
+}
+
 func (m *mockLimits) CompactorSplitAndMergeShards(userID string) int {
 	return m.splitAndMergeShards
 }

@@ -754,6 +754,14 @@ func (m multiTenantMockLimits) NativeMetadataResultsCacheDisabled(userID string)
 	return m.byTenant[userID].nativeMetadataResultsCacheDisabled
 }
 
+func (m multiTenantMockLimits) NativeResourcesEnabled(userID string) bool {
+	return m.byTenant[userID].nativeResourcesEnabled
+}
+
+func (m multiTenantMockLimits) NativeInfoQueryShardingDisabled(userID string) bool {
+	return m.byTenant[userID].nativeInfoQueryShardingDisabled
+}
+
 func (m multiTenantMockLimits) EnabledPromQLExperimentalFunctions(userID string) []string {
 	return m.byTenant[userID].enabledPromQLExperimentalFunctions
 }
@@ -830,6 +838,8 @@ type mockLimits struct {
 	resultsCacheTTLForErrors              time.Duration
 	resultsCacheForUnalignedQueryEnabled  bool
 	nativeMetadataResultsCacheDisabled    bool
+	nativeResourcesEnabled                bool
+	nativeInfoQueryShardingDisabled       bool
 	enabledPromQLExperimentalFunctions    []string
 	enabledPromQLBinopFillModifiers       []string
 	prom2RangeCompat                      bool
@@ -935,6 +945,14 @@ func (m mockLimits) ResultsCacheForUnalignedQueryEnabled(string) bool {
 
 func (m mockLimits) NativeMetadataResultsCacheDisabled(string) bool {
 	return m.nativeMetadataResultsCacheDisabled
+}
+
+func (m mockLimits) NativeResourcesEnabled(string) bool {
+	return m.nativeResourcesEnabled
+}
+
+func (m mockLimits) NativeInfoQueryShardingDisabled(string) bool {
+	return m.nativeInfoQueryShardingDisabled
 }
 
 func (m mockLimits) EnabledPromQLExperimentalFunctions(string) []string {

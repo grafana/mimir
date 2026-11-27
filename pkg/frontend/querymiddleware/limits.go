@@ -112,6 +112,14 @@ type Limits interface {
 	// NativeMetadataResultsCacheDisabled returns whether the tenant's queries neither read nor write the results cache.
 	NativeMetadataResultsCacheDisabled(userID string) bool
 
+	// NativeResourcesEnabled returns whether the tenant's queries find target_info natively, unless a request asks for
+	// the join.
+	NativeResourcesEnabled(userID string) bool
+
+	// NativeInfoQueryShardingDisabled returns whether the tenant's queries that call info() and find target_info
+	// natively aren't sharded.
+	NativeInfoQueryShardingDisabled(userID string) bool
+
 	// EnabledPromQLExperimentalFunctions returns the names of PromQL experimental functions allowed for the tenant.
 	EnabledPromQLExperimentalFunctions(userID string) []string
 

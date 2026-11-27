@@ -32,20 +32,6 @@ import (
 // conversion's rules, with two documented differences: a version's synthesized series has no gaps where the stored
 // one would, and identities that collapse onto one job and instance resolve to the later change point.
 
-type nativeTargetInfoContextKey int
-
-const nativeTargetInfoModeKey = nativeTargetInfoContextKey(0)
-
-// ContextWithNativeTargetInfo returns a context whose queries find target_info natively, or by the join.
-func ContextWithNativeTargetInfo(ctx context.Context, native bool) context.Context {
-	return context.WithValue(ctx, nativeTargetInfoModeKey, native)
-}
-
-func nativeTargetInfoFromContext(ctx context.Context) (native, set bool) {
-	native, set = ctx.Value(nativeTargetInfoModeKey).(bool)
-	return native, set
-}
-
 // NativeTargetInfoExtractor carries api.NativeTargetInfoHeader from a request to its context.
 type NativeTargetInfoExtractor struct{}
 
@@ -54,7 +40,7 @@ func (e *NativeTargetInfoExtractor) ExtractFromCarrier(ctx context.Context, carr
 	case "":
 		return ctx, nil
 	case "native", "join":
-		return ContextWithNativeTargetInfo(ctx, value == "native"), nil
+		return querierapi.ContextWithNativeTargetInfo(ctx, value == "native"), nil
 	default:
 		return nil, apierror.Newf(apierror.TypeBadData, "invalid value '%s' for '%s' header, must be 'native' or 'join'", value, querierapi.NativeTargetInfoHeader)
 	}
@@ -136,7 +122,7 @@ func (q *nativeTargetInfoQuerier) Select(ctx context.Context, sortSeries bool, h
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
-	if native, set := nativeTargetInfoFromContext(ctx); (set && !native) || (!set && !q.limits.NativeResourcesEnabled(tenantID)) {
+	if native, set := querierapi.NativeTargetInfoFromContext(ctx); (set && !native) || (!set && !q.limits.NativeResourcesEnabled(tenantID)) {
 		return q.Querier.Select(ctx, sortSeries, hints, matchers...)
 	}
 

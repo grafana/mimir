@@ -280,6 +280,7 @@ type Limits struct {
 	NativeResourcesLookupMemo               bool                   `yaml:"native_resources_lookup_memo_enabled" json:"native_resources_lookup_memo_enabled" category:"experimental"`
 	NativeMetadataGroupedLookupMaxSeries    int                    `yaml:"native_metadata_grouped_lookup_max_series" json:"native_metadata_grouped_lookup_max_series" category:"experimental"`
 	NativeMetadataResultsCacheDisabled      bool                   `yaml:"native_metadata_results_cache_disabled" json:"native_metadata_results_cache_disabled" category:"experimental"`
+	NativeInfoQueryShardingDisabled         bool                   `yaml:"native_info_query_sharding_disabled" json:"native_info_query_sharding_disabled" category:"experimental"`
 
 	// Float chunk encoding.
 	FloatChunkEncoding string `yaml:"float_chunk_encoding" json:"float_chunk_encoding" category:"experimental"`
@@ -528,6 +529,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.NativeResourcesLookupMemo, "ingester.native-resources-lookup-memo-enabled", false, "Decode each resource attribute value a native resources lookup returns once per lookup, outside the seriesstore engine's resources lock, rather than once per series under it, and share the decoded attributes between series. Read on every lookup, so that turning it off takes effect at once.")
 	f.IntVar(&l.NativeMetadataGroupedLookupMaxSeries, "ingester.native-metadata-grouped-lookup-max-series", 1_000_000, "How many series with native resources a lookup of them by target may match in an ingester, which reads every series of each target. Past it, the lookup fails. 0 means no limit.")
 	f.BoolVar(&l.NativeMetadataResultsCacheDisabled, "query-frontend.native-metadata-results-cache-disabled", false, "Neither read nor write the results caches for the tenant's queries: the query-frontend's results cache, of query results and errors, and the query engine's intermediate results cache. A TTL of 0 isn't the same, since entries are still written with it. The label names and values and cardinality query caches are already off when their TTLs are 0, the default.")
+	f.BoolVar(&l.NativeInfoQueryShardingDisabled, "query-frontend.native-info-query-sharding-disabled", false, "Don't shard the tenant's queries that call info() and find target_info natively, from the ingesters' native resources. Each shard's info() looks up every target its share of the inner series has, which for targets of a few dozen series each is nearly all of them, so that a query of N shards makes N lookups of nearly every target. Read on every query.")
 	f.BoolVar(&l.NativeMetricMetadataEnabled, "ingester.native-metric-metadata-enabled", false, "Store each series' metric metadata (type, unit and help) in the ingester's memory, as versions over time, in addition to the metric families' metadata. Turning it on takes effect when the tenant's TSDB next opens; turning it off stops storing new metadata right away.")
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", true, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
 	f.StringVar(&l.FloatChunkEncoding, "blocks-storage.tsdb.float-chunk-encoding", DefaultFloatChunkEncodingValue, fmt.Sprintf("Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: %s.", strings.Join(FloatChunkEncodingValues, ", ")))
@@ -1622,6 +1624,12 @@ func (o *Overrides) NativeResourcesLookupOptions(userID string) (setMatching, un
 // NativeMetadataResultsCacheDisabled returns whether the tenant's queries neither read nor write the results caches.
 func (o *Overrides) NativeMetadataResultsCacheDisabled(userID string) bool {
 	return o.getOverridesForUser(userID).NativeMetadataResultsCacheDisabled
+}
+
+// NativeInfoQueryShardingDisabled returns whether the tenant's queries that call info() and find target_info natively
+// aren't sharded.
+func (o *Overrides) NativeInfoQueryShardingDisabled(userID string) bool {
+	return o.getOverridesForUser(userID).NativeInfoQueryShardingDisabled
 }
 
 // NativeMetricMetadataChangeLimit returns how many changes of a series' own metric metadata the seriesstore engine

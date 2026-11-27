@@ -295,7 +295,7 @@ func (h *nativeInfoHarness) queryContext(native bool) context.Context {
 // eventualQueryContext is queryContext's without strong read consistency, whose wait for the ingesters to catch up
 // would dominate a benchmark's time once they have.
 func (h *nativeInfoHarness) eventualQueryContext(native bool) context.Context {
-	return querier.ContextWithNativeTargetInfo(user.InjectOrgID(context.Background(), h.tenant), native)
+	return querierapi.ContextWithNativeTargetInfo(user.InjectOrgID(context.Background(), h.tenant), native)
 }
 
 // rangeQuery evaluates the query over [start, end] by step, with native target_info or the join.

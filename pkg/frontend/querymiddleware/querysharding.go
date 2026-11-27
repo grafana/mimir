@@ -26,6 +26,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/util"
@@ -264,6 +265,10 @@ type ShardingLimits interface {
 	QueryShardingTotalShards(userID string) int
 	QueryShardingMaxRegexpSizeBytes(userID string) int
 	QueryShardingMaxShardedQueries(userID string) int
+	// NativeResourcesEnabled returns whether the tenant's queries find target_info natively, unless a request asks for
+	// the join.
+	NativeResourcesEnabled(userID string) bool
+	NativeInfoQueryShardingDisabled(userID string) bool
 }
 
 func NewQuerySharder(
@@ -291,6 +296,11 @@ func (s *QuerySharder) Shard(ctx context.Context, tenantIDs []string, expr parse
 	log := spanlogger.FromContext(ctx, s.logger)
 	log.DebugLog("msg", "attempting query sharding", "query", expr)
 	s.metrics.shardingAttempts.Inc()
+
+	if s.keepsNativeInfoUnsharded(ctx, tenantIDs, expr) {
+		log.DebugLog("msg", "query not sharded, since it calls info() and finds target_info natively", "query", expr)
+		return nil, nil
+	}
 
 	totalShards, err := s.getShardsForQuery(ctx, tenantIDs, expr, requestedShardCount, seriesCount, totalQueries, log)
 	if err != nil {
@@ -347,6 +357,33 @@ func (s *QuerySharder) shardQuery(ctx context.Context, expr parser.Expr, totalSh
 	}
 
 	return shardedQuery, stats, nil
+}
+
+// keepsNativeInfoUnsharded reports whether expr calls info() and finds target_info natively for a tenant that doesn't
+// shard such queries. Sharding splits info()'s inner series by series, so each shard's info() looks up every target
+// its share has: with targets of a few dozen series, nearly all of them, so that the shards together look up every
+// target about as many times as there are shards.
+func (s *QuerySharder) keepsNativeInfoUnsharded(ctx context.Context, tenantIDs []string, expr parser.Expr) bool {
+	native, set := querierapi.NativeTargetInfoFromContext(ctx)
+	if set && !native {
+		return false
+	}
+	keeps := func(tenantID string) bool {
+		return s.limit.NativeInfoQueryShardingDisabled(tenantID) && (native || s.limit.NativeResourcesEnabled(tenantID))
+	}
+	return slices.ContainsFunc(tenantIDs, keeps) && callsInfo(expr)
+}
+
+// callsInfo reports whether expr calls info() anywhere.
+func callsInfo(expr parser.Expr) bool {
+	calls := false
+	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
+		if call, ok := node.(*parser.Call); ok && call.Func != nil && call.Func.Name == "info" {
+			calls = true
+		}
+		return nil
+	})
+	return calls
 }
 
 // getShardsForQuery calculates and return the number of shards that should be used to run the query.

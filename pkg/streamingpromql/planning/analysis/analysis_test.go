@@ -606,7 +606,9 @@ func TestHandler_Sharding(t *testing.T) {
 
 type mockLimits struct{}
 
-func (m *mockLimits) QueryShardingTotalShards(userID string) int        { return 3 }
-func (m *mockLimits) QueryShardingMaxRegexpSizeBytes(userID string) int { return 0 }
-func (m *mockLimits) QueryShardingMaxShardedQueries(userID string) int  { return 0 }
-func (m *mockLimits) CompactorSplitAndMergeShards(userID string) int    { return 1 }
+func (m *mockLimits) QueryShardingTotalShards(userID string) int         { return 3 }
+func (m *mockLimits) QueryShardingMaxRegexpSizeBytes(userID string) int  { return 0 }
+func (m *mockLimits) QueryShardingMaxShardedQueries(userID string) int   { return 0 }
+func (m *mockLimits) NativeResourcesEnabled(userID string) bool          { return false }
+func (m *mockLimits) NativeInfoQueryShardingDisabled(userID string) bool { return false }
+func (m *mockLimits) CompactorSplitAndMergeShards(userID string) int     { return 1 }

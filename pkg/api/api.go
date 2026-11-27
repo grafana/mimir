@@ -191,6 +191,8 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 	// Propagate the consistency level on all HTTP routes.
 	// They are not used everywhere, but for consistency and less surprise it's added everywhere.
 	handler = propagation.Middleware(&querierapi.ConsistencyExtractor{}).Wrap(handler)
+	// So is how info() finds target_info, which the query-frontend's sharding reads.
+	handler = propagation.Middleware(&querierapi.NativeTargetInfoModeExtractor{}).Wrap(handler)
 
 	if auth {
 		handler = a.AuthMiddleware.Wrap(handler)

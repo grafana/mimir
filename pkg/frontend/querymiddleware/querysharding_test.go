@@ -39,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
@@ -519,6 +520,51 @@ func TestQuerySharding_ShouldSkipShardingIfUnshardableAndMaxShardedQueriesIsZero
 		downstream.AssertCalled(t, "Do", mock.Anything, req)
 		downstream.AssertNumberOfCalls(t, "Do", 1)
 	})
+}
+
+// A query that calls info() and finds target_info natively isn't sharded for a tenant whose switch says so, since
+// each shard's info() would look up nearly every target. The join, which a request can ask for, keeps its sharding, as
+// do queries without info() and tenants without the switch. Every query here shards with the switch off, so that a
+// query left unsharded is the switch's doing.
+func TestQuerySharder_Shard_NativeInfo(t *testing.T) {
+	const aggregatedInfo = `sum by (k8s_node_name) (info(container_memory_working_set_bytes{container!=""}))`
+	native, join := true, false
+	for name, tc := range map[string]struct {
+		query           string
+		switchOn        bool
+		nativeResources bool
+		// The request's choice of native target_info or the join, if any.
+		requested *bool
+		sharded   bool
+	}{
+		"native by the tenant's native resources": {query: aggregatedInfo, switchOn: true, nativeResources: true},
+		"native by the request":                   {query: aggregatedInfo, switchOn: true, requested: &native},
+		"the join by the request":                 {query: aggregatedInfo, switchOn: true, nativeResources: true, requested: &join, sharded: true},
+		"the switch off":                          {query: aggregatedInfo, nativeResources: true, sharded: true},
+		"a query without info()":                  {query: `sum by (k8s_node_name) (container_memory_working_set_bytes{container!=""})`, switchOn: true, nativeResources: true, sharded: true},
+		"info() below the query's root":           {query: `sum(info(up)) / sum(up)`, switchOn: true, nativeResources: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			shard := func(switchOn bool) parser.Expr {
+				limits := mockLimits{totalShards: 16, nativeResourcesEnabled: tc.nativeResources, nativeInfoQueryShardingDisabled: switchOn}
+				sharder := NewQuerySharder(astmapper.EmbeddedQueriesSquasher, limits, 0, nil, log.NewNopLogger())
+				ctx := t.Context()
+				if tc.requested != nil {
+					ctx = querierapi.ContextWithNativeTargetInfo(ctx, *tc.requested)
+				}
+				// Shard changes the expression it's given, so each call parses the query anew.
+				sharded, err := sharder.Shard(ctx, []string{"tenant"}, parseQuery(t, tc.query), 0, nil, 1)
+				require.NoError(t, err)
+				return sharded
+			}
+			require.NotNil(t, shard(false), "the query shards with the switch off")
+			if tc.sharded {
+				require.NotNil(t, shard(tc.switchOn))
+			} else {
+				require.Nil(t, shard(tc.switchOn))
+			}
+		})
+	}
 }
 
 func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {

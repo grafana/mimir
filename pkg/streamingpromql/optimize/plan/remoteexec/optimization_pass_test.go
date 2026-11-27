@@ -1368,7 +1368,9 @@ func rewriteForSubquerySpinoff(ctx context.Context, expr string) (string, error)
 
 type mockLimits struct{}
 
-func (m *mockLimits) QueryShardingTotalShards(userID string) int        { return 2 }
-func (m *mockLimits) QueryShardingMaxRegexpSizeBytes(userID string) int { return 0 }
-func (m *mockLimits) QueryShardingMaxShardedQueries(userID string) int  { return 0 }
-func (m *mockLimits) CompactorSplitAndMergeShards(userID string) int    { return 0 }
+func (m *mockLimits) QueryShardingTotalShards(userID string) int         { return 2 }
+func (m *mockLimits) QueryShardingMaxRegexpSizeBytes(userID string) int  { return 0 }
+func (m *mockLimits) QueryShardingMaxShardedQueries(userID string) int   { return 0 }
+func (m *mockLimits) NativeResourcesEnabled(userID string) bool          { return false }
+func (m *mockLimits) NativeInfoQueryShardingDisabled(userID string) bool { return false }
+func (m *mockLimits) CompactorSplitAndMergeShards(userID string) int     { return 0 }

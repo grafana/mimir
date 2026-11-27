@@ -4967,6 +4967,14 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.native-metadata-results-cache-disabled
 [native_metadata_results_cache_disabled: <boolean> | default = false]
 
+# (experimental) Don't shard the tenant's queries that call info() and find
+# target_info natively, from the ingesters' native resources. Each shard's
+# info() looks up every target its share of the inner series has, which for
+# targets of a few dozen series each is nearly all of them, so that a query of N
+# shards makes N lookups of nearly every target. Read on every query.
+# CLI flag: -query-frontend.native-info-query-sharding-disabled
+[native_info_query_sharding_disabled: <boolean> | default = false]
+
 # (experimental) Encoding used for float chunks written for this tenant by the
 # ingester and block-builder, and by the compactor when it re-encodes
 # overlapping chunks. Supported values are: xor, xor2.

@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/mimir/pkg/distributor"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -187,7 +188,7 @@ func TestNativeTargetInfoQuerier_Select(t *testing.T) {
 	})
 
 	t.Run("the join, as the request asks", func(t *testing.T) {
-		got, next, metrics := selectWith(t, ContextWithNativeTargetInfo(ctx, false), &fakeNativeLookups{resources: resources}, targetInfo, job)
+		got, next, metrics := selectWith(t, querierapi.ContextWithNativeTargetInfo(ctx, false), &fakeNativeLookups{resources: resources}, targetInfo, job)
 		require.Equal(t, map[string][]int64{storedLabels.String(): {100_000, 400_000}}, got)
 		require.Equal(t, [][]*labels.Matcher{{targetInfo, job}}, next.selected)
 		require.Zero(t, testutil.ToFloat64(metrics.lookups))
