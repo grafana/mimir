@@ -138,3 +138,31 @@ func TestNativeLookupMerge_CountsResponsesAgainstTheTracker(t *testing.T) {
 	merge.release()
 	require.Zero(t, tracker.CurrentEstimatedMemoryConsumptionBytes())
 }
+
+// The merge's result at the size of a lookup by series for a query's inner series: about 26k series of 20 labels each,
+// one answer each, in arrival order, which the result sorts by labels.
+func BenchmarkNativeLookupMerge_Result(b *testing.B) {
+	const series = 26_000
+	answers := make([][]mimirpb.LabelAdapter, 0, series)
+	for n := range series {
+		lbls := []mimirpb.LabelAdapter{{Name: "__name__", Value: "container_memory_working_set_bytes"}}
+		for l := range 19 {
+			lbls = append(lbls, mimirpb.LabelAdapter{Name: fmt.Sprintf("label_%02d", l), Value: fmt.Sprintf("value-%d-%d", l, (n*7919+l)%series)})
+		}
+		answers = append(answers, lbls)
+	}
+	versions := []ingester_client.NativeResourceVersion{{MinTimeMs: 1_000, MaxTimeMs: 2_000}}
+	for b.Loop() {
+		b.StopTimer()
+		merge := newNativeLookupMerge[ingester_client.NativeResourceVersion]()
+		for _, lbls := range answers {
+			merge.addSeries(lbls, versions, false, false)
+		}
+		merge.close()
+		b.StartTimer()
+		merged, _, _ := merge.result(0, ingester_client.MergeNativeResourceVersions)
+		if len(merged) != series {
+			b.Fatalf("merged %d series", len(merged))
+		}
+	}
+}

@@ -289,14 +289,22 @@ func (m *nativeLookupMerge[V]) release() {
 func (m *nativeLookupMerge[V]) result(limit int, mergeVersions func([][]V) []V) ([]*mergedNativeSeries[V], bool, int64) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
-	out := make([]*mergedNativeSeries[V], 0, len(m.series))
+	// Each series' labels are converted once for the sort: converting them in the comparison would convert them about
+	// log2(n) times each, which for a lookup by series of a query's tens of thousands of inner series was most of it.
+	type labeled struct {
+		series *mergedNativeSeries[V]
+		labels labels.Labels
+	}
+	sorted := make([]labeled, 0, len(m.series))
 	for _, s := range m.series {
 		s.versions = mergeVersions(s.answers)
-		out = append(out, s)
+		sorted = append(sorted, labeled{series: s, labels: mimirpb.FromLabelAdaptersToLabels(s.labels)})
 	}
-	slices.SortFunc(out, func(a, b *mergedNativeSeries[V]) int {
-		return labels.Compare(mimirpb.FromLabelAdaptersToLabels(a.labels), mimirpb.FromLabelAdaptersToLabels(b.labels))
-	})
+	slices.SortFunc(sorted, func(a, b labeled) int { return labels.Compare(a.labels, b.labels) })
+	out := make([]*mergedNativeSeries[V], 0, len(sorted))
+	for _, s := range sorted {
+		out = append(out, s.series)
+	}
 	limited := m.limited
 	if limit > 0 && len(out) > limit {
 		out, limited = out[:limit], true
