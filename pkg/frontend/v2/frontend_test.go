@@ -3001,3 +3001,135 @@ func TestFrontendToSchedulerEnqueueRequestRootQueryID(t *testing.T) {
 		})
 	}
 }
+
+func TestStrongReadConsistencyQueueDimension_HTTPRequest(t *testing.T) {
+	now := time.Now()
+	queryStoreAfter := 12 * time.Hour
+	queryIngestersWithin := 13 * time.Hour
+
+	ingesterOnly := makeRangeHTTPRequest(context.Background(), now.Add(-queryStoreAfter).Add(time.Minute), now, 60)
+	storeGatewayOnly := makeRangeHTTPRequest(context.Background(), now.Add(-queryIngestersWithin).Add(-time.Hour), now.Add(-queryIngestersWithin).Add(-time.Minute), 60)
+	ingesterAndStoreGateway := makeRangeHTTPRequest(context.Background(), now.Add(-queryIngestersWithin).Add(-time.Minute), now, 60)
+	cardinality, err := http.NewRequest("GET", "/api/v1/cardinality/label_names", nil)
+	require.NoError(t, err)
+	unknown, err := http.NewRequest("GET", "/api/v1/status/buildinfo", nil)
+	require.NoError(t, err)
+
+	tests := map[string]struct {
+		req               *http.Request
+		enabled           bool
+		strong            bool
+		expectedDimension []string
+	}{
+		"strong ingester request": {
+			req: ingesterOnly, enabled: true, strong: true,
+			expectedDimension: []string{ingesterQueryComponent, strongReadConsistencyQueryComponent},
+		},
+		"strong ingester-and-store-gateway request": {
+			req: ingesterAndStoreGateway, enabled: true, strong: true,
+			expectedDimension: []string{ingesterAndStoreGatewayQueryComponent, strongReadConsistencyQueryComponent},
+		},
+		"strong cardinality request keeps its component": {
+			req: cardinality, enabled: true, strong: true,
+			expectedDimension: []string{ingesterQueryComponent},
+		},
+		"strong request of an unknown component stays unknown": {
+			req: unknown, enabled: true, strong: true,
+			expectedDimension: nil,
+		},
+		"strong store-gateway request keeps its component": {
+			req: storeGatewayOnly, enabled: true, strong: true,
+			expectedDimension: []string{storeGatewayQueryComponent},
+		},
+		"eventual ingester request keeps its component": {
+			req: ingesterOnly, enabled: true, strong: false,
+			expectedDimension: []string{ingesterQueryComponent},
+		},
+		"strong ingester request keeps its component when the queue is disabled": {
+			req: ingesterOnly, enabled: false, strong: true,
+			expectedDimension: []string{ingesterQueryComponent},
+		},
+		"strong request of an unknown component stays unknown when the queue is disabled": {
+			req: unknown, enabled: false, strong: true,
+			expectedDimension: nil,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			frontend := &Frontend{
+				cfg:    Config{QueryStoreAfter: queryStoreAfter, StrongReadConsistencyQueueEnabled: testData.enabled},
+				limits: limits{queryIngestersWithin: queryIngestersWithin},
+				codec:  newTestCodec(),
+				log:    log.NewNopLogger(),
+			}
+			ctx := user.InjectOrgID(context.Background(), "tenant-0")
+			req := testData.req.Clone(ctx)
+			req.Body = http.NoBody
+			req.RequestURI = req.URL.RequestURI()
+			if testData.strong {
+				req.Header.Set(api.ReadConsistencyOffsetsHeader, "encoded-offsets")
+			}
+			httpgrpcReq, err := httpgrpc.FromHTTPRequest(req)
+			require.NoError(t, err)
+
+			dims, err := frontend.extractTouchedQueryComponentsForHTTPRequest(ctx, httpgrpcReq, now)
+			require.NoError(t, err)
+			require.Equal(t, testData.expectedDimension, dims)
+		})
+	}
+}
+
+func TestStrongReadConsistencyQueueDimension_ProtobufRequest(t *testing.T) {
+	const userID = "test"
+
+	tests := map[string]struct {
+		enabled           bool
+		headers           map[string][]string
+		expectedDimension []string
+	}{
+		"strong request": {
+			enabled:           true,
+			headers:           map[string][]string{api.ReadConsistencyOffsetsHeader: {"encoded-offsets"}},
+			expectedDimension: []string{ingesterQueryComponent, strongReadConsistencyQueryComponent},
+		},
+		"eventual request": {
+			enabled:           true,
+			headers:           map[string][]string{"Some-Extra-Header": {"some-value"}},
+			expectedDimension: []string{ingesterQueryComponent},
+		},
+		"strong request when the queue is disabled": {
+			enabled:           false,
+			headers:           map[string][]string{api.ReadConsistencyOffsetsHeader: {"encoded-offsets"}},
+			expectedDimension: []string{ingesterQueryComponent},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			dims := make(chan []string, 1)
+			f, _ := setupFrontendWithConfig(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+				if msg.Type != schedulerpb.ENQUEUE {
+					return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+				}
+				dims <- msg.AdditionalQueueDimensions
+				go sendStreamingResponse(t, f, userID, msg.QueryID, newStringMessage("message"))
+				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			}, func(cfg *Config) {
+				cfg.StrongReadConsistencyQueueEnabled = testData.enabled
+			})
+
+			ctx := user.InjectOrgID(t.Context(), userID)
+			ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
+			ctx = querymiddleware.ContextWithHeadersToPropagate(ctx, testData.headers)
+			resp, err := f.DoProtobufRequest(ctx, &querierpb.EvaluateQueryRequest{}, time.Now().Add(-5*time.Hour), time.Now())
+			require.NoError(t, err)
+			defer resp.Close()
+
+			msg, err := resp.Next(ctx)
+			require.NoError(t, err)
+			msg.Buffer().Free()
+			require.Equal(t, testData.expectedDimension, <-dims)
+		})
+	}
+}

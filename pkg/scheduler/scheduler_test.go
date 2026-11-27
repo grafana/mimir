@@ -2419,3 +2419,41 @@ func (f *rejectingFrontend) QueryResultStream(stream frontendv2pb.FrontendForQue
 
 	return f.replyErr
 }
+
+func strongEnqueue(queryID uint64) *schedulerpb.FrontendToScheduler {
+	return &schedulerpb.FrontendToScheduler{
+		Type:                      schedulerpb.ENQUEUE,
+		QueryID:                   queryID,
+		UserID:                    "test",
+		AdditionalQueueDimensions: []string{ingesterQueueDimension, strongReadConsistencyQueueDimension},
+		Payload:                   &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+	}
+}
+
+func TestSchedulerQueueDurationLabelJoinsTheQueueDimensions(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	_, frontendClient, querierClient := setupScheduler(t, reg)
+
+	fl := initFrontendLoop(t, frontendClient, "frontend-1")
+	frontendToScheduler(t, fl, strongEnqueue(1))
+
+	querier := testQuerier{loop: initQuerierLoop(t, querierClient, "querier-1")}
+	require.Equal(t, uint64(1), querier.receive(t))
+
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	var labelValues []string
+	for _, family := range families {
+		if family.GetName() != "cortex_query_scheduler_queue_duration_seconds" {
+			continue
+		}
+		for _, m := range family.GetMetric() {
+			for _, l := range m.GetLabel() {
+				if l.GetName() == "additional_queue_dimensions" {
+					labelValues = append(labelValues, l.GetValue())
+				}
+			}
+		}
+	}
+	require.Equal(t, []string{ingesterQueueDimension + ":" + strongReadConsistencyQueueDimension}, labelValues)
+}

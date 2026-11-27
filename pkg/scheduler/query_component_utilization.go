@@ -11,8 +11,9 @@ import (
 type QueryComponent string
 
 const (
-	StoreGateway QueryComponent = "store-gateway"
-	Ingester     QueryComponent = "ingester"
+	StoreGateway          QueryComponent = "store-gateway"
+	Ingester              QueryComponent = "ingester"
+	StrongReadConsistency QueryComponent = "strong-read-consistency"
 )
 
 // Queue-dimension labels the scheduler attaches to enqueued requests.
@@ -24,6 +25,7 @@ const (
 	ingesterQueueDimension                = "ingester"
 	storeGatewayQueueDimension            = "store-gateway"
 	ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
+	strongReadConsistencyQueueDimension   = "strong-read-consistency"
 )
 
 // queryComponentFlags interprets annotations by the frontend for the expected query component,
@@ -52,15 +54,17 @@ func queryComponentFlags(queryComponentName string) (isIngester, isStoreGateway 
 // representing whether the query request will be served by the ingesters, store-gateways, or both.
 // Query requests utilizing both ingesters and store-gateways are tracked in the atomics for both component,
 // therefore the sum of inflight requests by component is likely to exceed the inflight requests total.
+// Requests of the strong read consistency queue are also tracked on their own.
 type QueryComponentUtilization struct {
 	inflightRequestsMu sync.RWMutex
 	// inflightRequests tracks requests
 	// from the time the request was successfully sent to a querier
 	// to the time the request was completed by the querier or failed due to cancel, timeout, or disconnect.
-	inflightRequests             map[RequestKey]*SchedulerRequest
-	ingesterInflightRequests     int
-	storeGatewayInflightRequests int
-	querierInflightRequestsTotal int
+	inflightRequests                      map[RequestKey]*SchedulerRequest
+	ingesterInflightRequests              int
+	storeGatewayInflightRequests          int
+	strongReadConsistencyInflightRequests int
+	querierInflightRequestsTotal          int
 
 	querierInflightRequestsMetric *prometheus.SummaryVec
 }
@@ -86,7 +90,7 @@ func (qcl *QueryComponentUtilization) MarkRequestSent(req *SchedulerRequest) {
 		defer qcl.inflightRequestsMu.Unlock()
 
 		qcl.inflightRequests[req.Key()] = req
-		qcl.incrementForComponentName(req.ExpectedQueryComponentName())
+		qcl.updateInflightCounters(req, 1)
 	}
 }
 
@@ -98,30 +102,29 @@ func (qcl *QueryComponentUtilization) MarkRequestCompleted(req *SchedulerRequest
 
 		reqKey := req.Key()
 		if req, ok := qcl.inflightRequests[reqKey]; ok {
-			qcl.decrementForComponentName(req.ExpectedQueryComponentName())
+			qcl.updateInflightCounters(req, -1)
 		}
 		delete(qcl.inflightRequests, reqKey)
 	}
 }
 
-func (qcl *QueryComponentUtilization) incrementForComponentName(expectedQueryComponent string) {
-	qcl.updateForComponentName(expectedQueryComponent, 1)
-}
-
-func (qcl *QueryComponentUtilization) decrementForComponentName(expectedQueryComponent string) {
-	qcl.updateForComponentName(expectedQueryComponent, -1)
-}
-
-func (qcl *QueryComponentUtilization) updateForComponentName(expectedQueryComponent string, increment int) {
-	isIngester, isStoreGateway := queryComponentFlags(expectedQueryComponent)
+// updateInflightCounters adds delta to the counters of req. A request counts for the query component in
+// its first queue dimension. A strong read consistency request also counts for the strong read
+// consistency queue.
+func (qcl *QueryComponentUtilization) updateInflightCounters(req *SchedulerRequest, delta int) {
+	queryComponentName, strongConsistency := req.ExpectedTargetQueryComponentNameWithConsistency()
+	if strongConsistency {
+		qcl.strongReadConsistencyInflightRequests += delta
+	}
+	isIngester, isStoreGateway := queryComponentFlags(queryComponentName)
 	// lock is expected to be obtained by the calling method to mark the request as sent or completed
 	if isIngester {
-		qcl.ingesterInflightRequests += increment
+		qcl.ingesterInflightRequests += delta
 	}
 	if isStoreGateway {
-		qcl.storeGatewayInflightRequests += increment
+		qcl.storeGatewayInflightRequests += delta
 	}
-	qcl.querierInflightRequestsTotal += increment
+	qcl.querierInflightRequestsTotal += delta
 }
 
 func (qcl *QueryComponentUtilization) ObserveInflightRequests() {
@@ -129,6 +132,7 @@ func (qcl *QueryComponentUtilization) ObserveInflightRequests() {
 	defer qcl.inflightRequestsMu.RUnlock()
 	qcl.querierInflightRequestsMetric.WithLabelValues(string(Ingester)).Observe(float64(qcl.ingesterInflightRequests))
 	qcl.querierInflightRequestsMetric.WithLabelValues(string(StoreGateway)).Observe(float64(qcl.storeGatewayInflightRequests))
+	qcl.querierInflightRequestsMetric.WithLabelValues(string(StrongReadConsistency)).Observe(float64(qcl.strongReadConsistencyInflightRequests))
 }
 
 // GetForComponent is a test-only util
@@ -140,6 +144,8 @@ func (qcl *QueryComponentUtilization) GetForComponent(component QueryComponent) 
 		return qcl.ingesterInflightRequests
 	case StoreGateway:
 		return qcl.storeGatewayInflightRequests
+	case StrongReadConsistency:
+		return qcl.strongReadConsistencyInflightRequests
 	default:
 		return 0
 	}

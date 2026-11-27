@@ -2160,7 +2160,9 @@ store_gateway_client:
 
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier. The minimum value is
-# four; lower values are ignored and set to the minimum
+# four per in-use query-scheduler, or five when
+# -querier.strong-read-consistency-queue-enabled is true; lower values are
+# ignored and set to the minimum
 # CLI flag: -querier.max-concurrent
 [max_concurrent: <int> | default = 8]
 
@@ -2494,6 +2496,12 @@ The `frontend` block configures the query-frontend.
 # -query-scheduler.queue-reservation-enabled receive reservations.
 # CLI flag: -query-frontend.queue-reservation-enabled
 [queue_reservation_enabled: <boolean> | default = false]
+
+# (experimental) Send requests with strong read consistency to their own
+# query-scheduler queue, unless they query only store-gateways. Enable it only
+# after every querier runs with -querier.strong-read-consistency-queue-enabled.
+# CLI flag: -query-frontend.strong-read-consistency-queue-enabled
+[strong_read_consistency_queue_enabled: <boolean> | default = false]
 
 # (advanced) Split range queries by an interval and execute in parallel. You
 # should use a multiple of 24 hours to optimize querying blocks. 0 to disable
@@ -4158,6 +4166,13 @@ grpc_client_config:
 # query-scheduler.
 # The CLI flags prefix for this block configuration is: querier.scheduler-client
 [query_scheduler_grpc_client_config: <grpc_client>]
+
+# (experimental) Open at least 5 querier-worker connections to each
+# query-scheduler, up from 4, so that the strong read consistency queue of each
+# query-scheduler has a prioritized querier-worker. Enable it on every querier
+# before you enable -query-frontend.strong-read-consistency-queue-enabled.
+# CLI flag: -querier.strong-read-consistency-queue-enabled
+[strong_read_consistency_queue_enabled: <boolean> | default = false]
 ```
 
 ### etcd

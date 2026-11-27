@@ -2526,7 +2526,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-blocks-per-store-request int
     	[experimental] Maximum number of blocks that a querier will reference in a single request to a store-gateway. When a request would exceed this, it is split into multiple requests to the same store-gateway. 0 disables the limit. (default 20)
   -querier.max-concurrent int
-    	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four; lower values are ignored and set to the minimum (default 8)
+    	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four per in-use query-scheduler, or five when -querier.strong-read-consistency-queue-enabled is true; lower values are ignored and set to the minimum (default 8)
   -querier.max-concurrent-remote-read-queries int
     	Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency. (default 2)
   -querier.max-estimated-fetched-chunks-per-query-multiplier float
@@ -2829,6 +2829,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of series to buffer per ingester when streaming chunks from ingesters. (default 256)
   -querier.streaming-chunks-per-store-gateway-buffer-size uint
     	Number of series to buffer per store-gateway when streaming chunks from store-gateways. (default 256)
+  -querier.strong-read-consistency-queue-enabled
+    	[experimental] Open at least 5 querier-worker connections to each query-scheduler, up from 4, so that the strong read consistency queue of each query-scheduler has a prioritized querier-worker. Enable it on every querier before you enable -query-frontend.strong-read-consistency-queue-enabled.
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
   -query-frontend.active-series-framed-responses
@@ -3075,6 +3077,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of concurrent workers forwarding queries to single query-scheduler. (default 5)
   -query-frontend.split-queries-by-interval duration
     	Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it. (default 24h0m0s)
+  -query-frontend.strong-read-consistency-queue-enabled
+    	[experimental] Send requests with strong read consistency to their own query-scheduler queue, unless they query only store-gateways. Enable it only after every querier runs with -querier.strong-read-consistency-queue-enabled.
   -query-frontend.subquery-spin-off-enabled
     	[experimental] Enable spinning off subqueries from instant queries as range queries to optimize their performance.
   -query-frontend.subquery-spin-off-simple-subqueries

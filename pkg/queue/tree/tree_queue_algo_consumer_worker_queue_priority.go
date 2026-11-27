@@ -9,16 +9,18 @@ import (
 // ConsumerWorkerQueuePriorityAlgo implements QueuingAlgorithm by mapping worker IDs to a queue node to prioritize.
 // Consumer-workers' prioritized queue nodes are calculated by the integer WorkerID % len(nodeOrder).
 // This distribution of workers across query component subtrees ensures that when one query component is experiencing
-// high latency about 25% of consumer-workers continue prioritizing queries for unaffected components.
+// high latency, the consumer-workers prioritized to the other nodes continue prioritizing queries for unaffected components.
 //
 // This significantly outperforms the previous round-robin approach which simply rotated through the node order.
-// Although a vanilla round-robin algorithm will select a given query-component node 1 / 4 of the time,
+// Although a vanilla round-robin algorithm will select a given query-component node 1 / len(nodeOrder) of the time,
 // in situations of high latency on a query component, the utilization of the consumer-worker connections
 // as measured by inflight query processing time will grow asymptotically to be dominated by the slow query component.
 //
-// There are 4 possible query components: "ingester", "store-gateway", "ingester-and-store-gateway", and "unknown".
-// When all 4 queue nodes exist, approximately 1 / 4 of the consumer-workers are prioritized to each queue node.
-// This algorithm requires a minimum of 4 consumer-workers per consumer to prevent queue starvation.
+// There are 5 possible query components: "ingester", "store-gateway", "ingester-and-store-gateway",
+// "strong-read-consistency", and "unknown".
+// When all 5 queue nodes exist, approximately 1 / 5 of the consumer-workers are prioritized to each queue node.
+// This algorithm requires a minimum of one consumer-worker per consumer for each possible queue node to prevent
+// queue starvation: 4, or 5 when the strong-read-consistency node can exist.
 // The minimum is enforced in the consumers by overriding -querier.max-concurrent if necessary.
 //
 // MultiAlgorithmTreeQueue always deletes empty leaf nodes and nodes with no children after a dequeue operation,

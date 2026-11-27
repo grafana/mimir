@@ -1836,6 +1836,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
           Queries which require data from both ingesters and store-gateways
           are counted in each category, so the sum of the two categories
           may exceed the true total number of queries inflight.
+        </p><p>
+          Queries in the strong-read-consistency queue are also counted
+          in the strong-read-consistency category.
         </p>
       |||;
       local metricName = 'cortex_query_scheduler_querier_inflight_requests';

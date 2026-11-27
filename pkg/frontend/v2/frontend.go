@@ -45,10 +45,12 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/rootqueryid"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -84,6 +86,8 @@ type Config struct {
 
 	QueueReservationEnabled bool `yaml:"queue_reservation_enabled" category:"experimental"`
 
+	StrongReadConsistencyQueueEnabled bool `yaml:"strong_read_consistency_queue_enabled" category:"experimental"`
+
 	// These configuration options are injected internally.
 	QuerySchedulerDiscovery   schedulerdiscovery.Config `yaml:"-"`
 	LookBackDelta             time.Duration             `yaml:"-"`
@@ -106,6 +110,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Uint64Var(&cfg.RemoteExecutionSeriesMetadataBatchSize, "query-frontend.remote-execution-series-metadata-batch-size", 128, "Maximum number of series metadata entries to send in a single remote execution response from a querier.")
 
 	f.BoolVar(&cfg.QueueReservationEnabled, "query-frontend.queue-reservation-enabled", false, "Reserve query-scheduler queue slots for the remote execution sub-requests of a query evaluation, before the query-frontend sends them. A reservation holds the smaller of -querier.max-query-parallelism and the number of sub-requests. An evaluation with one sub-request does not reserve, and its sub-request uses the plain enqueue. Requires -query-frontend.enable-remote-execution and -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results, and -query-frontend.use-mimir-query-engine-for-sharding when sharding is enabled. A sub-request that waits for -querier.max-query-parallelism can fail the query when the query-frontend reads the response of another sub-request for longer than -query-scheduler.queue-reservation-timeout. Set the timeout longer than the longest such read. Only query-schedulers with -query-scheduler.queue-reservation-enabled receive reservations.")
+
+	f.BoolVar(&cfg.StrongReadConsistencyQueueEnabled, "query-frontend.strong-read-consistency-queue-enabled", false, "Send requests with strong read consistency to their own query-scheduler queue, unless they query only store-gateways. Enable it only after every querier runs with -querier.strong-read-consistency-queue-enabled.")
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-frontend.grpc-client-config", f)
@@ -513,9 +519,12 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 		return nil, err
 	}
 
-	freq.touchedQueryComponents = f.queryComponentQueueDimensionFromTimeParams([]string{freq.userID}, timestamp.FromTime(minT), timestamp.FromTime(maxT), time.Now())
 	freq.protobufRequest = req
 	freq.protobufRequestHeaders = maps.Clone(querymiddleware.HeadersToPropagateFromContext(streamContext)) // Take a shallow copy of the headers, so that we don't mutate the shared map when adding trace headers later.
+
+	useStrongConsistentReadQueue := f.cfg.StrongReadConsistencyQueueEnabled && propagation.MapCarrier(freq.protobufRequestHeaders).Get(querierapi.ReadConsistencyOffsetsHeader) != ""
+	freq.touchedQueryComponents = f.queryComponentQueueDimensionFromTimeParams([]string{freq.userID}, timestamp.FromTime(minT), timestamp.FromTime(maxT), time.Now(), useStrongConsistentReadQueue)
+
 	freq.protobufResponseDone = make(chan struct{})
 	freq.protobufResponseStream = &ProtobufResponseStream{
 		requestContext: requestContext,
@@ -1132,6 +1141,7 @@ func (f *Frontend) receiveResultForProtobufRequest(req *frontendRequest, firstMe
 const ingesterQueryComponent = "ingester"
 const storeGatewayQueryComponent = "store-gateway"
 const ingesterAndStoreGatewayQueryComponent = "ingester-and-store-gateway"
+const strongReadConsistencyQueryComponent = "strong-read-consistency"
 
 func (f *Frontend) extractTouchedQueryComponentsForHTTPRequest(
 	ctx context.Context, request *httpgrpc.HTTPRequest, now time.Time,
@@ -1148,6 +1158,8 @@ func (f *Frontend) extractTouchedQueryComponentsForHTTPRequest(
 		return nil, err
 	}
 
+	useStrongConsistentReadQueue := f.cfg.StrongReadConsistencyQueueEnabled && httpRequest.Header.Get(querierapi.ReadConsistencyOffsetsHeader) != ""
+
 	switch {
 	case querymiddleware.IsRangeQuery(httpRequest.URL.Path), querymiddleware.IsInstantQuery(httpRequest.URL.Path), querymiddleware.IsQueryCostQuery(httpRequest.URL.Path):
 		decodedRequest, err := f.codec.DecodeMetricsQueryRequest(httpRequest.Context(), httpRequest)
@@ -1157,7 +1169,7 @@ func (f *Frontend) extractTouchedQueryComponentsForHTTPRequest(
 		minT := decodedRequest.GetMinT()
 		maxT := decodedRequest.GetMaxT()
 
-		return f.queryComponentQueueDimensionFromTimeParams(tenantIDs, minT, maxT, now), nil
+		return f.queryComponentQueueDimensionFromTimeParams(tenantIDs, minT, maxT, now, useStrongConsistentReadQueue), nil
 	case querymiddleware.IsLabelsQuery(httpRequest.URL.Path):
 		decodedRequest, err := f.codec.DecodeLabelsSeriesQueryRequest(httpRequest.Context(), httpRequest)
 		if err != nil {
@@ -1165,7 +1177,7 @@ func (f *Frontend) extractTouchedQueryComponentsForHTTPRequest(
 		}
 
 		return f.queryComponentQueueDimensionFromTimeParams(
-			tenantIDs, decodedRequest.GetStart(), decodedRequest.GetEnd(), now,
+			tenantIDs, decodedRequest.GetStart(), decodedRequest.GetEnd(), now, useStrongConsistentReadQueue,
 		), nil
 	case querymiddleware.IsCardinalityQuery(httpRequest.URL.Path), querymiddleware.IsActiveSeriesQuery(httpRequest.URL.Path), querymiddleware.IsActiveNativeHistogramMetricsQuery(httpRequest.URL.Path):
 		// cardinality only hits ingesters
@@ -1178,7 +1190,7 @@ func (f *Frontend) extractTouchedQueryComponentsForHTTPRequest(
 }
 
 func (f *Frontend) queryComponentQueueDimensionFromTimeParams(
-	tenantIDs []string, queryStartUnixMs, queryEndUnixMs int64, now time.Time,
+	tenantIDs []string, queryStartUnixMs, queryEndUnixMs int64, now time.Time, useStrongConsistentReadQueue bool,
 ) []string {
 	longestQueryIngestersWithinWindow := validation.MaxDurationPerTenant(tenantIDs, f.limits.QueryIngestersWithin)
 	shouldQueryIngesters := querier.ShouldQueryIngesters(
@@ -1189,11 +1201,24 @@ func (f *Frontend) queryComponentQueueDimensionFromTimeParams(
 	)
 
 	if shouldQueryIngesters && !shouldQueryBlockStore {
-		return []string{ingesterQueryComponent}
+		return withStrongConsistentComponent(ingesterQueryComponent, useStrongConsistentReadQueue)
 	} else if !shouldQueryIngesters && shouldQueryBlockStore {
-		return []string{storeGatewayQueryComponent}
+		return withStrongConsistentComponent(storeGatewayQueryComponent, useStrongConsistentReadQueue)
 	}
-	return []string{ingesterAndStoreGatewayQueryComponent}
+	return withStrongConsistentComponent(ingesterAndStoreGatewayQueryComponent, useStrongConsistentReadQueue)
+}
+
+// withStrongConsistentComponent returns a slice with component in [0]. When useStrongConsistentReadQueue
+// is true and component is ingester or ingester-and-store-gateway, [1] is strong-read-consistency.
+// A store-gateway component gets no [1], because store-gateways do not wait for strong read consistency.
+func withStrongConsistentComponent(component string, useStrongConsistentReadQueue bool) []string {
+	if useStrongConsistentReadQueue {
+		switch component {
+		case ingesterQueryComponent, ingesterAndStoreGatewayQueryComponent:
+			return []string{component, strongReadConsistencyQueryComponent}
+		}
+	}
+	return []string{component}
 }
 
 // CheckReady determines if the query frontend is ready.  Function parameters/return

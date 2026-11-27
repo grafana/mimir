@@ -10,6 +10,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/queue"
 )
 
 func newTestQCU(t *testing.T) (*QueryComponentUtilization, *prometheus.Registry) {
@@ -54,6 +56,38 @@ func TestQueryComponentUtilization_MarkRequestSent_ComponentRouting(t *testing.T
 			qcu.MarkRequestSent(newTestSchedulerRequest(1, tc.queryComponent))
 			require.Equal(t, tc.wantIngester, qcu.GetForComponent(Ingester))
 			require.Equal(t, tc.wantStoreGW, qcu.GetForComponent(StoreGateway))
+			require.Zero(t, qcu.GetForComponent(StrongReadConsistency))
+		})
+	}
+}
+
+func TestQueryComponentUtilization_StrongReadConsistencyRouting(t *testing.T) {
+	cases := map[string]struct {
+		dims         []string
+		wantIngester int
+		wantStoreGW  int
+	}{
+		"strong ingester request": {
+			dims: []string{ingesterQueueDimension, strongReadConsistencyQueueDimension}, wantIngester: 1, wantStoreGW: 0,
+		},
+		"strong ingester-and-store-gateway request": {
+			dims: []string{ingesterAndStoreGatewayQueueDimension, strongReadConsistencyQueueDimension}, wantIngester: 1, wantStoreGW: 1,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			qcu, _ := newTestQCU(t)
+			req := newTestSchedulerRequest(1, "")
+			req.AdditionalQueueDimensions = tc.dims
+			qcu.MarkRequestSent(req)
+			require.Equal(t, tc.wantIngester, qcu.GetForComponent(Ingester))
+			require.Equal(t, tc.wantStoreGW, qcu.GetForComponent(StoreGateway))
+			require.Equal(t, 1, qcu.GetForComponent(StrongReadConsistency))
+
+			qcu.MarkRequestCompleted(req)
+			require.Zero(t, qcu.GetForComponent(Ingester))
+			require.Zero(t, qcu.GetForComponent(StoreGateway))
+			require.Zero(t, qcu.GetForComponent(StrongReadConsistency))
 		})
 	}
 }
@@ -120,6 +154,9 @@ func TestQueryComponentUtilization_ObserveInflightRequests(t *testing.T) {
 	qcu.MarkRequestSent(newTestSchedulerRequest(1, ingesterQueueDimension))
 	qcu.MarkRequestSent(newTestSchedulerRequest(2, ingesterQueueDimension))
 	qcu.MarkRequestSent(newTestSchedulerRequest(3, storeGatewayQueueDimension))
+	strongReq := newTestSchedulerRequest(4, "")
+	strongReq.AdditionalQueueDimensions = []string{ingesterQueueDimension, strongReadConsistencyQueueDimension}
+	qcu.MarkRequestSent(strongReq)
 
 	qcu.ObserveInflightRequests()
 
@@ -127,20 +164,28 @@ func TestQueryComponentUtilization_ObserveInflightRequests(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, families, 1)
 
-	// Expect one Summary observation per component (ingester + store-gateway),
-	// keyed on the query_component label.
+	// Expect one Summary observation per component (ingester + store-gateway + strong-read-consistency),
+	// keyed on the query_component label. The strong request also counts for its ingester query component.
 	samplesByComponent := map[string]uint64{}
+	sumByComponent := map[string]float64{}
 	for _, m := range families[0].Metric {
 		for _, l := range m.Label {
 			if l.GetName() == "query_component" {
 				samplesByComponent[l.GetValue()] = m.GetSummary().GetSampleCount()
+				sumByComponent[l.GetValue()] = m.GetSummary().GetSampleSum()
 			}
 		}
 	}
 	require.Equal(t, map[string]uint64{
-		string(Ingester):     1,
-		string(StoreGateway): 1,
+		string(Ingester):              1,
+		string(StoreGateway):          1,
+		string(StrongReadConsistency): 1,
 	}, samplesByComponent)
+	require.Equal(t, map[string]float64{
+		string(Ingester):              3,
+		string(StoreGateway):          1,
+		string(StrongReadConsistency): 1,
+	}, sumByComponent)
 
 	// A second observation accumulates onto the same per-component summary.
 	qcu.ObserveInflightRequests()
@@ -169,6 +214,44 @@ func TestQueryComponentFlags(t *testing.T) {
 			isIng, isSG := queryComponentFlags(tc.input)
 			require.Equal(t, tc.wantIngester, isIng)
 			require.Equal(t, tc.wantStoreGW, isSG)
+		})
+	}
+}
+
+func TestSchedulerRequest_ExpectedQueryComponentName(t *testing.T) {
+	cases := map[string]struct {
+		dims                  []string
+		wantQueueDimension    string
+		wantTargetComponent   string
+		wantStrongConsistency bool
+	}{
+		"no queue dimension": {
+			dims: nil, wantQueueDimension: queue.UnknownDimension, wantTargetComponent: "", wantStrongConsistency: false,
+		},
+		"eventual ingester request": {
+			dims:               []string{ingesterQueueDimension},
+			wantQueueDimension: ingesterQueueDimension, wantTargetComponent: ingesterQueueDimension, wantStrongConsistency: false,
+		},
+		"strong ingester request": {
+			dims:               []string{ingesterQueueDimension, strongReadConsistencyQueueDimension},
+			wantQueueDimension: strongReadConsistencyQueueDimension, wantTargetComponent: ingesterQueueDimension, wantStrongConsistency: true,
+		},
+		"strong ingester-and-store-gateway request": {
+			dims:               []string{ingesterAndStoreGatewayQueueDimension, strongReadConsistencyQueueDimension},
+			wantQueueDimension: strongReadConsistencyQueueDimension, wantTargetComponent: ingesterAndStoreGatewayQueueDimension, wantStrongConsistency: true,
+		},
+		"unrecognised second queue dimension": {
+			dims:               []string{ingesterQueueDimension, "garbage"},
+			wantQueueDimension: ingesterQueueDimension, wantTargetComponent: ingesterQueueDimension, wantStrongConsistency: false,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			req := &SchedulerRequest{AdditionalQueueDimensions: tc.dims}
+			require.Equal(t, tc.wantQueueDimension, req.ExpectedQueryComponentName())
+			component, strong := req.ExpectedTargetQueryComponentNameWithConsistency()
+			require.Equal(t, tc.wantTargetComponent, component)
+			require.Equal(t, tc.wantStrongConsistency, strong)
 		})
 	}
 }
