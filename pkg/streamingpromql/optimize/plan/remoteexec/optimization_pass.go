@@ -174,12 +174,12 @@ func (o *OptimizationPass) applyToRootNode(root planning.Node, groups remoteExec
 	return root, nil
 }
 
-// collectEvaluationRoots returns the EvaluationRoot nodes in the plan.
 type evaluationRootWithTimeRange struct {
 	root      *core.EvaluationRoot
 	timeRange types.QueryTimeRange
 }
 
+// collectEvaluationRoots returns the EvaluationRoot nodes in the plan that need remote execution.
 func collectEvaluationRoots(node planning.Node, timeRange types.QueryTimeRange) []evaluationRootWithTimeRange {
 	seen := map[*core.EvaluationRoot]struct{}{}
 	var roots []evaluationRootWithTimeRange
@@ -187,7 +187,11 @@ func collectEvaluationRoots(node planning.Node, timeRange types.QueryTimeRange) 
 	var collect func(planning.Node, types.QueryTimeRange)
 	collect = func(node planning.Node, timeRange types.QueryTimeRange) {
 		if evaluationRoot, ok := node.(*core.EvaluationRoot); ok {
-			if _, exists := seen[evaluationRoot]; !exists {
+			// An earlier pass can remove all selectors from an evaluation root, for example by simplifying
+			// `sum(foo{a="1",a="2"}) or vector(0)` to `vector(0)`. A remote execution group needs a selector,
+			// and such a root reads no data, so leave it to run locally. Skipping it here also means that a
+			// single remaining root is not counted as one of several roots, so it is not eagerly loaded.
+			if _, exists := seen[evaluationRoot]; !exists && optimize.InspectSelectors(evaluationRoot.Inner).HasSelectors {
 				seen[evaluationRoot] = struct{}{}
 				roots = append(roots, evaluationRootWithTimeRange{
 					root:      evaluationRoot,

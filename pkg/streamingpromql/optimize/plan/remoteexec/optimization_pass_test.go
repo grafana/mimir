@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
@@ -1055,6 +1056,8 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 		expectedPlan         string
 		disableSharding      bool
 		supportedPlanVersion planning.QueryPlanVersion
+
+		removeStaticallyEmptyExpressions bool
 	}{
 		"spun-off subquery keeps unsupported fill local": {
 			expr:                 `max_over_time((__vector_evaluation_root__(left_metric + fill_right(0) right_metric))[2h:1m])`,
@@ -1113,6 +1116,20 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 					- RHS: EvaluationRoot
 						- RemoteExecutionConsumer: node 0
 							- RemoteExecutionGroup: eager load
+								- node 0: VectorSelector: {__name__="bar"}
+			`,
+		},
+		"evaluation root left without selectors by an earlier pass, plus another evaluation root": {
+			expr:                             `__vector_evaluation_root__(foo{a="1",a="2"} or vector(0)) / __vector_evaluation_root__(bar)`,
+			removeStaticallyEmptyExpressions: true,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: EvaluationRoot
+						- FunctionCall: vector(...)
+							- NumberLiteral: 0
+					- RHS: EvaluationRoot
+						- RemoteExecutionConsumer: node 0
+							- RemoteExecutionGroup
 								- node 0: VectorSelector: {__name__="bar"}
 			`,
 		},
@@ -1314,6 +1331,10 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 
 			if !testCase.disableSharding {
 				planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, nil, opts.Logger))
+			}
+
+			if testCase.removeStaticallyEmptyExpressions {
+				planner.RegisterQueryPlanOptimizationPass(plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
 			}
 
 			planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, opts.CommonOpts.Reg, opts.Logger))
