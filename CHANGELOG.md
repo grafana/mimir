@@ -214,6 +214,7 @@
 * [BUGFIX] Mimirtool: Stop `mimirtool rules get` from printing the API request path to stdout before the rule group, which made the output invalid YAML. #17440
 * [ENHANCEMENT] Ingester: Route raw Kafka records through the ingester write path when the selected engine supports direct ingest. #17521
 * [ENHANCEMENT] Ingester: Allow tenant storage engines to track active series in their head and provide active-series counts and membership. #17524
+* [ENHANCEMENT] Ingester: Allow tenant storage engines to provide fast paths for streaming queries, active-series lookups, and label cardinality. #17525
 
 ### Mixin
 

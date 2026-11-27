@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -61,6 +62,13 @@ func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream clie
 	}
 
 	isNativeHistogram := request.GetType() == client.NATIVE_HISTOGRAM_SERIES
+	if native, ok := idx.(activeSeriesIndex); ok && !db.trackerActive() && !hasShardMatcher(matchers) {
+		// An engine that keeps the active series in its series lists them in a pass over the matchers' series, where each
+		// was looked up twice, for whether it's active and for its labels.
+		return sendActiveSeries(stream, isNativeHistogram, func(visit func([]mimirpb.LabelAdapter, int) error) error {
+			return native.ActiveSeriesMatching(ctx, matchers, db.activeCutoff(time.Now()).UnixMilli(), isNativeHistogram, visit)
+		})
+	}
 	postings, err := getPostings(ctx, db, idx, matchers, isNativeHistogram)
 	if err != nil {
 		return fmt.Errorf("error listing active series: %w", err)
@@ -124,7 +132,12 @@ func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matche
 	if shard != nil && matchAllSeries(matchers) {
 		postings = db.Head().ShardSeries(shard.ShardIndex, shard.ShardCount)
 	} else {
-		postings, err = tsdb.PostingsForMatchers(ctx, idx, matchers...)
+		if native, ok := idx.(nativeMatchersIndex); ok {
+			// An index that selects by matchers itself doesn't read every series with a label for each regex or negation.
+			postings, err = native.PostingsForMatchersNative(ctx, matchers...)
+		} else {
+			postings, err = tsdb.PostingsForMatchers(ctx, idx, matchers...)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("error getting postings: %w", err)
 		}
@@ -133,11 +146,134 @@ func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matche
 		}
 	}
 
+	activeRefs := db.activeRefs(time.Now())
 	if isNativeHistogram {
-		return activeseries.NewNativeHistogramPostings(db.activeRefs(time.Now()), postings), nil
+		return activeseries.NewNativeHistogramPostings(activeRefs, postings), nil
 	}
 
-	return &ZeroBucketCountPostings{*activeseries.NewPostings(db.activeRefs(time.Now()), postings)}, nil
+	return &ZeroBucketCountPostings{*activeseries.NewPostings(activeRefs, postings)}, nil
+}
+
+// activeSeriesIndex is an index of an engine that keeps the active series in its series, which lists the ones matching
+// matchers that were ingested since cutoffMs, with their native histogram bucket counts.
+type activeSeriesIndex interface {
+	ActiveSeriesMatching(ctx context.Context, matchers []*labels.Matcher, cutoffMs int64, nativeHistograms bool, visit func(lbls []mimirpb.LabelAdapter, buckets int) error) error
+}
+
+func hasShardMatcher(matchers []*labels.Matcher) bool {
+	for _, m := range matchers {
+		if m.Name == sharding.ShardLabel {
+			return true
+		}
+	}
+	return false
+}
+
+// sendActiveSeries sends the series list visits as the active series API does, in messages of at most
+// activeSeriesMaxSizeBytes.
+func sendActiveSeries(stream client.Ingester_ActiveSeriesServer, isNativeHistogram bool, list func(visit func([]mimirpb.LabelAdapter, int) error) error) error {
+	scratch := takeActiveSeriesScratch()
+	defer scratch.give()
+	// A response's metrics and labels are copied into the scratch's slices, which the next response reuses from the
+	// start once it is sent, which encodes it.
+	resp := &client.ActiveSeriesResponse{Metric: scratch.pointers[:0], BucketCount: scratch.buckets[:0]}
+	adapters, metrics := scratch.adapters[:0], scratch.metrics[:0]
+	keep := func() {
+		scratch.pointers, scratch.buckets = held(scratch.pointers, resp.Metric), held(scratch.buckets, resp.BucketCount)
+		scratch.adapters, scratch.metrics = held(scratch.adapters, adapters), held(scratch.metrics, metrics)
+	}
+	defer keep()
+	currentSize := 0
+	err := list(func(lbls []mimirpb.LabelAdapter, buckets int) error {
+		mSize := (&mimirpb.Metric{Labels: lbls}).Size()
+		if isNativeHistogram {
+			mSize += 8 // 8 bytes for the bucket count.
+		}
+		if currentSize+mSize > activeSeriesMaxSizeBytes {
+			if err := client.SendActiveSeriesResponse(stream, resp); err != nil {
+				return fmt.Errorf("error sending response: %w", err)
+			}
+			keep()
+			resp = &client.ActiveSeriesResponse{Metric: resp.Metric[:0], BucketCount: resp.BucketCount[:0]}
+			adapters, metrics = adapters[:0], metrics[:0]
+			currentSize = 0
+		}
+		// The labels are the engine's only until visit returns. Growing a slice leaves the metrics already in the
+		// response pointing into the one it had.
+		start := len(adapters)
+		adapters = append(adapters, lbls...)
+		metrics = append(metrics, mimirpb.Metric{Labels: adapters[start:len(adapters):len(adapters)]})
+		resp.Metric = append(resp.Metric, &metrics[len(metrics)-1])
+		if isNativeHistogram {
+			resp.BucketCount = append(resp.BucketCount, uint64(buckets))
+		}
+		currentSize += mSize
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("error listing active series: %w", err)
+	}
+	if len(resp.Metric) > 0 {
+		if err := client.SendActiveSeriesResponse(stream, resp); err != nil {
+			return fmt.Errorf("error sending response: %w", err)
+		}
+	}
+	return nil
+}
+
+// activeSeriesScratch holds the slices an active series response is built in, kept between responses: growing them
+// for each was most of what an engine's listing allocated.
+type activeSeriesScratch struct {
+	pointers []*mimirpb.Metric
+	buckets  []uint64
+	adapters []mimirpb.LabelAdapter
+	metrics  []mimirpb.Metric
+}
+
+var activeSeriesScratches sync.Pool
+
+// maxKeptActiveSeriesScratch is how many labels a kept scratch holds at most: what a response of a full size has of
+// series with short labels, which one of a large listing grows to as it is reused for each response.
+const maxKeptActiveSeriesScratch = activeSeriesMaxSizeBytes / 8
+
+func takeActiveSeriesScratch() *activeSeriesScratch {
+	if scratch, ok := activeSeriesScratches.Get().(*activeSeriesScratch); ok {
+		return scratch
+	}
+	return &activeSeriesScratch{}
+}
+
+// give keeps the slices for another response, unless they are large, cleared as far as a response wrote them: they
+// point into one tenant's labels.
+func (s *activeSeriesScratch) give() {
+	if cap(s.adapters) > maxKeptActiveSeriesScratch {
+		return
+	}
+	clear(s.pointers)
+	clear(s.adapters)
+	clear(s.metrics)
+	s.pointers, s.buckets, s.adapters, s.metrics = s.pointers[:0], s.buckets[:0], s.adapters[:0], s.metrics[:0]
+	activeSeriesScratches.Put(s)
+}
+
+// held is the slice a response keeps of kept, which used is cut from or grown out of: as long as all the elements the
+// response wrote, which give clears. A slice is reused from its start for each batch.
+func held[T any](kept, used []T) []T {
+	if len(kept) > len(used) && cap(used) > 0 && &kept[0] == &used[:1][0] {
+		return kept
+	}
+	return used
+}
+
+// activeLabelValueIndex is an index of an engine that keeps the active series in its series, which tells whether a series
+// with the label's value was ingested since cutoffMs.
+type activeLabelValueIndex interface {
+	IsLabelValueActive(ctx context.Context, name, value string, cutoffMs int64) (bool, error)
+}
+
+// nativeMatchersIndex is an index that has its own selection by matchers, better than assembling one from its postings.
+type nativeMatchersIndex interface {
+	PostingsForMatchersNative(ctx context.Context, matchers ...*labels.Matcher) (index.Postings, error)
 }
 
 // Check if matchers will match every series. Not an exhaustive check; just some common examples seen in the wild.
