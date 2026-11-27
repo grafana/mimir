@@ -113,7 +113,7 @@ const QueryPlanV21 = QueryPlanVersion(21)
 // ignore the fill modifier and produce incorrect results.
 const QueryPlanV22 = QueryPlanVersion(22)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV21
+var MaximumSupportedQueryPlanVersion = QueryPlanV22
 
 type QueryPlan struct {
 	Root       Node
