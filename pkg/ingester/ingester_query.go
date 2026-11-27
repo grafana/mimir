@@ -433,7 +433,7 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 		}
 	case client.ACTIVE:
 		valueFilter = func(name, value string) (bool, error) {
-			return activeseries.IsLabelValueActive(stream.Context(), index, db.activeSeries, name, value)
+			return activeseries.IsLabelValueActive(stream.Context(), index, db.activeRefs(time.Now()), name, value)
 		}
 	default:
 		return fmt.Errorf("unknown count method %q", request.GetCountMethod())
@@ -485,7 +485,7 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 			if err != nil {
 				return nil, err
 			}
-			return activeseries.NewPostings(db.activeSeries, postings), nil
+			return activeseries.NewPostings(db.activeRefs(time.Now()), postings), nil
 		}
 	default:
 		return fmt.Errorf("unknown count method %q", req.GetCountMethod())
@@ -513,7 +513,7 @@ func createUserStats(db *userTSDB, req *client.UserStatsRequest) (*client.UserSt
 	case client.IN_MEMORY:
 		series = db.Head().NumSeries()
 	case client.ACTIVE:
-		activeSeries, _, _, _ := db.activeSeries.Active()
+		activeSeries := db.activeSeriesTotal(time.Now())
 		series = uint64(activeSeries)
 	default:
 		return nil, fmt.Errorf("unknown count method %q", req.GetCountMethod())
