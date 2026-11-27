@@ -297,6 +297,7 @@ The following features are currently experimental:
 - Store-gateway
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`
   - Per-zone shard size, useful for computing automatic shard sizes based on the number of zone `-store-gateway.tenant-shard-size-per-zone`
+  - Keep the previous tenant shard available for a transition period after a tenant's store-gateway shard size changes `-store-gateway.shard-size-transition-enabled`
   - Specify the partitioner gap size for chunks (excluding posting & series) `-blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks`
   - Load only symbols table onto disk index-header `-blocks-storage.bucket-store.index-header.version=2`
   - Logarithmic in-memory postings offsets sampling for high-cardinality labels `-blocks-storage.bucket-store.posting-offsets-in-mem-sampling-cardinality-threshold`

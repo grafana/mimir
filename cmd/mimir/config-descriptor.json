@@ -16069,6 +16069,17 @@
         },
         {
           "kind": "field",
+          "name": "shard_size_transition_enabled",
+          "required": false,
+          "desc": "If true, when the store-gateway shard size of a tenant changes, store-gateways keep the blocks they loaded for the previous tenant shard, and queriers also query the previous tenant shard when blocks are missing, for 3 times -blocks-storage.bucket-store.sync-interval after the change. This gives the store-gateways in the new tenant shard time to load the blocks. The state is kept in memory, so a restarted component doesn't know about changes made before it started. This setting is used by queriers and store-gateways.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "store-gateway.shard-size-transition-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "enabled_tenants",
           "required": false,
           "desc": "Comma separated list of tenants that can be loaded by the store-gateway. If specified, only blocks for these tenants will be loaded by the store-gateway, otherwise all tenants can be loaded. Subject to sharding.",

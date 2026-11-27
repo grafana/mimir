@@ -57,6 +57,8 @@ type Config struct {
 	ShardingRing       RingConfig               `yaml:"sharding_ring" doc:"description=The hash ring configuration."`
 	DynamicReplication DynamicReplicationConfig `yaml:"dynamic_replication" doc:"description=Experimental dynamic replication configuration." category:"experimental"`
 
+	ShardSizeTransitionEnabled bool `yaml:"shard_size_transition_enabled" category:"experimental"`
+
 	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
 
@@ -72,6 +74,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.ShardingRing.RegisterFlags(f, logger)
 	cfg.DynamicReplication.RegisterFlagsWithPrefix(f, "store-gateway.")
 
+	f.BoolVar(&cfg.ShardSizeTransitionEnabled, "store-gateway.shard-size-transition-enabled", false, "If true, when the store-gateway shard size of a tenant changes, store-gateways keep the blocks they loaded for the previous tenant shard, and queriers also query the previous tenant shard when blocks are missing, for 3 times -blocks-storage.bucket-store.sync-interval after the change. This gives the store-gateways in the new tenant shard time to load the blocks. The state is kept in memory, so a restarted component doesn't know about changes made before it started. This setting is used by queriers and store-gateways.")
 	f.Var(&cfg.EnabledTenants, "store-gateway.enabled-tenants", "Comma separated list of tenants that can be loaded by the store-gateway. If specified, only blocks for these tenants will be loaded by the store-gateway, otherwise all tenants can be loaded. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "store-gateway.disabled-tenants", "Comma separated list of tenants that cannot be loaded by the store-gateway. If specified, and the store-gateway would normally load a given tenant for (via -store-gateway.enabled-tenants or sharding), it will be ignored instead.")
 	f.IntVar(&cfg.ReadCompartmentID, "store-gateway.read-compartment-id", 0, "The read compartment this store-gateway serves. Only used when compartments are enabled.")
@@ -232,7 +235,12 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		)
 	}
 
-	shardingStrategy = NewShuffleShardingStrategy(g.ring, lifecyclerCfg.ID, lifecyclerCfg.Addr, dynamicReplication, limits, logger)
+	var shardSizeTransitions *ShardSizeTransitions
+	if gatewayCfg.ShardSizeTransitionEnabled {
+		shardSizeTransitions = NewShardSizeTransitions(mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval, "store-gateway", reg, logger)
+	}
+
+	shardingStrategy = NewShuffleShardingStrategy(g.ring, lifecyclerCfg.ID, lifecyclerCfg.Addr, dynamicReplication, limits, shardSizeTransitions, logger)
 
 	allowedTenants := util.NewAllowList(gatewayCfg.EnabledTenants, gatewayCfg.DisabledTenants)
 	if len(gatewayCfg.EnabledTenants) > 0 {

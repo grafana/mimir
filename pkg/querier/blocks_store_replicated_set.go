@@ -40,6 +40,8 @@ type blocksStoreReplicationSet struct {
 	dynamicReplication storegateway.DynamicReplication
 	limits             BlocksStoreLimits
 
+	transitions *storegateway.ShardSizeTransitions
+
 	// When non empty, the querier prioritises querying blocks from store-gateways in these zones with equal priority.
 	preferredZones []string
 
@@ -55,6 +57,7 @@ func newBlocksStoreReplicationSet(
 	dynamicReplication storegateway.DynamicReplication,
 	preferredZones []string,
 	limits BlocksStoreLimits,
+	transitions *storegateway.ShardSizeTransitions,
 ) (*blocksStoreReplicationSet, error) {
 	s := &blocksStoreReplicationSet{
 		storesRing:         storesRing,
@@ -63,6 +66,7 @@ func newBlocksStoreReplicationSet(
 		balancingStrategy:  balancingStrategy,
 		preferredZones:     preferredZones,
 		limits:             limits,
+		transitions:        transitions,
 		subservicesWatcher: services.NewFailureWatcher(),
 	}
 
@@ -105,9 +109,28 @@ func (s *blocksStoreReplicationSet) stopping(_ error) error {
 }
 
 func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][][]ulid.ULID, error) {
+	userRing, _ := storegateway.GetShuffleShardingSubrings(s.storesRing, userID, s.limits, s.transitions)
+	return s.getClientsFor(userRing, userID, blocks, exclude)
+}
+
+// GetPreviousClientsFor implements BlocksStoreSet.
+func (s *blocksStoreReplicationSet) GetPreviousClientsFor(userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][][]ulid.ULID, bool, error) {
+	if s.transitions == nil {
+		return nil, false, nil
+	}
+
+	_, previousUserRing := storegateway.GetShuffleShardingSubrings(s.storesRing, userID, s.limits, s.transitions)
+	if previousUserRing == nil {
+		return nil, false, nil
+	}
+
+	clients, err := s.getClientsFor(previousUserRing, userID, blocks, exclude)
+	return clients, true, err
+}
+
+func (s *blocksStoreReplicationSet) getClientsFor(userRing ring.ReadRing, userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][][]ulid.ULID, error) {
 	blocksByAddr := make(map[string][]ulid.ULID)
 	instances := make(map[string]ring.InstanceDesc)
-	userRing := storegateway.GetShuffleShardingSubring(s.storesRing, userID, s.limits)
 
 	// It's safe to reuse buffers across iterations, as far as we don't retain the ReplicationSet.Instances slice
 	// (retaining individual instances from the slice is fine).
