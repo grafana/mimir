@@ -17,7 +17,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/upstreamtestdata"
+	"github.com/grafana/mimir/pkg/streamingpromql/upstreamtestdata/fileformat"
 )
 
 func main() {
@@ -59,8 +59,8 @@ func run() error {
 			return err
 		}
 		// Normalize trailing whitespace (the in-sync test ignores it) so re-syncing is a no-op.
-		upstream := upstreamtestdata.StripLineTrailingWhitespace(string(upstreamBytes))
-		header := upstreamtestdata.LicenseHeader(name)
+		upstream := fileformat.StripLineTrailingWhitespace(string(upstreamBytes))
+		header := fileformat.LicenseHeader(name)
 
 		ourEnabled := filepath.Join(ourDir, name)
 		ourDisabled := ourEnabled + ".disabled"
@@ -86,10 +86,10 @@ func run() error {
 			if err != nil {
 				return err
 			}
-			ours := upstreamtestdata.StripLineTrailingWhitespace(strings.TrimPrefix(string(ourBytes), header))
+			ours := fileformat.StripLineTrailingWhitespace(strings.TrimPrefix(string(ourBytes), header))
 			// restore(ours) equals the previously-vendored upstream (the in-sync test guarantees it),
 			// so it serves as the merge base - no need for the old vendor.
-			base := upstreamtestdata.RestoreUnsupportedTestCases(ours)
+			base := fileformat.RestoreUnsupportedTestCases(ours)
 
 			merged, conflicts, err := threeWayMerge(base, ours, upstream)
 			if err != nil {

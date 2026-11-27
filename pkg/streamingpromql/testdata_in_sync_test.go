@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/upstreamtestdata"
+	"github.com/grafana/mimir/pkg/streamingpromql/upstreamtestdata/fileformat"
 )
 
 // This test confirms that the test cases in testdata/upstream are in sync with the test cases
@@ -62,7 +62,7 @@ func TestOurUpstreamTestCasesAreInSyncWithUpstream(t *testing.T) {
 		name := strings.TrimSuffix(filepath.Base(ourUpstreamTestCase), ".disabled") // Remove the .disabled suffix, if it's there.
 
 		t.Run(name, func(t *testing.T) {
-			licenseHeader := upstreamtestdata.LicenseHeader(name)
+			licenseHeader := fileformat.LicenseHeader(name)
 
 			isDisabled := strings.HasSuffix(ourUpstreamTestCase, ".disabled")
 
@@ -76,8 +76,8 @@ func TestOurUpstreamTestCasesAreInSyncWithUpstream(t *testing.T) {
 			ourString := string(ourBytes)
 
 			// Some of the upstream test cases have trailing whitespace which we don't care about.
-			sourceString = upstreamtestdata.StripLineTrailingWhitespace(sourceString)
-			ourString = upstreamtestdata.StripLineTrailingWhitespace(ourString)
+			sourceString = fileformat.StripLineTrailingWhitespace(sourceString)
+			ourString = fileformat.StripLineTrailingWhitespace(ourString)
 
 			require.Truef(t, strings.HasPrefix(ourString, licenseHeader), "%v does not have the expected license header:\n%v", ourUpstreamTestCase, licenseHeader)
 			ourString = strings.TrimPrefix(ourString, licenseHeader) // Ignore the license header in later checks.
@@ -87,7 +87,7 @@ func TestOurUpstreamTestCasesAreInSyncWithUpstream(t *testing.T) {
 				require.Equalf(t, sourceString, ourString, "our test case %v is not in sync with the corresponding upstream test case %v", ourUpstreamTestCase, sourcePath)
 			} else {
 				// Check test cases are equivalent, after re-enabling disabled test cases.
-				ourString = upstreamtestdata.RestoreUnsupportedTestCases(ourString)
+				ourString = fileformat.RestoreUnsupportedTestCases(ourString)
 				require.Equalf(t, sourceString, ourString, "our test case %v is not in sync with the corresponding upstream test case %v after unignoring unsupported test cases", ourUpstreamTestCase, sourcePath)
 			}
 		})

@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/upstreamtestdata/fileformat"
 )
 
 func TestCommentOutEvals(t *testing.T) {
@@ -65,7 +66,7 @@ func TestCommentOutEvals(t *testing.T) {
 			require.Equal(t, tc.expectedLines, unmatched)
 
 			// The in-sync test relies on this reversing exactly.
-			require.Equal(t, RestoreUnsupportedTestCases(tc.content), RestoreUnsupportedTestCases(actual))
+			require.Equal(t, fileformat.RestoreUnsupportedTestCases(tc.content), fileformat.RestoreUnsupportedTestCases(actual))
 		})
 	}
 }
