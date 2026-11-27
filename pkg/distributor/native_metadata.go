@@ -76,11 +76,12 @@ func (d *Distributor) NativeMetricMetadata(ctx context.Context, matcherSets [][]
 			msg.FreeBuffer()
 		}
 	})
+	merge.close()
 	if err != nil {
 		return NativeMetricMetadataResult{}, err
 	}
-	merged, limited := merge.result(limit, ingester_client.MergeNativeMetricMetadataVersions)
-	result := NativeMetricMetadataResult{Series: make([]ingester_client.NativeMetricMetadataSeries, 0, len(merged)), Limited: limited, CoverageStart: merge.coverageStart}
+	merged, limited, coverageStart := merge.result(limit, ingester_client.MergeNativeMetricMetadataVersions)
+	result := NativeMetricMetadataResult{Series: make([]ingester_client.NativeMetricMetadataSeries, 0, len(merged)), Limited: limited, CoverageStart: coverageStart}
 	for _, s := range merged {
 		result.Series = append(result.Series, ingester_client.NativeMetricMetadataSeries{Labels: s.labels, Versions: s.versions, Truncated: s.truncated, Coalesced: s.coalesced})
 	}
@@ -119,11 +120,12 @@ func (d *Distributor) NativeResources(ctx context.Context, matcherSets [][]*labe
 			msg.FreeBuffer()
 		}
 	})
+	merge.close()
 	if err != nil {
 		return NativeResourcesResult{}, err
 	}
-	merged, limited := merge.result(limit, ingester_client.MergeNativeResourceVersions)
-	result := NativeResourcesResult{Series: make([]ingester_client.NativeResourcesSeries, 0, len(merged)), Limited: limited, CoverageStart: merge.coverageStart}
+	merged, limited, coverageStart := merge.result(limit, ingester_client.MergeNativeResourceVersions)
+	result := NativeResourcesResult{Series: make([]ingester_client.NativeResourcesSeries, 0, len(merged)), Limited: limited, CoverageStart: coverageStart}
 	for _, s := range merged {
 		result.Series = append(result.Series, ingester_client.NativeResourcesSeries{Labels: s.labels, Versions: s.versions, Coalesced: s.coalesced})
 	}
@@ -172,9 +174,11 @@ func toLabelMatcherSets(matcherSets [][]*labels.Matcher) ([]*ingester_client.Lab
 }
 
 // nativeLookupMerge collects the ingesters' answers about each series, or target, to merge them by their change
-// points.
+// points. It's closed when the lookup returns: the requests the quorum cancelled may still be answering, since
+// DoUntilQuorum doesn't wait for them, and their answers would otherwise change the merge while its result is taken.
 type nativeLookupMerge[V any] struct {
 	mtx           sync.Mutex
+	closed        bool
 	series        map[string]*mergedNativeSeries[V]
 	limited       bool
 	coverageStart int64
@@ -194,11 +198,14 @@ func newNativeLookupMerge[V any]() *nativeLookupMerge[V] {
 // addResponse adds a response's lookup-wide fields, and counts its bytes and the series its ingester visited for the
 // query's stats.
 func (m *nativeLookupMerge[V]) addResponse(ctx context.Context, size int, limited bool, coverageStart, seriesVisited int64) {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	if m.closed {
+		return
+	}
 	queryStats := stats.FromContext(ctx)
 	queryStats.AddNativeLookupResponseBytes(uint64(size))
 	queryStats.AddNativeLookupSeriesVisited(uint64(seriesVisited))
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
 	m.limited = m.limited || limited
 	// The merged lookup covers the series' changes from when every ingester's native metadata has started.
 	m.coverageStart = max(m.coverageStart, coverageStart)
@@ -208,6 +215,9 @@ func (m *nativeLookupMerge[V]) addSeries(lbls []mimirpb.LabelAdapter, versions [
 	key := nativeSeriesKey(lbls)
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
+	if m.closed {
+		return
+	}
 	s, ok := m.series[key]
 	if !ok {
 		// The labels refer to the response's buffer.
@@ -222,9 +232,18 @@ func (m *nativeLookupMerge[V]) addSeries(lbls []mimirpb.LabelAdapter, versions [
 	s.coalesced = s.coalesced || coalesced
 }
 
-// result is the merged series in label order, at most limit of them when positive, and whether more matched, here or
-// in an ingester.
-func (m *nativeLookupMerge[V]) result(limit int, mergeVersions func([][]V) []V) ([]*mergedNativeSeries[V], bool) {
+// close stops the merge from taking answers.
+func (m *nativeLookupMerge[V]) close() {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	m.closed = true
+}
+
+// result is the merged series in label order, at most limit of them when positive, whether more matched, here or in
+// an ingester, and when the lookup covers the series' changes from.
+func (m *nativeLookupMerge[V]) result(limit int, mergeVersions func([][]V) []V) ([]*mergedNativeSeries[V], bool, int64) {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
 	out := make([]*mergedNativeSeries[V], 0, len(m.series))
 	for _, s := range m.series {
 		s.versions = mergeVersions(s.answers)
@@ -237,7 +256,7 @@ func (m *nativeLookupMerge[V]) result(limit int, mergeVersions func([][]V) []V) 
 	if limit > 0 && len(out) > limit {
 		out, limited = out[:limit], true
 	}
-	return out, limited
+	return out, limited, m.coverageStart
 }
 
 func nativeSeriesKey(lbls []mimirpb.LabelAdapter) string {
