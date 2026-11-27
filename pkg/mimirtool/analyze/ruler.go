@@ -52,7 +52,9 @@ func ParseMetricsInRuleGroup(mir *MetricsInRuler, group rwrulefmt.RuleGroup, ns 
 
 		parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 			if n, ok := node.(*parser.VectorSelector); ok {
-				refMetrics[n.Name] = struct{}{}
+				if name := metricNameFromSelector(n); name != "" {
+					refMetrics[name] = struct{}{}
+				}
 			}
 
 			return nil
