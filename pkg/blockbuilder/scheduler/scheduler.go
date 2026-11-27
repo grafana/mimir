@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"google.golang.org/grpc/codes"
@@ -47,12 +48,28 @@ type BlockBuilderScheduler struct {
 
 	partitionStates map[int32]*partitionState
 
+	// markerStore persists the offset marker. It is nil when no bucket was provided, which disables the marker.
+	markerStore *offsetMarkerStore
+	// markerWriter writes the marker from a background goroutine. It is nil if markerStore is.
+	markerWriter *offsetMarkerWriter
+	// markerFinalTimeout bounds the marker write at shutdown.
+	markerFinalTimeout time.Duration
+
+	// startupKafka and clusterInfos hold, per cluster, the Kafka committed offsets found at startup, and the
+	// cluster's identity. They are set by loadInitialCommittedOffsets before the marker writer is released, and
+	// not changed after.
+	startupKafka []kadm.Offsets
+	clusterInfos []clusterInfo
+
 	// for synchronizing tests.
 	onScheduleUpdated func()
 }
 
+// New creates the scheduler. bkt is the blocks-storage bucket used for the offset marker object;
+// if nil, the marker is disabled.
 func New(
 	cfg Config,
+	bkt objstore.Bucket,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*BlockBuilderScheduler, error) {
@@ -68,11 +85,27 @@ func New(
 
 		onScheduleUpdated: func() {},
 	}
+	if bkt != nil {
+		s.markerStore = newOffsetMarkerStore(bkt, cfg.Kafka.Topic, cfg.ConsumerGroup)
+		s.markerWriter = newOffsetMarkerWriter(s.markerStore, cfg.Kafka.Topic, cfg.ConsumerGroup, cfg.OffsetMarkerRefreshInterval, &s.metrics, logger)
+		s.markerWriter.onBase = s.onMarkerBaseLoaded
+		s.markerFinalTimeout = offsetMarkerFinalWriteTimeout
+	}
 	s.Service = services.NewBasicService(s.starting, s.running, s.stopping)
 	return s, nil
 }
 
-func (s *BlockBuilderScheduler) starting(_ context.Context) error {
+func (s *BlockBuilderScheduler) starting(ctx context.Context) error {
+	if err := s.startKafkaClients(ctx); err != nil {
+		return err
+	}
+	if s.markerWriter != nil {
+		s.markerWriter.start()
+	}
+	return nil
+}
+
+func (s *BlockBuilderScheduler) startKafkaClients(_ context.Context) error {
 	if !s.cfg.Compartments.Enabled {
 		kc, err := ingest.NewKafkaReaderClient(
 			s.cfg.Kafka,
@@ -107,8 +140,16 @@ func (s *BlockBuilderScheduler) starting(_ context.Context) error {
 }
 
 func (s *BlockBuilderScheduler) stopping(_ error) error {
-	if err := s.flushOffsetsToKafka(context.Background()); err != nil {
+	// Commit to Kafka first, then make the last marker write, within a short deadline. The marker is
+	// best effort, so it must not delay the Kafka commit.
+	committed, planned := s.snapshotAllOffsets()
+	s.publishOffsetMetrics(committed, planned)
+	if err := s.commitOffsetsToKafka(context.Background(), committed); err != nil {
 		level.Error(s.logger).Log("msg", "failed to flush offsets at shutdown", "err", err)
+	}
+	if s.markerWriter != nil {
+		s.markerWriter.submit(s.markerSnapshot(committed), true)
+		s.markerWriter.stop(s.markerFinalTimeout)
 	}
 
 	for _, ac := range s.adminClients {
@@ -184,9 +225,20 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	}
 }
 
+// clusterInfo is what the scheduler learns about a cluster's topic at startup.
+type clusterInfo struct {
+	identity clusterIdentity
+}
+
 // loadInitialCommittedOffsets seeds each partition's committed offset from every cluster's
 // committed offsets, so startup recovery resumes from where the previous scheduler left off.
+//
+// The offset marker doesn't change where the scheduler resumes from, and this makes no object storage calls:
+// the marker writer reads the marker in the background, only to report how it compares to these offsets.
 func (s *BlockBuilderScheduler) loadInitialCommittedOffsets(ctx context.Context) error {
+	n := len(s.adminClients)
+	kafka := make([]kadm.Offsets, n)
+	infos := make([]clusterInfo, n)
 	for clusterID, client := range s.adminClients {
 		logger := s.compartmentLogger(clusterID)
 		c, err := fetchCommittedOffsets(ctx, client, s.cfg.ConsumerGroup, s.cfg.Kafka.Topic)
@@ -194,10 +246,11 @@ func (s *BlockBuilderScheduler) loadInitialCommittedOffsets(ctx context.Context)
 			if errors.Is(err, context.Canceled) {
 				return err
 			}
-			level.Error(logger).Log("msg", "failed to load initial committed offsets", "err", err)
+			level.Error(logger).Log("msg", "failed to fetch committed offsets", "err", err)
 			s.metrics.fetchOffsetsFailed.Inc()
 			return s.compartmentError(clusterID, fmt.Errorf("fetch committed offsets: %w", err))
 		}
+		kafka[clusterID] = c
 		level.Info(logger).Log("msg", "loaded initial committed offsets", "offsets", offsetsStr(c))
 		s.mu.Lock()
 		c.Each(func(o kadm.Offset) {
@@ -207,8 +260,84 @@ func (s *BlockBuilderScheduler) loadInitialCommittedOffsets(ctx context.Context)
 			s.metrics.perClusterMetrics[clusterID].committedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.At))
 		})
 		s.mu.Unlock()
+
+		if s.markerStore == nil {
+			continue
+		}
+		// The IDs are recorded in the marker. They are not needed to resume, so a failure to get them is not fatal:
+		// without them the marker is written without IDs.
+		info, err := fetchClusterInfo(ctx, client, s.cfg.Kafka.Topic)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return err
+			}
+			level.Warn(logger).Log("msg", "failed to fetch the topic's IDs for the offset marker", "err", err)
+		}
+		infos[clusterID] = info
+	}
+	s.startupKafka, s.clusterInfos = kafka, infos
+
+	if s.markerWriter != nil {
+		s.markerWriter.release()
 	}
 	return nil
+}
+
+// recordMarkerComparison reports how the marker and the Kafka commits compared at startup.
+func (s *BlockBuilderScheduler) recordMarkerComparison(logger log.Logger, mismatches map[string]int) {
+	for reason, n := range mismatches {
+		s.metrics.offsetMarkerMismatches.WithLabelValues(reason).Add(float64(n))
+	}
+	if len(mismatches) > 0 {
+		level.Warn(logger).Log("msg", "offset marker disagrees with Kafka committed offsets", "mismatches", fmt.Sprint(mismatches))
+	}
+}
+
+// onMarkerBaseLoaded is called by the marker writer, from its goroutine, when it has read the marker at
+// startup. It reports how the marker compares to the Kafka commits the scheduler started from.
+func (s *BlockBuilderScheduler) onMarkerBaseLoaded(m *offsetMarker) {
+	if m == nil {
+		return
+	}
+	for clusterID := range s.adminClients {
+		if clusterID >= len(s.startupKafka) {
+			continue
+		}
+		entry := m.cluster(clusterID)
+		if entry == nil {
+			continue
+		}
+		logger := s.compartmentLogger(clusterID)
+		mismatches := compareMarkerToKafka(s.cfg.Kafka.Topic, entry.Offsets, s.startupKafka[clusterID])
+		s.recordMarkerComparison(logger, mismatches)
+		// The marker's offset is overwritten once the scheduler moves past it, so log it now: together with the
+		// lookback-on-no-commit warning's resume_offset, it bounds any records that were skipped.
+		for partition, offset := range markerOffsetsMissingInKafka(s.cfg.Kafka.Topic, entry.Offsets, s.startupKafka[clusterID]) {
+			level.Warn(logger).Log("msg", "Kafka has no committed offset for partition, but the offset marker does: records from marker_offset up to where the scheduler resumed were not built into blocks if it resumed later",
+				"partition", partition, "marker_offset", offset)
+		}
+	}
+}
+
+// fetchClusterInfo returns the Kafka identity of the cluster's topic.
+func fetchClusterInfo(ctx context.Context, client *kadm.Client, topic string) (clusterInfo, error) {
+	md, err := client.Metadata(ctx, topic)
+	if err != nil {
+		return clusterInfo{}, fmt.Errorf("get metadata: %w", err)
+	}
+	td, ok := md.Topics[topic]
+	if !ok {
+		return clusterInfo{}, fmt.Errorf("topic %s not found in metadata", topic)
+	}
+	if td.Err != nil {
+		return clusterInfo{}, fmt.Errorf("topic %s metadata: %w", topic, td.Err)
+	}
+	// An all-zero topic ID, and an empty cluster ID, mean the broker doesn't support them.
+	info := clusterInfo{identity: clusterIdentity{kafkaClusterID: md.Cluster}}
+	if td.ID != (kadm.TopicID{}) {
+		info.identity.kafkaTopicID = td.ID.String()
+	}
+	return info, nil
 }
 
 // completeObservationMode transitions the scheduler from observation mode to normal operation.
@@ -243,6 +372,7 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) err
 	}
 
 	scanner := newOffsetScanner(stores, s.cfg.Kafka.Topic, time.Now(), s.cfg.JobSize, s.cfg.MaxScanAge, s.metrics.probeRecordTimeDelta)
+	s.reportLookbackFallbacks(offsetsByPartition)
 	s.populateInitialJobs(ctx, offsetsByPartition, scanner)
 	s.observations = nil
 	s.observationComplete = true
@@ -637,53 +767,108 @@ func fetchCommittedOffsets(ctx context.Context, adminClient *kadm.Client, consum
 	return kadm.Offsets{}, lastErr
 }
 
-// snapshotOffsets returns a snapshot of the committed and planned offsets for the given cluster
-// across all partitions.
-func (s *BlockBuilderScheduler) snapshotOffsets(clusterID int) (kadm.Offsets, kadm.Offsets) {
-	cp := make(kadm.Offsets)
-	pp := make(kadm.Offsets)
+// snapshotAllOffsets returns, for each cluster, the committed and planned offsets across all partitions. They
+// are taken under one lock: a job spans clusters, so separate snapshots could catch it half applied.
+func (s *BlockBuilderScheduler) snapshotAllOffsets() (committed, planned []kadm.Offsets) {
+	n := len(s.adminClients)
+	committed = make([]kadm.Offsets, n)
+	planned = make([]kadm.Offsets, n)
+	for clusterID := range committed {
+		committed[clusterID] = make(kadm.Offsets)
+		planned[clusterID] = make(kadm.Offsets)
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for _, ps := range s.partitionStates {
-		if !ps.committedEmpty(clusterID) {
-			cp.AddOffset(ps.topic, ps.partition, ps.committedOffset(clusterID), 0)
-		}
-		if !ps.plannedEmpty(clusterID) {
-			pp.AddOffset(ps.topic, ps.partition, ps.plannedOffset(clusterID), 0)
+		for clusterID := range committed {
+			if !ps.committedEmpty(clusterID) {
+				committed[clusterID].AddOffset(ps.topic, ps.partition, ps.committedOffset(clusterID), 0)
+			}
+			if !ps.plannedEmpty(clusterID) {
+				planned[clusterID].AddOffset(ps.topic, ps.partition, ps.plannedOffset(clusterID), 0)
+			}
 		}
 	}
+	return committed, planned
+}
 
-	return cp, pp
+// publishOffsetMetrics updates the committed and planned offset gauges from a snapshot.
+func (s *BlockBuilderScheduler) publishOffsetMetrics(committed, planned []kadm.Offsets) {
+	for clusterID := range committed {
+		committed[clusterID].Each(func(o kadm.Offset) {
+			s.metrics.perClusterMetrics[clusterID].committedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.At))
+		})
+		planned[clusterID].Each(func(o kadm.Offset) {
+			s.metrics.perClusterMetrics[clusterID].plannedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.At))
+		})
+	}
+}
+
+// markerSnapshot converts a snapshot of committed offsets to what the marker writer takes.
+func (s *BlockBuilderScheduler) markerSnapshot(committed []kadm.Offsets) markerSnapshot {
+	snap := markerSnapshot{offsets: make(markerOffsets, len(committed))}
+	for clusterID, offs := range committed {
+		snap.offsets[clusterID] = map[int32]int64{}
+		offs.Each(func(o kadm.Offset) {
+			if o.Topic == s.cfg.Kafka.Topic {
+				snap.offsets[clusterID][o.Partition] = o.At
+			}
+		})
+	}
+	for _, info := range s.clusterInfos {
+		snap.ids = append(snap.ids, info.identity)
+	}
+	return snap
 }
 
 // flushOffsetsToKafka flushes each cluster's committed offsets to that cluster's Kafka and
-// updates relevant metrics.
-// If a single cluster's flush errors, we continue to flush to other clusters, then return
-// all cluster flush errors.
+// updates relevant metrics. It also hands them to the offset marker writer, which doesn't wait
+// for the marker to be written, and so never delays this.
 func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
 	// TODO: only flush if dirty.
+	committed, planned := s.snapshotAllOffsets()
+	s.publishOffsetMetrics(committed, planned)
+	if s.markerWriter != nil {
+		s.markerWriter.submit(s.markerSnapshot(committed), false)
+	}
+	return s.commitOffsetsToKafka(ctx, committed)
+}
+
+// commitOffsetsToKafka commits each cluster's offsets to that cluster's Kafka.
+// If a single cluster's commit errors, we continue to the other clusters, then return
+// all cluster errors.
+func (s *BlockBuilderScheduler) commitOffsetsToKafka(ctx context.Context, committed []kadm.Offsets) error {
 	var errs []error
 	for clusterID, client := range s.adminClients {
-		committed, planned := s.snapshotOffsets(clusterID)
-
-		committed.Each(func(o kadm.Offset) {
-			s.metrics.perClusterMetrics[clusterID].committedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.At))
-		})
-		planned.Each(func(o kadm.Offset) {
-			s.metrics.perClusterMetrics[clusterID].plannedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.At))
-		})
-
-		if err := client.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, committed); err != nil {
+		if err := client.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, committed[clusterID]); err != nil {
 			errs = append(errs, s.compartmentError(clusterID, fmt.Errorf("commit offsets: %w", err)))
 			s.metrics.perClusterMetrics[clusterID].flushFailed.Inc()
 			continue
 		}
 
-		level.Debug(s.compartmentLogger(clusterID)).Log("msg", "flushed offsets to Kafka", "offsets", offsetsStr(committed))
+		level.Debug(s.compartmentLogger(clusterID)).Log("msg", "flushed offsets to Kafka", "offsets", offsetsStr(committed[clusterID]))
 	}
 	return errors.Join(errs...)
+}
+
+// reportLookbackFallbacks warns about, and counts, partitions that have no committed or planned offset
+// on a cluster, and so resume from the lookback-on-no-commit time, skipping the records before it that are
+// still in Kafka: they are never built into blocks. It is called once at startup, after observations
+// are imported.
+func (s *BlockBuilderScheduler) reportLookbackFallbacks(offsetsByPartition map[int32][]*partitionOffsets) {
+	for partition, clusterOffsets := range offsetsByPartition {
+		ps := s.getPartitionState(s.cfg.Kafka.Topic, partition)
+		for clusterID, po := range clusterOffsets {
+			if po == nil || !ps.plannedEmpty(clusterID) || po.resume <= po.start {
+				continue
+			}
+			s.metrics.lookbackFallbacks.Inc()
+			level.Warn(s.compartmentLogger(clusterID)).Log("msg", "no committed or planned offset for partition: resuming from lookback-on-no-commit, the earlier records still in Kafka will not be built into blocks",
+				"partition", partition, "start_offset", po.start, "resume_offset", po.resume, "skipped_records", po.resume-po.start, "lookback", s.cfg.LookbackOnNoCommit)
+		}
+	}
 }
 
 // offsetsStr returns a string representation of the given offsets.

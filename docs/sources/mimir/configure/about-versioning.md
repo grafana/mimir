@@ -65,6 +65,8 @@ The following features are currently experimental:
   - Health check grace period for connections to other replicas (`-alertmanager.alertmanager-client.health-check-grace-period`)
 - Block-builder
   - Verify blocks before uploading them to object storage (`-block-builder.verify-blocks-before-upload`)
+- Block-builder-scheduler
+  - Rewrite the offset marker in the blocks storage bucket at least this often, even when no offset changed (`-block-builder-scheduler.offset-marker-refresh-interval`)
 - Compactor
   - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.
     - `-compactor.max-lookback`

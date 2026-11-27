@@ -16,6 +16,9 @@
     $._config.commonConfig +
     $._config.usageStatsConfig +
     $._config.grpcConfig +
+    // The scheduler records its committed offsets in a marker object in the blocks storage bucket.
+    $._config.storageConfig +
+    $._config.blocksStorageConfig +
     $.ingest_storage_args +
     $.ingest_storage_kafka_consumer_args +
     {
