@@ -36,6 +36,23 @@ func NewSiblingRefTransformer(idx *index.SpecIndex) *SiblingRefTransformer {
 //
 //	Input:  {title: "MySchema", $ref: "#/components/schemas/Base"}
 //	Output: {allOf: [{title: "MySchema"}, {$ref: "#/components/schemas/Base"}]}
+//
+// unevaluatedProperties and unevaluatedItems stay beside allOf rather than moving into it,
+// because they only see what adjacent keywords evaluated, and that includes the $ref target:
+//
+//	Input:  {$ref: "#/components/schemas/Base", unevaluatedProperties: false}
+//	Output: {allOf: [{$ref: "#/components/schemas/Base"}], unevaluatedProperties: false}
+//
+// $id, $schema, $vocabulary, $anchor, $dynamicAnchor, $defs and definitions also stay beside
+// allOf, so the wrapper keeps the identity of the authored object: $id sets the base URI the $ref
+// resolves against, $schema names the dialect and $vocabulary the vocabularies it uses, $anchor
+// and $dynamicAnchor name the whole object, and $defs and definitions stay at the JSON pointers
+// they were written at.
+// The other siblings move under allOf/0, so a JSON pointer that reached one of them, such as
+// ".../thing#/properties/x", no longer does.
+//
+//	Input:  {$id: "https://example.com/thing", $ref: "base", title: "Thing"}
+//	Output: {allOf: [{title: "Thing"}, {$ref: "base"}], $id: "https://example.com/thing"}
 func (srt *SiblingRefTransformer) TransformSiblingRef(node *yaml.Node) (*yaml.Node, error) {
 	transformed := srt.transformSiblingRefWithMetadata(node)
 	if transformed == nil {
@@ -93,8 +110,34 @@ func (srt *SiblingRefTransformer) createAllOfStructureWithSiblingNode(refValue s
 
 	allOfArrayNode := allOfNode.Content[1]
 
-	if siblingSchemaNode != nil && len(siblingSchemaNode.Content) > 0 {
-		allOfArrayNode.Content = append(allOfArrayNode.Content, siblingSchemaNode)
+	// keywords that stay beside allOf go on the wrapper and the rest form the allOf member. The
+	// sibling node itself is the member until a keyword moves, so the member pairs are only copied
+	// when one does.
+	memberNode := siblingSchemaNode
+	if siblingSchemaNode != nil {
+		var kept []*yaml.Node
+		moved := false
+		for i := 0; i+1 < len(siblingSchemaNode.Content); i += 2 {
+			keyNode, valueNode := siblingSchemaNode.Content[i], siblingSchemaNode.Content[i+1]
+			if !staysBesideAllOf(keyNode.Value) {
+				if moved {
+					kept = append(kept, keyNode, valueNode)
+				}
+				continue
+			}
+			if !moved {
+				moved = true
+				kept = append(make([]*yaml.Node, 0, len(siblingSchemaNode.Content)-2), siblingSchemaNode.Content[:i]...)
+			}
+			allOfNode.Content = append(allOfNode.Content, keyNode, valueNode)
+		}
+		if moved {
+			memberNode = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", Content: kept}
+		}
+	}
+
+	if memberNode != nil && len(memberNode.Content) > 0 {
+		allOfArrayNode.Content = append(allOfArrayNode.Content, memberNode)
 	}
 
 	refSchemaNode := &yaml.Node{
@@ -108,6 +151,23 @@ func (srt *SiblingRefTransformer) createAllOfStructureWithSiblingNode(refValue s
 	allOfArrayNode.Content = append(allOfArrayNode.Content, refSchemaNode)
 
 	return allOfNode
+}
+
+// staysBesideAllOf reports whether a sibling keyword stays beside allOf instead of moving into it.
+// unevaluatedProperties and unevaluatedItems only see what adjacent keywords evaluated, so they
+// stay next to the $ref. $id sets the base URI the $ref resolves against, $schema names the
+// dialect of the object and $vocabulary the vocabularies that dialect uses, $anchor and
+// $dynamicAnchor name the whole object, and $defs and definitions hold subschemas that JSON
+// pointers reach through the object.
+//
+// definitions is written out because the v2 package, which defines its label, imports this one.
+func staysBesideAllOf(key string) bool {
+	switch key {
+	case UnevaluatedPropertiesLabel, UnevaluatedItemsLabel, IdLabel, SchemaTypeLabel, VocabularyLabel,
+		AnchorLabel, DynamicAnchorLabel, DefsLabel, "definitions":
+		return true
+	}
+	return false
 }
 
 func (srt *SiblingRefTransformer) createSiblingSchemaNode(node *yaml.Node) *yaml.Node {

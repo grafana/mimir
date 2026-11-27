@@ -156,7 +156,10 @@ func (p *JSONPath) parseInnerSegment() (retValue *innerSegment, err error) {
 		return nil, p.parseFailure(nil, "unexpected end of input")
 	}
 	firstToken := p.tokens[p.current]
-	if firstToken.Token == token.WILDCARD {
+	if firstToken.Token == token.ESCAPED_NAME {
+		p.current++
+		return &innerSegment{kind: segmentLongHand, selectors: []*selector{{kind: selectorSubKindName, name: firstToken.Literal}}}, nil
+	} else if firstToken.Token == token.WILDCARD {
 		p.current += 1
 		return &innerSegment{segmentDotWildcard, "", nil}, nil
 	} else if firstToken.Token == token.STRING {
@@ -219,7 +222,7 @@ func (p *JSONPath) parseSelector() (retSelector *selector, err error) {
 	}()
 
 	//    name-selector       = string-literal
-	if p.tokens[p.current].Token == token.STRING_LITERAL {
+	if p.tokens[p.current].Token == token.STRING_LITERAL || p.tokens[p.current].Token == token.ESCAPED_NAME {
 		name := p.tokens[p.current].Literal
 		p.current++
 		return &selector{kind: selectorSubKindName, name: name}, nil

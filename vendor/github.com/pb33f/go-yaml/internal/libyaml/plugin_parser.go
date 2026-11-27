@@ -4,6 +4,7 @@
 package libyaml
 
 import (
+	"errors"
 	"fmt"
 	"io"
 )
@@ -13,12 +14,6 @@ import (
 // Implementations must support concurrent calls with independent input.
 type ParserPlugin interface {
 	Parse(input []byte) ([]PluginEvent, error)
-}
-
-// JSONCommentsPlugin sanitizes JSON-style comments before parsing.
-// Implementations must support concurrent calls with independent input.
-type JSONCommentsPlugin interface {
-	Sanitize(input []byte) ([]byte, error)
 }
 
 // IndentMode supplies loading and dumping defaults.
@@ -61,8 +56,7 @@ func (c IndentConfig) Normalize() (IndentConfig, error) {
 		c.Mode = IndentModeAuto
 	case IndentModeAuto, IndentModeTabs:
 	default:
-		return c, fmt.Errorf(
-			"yaml: tab-indent mode must be auto or tabs")
+		return c, errors.New("yaml: tab-indent mode must be auto or tabs")
 	}
 	if c.LoadStyle == "" {
 		if c.Mode == IndentModeTabs {
@@ -80,20 +74,17 @@ func (c IndentConfig) Normalize() (IndentConfig, error) {
 	switch c.LoadStyle {
 	case IndentStyleAuto, IndentStyleSpaces, IndentStyleTabs:
 	default:
-		return c, fmt.Errorf(
-			"yaml: tab-indent load must be auto, spaces, or tabs")
+		return c, errors.New("yaml: tab-indent load must be auto, spaces, or tabs")
 	}
 	switch c.DumpStyle {
 	case IndentStyleSpaces, IndentStyleTabs:
 	default:
-		return c, fmt.Errorf(
-			"yaml: tab-indent dump must be spaces or tabs")
+		return c, errors.New("yaml: tab-indent dump must be spaces or tabs")
 	}
 	switch c.Scope {
 	case IndentScopeDocument, IndentScopeStream:
 	default:
-		return c, fmt.Errorf(
-			"yaml: tab-indent auto must be document or stream")
+		return c, errors.New("yaml: tab-indent auto must be document or stream")
 	}
 	return c, nil
 }
@@ -104,10 +95,9 @@ type TabIndentPlugin interface {
 }
 
 // hasInputPlugins reports whether input must pass through EventReader.
-// Parser plugins replace native parsing, while JSON-comments plugins sanitize
-// the complete input before native parsing.
+// Parser plugins replace native parsing.
 func hasInputPlugins(opts *Options) bool {
-	return opts != nil && (opts.Parser != nil || opts.JSONComments != nil)
+	return opts != nil && opts.Parser != nil
 }
 
 // PluginEvent is a portable YAML event supplied by a plugin.
@@ -183,6 +173,7 @@ func (e *EventReader) initialize() {
 		e.reader = nil
 		if e.opts != nil {
 			e.parser.depthCheck = e.opts.DepthCheck
+			e.parser.formatError = e.opts.FormatLoadError
 			e.parser.indentConfig = e.opts.IndentConfig
 		}
 		return
@@ -191,31 +182,17 @@ func (e *EventReader) initialize() {
 	input, err := io.ReadAll(e.reader)
 	e.reader = nil
 	if err != nil {
-		e.err = NewLoadError(ReaderStage, err.Error(), Mark{}, err)
+		e.err = formatLoadError(NewLoadError(ReaderStage, err.Error(), Mark{}, err), e.opts.FormatLoadError)
 		return
 	}
-	if e.opts.JSONComments != nil {
-		input, err = e.opts.JSONComments.Sanitize(input)
-		if err != nil {
-			e.err = NewLoadError(ReaderStage, err.Error(), Mark{}, err)
-			return
-		}
+	e.pluginEvents = true
+	e.events, err = e.opts.Parser.Parse(input)
+	if err == nil {
+		err = validatePluginEvents(e.events, e.opts.DepthCheck)
 	}
-	if e.opts.Parser != nil {
-		e.pluginEvents = true
-		e.events, err = e.opts.Parser.Parse(input)
-		if err == nil {
-			err = validatePluginEvents(e.events, e.opts.DepthCheck)
-		}
-		if err != nil {
-			e.err = NewLoadError(ParserStage, err.Error(), Mark{}, err)
-		}
-		return
+	if err != nil {
+		e.err = formatLoadError(NewLoadError(ParserStage, err.Error(), Mark{}, err), e.opts.FormatLoadError)
 	}
-	e.parser = NewParser()
-	e.parser.SetInputString(input)
-	e.parser.depthCheck = e.opts.DepthCheck
-	e.parser.indentConfig = e.opts.IndentConfig
 }
 
 // validatePluginEvents checks structure before the recursive composer sees it.
@@ -302,7 +279,7 @@ func validatePluginEvents(events []PluginEvent, depthCheck func(int, *DepthConte
 		}
 	}
 	if !ended {
-		return fmt.Errorf("parser stream is missing stream_end")
+		return errors.New("parser stream is missing stream_end")
 	}
 	return nil
 }

@@ -171,8 +171,7 @@ func (co *Components) FindMediaType(mediaType string) *low.ValueReference[*Media
 // Build converts root YAML node containing components to low level model.
 // Process each component in parallel.
 func (co *Components) Build(ctx context.Context, root *yaml.Node, idx *index.SpecIndex) error {
-	root = utils.NodeAlias(root)
-	utils.CheckForMergeNodes(root)
+	root = utils.ResolveMergeNodes(root)
 	co.reference = low.Reference{}
 	co.Reference = &co.reference
 	co.nodeStore = low.NodeLines{}
@@ -279,6 +278,7 @@ func (co *Components) Build(ctx context.Context, root *yaml.Node, idx *index.Spe
 func extractComponentValues[T low.Buildable[N], N any](ctx context.Context, label string, root *yaml.Node, idx *index.SpecIndex, co *Components) (low.NodeReference[*orderedmap.Map[low.KeyReference[string], low.ValueReference[T]]], error) {
 	var emptyResult low.NodeReference[*orderedmap.Map[low.KeyReference[string], low.ValueReference[T]]]
 	_, nodeLabel, nodeValue := utils.FindKeyNodeFullTop(label, root.Content)
+	nodeValue = utils.ResolveMergeNodes(nodeValue)
 	if nodeValue == nil {
 		return emptyResult, nil
 	}

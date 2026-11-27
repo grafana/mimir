@@ -65,9 +65,8 @@ func (t *Tag) GetKeyNode() *yaml.Node {
 // Build will extract extensions and external docs for the Tag.
 func (t *Tag) Build(ctx context.Context, keyNode, root *yaml.Node, idx *index.SpecIndex) error {
 	t.KeyNode = keyNode
-	root = utils.NodeAlias(root)
+	root = utils.ResolveMergeNodes(root)
 	t.RootNode = root
-	utils.CheckForMergeNodes(root)
 	t.Reference = new(low.Reference)
 	t.Nodes = low.ExtractNodes(ctx, root)
 	t.Extensions = low.ExtractExtensions(root)

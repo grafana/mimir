@@ -64,9 +64,8 @@ func (s *SecurityRequirement) Build(ctx context.Context, keyNode, root *yaml.Nod
 		}
 		return nil
 	}
-	root = utils.NodeAlias(root)
+	root = utils.ResolveMergeNodes(root)
 	s.RootNode = root
-	utils.CheckForMergeNodes(root)
 	if len(root.Content) > 0 {
 		s.NodeMap.ExtractNodes(root, false)
 	} else {

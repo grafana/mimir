@@ -92,8 +92,8 @@ func (p *Paths) GetExtensions() *orderedmap.Map[low.KeyReference[string], low.Va
 func (p *Paths) Build(ctx context.Context, keyNode, root *yaml.Node, idx *index.SpecIndex) error {
 	root = utils.NodeAlias(root)
 	p.KeyNode = keyNode
+	root = utils.ResolveMergeNodes(root)
 	p.RootNode = root
-	utils.CheckForMergeNodes(root)
 	p.reference = low.Reference{}
 	p.Reference = &p.reference
 	p.nodeStore = low.NodeLines{}

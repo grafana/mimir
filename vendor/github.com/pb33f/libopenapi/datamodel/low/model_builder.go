@@ -4,7 +4,9 @@
 package low
 
 import (
+	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -71,8 +73,7 @@ func BuildModel(node *yaml.Node, model interface{}) error {
 	if node == nil {
 		return nil
 	}
-	node = utils.NodeAlias(node)
-	utils.CheckForMergeNodes(node)
+	node = utils.ResolveMergeNodes(node)
 
 	if reflect.ValueOf(model).Type().Kind() != reflect.Pointer {
 		return fmt.Errorf("cannot build model on non-pointer: %v", reflect.ValueOf(model).Type().Kind())
@@ -147,6 +148,13 @@ func SetField(field *reflect.Value, valueNode *yaml.Node, keyNode *yaml.Node) {
 		return
 	}
 
+	// Typed map fields read effective contents without rewriting the source
+	// mapping retained by NodeReference metadata or another model builder.
+	content := valueNode.Content
+	if utils.IsNodeMap(valueNode) {
+		content = utils.ResolveMergeNodes(valueNode).Content
+	}
+
 	switch field.Type() {
 
 	case setFieldMapStringNodeReferenceYAMLNodeType:
@@ -155,7 +163,7 @@ func SetField(field *reflect.Value, valueNode *yaml.Node, keyNode *yaml.Node) {
 			if field.CanSet() {
 				items := orderedmap.New[string, NodeReference[*yaml.Node]]()
 				var currentLabel string
-				for i, sliceItem := range valueNode.Content {
+				for i, sliceItem := range content {
 					if i%2 == 0 {
 						currentLabel = sliceItem.Value
 						continue
@@ -176,7 +184,7 @@ func SetField(field *reflect.Value, valueNode *yaml.Node, keyNode *yaml.Node) {
 			if field.CanSet() {
 				items := orderedmap.New[string, NodeReference[string]]()
 				var currentLabel string
-				for i, sliceItem := range valueNode.Content {
+				for i, sliceItem := range content {
 					if i%2 == 0 {
 						currentLabel = sliceItem.Value
 						continue
@@ -202,8 +210,8 @@ func SetField(field *reflect.Value, valueNode *yaml.Node, keyNode *yaml.Node) {
 
 		if utils.IsNodeArray(valueNode) {
 			if field.CanSet() {
-				items := make([]NodeReference[*yaml.Node], 0, len(valueNode.Content))
-				for _, sliceItem := range valueNode.Content {
+				items := make([]NodeReference[*yaml.Node], 0, len(content))
+				for _, sliceItem := range content {
 					items = append(items, NodeReference[*yaml.Node]{
 						Value:     sliceItem,
 						ValueNode: sliceItem,
@@ -251,15 +259,16 @@ func SetField(field *reflect.Value, valueNode *yaml.Node, keyNode *yaml.Node) {
 
 	case setFieldNodeReferenceIntType:
 
-		if utils.IsNodeIntValue(valueNode) {
+		if utils.IsNodeIntValue(valueNode) || utils.IsNodeFloatValue(valueNode) {
 			if field.CanSet() {
-				fv, _ := strconv.Atoi(valueNode.Value)
-				nr := NodeReference[int]{
-					Value:     fv,
-					ValueNode: valueNode,
-					KeyNode:   keyNode,
+				if fv, ok := parseIntNode(valueNode.Value); ok {
+					nr := NodeReference[int]{
+						Value:     fv,
+						ValueNode: valueNode,
+						KeyNode:   keyNode,
+					}
+					field.Set(reflect.ValueOf(nr))
 				}
-				field.Set(reflect.ValueOf(nr))
 			}
 		}
 
@@ -267,13 +276,14 @@ func SetField(field *reflect.Value, valueNode *yaml.Node, keyNode *yaml.Node) {
 
 		if utils.IsNodeIntValue(valueNode) || utils.IsNodeFloatValue(valueNode) {
 			if field.CanSet() {
-				fv, _ := strconv.ParseInt(valueNode.Value, 10, 64)
-				nr := NodeReference[int64]{
-					Value:     fv,
-					ValueNode: valueNode,
-					KeyNode:   keyNode,
+				if fv, ok := parseInt64Node(valueNode.Value); ok {
+					nr := NodeReference[int64]{
+						Value:     fv,
+						ValueNode: valueNode,
+						KeyNode:   keyNode,
+					}
+					field.Set(reflect.ValueOf(nr))
 				}
-				field.Set(reflect.ValueOf(nr))
 			}
 		}
 
@@ -309,8 +319,8 @@ func SetField(field *reflect.Value, valueNode *yaml.Node, keyNode *yaml.Node) {
 
 		if utils.IsNodeArray(valueNode) {
 			if field.CanSet() {
-				items := make([]NodeReference[string], 0, len(valueNode.Content))
-				for _, sliceItem := range valueNode.Content {
+				items := make([]NodeReference[string], 0, len(content))
+				for _, sliceItem := range content {
 					items = append(items, NodeReference[string]{
 						Value:     sliceItem.Value,
 						ValueNode: sliceItem,
@@ -325,8 +335,8 @@ func SetField(field *reflect.Value, valueNode *yaml.Node, keyNode *yaml.Node) {
 
 		if utils.IsNodeArray(valueNode) {
 			if field.CanSet() {
-				items := make([]NodeReference[float32], 0, len(valueNode.Content))
-				for _, sliceItem := range valueNode.Content {
+				items := make([]NodeReference[float32], 0, len(content))
+				for _, sliceItem := range content {
 					fv, _ := strconv.ParseFloat(sliceItem.Value, 32)
 					items = append(items, NodeReference[float32]{
 						Value:     float32(fv),
@@ -342,8 +352,8 @@ func SetField(field *reflect.Value, valueNode *yaml.Node, keyNode *yaml.Node) {
 
 		if utils.IsNodeArray(valueNode) {
 			if field.CanSet() {
-				items := make([]NodeReference[float64], 0, len(valueNode.Content))
-				for _, sliceItem := range valueNode.Content {
+				items := make([]NodeReference[float64], 0, len(content))
+				for _, sliceItem := range content {
 					fv, _ := strconv.ParseFloat(sliceItem.Value, 64)
 					items = append(items, NodeReference[float64]{Value: fv, ValueNode: sliceItem})
 				}
@@ -355,9 +365,9 @@ func SetField(field *reflect.Value, valueNode *yaml.Node, keyNode *yaml.Node) {
 
 		if utils.IsNodeArray(valueNode) {
 			if field.CanSet() {
-				items := make([]NodeReference[int], 0, len(valueNode.Content))
-				for _, sliceItem := range valueNode.Content {
-					iv, _ := strconv.Atoi(sliceItem.Value)
+				items := make([]NodeReference[int], 0, len(content))
+				for _, sliceItem := range content {
+					iv, _ := parseIntNode(sliceItem.Value)
 					items = append(items, NodeReference[int]{
 						Value:     iv,
 						ValueNode: sliceItem,
@@ -372,9 +382,9 @@ func SetField(field *reflect.Value, valueNode *yaml.Node, keyNode *yaml.Node) {
 
 		if utils.IsNodeArray(valueNode) {
 			if field.CanSet() {
-				items := make([]NodeReference[int64], 0, len(valueNode.Content))
-				for _, sliceItem := range valueNode.Content {
-					iv, _ := strconv.ParseInt(sliceItem.Value, 10, 64)
+				items := make([]NodeReference[int64], 0, len(content))
+				for _, sliceItem := range content {
+					iv, _ := parseInt64Node(sliceItem.Value)
 					items = append(items, NodeReference[int64]{
 						Value:     iv,
 						ValueNode: sliceItem,
@@ -389,8 +399,8 @@ func SetField(field *reflect.Value, valueNode *yaml.Node, keyNode *yaml.Node) {
 
 		if utils.IsNodeArray(valueNode) {
 			if field.CanSet() {
-				items := make([]NodeReference[bool], 0, len(valueNode.Content))
-				for _, sliceItem := range valueNode.Content {
+				items := make([]NodeReference[bool], 0, len(content))
+				for _, sliceItem := range content {
 					bv, _ := strconv.ParseBool(sliceItem.Value)
 					items = append(items, NodeReference[bool]{
 						Value:     bv,
@@ -408,9 +418,9 @@ func SetField(field *reflect.Value, valueNode *yaml.Node, keyNode *yaml.Node) {
 		if utils.IsNodeMap(valueNode) {
 			if field.CanSet() {
 				items := orderedmap.New[KeyReference[string], ValueReference[string]]()
-				for i := 0; i < len(valueNode.Content)-1; i += 2 {
-					cf := valueNode.Content[i]
-					sliceItem := valueNode.Content[i+1]
+				for i := 0; i < len(content)-1; i += 2 {
+					cf := content[i]
+					sliceItem := content[i+1]
 					items.Set(KeyReference[string]{
 						Value:   cf.Value,
 						KeyNode: cf,
@@ -428,9 +438,9 @@ func SetField(field *reflect.Value, valueNode *yaml.Node, keyNode *yaml.Node) {
 		if utils.IsNodeMap(valueNode) {
 			if field.CanSet() {
 				items := orderedmap.New[KeyReference[string], ValueReference[string]]()
-				for i := 0; i < len(valueNode.Content)-1; i += 2 {
-					cf := valueNode.Content[i]
-					sliceItem := valueNode.Content[i+1]
+				for i := 0; i < len(content)-1; i += 2 {
+					cf := content[i]
+					sliceItem := content[i+1]
 					items.Set(KeyReference[string]{
 						Value:   cf.Value,
 						KeyNode: cf,
@@ -450,9 +460,9 @@ func SetField(field *reflect.Value, valueNode *yaml.Node, keyNode *yaml.Node) {
 		if utils.IsNodeMap(valueNode) {
 			if field.CanSet() {
 				items := orderedmap.New[KeyReference[string], ValueReference[string]]()
-				for i := 0; i < len(valueNode.Content)-1; i += 2 {
-					cf := valueNode.Content[i]
-					sliceItem := valueNode.Content[i+1]
+				for i := 0; i < len(content)-1; i += 2 {
+					cf := content[i]
+					sliceItem := content[i+1]
 					items.Set(KeyReference[string]{
 						Value:   cf.Value,
 						KeyNode: cf,
@@ -473,8 +483,8 @@ func SetField(field *reflect.Value, valueNode *yaml.Node, keyNode *yaml.Node) {
 
 		if utils.IsNodeArray(valueNode) {
 			if field.CanSet() {
-				items := make([]ValueReference[string], 0, len(valueNode.Content))
-				for _, sliceItem := range valueNode.Content {
+				items := make([]ValueReference[string], 0, len(content))
+				for _, sliceItem := range content {
 					items = append(items, ValueReference[string]{
 						Value:     sliceItem.Value,
 						ValueNode: sliceItem,
@@ -493,8 +503,8 @@ func SetField(field *reflect.Value, valueNode *yaml.Node, keyNode *yaml.Node) {
 
 		if utils.IsNodeArray(valueNode) {
 			if field.CanSet() {
-				items := make([]ValueReference[*yaml.Node], 0, len(valueNode.Content))
-				for _, sliceItem := range valueNode.Content {
+				items := make([]ValueReference[*yaml.Node], 0, len(content))
+				for _, sliceItem := range content {
 					items = append(items, ValueReference[*yaml.Node]{
 						Value:     sliceItem,
 						ValueNode: sliceItem,
@@ -513,6 +523,58 @@ func SetField(field *reflect.Value, valueNode *yaml.Node, keyNode *yaml.Node) {
 		// we want to ignore everything else, each model handles its own complex types.
 		break
 	}
+}
+
+// parseInt64Node parses the text of an int or float YAML node as an int64.
+//
+// Integers use strconv.ParseInt, so out-of-range values clamp to math.MaxInt64 / math.MinInt64.
+// Floats with a whole-number value are converted (2.0 -> 2, 1e3 -> 1000), and floats at or beyond
+// ±2^63 (including YAML .inf / -.inf) clamp the same way. Fractions and NaN return false.
+func parseInt64Node(value string) (int64, bool) {
+	i, err := strconv.ParseInt(value, 10, 64)
+	if err == nil || errors.Is(err, strconv.ErrRange) {
+		return i, true
+	}
+	// YAML spells infinity with a leading dot (.inf, +.inf, -.inf), which strconv does not accept.
+	// .nan fails to parse and is rejected below.
+	switch strings.ToLower(strings.TrimPrefix(value, "+")) {
+	case ".inf":
+		return math.MaxInt64, true
+	case "-.inf":
+		return math.MinInt64, true
+	}
+	f, err := strconv.ParseFloat(value, 64)
+	if (err != nil && !errors.Is(err, strconv.ErrRange)) || math.IsNaN(f) {
+		return 0, false
+	}
+	if err == nil && math.IsInf(f, 0) {
+		if f < 0 {
+			return math.MinInt64, true
+		}
+		return math.MaxInt64, true
+	}
+	// Keep the existing hexadecimal-float handling; decimal constraints must not
+	// pass through float64, which loses integer and fractional digits above 2^53.
+	if strings.ContainsAny(value, "xX") {
+		switch {
+		case f >= math.MaxInt64:
+			return math.MaxInt64, true
+		case f <= math.MinInt64:
+			return math.MinInt64, true
+		case f != math.Trunc(f):
+			return 0, false
+		}
+		return int64(f), true
+	}
+	return parseDecimalInt64(value)
+}
+
+// parseIntNode is parseInt64Node for an int field. Where int is 32 bits, strconv.Atoi clamps the
+// result to math.MaxInt / math.MinInt instead of letting it wrap.
+func parseIntNode(value string) (int, bool) {
+	v, ok := parseInt64Node(value)
+	i, _ := strconv.Atoi(strconv.FormatInt(v, 10))
+	return i, ok
 }
 
 // BuildModelAsync is a convenience function for calling BuildModel from a goroutine, requires a sync.WaitGroup

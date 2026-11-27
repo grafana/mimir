@@ -73,9 +73,8 @@ func (cb *Callback) Build(ctx context.Context, keyNode, root *yaml.Node, idx *in
 	if ok, _, ref := utils.IsNodeRefValue(root); ok {
 		cb.SetReference(ref, root)
 	}
-	root = utils.NodeAlias(root)
+	root = utils.ResolveMergeNodes(root)
 	cb.RootNode = root
-	utils.CheckForMergeNodes(root)
 	cb.nodeStore = low.NodeLines{}
 	cb.Nodes = &cb.nodeStore
 	if len(root.Content) > 0 {

@@ -95,8 +95,8 @@ func (p *Parameter) Build(ctx context.Context, keyNode, root *yaml.Node, idx *in
 	}
 	root = utils.NodeAlias(root)
 	p.KeyNode = keyNode
+	root = utils.ResolveMergeNodes(root)
 	p.RootNode = root
-	utils.CheckForMergeNodes(root)
 	p.nodeStore = low.NodeLines{}
 	p.Nodes = &p.nodeStore
 	if len(root.Content) > 0 {
@@ -184,7 +184,9 @@ func (p *Parameter) Hash() uint64 {
 		if p.Style.Value != "" {
 			low.HashString(h, "style", p.Style.Value)
 		}
-		low.HashBool(h, p.Explode.Value)
+		if !p.Explode.IsEmpty() {
+			low.HashBool(h, p.Explode.Value)
+		}
 		h.WriteByte(low.HASH_PIPE)
 		low.HashBool(h, p.AllowReserved.Value)
 		h.WriteByte(low.HASH_PIPE)

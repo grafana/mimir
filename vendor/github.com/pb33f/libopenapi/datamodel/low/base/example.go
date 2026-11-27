@@ -93,9 +93,8 @@ func (ex *Example) Build(ctx context.Context, keyNode, root *yaml.Node, idx *ind
 	if ok, _, ref := utils.IsNodeRefValue(root); ok {
 		ex.SetReference(ref, root)
 	}
-	root = utils.NodeAlias(root)
+	root = utils.ResolveMergeNodes(root)
 	ex.RootNode = root
-	utils.CheckForMergeNodes(root)
 	ex.nodeStore = low.NodeLines{}
 	ex.Nodes = &ex.nodeStore
 	if len(root.Content) > 0 {

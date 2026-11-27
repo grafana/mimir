@@ -212,6 +212,9 @@ const (
 	REGEX
 	STRICT_EQ
 	STRICT_NE
+
+	// ESCAPED_NAME is a JSONPath Plus member name prefixed with a backtick.
+	ESCAPED_NAME
 )
 
 var SimpleTokens = [...]Token{
@@ -225,6 +228,7 @@ var SimpleTokens = [...]Token{
 }
 
 var tokens = [...]string{
+	ESCAPED_NAME:   "ESCAPED_NAME",
 	ILLEGAL:        "ILLEGAL",
 	STRING:         "STRING",
 	INTEGER:        "INTEGER",
@@ -459,6 +463,12 @@ func (t *Tokenizer) Tokenize() Tokens {
 		}
 
 		switch ch := t.input[t.pos]; {
+		case ch == '`':
+			if t.config.JSONPathPlusEnabled() && !t.isInFilterContext() {
+				t.scanEscapedName()
+			} else {
+				t.addToken(ILLEGAL, 1, "backtick member escapes require JSONPath Plus mode outside filters; use quoted bracket notation")
+			}
 		case ch == '$':
 			if config.SpectralCompatibilityEnabled(t.config) && t.spectralDollarMemberCanStartHere() {
 				t.addToken(STRING, 4, "$ref")
@@ -665,6 +675,24 @@ func (t *Tokenizer) Tokenize() Tokens {
 		t.addToken(ILLEGAL, 1, fmt.Sprintf("unmatched %s", t.stack[len(t.stack)-1].String()))
 	}
 	return t.tokens
+}
+
+// scanEscapedName consumes one prefix backtick and the following member name.
+// Path separators still delimit segments; a second backtick is literal, not a
+// closing quote. Quoted bracket names use scanString and remain unchanged.
+func (t *Tokenizer) scanEscapedName() {
+	start := t.pos
+	end := start + 1
+	for end < len(t.input) {
+		ch := t.input[end]
+		if ch == '.' || ch == '[' || ch == ']' || ch == ',' || ch == '^' || ch == '~' || ch == '\'' || ch == '"' || ch == '\n' || isSpace(ch) {
+			break
+		}
+		end++
+	}
+	t.addToken(ESCAPED_NAME, end-start, t.input[start+1:end])
+	t.pos = end - 1
+	t.column += end - start - 1
 }
 
 func (t *Tokenizer) spectralDollarMemberCanStartHere() bool {

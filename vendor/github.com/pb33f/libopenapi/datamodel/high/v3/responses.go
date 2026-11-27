@@ -109,7 +109,7 @@ func (r *Responses) MarshalYAML() (interface{}, error) {
 			for lk := range r.low.Codes.KeysFromOldest() {
 				if lk.Value == code {
 					ln = lk.KeyNode.Line
-					style = lk.KeyNode.Style
+					style = utils.NodeAlias(lk.KeyNode).Style
 				}
 			}
 		}
@@ -183,7 +183,7 @@ func (r *Responses) marshalYAMLInlineWithContext(ctx any) (interface{}, error) {
 			for lk := range r.low.Codes.KeysFromOldest() {
 				if lk.Value == code {
 					ln = lk.KeyNode.Line
-					style = lk.KeyNode.Style
+					style = utils.NodeAlias(lk.KeyNode).Style
 				}
 			}
 		}

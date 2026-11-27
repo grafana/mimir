@@ -6,7 +6,6 @@ package index
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -221,20 +220,16 @@ func (index *SpecIndex) resolveReferenceTarget(value string) (string, string) {
 				// Absolute HTTP URL with fragment — use as-is.
 				fullDefinitionPath = value
 				componentName = fmt.Sprintf("#/%s", uri[1])
+			} else if strings.HasPrefix(defRoot, "http") {
+				fullDefinitionPath = resolveRefWithSchemaBase(value, defRoot)
+				componentName = fmt.Sprintf("#/%s", uri[1])
 			} else if filepath.IsAbs(uri[0]) {
 				// Absolute local file path with fragment — use as-is.
 				fullDefinitionPath = value
 				componentName = fmt.Sprintf("#/%s", uri[1])
 			} else if index.config.BaseURL != nil && !filepath.IsAbs(defRoot) {
 				// Relative path with a configured BaseURL — resolve against the base URL.
-				var u url.URL
-				if strings.HasPrefix(defRoot, "http") {
-					up, _ := url.Parse(defRoot)
-					up.Path = utils.ReplaceWindowsDriveWithLinuxPath(filepath.Dir(up.Path))
-					u = *up
-				} else {
-					u = *index.config.BaseURL
-				}
+				u := *index.config.BaseURL
 				abs := utils.CheckPathOverlap(u.Path, uri[0], string(os.PathSeparator))
 				u.Path = utils.ReplaceWindowsDriveWithLinuxPath(abs)
 				fullDefinitionPath = fmt.Sprintf("%s#/%s", u.String(), uri[1])
@@ -253,14 +248,7 @@ func (index *SpecIndex) resolveReferenceTarget(value string) (string, string) {
 		// No fragment, not a bare anchor — whole-file reference or relative path.
 		if strings.HasPrefix(defRoot, "http") {
 			// Spec root is remote — resolve the relative path against the remote URL.
-			if !filepath.IsAbs(uri[0]) {
-				u, _ := url.Parse(defRoot)
-				pathDir := filepath.Dir(u.Path)
-				pathAbs, _ := filepath.Abs(utils.CheckPathOverlap(pathDir, uri[0], string(os.PathSeparator)))
-				pathAbs = utils.ReplaceWindowsDriveWithLinuxPath(pathAbs)
-				u.Path = pathAbs
-				fullDefinitionPath = u.String()
-			}
+			fullDefinitionPath = resolveRefWithSchemaBase(value, defRoot)
 		} else if !filepath.IsAbs(uri[0]) {
 			// Relative local file path — resolve against BaseURL if configured, else the spec's directory.
 			if index.config.BaseURL != nil {

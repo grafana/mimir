@@ -4,8 +4,9 @@
 extends: default
 
 ignore: |
+  /.cache/
+  /repos/
   /**/testdata/
-  /example/json-comments/data.yaml
 
 rules:
   brackets:

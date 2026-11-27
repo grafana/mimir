@@ -17,12 +17,20 @@ endif
 include $(MAKES)/init.mk
 include $(MAKES)/shellcheck.mk
 include $(MAKES)/perl.mk
+include $(MAKES)/uv.mk
+include $(MAKES)/gh.mk
+
+YAMLLINT-VERSION ?= 1.38.0
+export UV_CACHE_DIR := $(LOCAL-CACHE)/uv
+export UV_PYTHON_INSTALL_DIR := $(LOCAL-ROOT)/uv-python
+export UV_TOOL_DIR := $(LOCAL-ROOT)/uv-tools
+export UV_TOOL_BIN_DIR := $(LOCAL-BIN)
 
 # Auto-install go unless GO_YAML_PATH is set:
 ifdef GO_YAML_PATH
 override export PATH := $(GO_YAML_PATH):$(PATH)
 else
-GO-VERSION ?= 1.27.0
+GO-VERSION ?= 1.27.2
 endif
 GO-VERSION-NEEDED := $(GO-VERSION)
 
@@ -32,6 +40,11 @@ YTS-TAG ?= data-2022-01-17
 YTS-DIR := yts/testdata/$(YTS-TAG)
 
 CLI-BINARY := go-yaml
+
+# README recording tools are installed only when explicitly requested.
+YAMLCAST-COMMIT := 0dfec58fc184e97b21239d0b54dc222bd8311cf1
+YAMLCAST-YS-VERSION := 0.2.32
+YAMLCAST-URL := https://codeload.github.com/ingydotnet/yamlcast
 
 # Pager for viewing documentation:
 PAGER ?= less -FRX
@@ -50,8 +63,13 @@ endif
 
 include $(MAKES)/go.mk
 
+YAMLCAST-ROOT := $(LOCAL-ROOT)/yamlcast-$(YAMLCAST-COMMIT)
+YAMLCAST := $(YAMLCAST-ROOT)/bin/yamlcast
+YAMLCAST-ARCHIVE := $(LOCAL-CACHE)/yamlcast-$(YAMLCAST-COMMIT).tar.gz
+YAMLCAST-READY := $(YAMLCAST-ROOT)/.cache/ready-$(YAMLCAST-YS-VERSION)
+
 # Set this from the `make` command to override:
-GOLANGCI-LINT-VERSION ?= v2.13.2
+GOLANGCI-LINT-VERSION ?= v2.14.0
 GOLANGCI-LINT-INSTALLER := \
   https://github.com/golangci/golangci-lint/raw/main/install.sh
 GOLANGCI-LINT := $(LOCAL-BIN)/golangci-lint
@@ -69,11 +87,12 @@ SHELL-NAME := makes go-yaml
 include $(MAKES)/clean.mk
 include $(MAKES)/shell.mk
 
-MAKES-CLEAN := $(CLI-BINARY) $(GOLANGCI-LINT)
+MAKES-CLEAN := $(CLI-BINARY) $(GOLANGCI-LINT) *.so
 MAKES-REALCLEAN := $(dir $(YTS-DIR))
 
 SHELL-SCRIPTS = \
   util/common.bash \
+  cmd/go-yaml/demo/demo-plugins.sh \
   $(shell grep -rl '^.!/usr/bin/env bash' util | \
           grep -v '\.sw')
 
@@ -82,7 +101,7 @@ COVER-TESTS := \
  ./cmd/... \
  ./internal/... \
 
-# v=1 for verbose
+# v=1 for verbose tests; release uses v as its version.
 MAKE := $(MAKE) --no-print-directory
 
 v ?=
@@ -98,13 +117,15 @@ $(if $(fuzz), --fuzz=FuzzEncodeFromJSON --fuzztime=$(time))\
 $(if $(opts), $(opts))\
 
 # Test rules:
-test: test-main test-internal test-cmd test-cli-build test-yts-all test-shell
+test: test-main test-internal test-cmd test-cli-build test-v3-hooks \
+  test-yts-all test-shell test-release
 	@echo 'ALL TESTS PASS'
 
 check:
 	$(MAKE) fmt
 	$(MAKE) tidy
 	$(MAKE) lint
+	$(MAKE) lint-yaml
 	$(MAKE) test
 
 test-main: $(GO-DEPS)
@@ -158,21 +179,23 @@ fmt: $(GOLANGCI-LINT-VERSIONED)
 lint: $(GOLANGCI-LINT-VERSIONED)
 	$< run $(GO-PACKAGES)
 
+lint-yaml: $(UV)
+	$(UV) tool run --from yamllint==$(YAMLLINT-VERSION) yamllint .
+
 tidy: $(GO-DEPS)
 	go mod tidy
 
 # Pass configuration paths as environment values, not shell source.
 export GO_YAML_BUILD_CONFIG = $(CONFIG)
 export GO_YAML_BUILD_PLUGIN = $(PLUGIN)
+export GO_YAML_BUILD_PLUGIN_PACKAGE = $(PLUGIN-PACKAGE)
 export GO_YAML_BUILD_GO = $(GO)
 export GO_YAML_BUILD_PERL = $(PERL)
-JSON-COMMENTS-LOCAL ?= 0
-export GO_YAML_JSON_COMMENTS_LOCAL = $(JSON-COMMENTS-LOCAL)
 REFERENCE-PARSER-LOCAL ?= 0
 export GO_YAML_REFERENCE_PARSER_LOCAL = $(REFERENCE-PARSER-LOCAL)
 
 cli: $(GO)
-ifneq ($(strip $(CONFIG)$(PLUGIN)),)
+ifneq ($(strip $(CONFIG)$(PLUGIN)$(PLUGIN-PACKAGE)),)
 cli: $(PERL)
 	go run ./util/build-cli
 else
@@ -181,6 +204,48 @@ endif
 
 $(CLI-BINARY): $(GO)
 	go build -o $@ ./cmd/$@
+
+# Create release notes as a draft after the annotated tag is published.
+export GO_YAML_RELEASE_VERSION = $(v)
+
+release: $(GH)
+	@version=$$GO_YAML_RELEASE_VERSION; \
+	part='(0|[1-9][0-9]*)'; \
+	[[ $$version =~ ^$$part\.$$part\.$$part$$ ]] || \
+	  { echo 'Usage: make release v=4.0.0' >&2; exit 1; }; \
+	notes=docs/releases/v$$version.md; \
+	test -s "$$notes" || \
+	  { echo "Missing or empty release notes: $$notes" >&2; exit 1; }; \
+	$(GH) release create "v$$version" \
+	  --repo yaml/go-yaml --verify-tag --draft \
+	  --title "go-yaml v$$version" --notes-file "$$notes"
+
+test-release: $(PERL)
+	$(PERL) util/release.t
+
+# Render the README image with the current CLI and demo sources.
+# Chrome's Unix socket path is too long under the project-local TMPDIR.
+update: cli yamlcast
+	@TMPDIR=/tmp YAMLCAST_ROOT=$(YAMLCAST-ROOT) \
+	PATH=$(YAMLCAST-ROOT)/.cache/local/bin:$(PATH) \
+	  $(YAMLCAST) docs/demo/cli.yaml
+
+yamlcast: $(YAMLCAST-READY)
+
+$(YAMLCAST-READY): $(YAMLCAST)
+	$(MAKE) -C $(YAMLCAST-ROOT) \
+	  YAMLSCRIPT-VERSION=$(YAMLCAST-YS-VERSION) shell CMD=true
+	touch $@
+
+$(YAMLCAST): $(YAMLCAST-ARCHIVE)
+	mkdir -p $(YAMLCAST-ROOT)/.cache
+	tar -xzf $< -C $(YAMLCAST-ROOT) --strip-components=1
+	ln -sfn $(MAKES) $(YAMLCAST-ROOT)/.cache/makes
+	touch $@
+
+$(YAMLCAST-ARCHIVE):
+	curl+ $(YAMLCAST-URL)/tar.gz/$(YAMLCAST-COMMIT) > $@.tmp
+	mv $@.tmp $@
 
 run-examples: $(GO)
 	@for dir in example/*/; do \
@@ -220,39 +285,15 @@ $(GOLANGCI-LINT): $(GOLANGCI-LINT-VERSIONED)
 # Optional plugin dependencies stay outside the core module.
 PLUGIN-WORK = $(CURDIR)/.cache/plugin-work/go.work
 
-prepare-json-comments: $(PERL) $(GO-DEPS)
-	GO_YAML_BUILD_JSON_COMMENTS=true \
-	GO_YAML_JSON_COMMENTS_LOCAL=1 \
-	GO_YAML_JSON_COMMENTS_VERSION=v0.1.9 \
-	$(PERL) util/prepare-plugins
-
 prepare-reference-parser: $(PERL) $(GO-DEPS)
 	GO_YAML_BUILD_REFERENCE_PARSER=true \
 	GO_YAML_REFERENCE_PARSER_LOCAL=1 \
-	GO_YAML_REFERENCE_PARSER_VERSION=v0.2.5 \
+	GO_YAML_REFERENCE_PARSER_VERSION=v0.2.6 \
 	$(PERL) util/prepare-plugins
-
-test-json-comments: prepare-json-comments
-	GOWORK=$(PLUGIN-WORK) CGO_ENABLED=0 \
-	  go test ./plugin/json-comments/... ./.cache/cli-plugins/...$(TEST-OPTS)
-	GO_YAML_TEST_JSON_COMMENTS=1 \
-	GO_YAML_JSON_COMMENTS_LOCAL=1 \
-	go test ./util/build-cli \
-	  -run TestConfiguredJSONCLI$(TEST-OPTS)
-
-lint-json-comments: prepare-json-comments $(GOLANGCI-LINT-VERSIONED)
-	GOWORK=$(PLUGIN-WORK) $(GOLANGCI-LINT-VERSIONED) run \
-	  ./plugin/json-comments/...
-
-# The generated parser shares state; exercise concurrent Go and EDN callers.
-test-json-comments-race: prepare-json-comments
-	GOWORK=$(PLUGIN-WORK) go test -race -count=3 \
-	  ./plugin/json-comments/... \
-	  github.com/yamlstar/yamlstar-plugin-json-comments/parser
 
 test-reference-parser: prepare-reference-parser
 	GOWORK=$(PLUGIN-WORK) CGO_ENABLED=0 \
-	  go test ./plugin/parser/reference/... \
+	  go test ./plugin/yamlparser/reference/... \
 	  ./.cache/cli-plugins/...$(TEST-OPTS)
 	GO_YAML_TEST_REFERENCE_PARSER=1 \
 	GO_YAML_REFERENCE_PARSER_LOCAL=1 \
@@ -261,3 +302,8 @@ test-reference-parser: prepare-reference-parser
 
 test-cli-build: $(GO-DEPS)
 	go test ./util/build-cli$(TEST-OPTS)
+
+# Real v3 types are confined to a test-only module under testdata.
+test-v3-hooks: $(GO-DEPS)
+	cd internal/libyaml/testdata/v3hooks && \
+	  GOWORK=off go test ./...$(TEST-OPTS)

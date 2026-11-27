@@ -25,6 +25,11 @@ import (
 //   - v3 schema: https://swagger.io/specification/#schema-object
 //   - v3.1 schema: https://spec.openapis.org/oas/v3.1.0#schema-object
 type Schema struct {
+	// BooleanSchema represents a JSON Schema boolean when non-nil: true accepts
+	// every instance and false rejects every instance. It overrides object keywords.
+	// Set it to nil to render this schema as an object.
+	BooleanSchema *bool `json:"-" yaml:"-"`
+
 	// 3.1 only, used to define a dialect for this schema, label is '$schema'.
 	SchemaTypeRef string `json:"$schema,omitempty" yaml:"$schema,omitempty"`
 
@@ -140,6 +145,11 @@ type Schema struct {
 func NewSchema(schema *base.Schema) *Schema {
 	s := new(Schema)
 	s.low = schema
+	if !schema.BooleanSchema.IsEmpty() {
+		value := schema.BooleanSchema.Value
+		s.BooleanSchema = &value
+		return s
+	}
 	s.Title = schema.Title.Value
 	if !schema.SchemaTypeRef.IsEmpty() {
 		s.SchemaTypeRef = schema.SchemaTypeRef.Value
@@ -530,10 +540,15 @@ func (s *Schema) RenderInline() ([]byte, error) {
 
 // MarshalYAML will create a ready to render YAML representation of the Schema object.
 func (s *Schema) MarshalYAML() (interface{}, error) {
+	// the sibling view of a $ref with siblings renders like its proxy, even when it is boolean.
 	if s.ParentProxy != nil {
 		if node, ok, err := s.ParentProxy.renderTransformedRefWithSiblings(s); ok || err != nil {
 			return node, err
 		}
+	}
+
+	if node := s.booleanSchemaNode(); node != nil {
+		return node, nil
 	}
 
 	nb := high.NewNodeBuilder(s, s.low)
@@ -550,12 +565,19 @@ func (s *Schema) MarshalYAML() (interface{}, error) {
 
 // MarshalJSON will create a ready to render JSON representation of the Schema object.
 func (s *Schema) MarshalJSON() ([]byte, error) {
-	if s.ParentProxy != nil && s.ParentProxy.isParsedRefWithSiblings() {
-		node, err := s.ParentProxy.referenceYAMLNodeForSchema(s)
+	// like MarshalYAML, render the full schema when the $ref form cannot hold it.
+	if s.ParentProxy != nil {
+		node, ok, err := s.ParentProxy.renderTransformedRefWithSiblings(s)
 		if err != nil {
 			return nil, err
 		}
-		return marshalYAMLNodeJSON(node)
+		if ok {
+			return marshalYAMLNodeJSON(node)
+		}
+	}
+
+	if s.BooleanSchema != nil {
+		return json.Marshal(*s.BooleanSchema)
 	}
 
 	nb := high.NewNodeBuilder(s, s.low)
@@ -585,8 +607,13 @@ func (s *Schema) MarshalYAMLInlineWithContext(ctx any) (interface{}, error) {
 		renderCtx = NewInlineRenderContext()
 		ctx = renderCtx
 	}
+	// the sibling view of a $ref with siblings renders like its proxy, even when it is boolean.
 	if s.ParentProxy != nil && s.ParentProxy.isParsedRefWithSiblings() {
 		return s.ParentProxy.marshalParsedRefWithSiblingsInline(renderCtx, s)
+	}
+
+	if node := s.booleanSchemaNode(); node != nil {
+		return node, nil
 	}
 
 	// determine if we should preserve discriminator refs based on rendering mode.
@@ -637,7 +664,12 @@ func (s *Schema) MarshalYAMLInline() (interface{}, error) {
 
 // MarshalJSONInline will render out the Schema pointer as JSON, and all refs will be inlined fully
 func (s *Schema) MarshalJSONInline() ([]byte, error) {
+	if s.BooleanSchema != nil && !s.ParentProxy.schemaIsTransformedSiblingView(s) {
+		return json.Marshal(*s.BooleanSchema)
+	}
+
 	if s.ParentProxy != nil && s.ParentProxy.isParsedRefWithSiblings() {
+		// the sibling view renders like its proxy, even when it is boolean.
 		rendered, err := s.MarshalYAMLInline()
 		if err != nil {
 			return nil, err

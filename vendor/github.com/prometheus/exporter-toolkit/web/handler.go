@@ -81,10 +81,57 @@ type webHandler struct {
 	handler       http.Handler
 	logger        *slog.Logger
 	cache         *cache
+	// limiterMtx guards limiter and limiterConfig. The limiter is retuned in
+	// place when the rate limiter configuration changes on disk, so that its
+	// token bucket survives the change.
+	limiterMtx    sync.Mutex
 	limiter       *rate.Limiter
+	limiterConfig RateLimiterConfig
 	// bcryptMtx is there to ensure that bcrypt.CompareHashAndPassword is run
 	// only once in parallel as this is CPU intensive.
 	bcryptMtx sync.Mutex
+}
+
+// rateLimiter returns the limiter to apply for the given configuration, or nil
+// when rate limiting is disabled.
+//
+// A change to the configuration is applied to the existing limiter rather
+// than by building a new one, so requests already counted against the limit
+// stay counted. Otherwise every change, including a request that read an older
+// or partially written file, would hand out a fresh burst.
+func (u *webHandler) rateLimiter(c RateLimiterConfig) *rate.Limiter {
+	if c.Interval == 0 {
+		// Without an interval there is no limit, whatever the burst.
+		c = RateLimiterConfig{}
+	}
+
+	u.limiterMtx.Lock()
+	changed := c != u.limiterConfig
+	// While disabled, the limiter is kept so that its bucket is kept if the
+	// limit returns.
+	if changed && c.Interval != 0 {
+		if u.limiter == nil {
+			u.limiter = rate.NewLimiter(rate.Every(c.Interval), c.Burst)
+		} else {
+			u.limiter.SetLimit(rate.Every(c.Interval))
+			u.limiter.SetBurst(c.Burst)
+		}
+	}
+	u.limiterConfig = c
+	limiter := u.limiter
+	u.limiterMtx.Unlock()
+
+	if c.Interval == 0 {
+		limiter = nil
+	}
+	if changed {
+		if limiter == nil {
+			u.logger.Info("Rate Limiter is disabled.")
+		} else {
+			u.logger.Info("Rate Limiter is enabled.", "burst", c.Burst, "interval", c.Interval)
+		}
+	}
+	return limiter
 }
 
 func (u *webHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +142,7 @@ func (u *webHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if u.limiter != nil && !u.limiter.Allow() {
+	if limiter := u.rateLimiter(c.RateLimiterConfig); limiter != nil && !limiter.Allow() {
 		http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
 		return
 	}

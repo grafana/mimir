@@ -56,7 +56,11 @@ func (o *Map[K, V]) MarshalYAML() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err = valueNode.Encode(value); err != nil {
+		// Encoding an empty null or untagged scalar node as a standalone document panics in go-yaml.
+		// The value is already cloned, so retain its comments and source metadata.
+		if n, ok := value.(*yaml.Node); ok && isEmptyNullScalar(n) {
+			valueNode = n
+		} else if err = valueNode.Encode(value); err != nil {
 			return nil, err
 		}
 
@@ -64,6 +68,11 @@ func (o *Map[K, V]) MarshalYAML() (interface{}, error) {
 	}
 
 	return &node, nil
+}
+
+// isEmptyNullScalar reports whether n is an empty scalar that go-yaml resolves as null.
+func isEmptyNullScalar(n *yaml.Node) bool {
+	return n != nil && n.Kind == yaml.ScalarNode && n.Value == "" && (n.Tag == "" || n.Tag == "!!null")
 }
 
 func encodeMarshalYAMLValue(value any) (any, error) {

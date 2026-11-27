@@ -18,9 +18,15 @@ type Encoding struct {
 	ContentType   string                           `json:"contentType,omitempty" yaml:"contentType,omitempty"`
 	Headers       *orderedmap.Map[string, *Header] `json:"headers,omitempty" yaml:"headers,omitempty"`
 	Style         string                           `json:"style,omitempty" yaml:"style,omitempty"`
-	Explode       *bool                            `json:"explode,omitempty" yaml:"explode,omitempty"`
+	Explode       *bool                            `json:"explode,renderZero,omitempty" yaml:"explode,renderZero,omitempty"`
 	AllowReserved bool                             `json:"allowReserved,omitempty" yaml:"allowReserved,omitempty"`
-	low           *lowv3.Encoding
+
+	// Encoding, PrefixEncoding and ItemEncoding describe nested multipart parts (OpenAPI 3.2+).
+	Encoding       *orderedmap.Map[string, *Encoding]  `json:"encoding,omitempty" yaml:"encoding,omitempty"`
+	PrefixEncoding []*Encoding                         `json:"prefixEncoding,omitempty" yaml:"prefixEncoding,omitempty"`
+	ItemEncoding   *Encoding                           `json:"itemEncoding,omitempty" yaml:"itemEncoding,omitempty"`
+	Extensions     *orderedmap.Map[string, *yaml.Node] `json:"-" yaml:"-"`
+	low            *lowv3.Encoding
 }
 
 // NewEncoding creates a new instance of Encoding from a low-level one.
@@ -33,7 +39,13 @@ func NewEncoding(encoding *lowv3.Encoding) *Encoding {
 		e.Explode = &encoding.Explode.Value
 	}
 	e.AllowReserved = encoding.AllowReserved.Value
+	e.Extensions = high.ExtractExtensions(encoding.Extensions)
 	e.Headers = ExtractHeaders(encoding.Headers.Value)
+	e.Encoding = ExtractEncoding(encoding.Encoding.Value)
+	e.PrefixEncoding = extractEncodingSlice(encoding.PrefixEncoding)
+	if !encoding.ItemEncoding.IsEmpty() {
+		e.ItemEncoding = NewEncoding(encoding.ItemEncoding.Value)
+	}
 	return e
 }
 
@@ -75,4 +87,17 @@ func (e *Encoding) MarshalYAMLInlineWithContext(ctx any) (interface{}, error) {
 // ExtractEncoding converts hard to navigate low-level plumbing Encoding definitions, into a high-level simple map
 func ExtractEncoding(elements *orderedmap.Map[lowmodel.KeyReference[string], lowmodel.ValueReference[*lowv3.Encoding]]) *orderedmap.Map[string, *Encoding] {
 	return low.FromReferenceMapWithFunc(elements, NewEncoding)
+}
+
+// extractEncodingSlice converts a low-level prefixEncoding array into high-level Encoding objects, keeping order.
+// An absent prefixEncoding becomes nil, and a present but empty one becomes an empty slice so it renders as [].
+func extractEncodingSlice(prefix lowmodel.NodeReference[[]lowmodel.ValueReference[*lowv3.Encoding]]) []*Encoding {
+	if prefix.IsEmpty() && len(prefix.Value) == 0 {
+		return nil
+	}
+	extracted := make([]*Encoding, 0, len(prefix.Value))
+	for i := range prefix.Value {
+		extracted = append(extracted, NewEncoding(prefix.Value[i].Value))
+	}
+	return extracted
 }
