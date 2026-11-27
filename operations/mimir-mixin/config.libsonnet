@@ -112,7 +112,6 @@
       ruler_query_frontend: ['ruler-query-frontend.*'],  // Match also custom and per-zone ruler-query-frontend deployments.
       query_scheduler: ['query-scheduler.*', 'cortex', 'mimir'],  // Match also custom and per-zone query-scheduler deployments.
       ruler_query_scheduler: ['ruler-query-scheduler.*'],  // Not part of single-binary. Match also custom and per-zone ruler-query-scheduler deployments.
-      // The query-scheduler, ruler-query-scheduler, query-frontend and ruler-query-frontend pods join the memberlist cluster only with ring-based query-scheduler service discovery.
       ring_members: ['admin-api', 'alertmanager', 'compactor.*', 'distributor.*', 'ingester.*', 'query-frontend.*', 'querier.*', 'ruler|ruler-zone-.*', 'ruler-querier.*', 'store-gateway.*', 'query-scheduler.*', 'ruler-query-scheduler.*', 'ruler-query-frontend.*', 'usage-tracker.*', 'memberlist-bridge.*', 'cortex', 'mimir'],
       store_gateway: ['store-gateway.*', 'cortex', 'mimir'],  // Match also per-zone store-gateway deployments.
       gateway: ['gateway', 'cortex-gw.*'],  // Match also custom and per-zone gateway deployments.
