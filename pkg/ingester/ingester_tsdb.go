@@ -169,11 +169,10 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
-	engine := &prometheusEngine{
-		blockDuration:     blockRanges[0],
-		logger:            userLogger,
-		blockMinRetention: i.cfg.BlocksStorageConfig.TSDB.Retention,
-	}
+	engine := newTenantEngine()
+	engine.blockDuration = blockRanges[0]
+	engine.logger = userLogger
+	engine.blockMinRetention = i.cfg.BlocksStorageConfig.TSDB.Retention
 
 	// Create a new user database
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{

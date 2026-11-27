@@ -60,6 +60,28 @@ type tenantEngine interface {
 	RenderDiagnosticsPage(w http.ResponseWriter, req *http.Request, tenant string, labelChurnEnabled bool)
 }
 
+func newTenantEngine() *prometheusEngine {
+	return &prometheusEngine{}
+}
+
+// directIngestEngine recognizes records it can ingest in full. ReadRecord only examines the record
+// bytes because it runs before the tenant's append lock is acquired. A nil result requests decoding.
+type directIngestEngine interface {
+	ReadRecord(content []byte, version int) directIngestRecord
+}
+
+// directIngestRecord may borrow the Kafka buffer until Release. Ingest runs under the same
+// append lock as tenantEngine.Ingest and reports write results through the same context.
+type directIngestRecord interface {
+	Metadata() []*mimirpb.MetricMetadata
+	NumSeries() int
+	MinTimestamp() int64
+	Source() mimirpb.WriteRequest_SourceEnum
+	FirstSeriesLabels() []mimirpb.LabelAdapter
+	Ingest(ctx *ingestContext) error
+	Release()
+}
+
 // ingestContext must not be retained after Ingest returns because its bookkeeping belongs to the request.
 type ingestContext struct {
 	context.Context

@@ -212,6 +212,7 @@
 * [BUGFIX] Ruler: Fix rule groups running on two rulers, or on no ruler, when rulers start together, for example in a rollout. This lasted up to `-ruler.poll-interval`. A new ruler now syncs again if the ring changed during its start-up or another ruler is still `JOINING`, with `reason="first-run"` in `cortex_ruler_sync_rules_total`. It skips this sync while most rulers are `JOINING`, to avoid a loop of out-of-memory restarts on many rulers in a cold start. #17513
 * [BUGFIX] Ingester: Fix the partition reader logging an error and waiting for the full backoff when the Kafka client reports that a broker connection died. This error is now retried immediately, as intended. #17495
 * [BUGFIX] Mimirtool: Stop `mimirtool rules get` from printing the API request path to stdout before the rule group, which made the output invalid YAML. #17440
+* [ENHANCEMENT] Ingester: Route raw Kafka records through the ingester write path when the selected engine supports direct ingest. #17521
 
 ### Mixin
 

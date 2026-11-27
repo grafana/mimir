@@ -29,7 +29,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // GetRef() is an extra method added to TSDB to let Mimir check before calling Add()
@@ -225,7 +224,11 @@ func (i *Ingester) checkInstanceLimits(inflight int64, inflightBytes int64, reje
 }
 
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
-func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanUp func()) (returnErr error) {
+func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanUp func()) error {
+	return i.pushWithCleanup(ctx, pushRequest{decoded: req}, cleanUp)
+}
+
+func (i *Ingester) pushWithCleanup(ctx context.Context, req pushRequest, cleanUp func()) (returnErr error) {
 	// NOTE: because we use `unsafe` in deserialisation, we must not
 	// retain anything from `req` past the exit from this function.
 	defer cleanUp()
@@ -235,7 +238,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// NOTE: request coming from grpc handler may end up calling start multiple times during its lifetime (e.g., when migrating to ingest storage).
 	// startPushRequest handles this.
 	if i.cfg.IngestStorageConfig.Enabled {
-		reqSize := int64(req.Size())
+		reqSize := req.size()
 		var (
 			shouldFinish bool
 			startPushErr error
@@ -270,22 +273,25 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	// Given metadata is a best-effort approach, and we don't halt on errors
 	// process it before samples. Otherwise, we risk returning an error before ingestion.
-	if ingestedMetadata := i.pushMetadata(ctx, userID, req.GetMetadata()); ingestedMetadata > 0 {
+	if ingestedMetadata := i.pushMetadata(ctx, userID, req.metadata()); ingestedMetadata > 0 {
 		// Distributor counts both samples and metadata, so for consistency ingester does the same.
 		i.ingestionRate.Add(int64(ingestedMetadata))
 	}
 
 	// Early exit if no timeseries in request - don't create a TSDB or an appender.
-	if len(req.Timeseries) == 0 {
+	if req.numSeries() == 0 {
 		return nil
 	}
 
-	db, err := i.getOrCreateTSDB(userID)
-	if err != nil {
-		return wrapOrAnnotateWithUser(err, userID)
+	db := req.db
+	if db == nil {
+		db, err = i.getOrCreateTSDB(userID)
+		if err != nil {
+			return wrapOrAnnotateWithUser(err, userID)
+		}
 	}
 
-	lockState, err := db.acquireAppendLock(req.MinTimestamp())
+	lockState, err := db.acquireAppendLock(req.minTimestamp())
 	if err != nil {
 		return wrapOrAnnotateWithUser(err, userID)
 	}
@@ -405,7 +411,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		activeSeries = db.activeSeries
 	}
 
-	if err := db.engine().Ingest(&ingestContext{
+	source := req.source()
+	if err := req.ingest(&ingestContext{
 		Context:            ctx,
 		i:                  i,
 		userID:             userID,
@@ -414,8 +421,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		errProcessor:       &errProcessor,
 		updateFirstPartial: updateFirstPartial,
 		activeSeries:       activeSeries,
-		isOTLP:             req.Source == mimirpb.OTLP,
-	}, req.Timeseries); err != nil {
+		isOTLP:             source == mimirpb.OTLP,
+	}, db.engine()); err != nil {
 		return wrapOrAnnotateWithUser(err, userID)
 	}
 
@@ -461,9 +468,9 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
 	appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
 
-	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
+	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, req.groupLabel(i.limits, userID), startAppend)
 
-	i.updateMetricsFromPushStats(userID, group, &stats, req.Source, db, i.metrics.discarded)
+	i.updateMetricsFromPushStats(userID, group, &stats, source, db, i.metrics.discarded)
 
 	if firstPartialErr != nil {
 		wrappedErr := softErrorWithRejectedSamples{
