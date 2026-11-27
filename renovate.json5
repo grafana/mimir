@@ -2,19 +2,23 @@
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
   extends: [
     'config:recommended',
-    'schedule:daily'
+    'schedule:daily',
   ],
   customDatasources: {
     'gvisor-go': {
       defaultRegistryUrlTemplate: 'https://proxy.golang.org/gvisor.dev/gvisor/@v/go.info',
-      transformTemplates: ['{"releases": [{"version": Version}]}'],
+      transformTemplates: [
+        '{"releases": [{"version": Version}]}',
+      ],
     },
   },
   customManagers: [
     {
       customType: 'regex',
       description: 'Update Docker images in the development docker-compose.jsonnet files',
-      managerFilePatterns: ['development/*/docker-compose.jsonnet'],
+      managerFilePatterns: [
+        'development/*/docker-compose.jsonnet',
+      ],
       matchStrings: [
         "image:\\s*'(?<depName>[^'@]+):(?<currentValue>[^':/@]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?'",
       ],
@@ -23,21 +27,21 @@
     {
       customType: 'regex',
       description: 'Update distroless image references in Makefile',
-      managerFilePatterns: ['Makefile'],
+      managerFilePatterns: [
+        'Makefile',
+      ],
       matchStrings: [
-        "(?<depName>gcr\\.io/distroless/[\\w-]+)@(?<currentDigest>sha256:[a-f0-9]+)",
+        '(?<depName>gcr\\.io/distroless/[\\w-]+)@(?<currentDigest>sha256:[a-f0-9]+)',
       ],
       currentValueTemplate: 'latest',
       datasourceTemplate: 'docker',
     },
     {
-      // grafana/docs-base is referenced inside `docker run` shell commands in
-      // workflow files, which Renovate's github-actions manager does not scan.
-      // This custom manager tracks the digest against the :latest tag so it
-      // can be auto-bumped via a PR rather than baked in at commit time.
       customType: 'regex',
       description: 'Update grafana/docs-base digest in workflow files',
-      managerFilePatterns: ['.github/workflows/**'],
+      managerFilePatterns: [
+        '.github/workflows/**',
+      ],
       matchStrings: [
         '(?<depName>grafana/docs-base)@(?<currentDigest>sha256:[a-f0-9]+)',
       ],
@@ -59,7 +63,9 @@
     {
       customType: 'regex',
       description: 'Update prettier in Makefile',
-      managerFilePatterns: ['Makefile'],
+      managerFilePatterns: [
+        'Makefile',
+      ],
       matchStrings: [
         'PRETTIER_VERSION := (?<currentValue>[^\\s]+)',
       ],
@@ -73,8 +79,8 @@
         'mimir-build-image/Dockerfile',
       ],
       matchStrings: [
-        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+)\\s+ENV [A-Z0-9_]+=(\\s|\"|)(?<currentValue>[^\"\\s]*)(\"|)",
-        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+) digestVersion=(?<currentValue>.*)\\s+ENV [A-Z0-9_]+=(\\s|\"|)(?<currentDigest>[^\"\\s]*)(\"|)"
+        '# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+)\\s+ENV [A-Z0-9_]+=(\\s|"|)(?<currentValue>[^"\\s]*)("|)',
+        '# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+) digestVersion=(?<currentValue>.*)\\s+ENV [A-Z0-9_]+=(\\s|"|)(?<currentDigest>[^"\\s]*)("|)',
       ],
     },
     {
@@ -88,7 +94,7 @@
       ],
       depNameTemplate: 'helm/helm',
       datasourceTemplate: 'github-releases',
-    }
+    },
   ],
   baseBranchPatterns: [
     'main',
@@ -103,11 +109,17 @@
   packageRules: [
     {
       description: 'Track checklocks pseudo-versions from the gVisor go branch weekly',
-      matchDatasources: ['custom.gvisor-go'],
-      matchPackageNames: ['gvisor.dev/gvisor'],
+      matchDatasources: [
+        'custom.gvisor-go',
+      ],
+      matchPackageNames: [
+        'gvisor.dev/gvisor',
+      ],
       versioning: 'semver',
       ignoreUnstable: false,
-      schedule: ['* 0-4 * * 1'],
+      schedule: [
+        '* 0-4 * * 1',
+      ],
     },
     {
       matchBaseBranches: [
@@ -131,10 +143,8 @@
       enabled: false,
     },
     {
-      // Don't update replace directives.
       matchPackageNames: [
         'github.com/grafana/mimir-prometheus',
-        // Don't attempt to upgrade the upstream Prometheus dependency, as it's replaced by our fork.
         'github.com/prometheus/prometheus',
         'github.com/grafana/memberlist',
         'github.com/grafana/regexp',
@@ -163,16 +173,16 @@
     },
     {
       description: 'Only update antithesis-sdk-go to default-no-op release variants',
-      matchManagers: ['gomod'],
+      matchManagers: [
+        'gomod',
+      ],
       matchPackageNames: [
         'github.com/antithesishq/antithesis-sdk-go',
       ],
-      // Mark -default-no-op as a suffix not used in comparing version numbers.
       versionCompatibility: '^(?<version>.+)(?<compatibility>-default-no-op)$',
       versioning: 'semver',
     },
     {
-      // Update Go version everywhere at once: build image, go.mod and GitHub Actions workflows.
       matchDatasources: [
         'docker',
         'golang-version',
@@ -221,7 +231,7 @@
         'digest',
       ],
       schedule: [
-        '* 0-4 * * 1'
+        '* 0-4 * * 1',
       ],
     },
     {
@@ -231,31 +241,32 @@
         'Makefile',
       ],
       rebaseWhen: 'behind-base-branch',
-      gitIgnoredAuthors: ['199097951+mimir-github-bot[bot]@users.noreply.github.com'],
+      gitIgnoredAuthors: [
+        '199097951+mimir-github-bot[bot]@users.noreply.github.com',
+      ],
     },
     {
       description: 'Keep grafana/writers-toolkit deploy-preview workflow on @main: the OIDC service account only trusts the main ref, so pinning to a SHA breaks the docs deploy preview.',
-      matchManagers: ['github-actions'],
+      matchManagers: [
+        'github-actions',
+      ],
       matchPackageNames: [
         'grafana/writers-toolkit',
       ],
       enabled: false,
     },
     {
-      // grafana/shared-workflows is a monorepo whose actions are tagged as
-      // `<action-name>/v<semver>` (e.g. `create-github-app-token/v0.2.2`).
-      // Renovate cannot compare those tags with its default versioning, so
-      // references to those actions are never auto-bumped without this rule.
-      // Canonical config from https://github.com/grafana/shared-workflows#custom-renovate-config
       description: 'Auto-bump grafana/shared-workflows actions (per-action semver tags)',
-      matchPackageNames: ['grafana/shared-workflows'],
+      matchPackageNames: [
+        'grafana/shared-workflows',
+      ],
       versioning: 'regex:^(?<compatibility>.*)[-/]v?(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)?$',
       additionalBranchPrefix: '{{ lookup (split newVersion "/") 0 }}-',
       commitMessagePrefix: 'chore(deps):',
       commitMessageAction: 'update',
       commitMessageTopic: '{{depName}}/{{ lookup (split newVersion "/") 0 }} action',
       commitMessageExtra: 'to {{ lookup (split newVersion "/") 1 }}',
-    }
+    },
   ],
   branchPrefix: 'deps-update/',
   labels: [
@@ -268,7 +279,9 @@
     ],
   },
   osvVulnerabilityAlerts: true,
-  dependencyDashboard: false,
+  dependencyDashboard: {
+    enabled: false,
+  },
   prHourlyLimit: 10,
   prConcurrentLimit: 20,
 }
