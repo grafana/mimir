@@ -3,9 +3,12 @@
 package index
 
 import (
+	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -17,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 	"github.com/grafana/mimir/pkg/util/filepool"
@@ -139,7 +143,12 @@ func TestSparseValuesFromV4SymbolsTableCorruption(t *testing.T) {
 		{name: "extra-directory-bytes", endDelta: -1, want: streamencoding.ErrInvalidSize},
 		{name: "truncated-file", endDelta: 1, want: streamencoding.ErrInvalidSize},
 		{name: "symbol-crosses-boundary", mutate: func(b []byte) []byte { b[payloadEnd-5] = 127; return b }, want: streamencoding.ErrInvalidSize},
-		{name: "sample-order", mutate: func(b []byte) []byte { copy(b[13:17], "9999"); return b }, message: "unsorted sampled symbols"},
+		{name: "unsampled-duplicate", mutate: func(b []byte) []byte {
+			// Duplicate the first symbol at ordinal 1. Both sampled values remain ordered.
+			copy(b[18:22], b[13:17])
+			binary.BigEndian.PutUint32(b[payloadEnd:], crc32.Checksum(b[8:payloadEnd], castagnoliTable))
+			return b
+		}, checksum: true, message: "unsorted symbols"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data := slices.Clone(original)
@@ -220,4 +229,43 @@ func TestSparseValuesFromV4SymbolsTableWideOffsets(t *testing.T) {
 			require.Equal(t, expected, offsets)
 		})
 	}
+}
+
+// Record reads crossing the interior of the payload, excluding framing, read-ahead
+// and the final group. Running directory loading alone excludes label-name lookups.
+type symbolPayloadReadCounter struct {
+	objstore.BucketReader
+	start, end, bytesRead int64
+}
+
+func (b *symbolPayloadReadCounter) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
+	b.bytesRead += max(0, min(off+length, b.end)-max(off, b.start))
+	return b.BucketReader.GetRange(ctx, name, off, length)
+}
+
+func TestSparseValuesFromV4SymbolsTable_PayloadReads(t *testing.T) {
+	symbols := make([]string, 1024)
+	for i := range symbols {
+		symbols[i] = fmt.Sprintf("%04096d", i)
+	}
+	section, offsets := makeV4SymbolSection(symbols)
+	bkt := objstore.NewInMemBucket()
+	require.NoError(t, bkt.Upload(t.Context(), "symbols", bytes.NewReader(section)))
+	ranges := &symbolPayloadReadCounter{
+		BucketReader: bkt,
+		start:        streamencoding.ReadBufferSize,
+		end:          int64(offsets[len(offsets)-1]),
+	}
+	require.Greater(t, ranges.end-ranges.start, int64(streamencoding.ReadBufferSize))
+	factory := streamencoding.NewBucketDecbufFactory(ranges, "symbols")
+	_, _, err := SparseValuesFromV4SymbolsTable(t.Context(), factory, 0, len(section), true)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, ranges.bytesRead, ranges.end-ranges.start)
+
+	ranges.bytesRead = 0
+	count, loaded, err := SparseValuesFromV4SymbolsTable(t.Context(), factory, 0, len(section), false)
+	require.NoError(t, err)
+	require.Equal(t, len(symbols), count)
+	require.Equal(t, offsets, loaded)
+	require.Zero(t, ranges.bytesRead)
 }

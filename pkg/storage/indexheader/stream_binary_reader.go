@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -179,28 +180,28 @@ func NewStreamBinaryReader(
 		return err
 	}()
 
-	// If we can't read the index header, or it's an unsupported version for the current config, we need to rebuild it
-	if initialTOCErr != nil || indexHeaderVersion != cfg.Version {
+	// Try upgrading an older V4 header locally before falling back to the block index.
+	legacyV4 := initialTOCErr == nil && indexHeaderVersion == cfg.Version && indexHeaderTOC.IndexVersion == index.FormatV4 && !indexHeaderTOC.v4SymbolsValidated
+	if initialTOCErr != nil || indexHeaderVersion != cfg.Version || legacyV4 {
 		rebuildErr := func() error {
 			spanLog, ctx, finish := newSetupSpan(ctx, l, cfg, "indexheader.rebuildIndexHeader")
 			defer finish()
 
-			if err = removeIndexHeaders(localBlockDir, headers...); err != nil {
-				return fmt.Errorf("failed to remove other index-header versions: %w", err)
+			if legacyV4 {
+				err = upgradeV4IndexHeader(ctx, localIndexHeaderPath)
 			}
-			// TOC read checks CRC32; assume a failure here is either due to a file corruption.
-			level.Debug(spanLog).Log(
-				"msg", "failed to read table of contents from index-header on disk; will recreate from bucket block index",
-				"path", localIndexHeaderPath, "indexHeaderVersion", indexHeaderVersion, "err", err,
-			)
-			start := time.Now()
-			if err = WriteBinary(ctx, bkt, blockID, localBlockDir, cfg.Version); err != nil {
-				return fmt.Errorf("failed to write index header: %w", err)
+			if !legacyV4 || err != nil {
+				level.Debug(spanLog).Log("msg", "rebuilding local index-header from bucket block index", "path", localIndexHeaderPath, "err", err)
+				start := time.Now()
+				if err = WriteBinary(ctx, bkt, blockID, localBlockDir, cfg.Version); err != nil {
+					return fmt.Errorf("failed to write index header: %w", err)
+				}
+				level.Info(spanLog).Log("msg", "created index-header on local disk from bucket block index", "path", localIndexHeaderPath, "elapsed", time.Since(start))
+				otherHeaders := slices.DeleteFunc(headers, func(h OnDiskIndexHeader) bool { return h.Path == localIndexHeaderPath })
+				if err = removeIndexHeaders(localBlockDir, otherHeaders...); err != nil {
+					return fmt.Errorf("failed to remove other index-header versions: %w", err)
+				}
 			}
-			level.Info(spanLog).Log(
-				"msg", "created index-header on local disk from bucket block index",
-				"path", localIndexHeaderPath, "elapsed", time.Since(start),
-			)
 
 			// filePoolDecbufFactory may be holding a stale version of the index header, so if we're rebuilding,
 			// we close it and open a new one.
@@ -274,7 +275,7 @@ func NewStreamBinaryReader(
 	if indexHeaderTOC.IndexVersion == index.FormatV4 {
 		// V4 carries both directories in the index, so never fetch or create a sparse sidecar.
 		allSymbolsCount, sparseSymbolsOffsets, err = streamindex.SparseValuesFromV4SymbolsTable(
-			ctx, filePoolDecbufFactory, int(indexHeaderTOC.Symbols), int(indexHeaderTOC.SymbolsEnd), cfg.VerifyOnLoad,
+			ctx, filePoolDecbufFactory, int(indexHeaderTOC.Symbols), int(indexHeaderTOC.SymbolsEnd), cfg.VerifyOnLoad || !indexHeaderTOC.v4SymbolsValidated,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("load embedded symbol directory: %w", err)

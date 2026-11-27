@@ -26,6 +26,7 @@ import (
 	"github.com/thanos-io/objstore"
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/util/filepool"
@@ -47,15 +48,23 @@ const (
 	BinaryTOCLen = 2*8 + crc32.Size // 16 (2 x uint64) + 4 (CRC32)
 	// HeaderLen represents number of bytes reserved of index header for header.
 	// At present, it is:
-	// - 4 bytes for MagicIndex
+	// - 4 bytes for the index-header magic
 	// - 1 byte for index header version
 	// - 1 byte for TSDB index version
 	// - 8 bytes for an offset in the TSDB index after the last posting list.
 	HeaderLen = 4 + 1 + 1 + 8
 
-	// MagicIndex are 4 bytes at the head of an index-header file.
+	// MagicIndex identifies an index-header with the original prefix.
 	MagicIndex = 0xBAAAD792
+
+	// A V4 local header gets this prefix only after its symbols and sample ordinals
+	// have been validated. Older readers rebuild this derived file from the block.
+	magicValidatedV4 = 0x56A4D193
 )
+
+func validIndexHeaderMagic(magic uint32, indexVersion int) bool {
+	return magic == MagicIndex || (magic == magicValidatedV4 && indexVersion == index.FormatV4)
+}
 
 // The table gets initialized with sync.Once but may still cause a race
 // with any other use of the crc32 package anywhere. Thus we initialize it
@@ -96,7 +105,7 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, b
 	// This also will control the size of the file writer buffer.
 	buf := make([]byte, 32*1024)
 
-	return writeIndexHeaderFile(blockDir, version, indexVersion, ir.toc.LabelIndicesTable, buf, ir.CopySymbols, copyPostingsOffsets)
+	return writeIndexHeaderFile(ctx, blockDir, version, indexVersion, ir.toc.LabelIndicesTable, buf, ir.CopySymbols, copyPostingsOffsets)
 }
 
 // sectionCopyFunc copies a section of an index-header (Symbols or Postings Offsets) into w,
@@ -108,6 +117,7 @@ type sectionCopyFunc func(w io.Writer, buf []byte) error
 // copySymbols and copyPostingsOffsets supply the content of their respective sections;
 // For BinaryFormatV2, copyPostingsOffsets is nil because postings offsets will be read from the bucket.
 func writeIndexHeaderFile(
+	ctx context.Context,
 	blockDir string,
 	version int,
 	indexVersion int,
@@ -115,60 +125,94 @@ func writeIndexHeaderFile(
 	buf []byte,
 	copySymbols sectionCopyFunc,
 	copyPostingsOffsets sectionCopyFunc,
-) (err error) {
+) error {
 	filename := indexHeaderPath(blockDir, version)
-	tmpFilename := filename + ".tmp"
-
-	bw, err := newBinaryWriter(tmpFilename, buf, version)
-	if err != nil {
-		return errors.Wrap(err, "new binary index header writer")
-	}
-	defer runutil.CloseWithErrCapture(&err, bw, "close binary writer for %s", tmpFilename)
-
-	// Supported Prometheus index formats share the postings section layout,
-	// in which the end of the Postings list is the beginning of the Label Indices table.
-	// Prometheus block index TOC only contains start offsets for sections, not end offsets,
-	// so we use Label Indices Table offset as the end bound of the Postings List.
-	if err := bw.AddIndexMeta(indexVersion, postingsListEnd); err != nil {
-		return errors.Wrap(err, "add index meta")
-	}
-
-	if err := copySymbols(bw.SymbolsWriter(), buf); err != nil {
-		return err
-	}
-
-	if err := bw.f.Flush(); err != nil {
-		return errors.Wrap(err, "flush")
-	}
-
-	if copyPostingsOffsets != nil {
-		if err := copyPostingsOffsets(bw.PostingOffsetsWriter(), buf); err != nil {
+	return publishIndexHeader(ctx, filename, indexVersion, func(f *os.File) error {
+		bw := &binaryWriter{
+			f:     newFileWriter(f, len(buf)),
+			buf:   encoding.Encbuf{B: buf},
+			crc32: newCRC32(),
+		}
+		bw.buf.Reset()
+		bw.buf.PutBE32(MagicIndex)
+		bw.buf.PutByte(byte(version))
+		if err := bw.f.Write(bw.buf.Get()); err != nil {
 			return err
 		}
-
-		if err := bw.f.Flush(); err != nil {
-			return errors.Wrap(err, "flush")
+		if err := bw.AddIndexMeta(indexVersion, postingsListEnd); err != nil {
+			return errors.Wrap(err, "add index meta")
 		}
-	}
+		if err := copySymbols(bw.SymbolsWriter(), buf); err != nil {
+			return err
+		}
+		if copyPostingsOffsets != nil {
+			if err := copyPostingsOffsets(bw.PostingOffsetsWriter(), buf); err != nil {
+				return err
+			}
+		}
+		if err := bw.WriteTOC(); err != nil {
+			return errors.Wrap(err, "write index header TOC")
+		}
+		return bw.f.Flush()
+	})
+}
 
-	if err := bw.WriteTOC(); err != nil {
-		return errors.Wrap(err, "write index header TOC")
+// Validate and mark the same private copy that will be installed by rename. Concurrent
+// builders cannot overwrite each other's inputs or publish a partially validated header.
+func publishIndexHeader(ctx context.Context, filename string, indexVersion int, write func(*os.File) error) error {
+	f, err := os.CreateTemp(filepath.Dir(filename), filepath.Base(filename)+"-*.tmp")
+	if err != nil {
+		return err
 	}
+	defer os.Remove(f.Name())
 
-	if err := bw.f.Flush(); err != nil {
-		return errors.Wrap(err, "flush")
+	if err := func() (err error) {
+		defer runutil.CloseWithErrCapture(&err, f, "close index-header")
+		if err := write(f); err != nil {
+			return err
+		}
+		if indexVersion == index.FormatV4 {
+			if err := validateAndMarkV4Symbols(ctx, f); err != nil {
+				return errors.Wrap(err, "validate V4 index-header symbols")
+			}
+		}
+		return f.Sync()
+	}(); err != nil {
+		return err
 	}
+	return fileutil.Rename(f.Name(), filename)
+}
 
-	if err := bw.f.f.Sync(); err != nil {
-		return errors.Wrap(err, "sync")
+func validateAndMarkV4Symbols(ctx context.Context, f *os.File) (err error) {
+	factory := streamencoding.NewFilePoolDecbufFactory(f.Name(), 0, filepool.NewFilePoolMetrics(nil))
+	defer runutil.CloseWithErrCapture(&err, factory, "close index-header validation reader")
+	toc, _, err := TOCFromIndexHeader(ctx, castagnoliTable, factory, log.NewNopLogger())
+	if err != nil {
+		return err
 	}
-
-	// Create index-header in atomic way, to avoid partial writes (e.g during restart or crash of store GW).
-	if err := os.Rename(tmpFilename, filename); err != nil {
-		return errors.Wrap(err, "rename index header into place")
+	if toc.IndexVersion != index.FormatV4 {
+		return errors.New("expected a V4 index-header")
 	}
+	if _, _, err = streamindex.SparseValuesFromV4SymbolsTable(ctx, factory, int(toc.Symbols), int(toc.SymbolsEnd), true); err != nil {
+		return err
+	}
+	var magic [4]byte
+	binary.BigEndian.PutUint32(magic[:], magicValidatedV4)
+	_, err = f.WriteAt(magic[:], 0)
+	return err
+}
 
-	return nil
+// Upgrade a pre-existing V4 header locally so that its validation survives restarts.
+func upgradeV4IndexHeader(ctx context.Context, filename string) error {
+	return publishIndexHeader(ctx, filename, index.FormatV4, func(dst *os.File) (err error) {
+		src, err := os.Open(filename)
+		if err != nil {
+			return err
+		}
+		defer runutil.CloseWithErrCapture(&err, src, "close legacy V4 index-header")
+		_, err = io.Copy(dst, src)
+		return err
+	})
 }
 
 // buildRequiredIndexHeader builds an index-header of requiredVersion at localBlockDir.
@@ -186,7 +230,7 @@ func buildRequiredIndexHeader(
 ) error {
 	if requiredVersion == BinaryFormatV2 {
 		if v1Path, v1TOC, ok := usableV1Header(ctx, headers, l); ok {
-			if err := buildV2FromV1(v1Path, localBlockDir, v1TOC); err == nil {
+			if err := buildV2FromV1(ctx, v1Path, localBlockDir, v1TOC); err == nil {
 				return nil
 			}
 			// Fall through to building from the bucket below.
@@ -220,7 +264,7 @@ func usableV1Header(ctx context.Context, headers []OnDiskIndexHeader, l log.Logg
 // buildV2FromV1 copies the Symbols section directly out of a BinaryFormatV1 index-header at v1Path to build a BinaryFormatV2 index-header,
 // instead of re-reading it from the bucket. It trusts that the validity of the V1 index-header has already been verified,
 // e.g., via usableV1Header.
-func buildV2FromV1(v1Path, blockDir string, v1TOC *TOCCompat) (err error) {
+func buildV2FromV1(ctx context.Context, v1Path, blockDir string, v1TOC *TOCCompat) (err error) {
 	v1File, err := os.Open(v1Path)
 	if err != nil {
 		return errors.Wrap(err, "open v1 index-header")
@@ -242,7 +286,7 @@ func buildV2FromV1(v1Path, blockDir string, v1TOC *TOCCompat) (err error) {
 	buf := make([]byte, 32*1024)
 
 	// BinaryFormatV2 has no Postings Offsets section, so copyPostingsOffsets is nil.
-	return writeIndexHeaderFile(blockDir, BinaryFormatV2, v1TOC.IndexVersion, v1TOC.PostingsListEnd, buf, copySymbols, nil)
+	return writeIndexHeaderFile(ctx, blockDir, BinaryFormatV2, v1TOC.IndexVersion, v1TOC.PostingsListEnd, buf, copySymbols, nil)
 }
 
 type chunkedIndexReader struct {
@@ -385,42 +429,6 @@ type binaryWriter struct {
 	crc32 hash.Hash
 }
 
-func newBinaryWriter(fn string, buf []byte, version int) (w *binaryWriter, err error) {
-	df, err := fileutil.OpenDir(filepath.Dir(fn))
-	if err != nil {
-		return nil, err
-	}
-
-	defer runutil.CloseWithErrCapture(&err, df, "dir close")
-
-	if err := os.RemoveAll(fn); err != nil {
-		return nil, errors.Wrap(err, "remove any existing index at path")
-	}
-
-	// We use file writer for buffers not larger than reused one.
-	f, err := NewFileWriter(fn, len(buf))
-	if err != nil {
-		return nil, err
-	}
-	if err := df.Sync(); err != nil {
-		return nil, errors.Wrap(err, "sync dir")
-	}
-
-	w = &binaryWriter{
-		f: f,
-
-		// Reusable memory.
-		buf:   encoding.Encbuf{B: buf},
-		crc32: newCRC32(),
-	}
-
-	w.buf.Reset()
-	w.buf.PutBE32(MagicIndex)
-	w.buf.PutByte(byte(version))
-
-	return w, w.f.Write(w.buf.Get())
-}
-
 type FileWriter struct {
 	f    *os.File
 	fbuf *bufio.Writer
@@ -434,12 +442,16 @@ func NewFileWriter(name string, size int) (*FileWriter, error) {
 	if err != nil {
 		return nil, err
 	}
+	return newFileWriter(f, size), nil
+}
+
+func newFileWriter(f *os.File, size int) *FileWriter {
 	return &FileWriter{
 		f:    f,
 		fbuf: bufio.NewWriterSize(f, size),
 		pos:  0,
-		name: name,
-	}, nil
+		name: f.Name(),
+	}
 }
 
 func (fw *FileWriter) Pos() uint64 {
@@ -538,10 +550,6 @@ func (w *binaryWriter) Write(p []byte) (int, error) {
 	n := w.f.Pos()
 	err := w.f.Write(p)
 	return int(w.f.Pos() - n), err
-}
-
-func (w *binaryWriter) Close() error {
-	return w.f.Close()
 }
 
 const valueSymbolsCacheSize = 1024

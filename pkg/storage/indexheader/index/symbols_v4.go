@@ -6,6 +6,7 @@
 package index
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"hash/crc32"
@@ -16,11 +17,11 @@ import (
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 )
 
-// SparseValuesFromV4SymbolsTable loads the persisted samples without scanning every symbol.
-// symbolsEnd is the absolute end of the directory, including its checksum.
-// Returned offsets are relative to tableOffset. The directory checksum is always verified;
-// doChecksum additionally verifies the full symbol payload checksum.
-func SparseValuesFromV4SymbolsTable(ctx context.Context, factory streamencoding.DecbufFactory, tableOffset, symbolsEnd int, doChecksum bool) (count int, offsets []int, err error) {
+// SparseValuesFromV4SymbolsTable reads the checksummed directory ending at symbolsEnd.
+// It verifies that the final group fills the payload. Offsets are relative to tableOffset.
+// Set verifyAll for unvalidated input. It checks the payload CRC, strict symbol order and
+// the ordinal of every sample. Only an already validated local header can skip that walk.
+func SparseValuesFromV4SymbolsTable(ctx context.Context, factory streamencoding.DecbufFactory, tableOffset, symbolsEnd int, verifyAll bool) (count int, offsets []int, err error) {
 	if tableOffset < 0 || symbolsEnd < tableOffset || symbolsEnd-tableOffset < 28 {
 		return 0, nil, streamencoding.ErrInvalidSize
 	}
@@ -34,7 +35,7 @@ func SparseValuesFromV4SymbolsTable(ctx context.Context, factory streamencoding.
 	if payloadEnd < 12 || payloadEnd > symbolsEnd-tableOffset-16 {
 		return 0, nil, streamencoding.ErrInvalidSize
 	}
-	if doChecksum {
+	if verifyAll {
 		symbols.CheckCrc32(castagnoliTable)
 		symbols.ResetAt(8)
 		if symbols.Err() != nil {
@@ -75,7 +76,6 @@ func SparseValuesFromV4SymbolsTable(ctx context.Context, factory streamencoding.
 	}
 	offsets = make([]int, 0, int(samples))
 	var offset uint64
-	var previous string
 	for i := range samples {
 		delta := directory.Uvarint64()
 		if directory.Err() != nil || directory.Len() < crc32.Size || delta == 0 || offset >= uint64(payloadEnd) || delta >= uint64(payloadEnd)-offset {
@@ -85,52 +85,43 @@ func SparseValuesFromV4SymbolsTable(ctx context.Context, factory streamencoding.
 		if i == 0 && offset != 12 {
 			return 0, nil, errors.New("invalid first symbol offset")
 		}
-		symbols.ResetAt(int(offset))
-		value, err := readV4SampleSymbol(&symbols, payloadEnd)
-		if err != nil {
-			return 0, nil, err
-		}
-		if i > 0 && value <= previous {
-			return 0, nil, errors.New("unsorted sampled symbols")
-		}
-		previous = value
 		offsets = append(offsets, int(offset))
 	}
 	if directory.Err() != nil || directory.Len() != crc32.Size {
 		return 0, nil, errors.New("invalid symbol directory length")
 	}
-	if count == 0 {
-		if payloadEnd != 12 {
-			return 0, nil, errors.New("invalid symbol count")
-		}
-		return count, offsets, nil
+	// Count lives in the payload, outside the directory CRC. Check the final group even
+	// on ordinary reloads: changing the count need not change the number of samples.
+	first := 0
+	if !verifyAll && count > 0 {
+		first = (len(offsets) - 1) * symbolFactor
+		symbols.ResetAt(offsets[len(offsets)-1])
 	}
-
-	// Validate the final group ends exactly at the symbol payload boundary.
-	symbols.ResetAt(offsets[len(offsets)-1])
-	remaining := count - (len(offsets)-1)*symbolFactor
-	for i := range remaining {
-		value, err := readV4SampleSymbol(&symbols, payloadEnd)
-		if err != nil {
+	var previous []byte
+	for ordinal := first; ordinal < count; ordinal++ {
+		if ordinal%symbolFactor == 0 {
+			if err := ctx.Err(); err != nil {
+				return 0, nil, err
+			}
+			if offsets[ordinal/symbolFactor] != symbols.Offset() {
+				return 0, nil, errors.New("symbol sample does not point to its ordinal")
+			}
+		}
+		value := symbols.UnsafeUvarintBytes()
+		if err := symbols.Err(); err != nil {
 			return 0, nil, err
 		}
-		if i > 0 && value <= previous {
+		if symbols.Offset() > payloadEnd {
+			return 0, nil, streamencoding.ErrInvalidSize
+		}
+		if ordinal > first && bytes.Compare(value, previous) <= 0 {
 			return 0, nil, errors.New("unsorted symbols")
 		}
-		previous = value
+		// The next read can reuse the buffer backing value.
+		previous = append(previous[:0], value...)
 	}
 	if symbols.Offset() != payloadEnd {
 		return 0, nil, errors.New("invalid symbol count")
 	}
 	return count, offsets, nil
-}
-
-func readV4SampleSymbol(d *streamencoding.Decbuf, payloadEnd int) (string, error) {
-	length := d.Uvarint64()
-	if d.Err() != nil || d.Offset() > payloadEnd || length > uint64(payloadEnd-d.Offset()) {
-		return "", streamencoding.ErrInvalidSize
-	}
-	// Bytes returns owned storage that remains valid after decoder reuse.
-	value := yoloString(d.Bytes(int(length)))
-	return value, d.Err()
 }

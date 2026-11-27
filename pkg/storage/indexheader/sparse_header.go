@@ -342,7 +342,7 @@ func buildInMemorySparseHeaderFromIndexHeader(
 
 	if symbols.toc.IndexVersion == index.FormatV4 {
 		allSymbolsCount, sparseSymbolsOffsets, err = streamindex.SparseValuesFromV4SymbolsTable(
-			ctx, symbols.decbufFactory, int(symbols.toc.Symbols), int(symbols.toc.SymbolsEnd), doChecksum,
+			ctx, symbols.decbufFactory, int(symbols.toc.Symbols), int(symbols.toc.SymbolsEnd), true,
 		)
 		return allSymbolsCount, sparseSymbolsOffsets, nil, err
 	}

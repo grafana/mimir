@@ -36,6 +36,8 @@ import (
 type TOCCompat struct {
 	IndexVersion int
 
+	v4SymbolsValidated bool
+
 	Symbols uint64
 
 	// SymbolsEnd bounds the V4 symbol payload and its embedded directory.
@@ -135,16 +137,17 @@ func TOCFromIndexHeader(
 	// Grab the full length of the index header before we read any of it. This is needed
 	// so that we can skip directly to the table of contents at the end of file.
 	indexHeaderSize := decbuf.Len()
-	if magic := decbuf.Be32(); magic != MagicIndex {
+	magic := decbuf.Be32()
+	indexHeaderVersion = int(decbuf.Byte())
+	indexVersion := int(decbuf.Byte())
+	if !validIndexHeaderMagic(magic, indexVersion) {
 		return nil, 0, fmt.Errorf("invalid magic number %x", magic)
 	}
 
 	level.Debug(l).Log("msg", "index header file size", "bytes", indexHeaderSize)
 
-	indexHeaderVersion = int(decbuf.Byte())
 	switch indexHeaderVersion {
 	case BinaryFormatV1, BinaryFormatV2:
-		indexVersion := int(decbuf.Byte())
 		if indexVersion != index.FormatV2 && indexVersion != index.FormatV4 {
 			return nil, indexHeaderVersion, fmt.Errorf("unknown or unsupported index format version %d", indexVersion)
 		}
@@ -195,6 +198,7 @@ func TOCFromIndexHeader(
 			postingsOffsetTable += 16
 		}
 		return &TOCCompat{
+			v4SymbolsValidated:  magic == magicValidatedV4,
 			IndexVersion:        indexVersion,
 			Symbols:             symbols,
 			SymbolsEnd:          symbolsEnd,

@@ -200,7 +200,8 @@ func readIndexVersionFromHeader(path string) (int, error) {
 	if closeErr != nil {
 		return 0, closeErr
 	}
-	if binary.BigEndian.Uint32(header[:4]) != MagicIndex || (header[4] != BinaryFormatV1 && header[4] != BinaryFormatV2) {
+	magic := binary.BigEndian.Uint32(header[:4])
+	if !validIndexHeaderMagic(magic, int(header[5])) || (header[4] != BinaryFormatV1 && header[4] != BinaryFormatV2) {
 		return 0, errors.New("invalid index-header prefix")
 	}
 	return int(header[5]), nil

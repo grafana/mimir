@@ -108,6 +108,7 @@ func TestV4IndexHeaders(t *testing.T) {
 				if version == BinaryFormatV1 {
 					migrated, err := NewStreamBinaryReader(ctx, id, objstore.WithNoopInstr(bkt), local, Config{Version: BinaryFormatV2, VerifyOnLoad: true}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 					require.NoError(t, err)
+					require.True(t, migrated.symbolsTOC.v4SymbolsValidated)
 					got, err := migrated.LookupSymbol(ctx, 1)
 					require.NoError(t, err)
 					require.Equal(t, symbols[1], got)
