@@ -19,6 +19,9 @@ spec:
   {{- with .Values.gateway.service.clusterIP }}
   clusterIP: {{ . }}
   {{- end }}
+  {{- if and (eq "LoadBalancer" .Values.gateway.service.type) .Values.gateway.service.loadBalancerClass }}
+  loadBalancerClass: {{ .Values.gateway.service.loadBalancerClass }}
+  {{- end }}
   {{- if and (eq "LoadBalancer" .Values.gateway.service.type) .Values.gateway.service.loadBalancerIP }}
   loadBalancerIP: {{ .Values.gateway.service.loadBalancerIP }}
   {{- end }}
