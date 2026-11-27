@@ -355,8 +355,9 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	numConsumers := 8
 	// Number of workers must be divisible by the number of query component queue types
 	// for even distribution of workers to queues and fair comparison between algorithms.
-	// Query component queue types can up to 4: ingester, store-gateway, ingester-and-store-gateway, and unknown.
-	// The unknown queue type is not used in this test, but 12 ensures divisibility by 4, 3, 2, and 1.
+	// Query component queue types can be up to 5: ingester, store-gateway, ingester-and-store-gateway,
+	// strong-read-consistency, and unknown. This test does not use the unknown and strong-read-consistency
+	// queue types, but 12 ensures divisibility by 4, 3, 2, and 1.
 	numWorkersPerConsumer := 12
 
 	normalConsumerLatency := 1 * time.Millisecond

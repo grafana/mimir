@@ -88,9 +88,27 @@ func requestLogFields(userID string, queryID uint64, rootQueryID string) []any {
 }
 
 // ExpectedQueryComponentName parses the expected query component from annotations by the frontend.
+// It returns the strong read consistency queue dimension when the second queue dimension is
+// strong-read-consistency, so the request goes to the strong read consistency queue.
 func (sr *SchedulerRequest) ExpectedQueryComponentName() string {
+	if len(sr.AdditionalQueueDimensions) > 1 && sr.AdditionalQueueDimensions[1] == strongReadConsistencyQueueDimension {
+		return sr.AdditionalQueueDimensions[1]
+	}
 	if len(sr.AdditionalQueueDimensions) > 0 {
 		return sr.AdditionalQueueDimensions[0]
 	}
 	return queue.UnknownDimension
+}
+
+// ExpectedTargetQueryComponentNameWithConsistency returns the query component that the request reads,
+// and whether the request has strong read consistency. The query component is empty when the
+// query-frontend sent no queue dimension.
+func (sr *SchedulerRequest) ExpectedTargetQueryComponentNameWithConsistency() (string, bool) {
+	if len(sr.AdditionalQueueDimensions) > 1 && sr.AdditionalQueueDimensions[1] == strongReadConsistencyQueueDimension {
+		return sr.AdditionalQueueDimensions[0], true
+	}
+	if len(sr.AdditionalQueueDimensions) > 0 {
+		return sr.AdditionalQueueDimensions[0], false
+	}
+	return "", false
 }

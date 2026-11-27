@@ -2579,7 +2579,7 @@
           "kind": "field",
           "name": "max_concurrent",
           "required": false,
-          "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four; lower values are ignored and set to the minimum",
+          "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four per in-use query-scheduler, or five when -querier.strong-read-consistency-queue-enabled is true; lower values are ignored and set to the minimum",
           "fieldValue": null,
           "fieldDefaultValue": 8,
           "fieldFlag": "querier.max-concurrent",
@@ -8575,6 +8575,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "strong_read_consistency_queue_enabled",
+          "required": false,
+          "desc": "Open at least 5 querier-worker connections to each query-scheduler, up from 4, so that the strong read consistency queue of each query-scheduler has a prioritized querier-worker. Enable it on every querier before you enable -query-frontend.strong-read-consistency-queue-enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.strong-read-consistency-queue-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -9052,6 +9063,17 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.queue-reservation-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "strong_read_consistency_queue_enabled",
+          "required": false,
+          "desc": "Send requests with strong read consistency to their own query-scheduler queue, unless they query only store-gateways. Enable it only after every querier runs with -querier.strong-read-consistency-queue-enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.strong-read-consistency-queue-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },

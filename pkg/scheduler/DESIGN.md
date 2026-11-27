@@ -40,6 +40,8 @@ and the depth-first traversal provides a familiar pattern for searching for a le
 > [!NOTE]
 > The system maintains a fourth query component, `unknown`, which is treated the same as `ingester-and-store-gateway`.
 > The `unknown` query component node and its subtree are omitted from diagrams in this doc for simplicity.
+> When `-query-frontend.strong-read-consistency-queue-enabled` is true, a fifth query component, `strong-read-consistency`,
+> holds the strong read consistency requests that query ingesters. The diagrams omit it too.
 
 ```mermaid
 ---
@@ -122,7 +124,7 @@ graph TB
 On enqueue, we partition requests into separate queues based on two static properties of the query request:
 
 - the "expected query component", determined by the time range of the query and the Mimir deployment configuration
-  - `ingester`, `store-gateway`, `ingester-and-store-gateway`, or `unknown`
+  - `ingester`, `store-gateway`, `ingester-and-store-gateway`, `strong-read-consistency`, or `unknown`
 - the tenant ID of the request
 
 These properties are used to place the request into a queue at a leaf node.
@@ -131,7 +133,7 @@ will be enqueued at the leaf node reached by the path `root -> ingester -> tenan
 
 This results in `O(m * n)` queues in the tree structure:
 
-- `m` is the number of active query component nodes; `m` is always `<= 4`
+- `m` is the number of active query component nodes; `m` is always `<= 5`
 - `n` is the number of active tenant nodes; `n` is only bounded by the total active tenant count in a multi-tenant Mimir deployment
 
 ### Dequeuing from the Tree Queue
@@ -139,7 +141,7 @@ This results in `O(m * n)` queues in the tree structure:
 On dequeue, we perform a depth-first search of the tree to select a leaf node to dequeue from.
 Each of the two non-leaf levels of the tree uses a different algorithm to select the next child node.
 
-1. At the root node level, one algorithm selects one of four possible query component child nodes.
+1. At the root node level, one algorithm selects one of five possible query component child nodes.
 1. At query component level, the other algorithm attempts to select a tenant-specific child node.
    1. due to tenant-querier shuffle sharding, it is possible that none of the tenant nodes
       can be selected for dequeuing for the current querier.
@@ -402,7 +404,7 @@ gantt
 This solution is inspired by a research paper from Brown University and Microsoft:
 [Two-Dimensional Fair Queuing for Multi-Tenant Cloud Services](https://people.mpi-sws.org/~jcmace/papers/mace20162dfq.pdf).
 
-Querier-worker connections are partitioned evenly across up to four possible query-component nodes
+Querier-worker connections are partitioned evenly across up to five possible query-component nodes
 with a modulo of the querier-worker connection ID across the ordered list of nodes.
 
 Ex:
@@ -414,8 +416,9 @@ Assume a query component node order of `[ingester, store-gateway, ingester-and-s
 
 We conservatively expect degradation of the store-gateway query component will cause high latency
 for the queries in the `store-gateway`, `ingester-and-store-gateway`, and `unknown` queues,
-but by partitioning the querier-worker connections evenly across the four queues,
+but by partitioning the querier-worker connections evenly across the four queues of this example,
 25% of connections remain "reserved" to process queries from the `ingester` queue.
+When all five query component nodes exist, the share is 20%.
 
 The primary measure of success is the servicing of the queries to the non-degraded query component,
 
@@ -502,10 +505,14 @@ gantt
 
 ###### Queue Starvation Due to Low `-querier.max-concurrent` Values
 
-If there are fewer than 4 querier-worker connections per querier to the request queue, a query-component
-node can be starved of connections.
-To prevent this, the querier has been updated to create at least 4 connections to each scheduler,
+If there are fewer querier-worker connections per querier to the request queue than query-component nodes,
+a query-component node can be starved of connections.
+To prevent this, the querier creates at least 4 connections to each scheduler,
 ignoring any `-querier.max-concurrent` value below 4.
+When `-querier.strong-read-consistency-queue-enabled` is true, the minimum is 5,
+for the fifth `strong-read-consistency` node.
+Before a query-frontend enables `-query-frontend.strong-read-consistency-queue-enabled`,
+every querier must run with `-querier.strong-read-consistency-queue-enabled`.
 
 ##### Uneven Distribution Querier-Worker Connections Across Query Component Nodes
 
@@ -523,7 +530,7 @@ This can result in the following scenario:
 
 1. Queries to store-gateways are experiencing high latency, causing backup
    in the `store-gateway`, `ingester-and store-gateway`, and `unknown queues`.
-2. The ingester-only queries continue to be dequeued and processed by 1/4 of the querier-worker connections.
+2. The ingester-only queries continue to be dequeued and processed by the querier-worker connections prioritized to the `ingester` node.
 3. The ingester-only queue is emptied and the `ingester` node is deleted from the tree.
 4. The querier-worker connections are now evenly distributed across the remaining three nodes,
    and _all_ connections are now stuck working on slow queries touching the degraded store-gateways.

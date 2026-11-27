@@ -38,6 +38,8 @@ type Config struct {
 	QueryFrontendGRPCClientConfig  QueryFrontendClientConfig `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the querier and the query-frontend."`
 	QuerySchedulerGRPCClientConfig grpcclient.Config         `yaml:"query_scheduler_grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the querier and the query-scheduler."`
 
+	StrongReadConsistencyQueueEnabled bool `yaml:"strong_read_consistency_queue_enabled" category:"experimental"`
+
 	// This configuration is injected internally.
 	MaxConcurrentRequests   int                       `yaml:"-"` // Must be same as passed to PromQL Engine.
 	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
@@ -52,6 +54,15 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.QueryFrontendGRPCClientConfig.RegisterFlagsWithPrefix("querier.frontend-client", f)
 	cfg.QuerySchedulerGRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.QuerySchedulerGRPCClientConfig.RegisterFlagsWithPrefix("querier.scheduler-client", f)
+
+	f.BoolVar(&cfg.StrongReadConsistencyQueueEnabled, "querier.strong-read-consistency-queue-enabled", false, fmt.Sprintf("Open at least %d querier-worker connections to each query-scheduler, up from %d, so that the strong read consistency queue of each query-scheduler has a prioritized querier-worker. Enable it on every querier before you enable -query-frontend.strong-read-consistency-queue-enabled.", minConcurrencyPerQueueWithStrongReadConsistencyQueue, MinConcurrencyPerQueue))
+}
+
+func (cfg *Config) minConcurrencyPerQueue() int {
+	if cfg.StrongReadConsistencyQueueEnabled {
+		return minConcurrencyPerQueueWithStrongReadConsistencyQueue
+	}
+	return MinConcurrencyPerQueue
 }
 
 func (cfg *Config) Validate() error {
@@ -115,9 +126,10 @@ type serviceDiscoveryFactory func(receiver servicediscovery.Notifications) (serv
 type querierWorker struct {
 	*services.BasicService
 
-	maxConcurrentRequests int
-	grpcClientConfig      grpcclient.Config
-	log                   log.Logger
+	maxConcurrentRequests  int
+	minConcurrencyPerQueue int
+	grpcClientConfig       grpcclient.Config
+	log                    log.Logger
 
 	processor processor
 
@@ -156,13 +168,14 @@ func NewQuerierWorker(cfg Config, httpHandler RequestHandler, protobufHandler Pr
 
 	processor, servs := newSchedulerProcessor(cfg, httpHandler, protobufHandler, log, reg)
 	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "query-scheduler-worker", util.GRPCProtocol)
-	return newQuerierWorkerWithProcessor(cfg.QuerySchedulerGRPCClientConfig, cfg.MaxConcurrentRequests, log, processor, factory, servs, invalidClusterValidation)
+	return newQuerierWorkerWithProcessor(cfg.QuerySchedulerGRPCClientConfig, cfg.MaxConcurrentRequests, cfg.minConcurrencyPerQueue(), log, processor, factory, servs, invalidClusterValidation)
 }
 
-func newQuerierWorkerWithProcessor(grpcCfg grpcclient.Config, maxConcReq int, log log.Logger, processor processor, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service, invalidClusterValidation *prometheus.CounterVec) (*querierWorker, error) {
+func newQuerierWorkerWithProcessor(grpcCfg grpcclient.Config, maxConcReq, minConcPerQueue int, log log.Logger, processor processor, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service, invalidClusterValidation *prometheus.CounterVec) (*querierWorker, error) {
 	f := &querierWorker{
 		grpcClientConfig:         grpcCfg,
 		maxConcurrentRequests:    maxConcReq,
+		minConcurrencyPerQueue:   minConcPerQueue,
 		log:                      log,
 		managers:                 map[string]*processorManager{},
 		instances:                map[string]servicediscovery.Instance{},
@@ -314,6 +327,11 @@ func (w *querierWorker) InstanceChanged(instance servicediscovery.Instance) {
 // Failure to assign any querier-worker connections to a queue dimension can result in starvation of that queue dimension.
 const MinConcurrencyPerQueue = 4
 
+// minConcurrencyPerQueueWithStrongReadConsistencyQueue replaces MinConcurrencyPerQueue when
+// -querier.strong-read-consistency-queue-enabled is true, because a query-frontend with
+// -query-frontend.strong-read-consistency-queue-enabled adds a 5th queue dimension: strong-read-consistency.
+const minConcurrencyPerQueueWithStrongReadConsistencyQueue = MinConcurrencyPerQueue + 1
+
 // +checklocks:w.mu
 func (w *querierWorker) resetConcurrency() {
 	desiredConcurrency := w.getDesiredConcurrency()
@@ -325,7 +343,7 @@ func (w *querierWorker) resetConcurrency() {
 			level.Error(w.log).Log("msg", "a querier worker is connected to an unknown remote endpoint", "addr", m.address)
 
 			// Consider it as not in-use.
-			concurrency = MinConcurrencyPerQueue
+			concurrency = w.minConcurrencyPerQueue
 		}
 
 		m.concurrency(concurrency, "resetting worker concurrency")
@@ -348,9 +366,9 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 		inUseIndex = 0
 	)
 
-	// new adjusted minimum to ensure that each in-use instance has at least MinConcurrencyPerQueue connections.
+	// new adjusted minimum to ensure that each in-use instance has at least minConcurrencyPerQueue connections.
 	maxConcurrentWithMinPerInstance := max(
-		w.maxConcurrentRequests, MinConcurrencyPerQueue*numInUse,
+		w.maxConcurrentRequests, w.minConcurrencyPerQueue*numInUse,
 	)
 	if maxConcurrentWithMinPerInstance > w.maxConcurrentRequests {
 		level.Warn(w.log).Log("msg", "max concurrency does not meet the minimum required per request queue instance, increasing to minimum")
@@ -363,7 +381,7 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 			// and therefore these connections will not contribute to the overall steady-state query concurrency.
 			// As the state is expected to be temporary, we allocate the minimum number of connections
 			// and do not count them against the connection pool size for the in-use instances.
-			desired[address] = MinConcurrencyPerQueue
+			desired[address] = w.minConcurrencyPerQueue
 			continue
 		}
 

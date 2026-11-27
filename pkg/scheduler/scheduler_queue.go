@@ -19,6 +19,7 @@ import (
 // schedulerQueue wraps the generic queue.Queue with scheduler-specific queue logic:
 //   - the first queue dimension is the query component,
 //     determined from the annotation that the query-frontend attaches to the request.
+//     A strong-read-consistency second queue dimension sends the request to the strong read consistency queue.
 //   - the per-tenant max-queriers limit is looked up from the configured Limits.
 //   - the QueryComponentUtilization tracker, and its periodic inflight observation,
 //     live here rather than in the generic queue.

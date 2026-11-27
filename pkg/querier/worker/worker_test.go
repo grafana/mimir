@@ -96,11 +96,12 @@ func TestConfig_IsSchedulerConfigured(t *testing.T) {
 
 func TestResetConcurrency(t *testing.T) {
 	tests := []struct {
-		name                string
-		maxConcurrent       int
-		numTargets          int
-		numInUseTargets     int
-		expectedConcurrency int
+		name                              string
+		maxConcurrent                     int
+		numTargets                        int
+		numInUseTargets                   int
+		strongReadConsistencyQueueEnabled bool
+		expectedConcurrency               int
 	}{
 		{
 			name:                "Create at least the minimum processors per target if max concurrent = 0, with all targets in use",
@@ -115,6 +116,22 @@ func TestResetConcurrency(t *testing.T) {
 			numTargets:          2,
 			numInUseTargets:     1,
 			expectedConcurrency: 8,
+		},
+		{
+			name:                              "Create at least the strong read consistency minimum processors per target if max concurrent = 0, with all targets in use",
+			maxConcurrent:                     0,
+			numTargets:                        2,
+			numInUseTargets:                   2,
+			strongReadConsistencyQueueEnabled: true,
+			expectedConcurrency:               10,
+		},
+		{
+			name:                              "Create at least the strong read consistency minimum processors per target if max concurrent = 0, with some targets in use",
+			maxConcurrent:                     0,
+			numTargets:                        2,
+			numInUseTargets:                   1,
+			strongReadConsistencyQueueEnabled: true,
+			expectedConcurrency:               10,
 		},
 		{
 			name:                "Max concurrent dividing with a remainder, with all targets in use",
@@ -144,15 +161,24 @@ func TestResetConcurrency(t *testing.T) {
 			numInUseTargets: 2,
 			expectedConcurrency:/* in use:  */ 12 + /* not in use : */ 8,
 		},
+		{
+			name:                              "Max concurrent dividing evenly, with some targets in use and the strong read consistency minimum",
+			maxConcurrent:                     12,
+			numTargets:                        4,
+			numInUseTargets:                   2,
+			strongReadConsistencyQueueEnabled: true,
+			expectedConcurrency:/* in use:  */ 12 + /* not in use : */ 10,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := Config{
-				MaxConcurrentRequests: tt.maxConcurrent,
+				MaxConcurrentRequests:             tt.maxConcurrent,
+				StrongReadConsistencyQueueEnabled: tt.strongReadConsistencyQueueEnabled,
 			}
 
-			w, err := newQuerierWorkerWithProcessor(cfg.QuerySchedulerGRPCClientConfig, cfg.MaxConcurrentRequests, log.NewNopLogger(), &mockProcessor{}, nil, nil, nil)
+			w, err := newQuerierWorkerWithProcessor(cfg.QuerySchedulerGRPCClientConfig, cfg.MaxConcurrentRequests, cfg.minConcurrencyPerQueue(), log.NewNopLogger(), &mockProcessor{}, nil, nil, nil)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), w))
 
@@ -177,9 +203,10 @@ func TestResetConcurrency(t *testing.T) {
 
 func TestQuerierWorker_getDesiredConcurrency(t *testing.T) {
 	tests := map[string]struct {
-		instances     []servicediscovery.Instance
-		maxConcurrent int
-		expected      map[string]int
+		instances                         []servicediscovery.Instance
+		maxConcurrent                     int
+		strongReadConsistencyQueueEnabled bool
+		expected                          map[string]int
 	}{
 		"should return empty map on no instances": {
 			instances:     nil,
@@ -199,6 +226,33 @@ func TestQuerierWorker_getDesiredConcurrency(t *testing.T) {
 				"2.2.2.2": MinConcurrencyPerQueue,
 				"3.3.3.3": 6,
 				"4.4.4.4": MinConcurrencyPerQueue,
+			},
+		},
+		"should keep the max concurrency split when it meets the minimum connections and the strong read consistency queue is disabled": {
+			instances: []servicediscovery.Instance{
+				{Address: "1.1.1.1", InUse: true},
+				{Address: "2.2.2.2", InUse: true},
+				{Address: "3.3.3.3", InUse: false},
+			},
+			maxConcurrent: 8,
+			expected: map[string]int{
+				"1.1.1.1": 4,
+				"2.2.2.2": 4,
+				"3.3.3.3": MinConcurrencyPerQueue,
+			},
+		},
+		"should raise each instance to the strong read consistency minimum connections when the strong read consistency queue is enabled": {
+			instances: []servicediscovery.Instance{
+				{Address: "1.1.1.1", InUse: true},
+				{Address: "2.2.2.2", InUse: true},
+				{Address: "3.3.3.3", InUse: false},
+			},
+			maxConcurrent:                     8,
+			strongReadConsistencyQueueEnabled: true,
+			expected: map[string]int{
+				"1.1.1.1": 5,
+				"2.2.2.2": 5,
+				"3.3.3.3": 5,
 			},
 		},
 		"should create the minimum connections for each instance if max concurrency is set to 0": {
@@ -236,10 +290,11 @@ func TestQuerierWorker_getDesiredConcurrency(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			cfg := Config{
-				MaxConcurrentRequests: testData.maxConcurrent,
+				MaxConcurrentRequests:             testData.maxConcurrent,
+				StrongReadConsistencyQueueEnabled: testData.strongReadConsistencyQueueEnabled,
 			}
 
-			w, err := newQuerierWorkerWithProcessor(cfg.QueryFrontendGRPCClientConfig.Config, cfg.MaxConcurrentRequests, log.NewNopLogger(), &mockProcessor{}, nil, nil, nil)
+			w, err := newQuerierWorkerWithProcessor(cfg.QueryFrontendGRPCClientConfig.Config, cfg.MaxConcurrentRequests, cfg.minConcurrencyPerQueue(), log.NewNopLogger(), &mockProcessor{}, nil, nil, nil)
 			require.NoError(t, err)
 
 			w.mu.Lock()

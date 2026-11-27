@@ -1192,10 +1192,12 @@ sum by (job) (
 **Step 3: Check querier saturation (inflight requests)**
 
 ```promql
-# Inflight requests being processed by queriers right now.
-# If this equals the total querier concurrency, queriers are saturated.
-sum by (job) (
-    cortex_query_scheduler_querier_inflight_requests{namespace="<namespace>"}
+# 99th percentile of inflight requests on querier connections, per query component.
+# A request counts in each query component that it reads. A strong read consistency
+# request also counts in the strong-read-consistency component. Do not add the components.
+# If one component equals the total querier concurrency, queriers are saturated.
+sum by (job, query_component) (
+    cortex_query_scheduler_querier_inflight_requests{namespace="<namespace>", quantile="0.99"}
 )
 ```
 

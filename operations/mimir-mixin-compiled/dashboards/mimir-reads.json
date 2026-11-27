@@ -1227,7 +1227,7 @@
             "panels": [
                {
                   "datasource": "$datasource",
-                  "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query-scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p>\n\n",
+                  "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query-scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p><p>\n  Queries in the strong-read-consistency queue are also counted\n  in the strong-read-consistency category.\n</p>\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {

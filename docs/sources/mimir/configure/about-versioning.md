@@ -256,6 +256,7 @@ The following features are currently experimental:
   - Query-frontend health check grace period (`-querier.frontend-client.health-check-grace-period`)
   - Store-gateway health check grace period (`-querier.store-gateway-client.health-check-grace-period`)
   - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)
+  - Minimum of 5 querier-worker connections per query-scheduler for the separate strong read consistency queue (`-querier.strong-read-consistency-queue-enabled`)
 - Query-frontend
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-time-window` from ingesters)
   - Length-delimited framed format for active series responses between queriers and query-frontends (`-query-frontend.active-series-framed-responses`)
@@ -288,6 +289,7 @@ The following features are currently experimental:
     - `cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes`
   - Peak in-flight request count and age metrics: `-query-frontend.max-inflight-metrics-enabled`
   - Queue reservation for the remote execution sub-requests of a query evaluation: `-query-frontend.queue-reservation-enabled`
+  - Separate query-scheduler queue for strong read consistency requests: `-query-frontend.strong-read-consistency-queue-enabled`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
   - `-query-scheduler.queue-max-wait-metric-enabled`
