@@ -52,6 +52,9 @@ type tenantEngine interface {
 	BlockShippingEnabled() bool
 	// The caller must prevent idle close while ShipBlocks uses the local data.
 	ShipBlocks(ctx context.Context)
+	// OldestUnshippedBlockTime returns the oldest pending block's creation time in milliseconds,
+	// or zero when shipping is disabled or has no pending blocks.
+	OldestUnshippedBlockTime() uint64
 
 	RenderDiagnosticsPage(w http.ResponseWriter, req *http.Request, tenant string, labelChurnEnabled bool)
 }
