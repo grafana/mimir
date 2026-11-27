@@ -54,7 +54,7 @@ func assertExpectedValuesOnDequeue(t *testing.T, qb *queueBroker, lastTenantInde
 		req, tenant, lastTenantIndex, err = qb.dequeueItemForConsumer(&ConsumerWorkerDequeueRequest{
 			ConsumerWorkerConn: &ConsumerWorkerConn{ConsumerID: consumerID},
 			lastTenantIndex:    TenantIndex{last: lastTenantIndex},
-		})
+		}, nil)
 		assert.Equal(t, expected.item, req)
 		assert.Equal(t, expected.tenant, tenant)
 		assert.NoError(t, err)
@@ -76,7 +76,7 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 	req, tenant, lastTenantIndexConsumerOne, err := qb.dequeueItemForConsumer(&ConsumerWorkerDequeueRequest{
 		ConsumerWorkerConn: &ConsumerWorkerConn{ConsumerID: "consumer-1"},
 		lastTenantIndex:    TenantIndex{-1},
-	})
+	}, nil)
 	assert.Nil(t, req)
 	assert.Nil(t, tenant)
 	assert.NoError(t, err)
@@ -197,8 +197,7 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 	req, tenant, _, err = qb.dequeueItemForConsumer(&ConsumerWorkerDequeueRequest{
 		ConsumerWorkerConn: &ConsumerWorkerConn{ConsumerID: "consumer-1"},
 		lastTenantIndex:    TenantIndex{lastTenantIndexConsumerOne},
-	},
-	)
+	}, nil)
 	assert.Nil(t, req)
 	assert.Nil(t, tenant)
 	assert.NoError(t, err)
@@ -276,7 +275,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	dequeuedTenantReq, _, _, err := qb.dequeueItemForConsumer(&ConsumerWorkerDequeueRequest{
 		ConsumerWorkerConn: &ConsumerWorkerConn{ConsumerID: "consumer-1"},
 		lastTenantIndex:    TenantIndex{-1},
-	})
+	}, nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, dequeuedTenantReq)
 
@@ -337,7 +336,7 @@ func TestQueuesOnTerminatingConsumer(t *testing.T) {
 	req, tenant, qTwolastTenantIndex, err := qb.dequeueItemForConsumer(&ConsumerWorkerDequeueRequest{
 		ConsumerWorkerConn: &ConsumerWorkerConn{ConsumerID: "consumer-2"},
 		lastTenantIndex:    TenantIndex{qTwolastTenantIndex},
-	})
+	}, nil)
 	assert.Nil(t, req)
 	assert.Nil(t, tenant)
 	assert.Equal(t, ErrConsumerShuttingDown, err)
@@ -354,7 +353,7 @@ func TestQueuesOnTerminatingConsumer(t *testing.T) {
 		req, tenant, qOneLastTenantIndex, err = qb.dequeueItemForConsumer(&ConsumerWorkerDequeueRequest{
 			ConsumerWorkerConn: &ConsumerWorkerConn{ConsumerID: "consumer-1"},
 			lastTenantIndex:    TenantIndex{qOneLastTenantIndex},
-		})
+		}, nil)
 		assert.Equal(t, expected.item, req)
 		assert.Equal(t, expected.tenant, tenant)
 		assert.NoError(t, err)
@@ -365,7 +364,7 @@ func TestQueuesOnTerminatingConsumer(t *testing.T) {
 	req, tenant, _, err = qb.dequeueItemForConsumer(&ConsumerWorkerDequeueRequest{
 		ConsumerWorkerConn: &ConsumerWorkerConn{ConsumerID: "consumer-2"},
 		lastTenantIndex:    TenantIndex{qTwolastTenantIndex},
-	})
+	}, nil)
 	assert.Nil(t, req)
 	assert.Nil(t, tenant)
 	assert.Equal(t, ErrConsumerShuttingDown, err)
@@ -389,7 +388,7 @@ func TestQueues_ConsumerDistribution(t *testing.T) {
 		req, tenant, _, err := qb.dequeueItemForConsumer(&ConsumerWorkerDequeueRequest{
 			ConsumerWorkerConn: &ConsumerWorkerConn{ConsumerID: qid},
 			lastTenantIndex:    TenantIndex{-1},
-		})
+		}, nil)
 		assert.Nil(t, req)
 		assert.Nil(t, tenant)
 		assert.NoError(t, err)
@@ -1033,7 +1032,7 @@ func TestQueueBroker_EnqueueItemFront_DoesNotTouchReservations(t *testing.T) {
 
 func dequeueForTest(t *testing.T, qb *queueBroker, conn *ConsumerWorkerConn) *tenantItem {
 	t.Helper()
-	dequeued, _, _, err := qb.dequeueItemForConsumer(NewConsumerWorkerDequeueRequest(conn, FirstTenant()))
+	dequeued, _, _, err := qb.dequeueItemForConsumer(NewConsumerWorkerDequeueRequest(conn, FirstTenant()), nil)
 	require.NoError(t, err)
 	return dequeued
 }

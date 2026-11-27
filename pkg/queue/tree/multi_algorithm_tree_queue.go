@@ -5,6 +5,7 @@ package tree
 import (
 	"container/list"
 	"fmt"
+	"slices"
 )
 
 type QueuePath []string //nolint:revive // disallows types beginning with package name
@@ -17,12 +18,16 @@ type Tree interface {
 	GetNode(path QueuePath) *Node
 	ItemCount() int
 	IsEmpty() bool
+	HasItemOutsideNodes(skipNodes []string) bool
 }
 
 type DequeueArgs struct {
 	ConsumerID      string
 	WorkerID        int
 	LastTenantIndex int
+	// SkipNodes names the first-layer nodes that this dequeue must not select.
+	// Only ConsumerWorkerQueuePriorityAlgo uses it.
+	SkipNodes []string
 }
 
 // MultiAlgorithmTreeQueue holds metadata and a pointer to the root node of a hierarchical queue implementation.
@@ -70,6 +75,20 @@ func (t *MultiAlgorithmTreeQueue) ItemCount() int {
 
 func (t *MultiAlgorithmTreeQueue) IsEmpty() bool {
 	return t.rootNode.IsEmpty()
+}
+
+// HasItemOutsideNodes reports whether a first-layer node that is not in skipNodes holds an item.
+// A dequeue with DequeueArgs.SkipNodes set to skipNodes can succeed only when it returns true.
+func (t *MultiAlgorithmTreeQueue) HasItemOutsideNodes(skipNodes []string) bool {
+	if len(skipNodes) == 0 || t.rootNode.isLeaf() {
+		return !t.IsEmpty()
+	}
+	for name, child := range t.rootNode.queueMap {
+		if !child.IsEmpty() && !slices.Contains(skipNodes, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // Dequeue removes and returns an item from the front of the next appropriate Node in the MultiAlgorithmTreeQueue,

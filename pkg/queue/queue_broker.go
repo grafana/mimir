@@ -84,6 +84,11 @@ func (qb *queueBroker) isEmpty() bool {
 	return qb.tree.IsEmpty()
 }
 
+// hasItemOutsideDimensions reports whether a queue dimension that is not in dimensions holds an item.
+func (qb *queueBroker) hasItemOutsideDimensions(dimensions []string) bool {
+	return qb.tree.HasItemOutsideNodes(dimensions)
+}
+
 func (qb *queueBroker) itemCount() int {
 	return qb.tree.ItemCount()
 }
@@ -207,8 +212,11 @@ func (qb *queueBroker) queuePath(item *tenantItem) tree.QueuePath {
 	return tree.QueuePath{dim, item.tenantID}
 }
 
+// dequeueItemForConsumer dequeues the next item for dequeueReq. skipNodes names the queue dimensions
+// that the dequeue must not select.
 func (qb *queueBroker) dequeueItemForConsumer(
 	dequeueReq *ConsumerWorkerDequeueRequest,
+	skipNodes []string,
 ) (
 	*tenantItem,
 	*queueTenant,
@@ -232,6 +240,7 @@ func (qb *queueBroker) dequeueItemForConsumer(
 			ConsumerID:      dequeueReq.ConsumerID,
 			WorkerID:        dequeueReq.WorkerID,
 			LastTenantIndex: dequeueReq.lastTenantIndex.last,
+			SkipNodes:       skipNodes,
 		})
 
 	if queueElement == nil {

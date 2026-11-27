@@ -9070,7 +9070,7 @@
           "kind": "field",
           "name": "strong_read_consistency_queue_enabled",
           "required": false,
-          "desc": "Send requests with strong read consistency to their own query-scheduler queue, unless they query only store-gateways. Enable it only after every querier runs with -querier.strong-read-consistency-queue-enabled.",
+          "desc": "Send requests with strong read consistency to their own query-scheduler queue, unless they query only store-gateways. Enable it only after every querier runs with -querier.strong-read-consistency-queue-enabled. -query-scheduler.strong-read-consistency-max-querier-workers-ratio limits the querier-workers that run these requests.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.strong-read-consistency-queue-enabled",
@@ -22667,6 +22667,17 @@
           "fieldDefaultValue": 5000000000,
           "fieldFlag": "query-scheduler.queue-reservation-timeout",
           "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "strong_read_consistency_max_querier_workers_ratio",
+          "required": false,
+          "desc": "Maximum share of the connected querier-worker connections that can run strong read consistency requests at the same time, per query-scheduler. Only requests from a query-frontend with -query-frontend.strong-read-consistency-queue-enabled count. At the limit, querier-workers take requests from the other queues. The limit is at least 1 querier-worker connection. 0 disables the limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-scheduler.strong-read-consistency-max-querier-workers-ratio",
+          "fieldType": "float",
           "fieldCategory": "experimental"
         },
         {

@@ -333,3 +333,90 @@ func TestConsumerWorkerQueuePriority_StartPositionByWorker_MultipleNodeCountsInT
 	// tree is now empty
 	assert.Nil(t, obj)
 }
+
+func TestConsumerWorkerQueuePriority_SkipNode(t *testing.T) {
+	tree, err := NewTree(NewConsumerWorkerQueuePriorityAlgo())
+	require.NoError(t, err)
+
+	// The enqueue order sets the node order: ["ingester", "strong", "store-gateway"].
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"ingester"}, "ingester-1"))
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"strong"}, "strong-1"))
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"store-gateway"}, "store-gateway-1"))
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"strong"}, "strong-2"))
+
+	// Worker 1 is prioritized to "strong". The skip moves it to "store-gateway", which the dequeue
+	// then deletes, so the node order becomes ["ingester", "strong"].
+	path, obj := tree.Dequeue(&DequeueArgs{WorkerID: 1, SkipNodes: []string{"strong"}})
+	require.Equal(t, QueuePath{"store-gateway"}, path)
+	require.Equal(t, "store-gateway-1", obj)
+
+	// Worker 1 is prioritized to "strong" again. The skip wraps to "ingester".
+	path, obj = tree.Dequeue(&DequeueArgs{WorkerID: 1, SkipNodes: []string{"strong"}})
+	require.Equal(t, QueuePath{"ingester"}, path)
+	require.Equal(t, "ingester-1", obj)
+
+	// Only the skipped node remains, so the dequeue returns nothing.
+	path, obj = tree.Dequeue(&DequeueArgs{WorkerID: 0, SkipNodes: []string{"strong"}})
+	require.Equal(t, QueuePath{}, path)
+	require.Nil(t, obj)
+	require.False(t, tree.IsEmpty())
+
+	// Without the skip, the node is selected again.
+	path, obj = tree.Dequeue(&DequeueArgs{WorkerID: 0})
+	require.Equal(t, QueuePath{"strong"}, path)
+	require.Equal(t, "strong-1", obj)
+
+	// A skip of a node that does not exist changes nothing.
+	path, obj = tree.Dequeue(&DequeueArgs{WorkerID: 0, SkipNodes: []string{"store-gateway"}})
+	require.Equal(t, QueuePath{"strong"}, path)
+	require.Equal(t, "strong-2", obj)
+	require.True(t, tree.IsEmpty())
+}
+
+func TestConsumerWorkerQueuePriority_SkipNodes(t *testing.T) {
+	tree, err := NewTree(NewConsumerWorkerQueuePriorityAlgo())
+	require.NoError(t, err)
+
+	// The enqueue order sets the node order: ["ingester", "strong", "slow"].
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"ingester"}, "ingester-1"))
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"strong"}, "strong-1"))
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"slow"}, "slow-1"))
+
+	// Worker 1 is prioritized to "strong". The skip of 2 nodes in a row wraps to "ingester".
+	path, obj := tree.Dequeue(&DequeueArgs{WorkerID: 1, SkipNodes: []string{"strong", "slow"}})
+	require.Equal(t, QueuePath{"ingester"}, path)
+	require.Equal(t, "ingester-1", obj)
+
+	// Every remaining node is skipped, so the dequeue returns nothing.
+	path, obj = tree.Dequeue(&DequeueArgs{WorkerID: 0, SkipNodes: []string{"slow", "strong"}})
+	require.Equal(t, QueuePath{}, path)
+	require.Nil(t, obj)
+	require.False(t, tree.IsEmpty())
+
+	// The skip of 1 node leaves the other node.
+	path, obj = tree.Dequeue(&DequeueArgs{WorkerID: 0, SkipNodes: []string{"strong"}})
+	require.Equal(t, QueuePath{"slow"}, path)
+	require.Equal(t, "slow-1", obj)
+}
+
+func TestMultiAlgorithmTreeQueue_HasItemOutsideNodes(t *testing.T) {
+	tree, err := NewTree(NewConsumerWorkerQueuePriorityAlgo())
+	require.NoError(t, err)
+	require.False(t, tree.HasItemOutsideNodes(nil))
+	require.False(t, tree.HasItemOutsideNodes([]string{"strong"}))
+
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"strong"}, "strong-1"))
+	require.True(t, tree.HasItemOutsideNodes(nil))
+	require.False(t, tree.HasItemOutsideNodes([]string{"strong"}))
+
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"ingester"}, "ingester-1"))
+	require.True(t, tree.HasItemOutsideNodes([]string{"strong"}))
+	require.False(t, tree.HasItemOutsideNodes([]string{"strong", "ingester"}))
+
+	// A tree with no queuing algorithm has no first-layer nodes to skip.
+	leafTree, err := NewTree()
+	require.NoError(t, err)
+	require.False(t, leafTree.HasItemOutsideNodes([]string{"strong"}))
+	require.NoError(t, leafTree.EnqueueBackByPath(QueuePath{}, "item-1"))
+	require.True(t, leafTree.HasItemOutsideNodes([]string{"strong"}))
+}

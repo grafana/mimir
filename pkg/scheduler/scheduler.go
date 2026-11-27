@@ -131,6 +131,8 @@ type Config struct {
 	QueueReservationEnabled     bool          `yaml:"queue_reservation_enabled" category:"experimental"`
 	QueueReservationTimeout     time.Duration `yaml:"queue_reservation_timeout" category:"experimental"`
 
+	StrongReadConsistencyMaxQuerierWorkersRatio float64 `yaml:"strong_read_consistency_max_querier_workers_ratio" category:"experimental"`
+
 	GRPCClientConfig grpcclient.Config         `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
 	ServiceDiscovery schedulerdiscovery.Config `yaml:",inline"`
 }
@@ -141,6 +143,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.QueueMaxWaitMetricEnabled, "query-scheduler.queue-max-wait-metric-enabled", true, "Enable the cortex_query_scheduler_queue_max_wait_seconds metric, which reports how long the oldest request still waiting in the queue has been waiting. Disabling it skips the per-tick scan over inflight requests.")
 	f.BoolVar(&cfg.MaxQueueLengthMetricEnabled, "query-scheduler.max-queue-length-metric-enabled", false, "Enable the cortex_query_scheduler_max_queue_length metric, which reports the per-tenant peak queue length observed since the last scrape. Disabling it skips per-tenant peak tracking on enqueue and dequeue.")
 	f.BoolVar(&cfg.QueueReservationEnabled, "query-scheduler.queue-reservation-enabled", false, "Enable queue reservation: a query-frontend that supports it reserves queue slots for a group of sub-requests before it sends them. The query-scheduler admits or rejects each reservation as a whole. An admitted sub-request uses an idle slot of its reservation, so the per-tenant limit does not reject it. A dequeue returns the slot to the reservation. Requires a query-frontend that also supports queue reservation; has no effect otherwise.")
+	f.Float64Var(&cfg.StrongReadConsistencyMaxQuerierWorkersRatio, "query-scheduler.strong-read-consistency-max-querier-workers-ratio", 0, "Maximum share of the connected querier-worker connections that can run strong read consistency requests at the same time, per query-scheduler. Only requests from a query-frontend with -query-frontend.strong-read-consistency-queue-enabled count. At the limit, querier-workers take requests from the other queues. The limit is at least 1 querier-worker connection. 0 disables the limit.")
 	f.DurationVar(&cfg.QueueReservationTimeout, "query-scheduler.queue-reservation-timeout", 5*time.Second, "Time after which the query-scheduler closes an open reservation and releases its idle queue slots, when no sub-request of the reservation is queued or running and none was inserted or finished in that time. Only applies when -query-scheduler.queue-reservation-enabled is true.")
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
@@ -149,10 +152,15 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 }
 
 var errInvalidQueueReservationTimeout = errors.New("the queue reservation timeout must be greater than 0 when queue reservation is enabled")
+var errInvalidStrongReadConsistencyMaxQuerierWorkersRatio = errors.New("the strong read consistency max querier-workers ratio must be between 0 and 1")
 
 func (cfg *Config) Validate() error {
 	if cfg.QueueReservationEnabled && cfg.QueueReservationTimeout <= 0 {
 		return errInvalidQueueReservationTimeout
+	}
+	// The negated range check also rejects NaN, which fails every comparison.
+	if !(cfg.StrongReadConsistencyMaxQuerierWorkersRatio >= 0 && cfg.StrongReadConsistencyMaxQuerierWorkersRatio <= 1) {
+		return errInvalidStrongReadConsistencyMaxQuerierWorkersRatio
 	}
 	return cfg.ServiceDiscovery.Validate()
 }
@@ -792,12 +800,14 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 			s.cancelRequestAndRemoveFromPending(schedulerReq.Key(), "request cancelled")
 			s.queue.MarkRequestCompleted(schedulerReq)
 			schedulerReq.finishReservedSubRequest()
+			s.queue.ReleaseInflight(schedulerReq)
 			lastTenantIdx = lastTenantIdx.ReuseLastTenant()
 			continue
 		}
 
 		err = s.forwardRequestToQuerier(querier, querierID, schedulerReq, queueTime)
 		schedulerReq.finishReservedSubRequest()
+		s.queue.ReleaseInflight(schedulerReq)
 		if err != nil {
 			return err
 		}

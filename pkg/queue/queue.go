@@ -103,6 +103,14 @@ type Queue struct {
 	rejectedReservations *prometheus.CounterVec // per user
 	idleSlots            *IdleSlotsGauge        // per user
 
+	// limitedDimensions holds the in-flight limit of each limited queue dimension.
+	// LimitDimensionInflightConsumption fills it before the Queue service starts.
+	// Only dispatcherLoop changes the limits. Nothing writes the map after the start,
+	// so SubmitReleaseDimensionInflight can read it from other goroutines.
+	limitedDimensions map[string]*dimensionInflightLimit
+	// skipNodes is the buffer that dimensionsAtLimit reuses. Only dispatcherLoop uses it.
+	skipNodes []string
+
 	// Only dispatcherLoop uses the open reservations.
 	reservations        map[ReservationKey]*Reservation
 	reservationsByOwner map[string]map[ReservationKey]*Reservation
@@ -199,6 +207,7 @@ const (
 	opAbortReservation
 	opCloseReservationsOfOwner
 	opReapReservations
+	opReleaseDimensionInflight
 )
 
 // producerOperation is one operation that dispatcherLoop applies to the queue. op selects the
@@ -329,14 +338,32 @@ func (q *Queue) dispatcherLoop() {
 			isStopping = true
 
 		case consumerWorkerOp := <-q.consumerWorkerOperations:
-			// Need to attempt to dispatch queries only if consumer-worker operation results in a resharding
-			needToDispatchQueries = q.processConsumerWorkerOperation(consumerWorkerOp)
+			dimensionsAtLimitBefore := len(q.dimensionsAtLimit())
+			// Need to attempt to dispatch queries only if consumer-worker operation results in a resharding,
+			// or if a new connection raises the limit of a limited dimension above its in-flight items.
+			// A consumer-worker op changes no in-flight count, so a connection only removes dimensions from
+			// the set at their limit, and a smaller set means that at least 1 dimension left it.
+			resharded := q.processConsumerWorkerOperation(consumerWorkerOp)
+			needToDispatchQueries = resharded || len(q.dimensionsAtLimit()) < dimensionsAtLimitBefore
 		case producerOp := <-q.producerOperations:
+			var released *dimensionInflightLimit
+			wasAtLimit := false
+			if producerOp.op == opReleaseDimensionInflight {
+				released = q.limitedDimensions[producerOp.queueDimension]
+				wasAtLimit = released != nil && released.atLimit(q.connectedConsumerWorkers.Load())
+			}
 			err := q.processProducerOperation(producerOp)
 			producerOp.errChan <- err
-			// Only an enqueue adds an item, so the other ops cannot make a waiting dequeue succeed.
-			if err == nil && (producerOp.op == opEnqueue || producerOp.op == opEnqueueIntoReservation) {
-				needToDispatchQueries = true
+			// An enqueue adds an item, and it can reshard its tenant. A release can make a waiting dequeue
+			// succeed only when it ends the skip of its limited dimension. The other ops cannot make a
+			// waiting dequeue succeed.
+			if err == nil {
+				switch producerOp.op {
+				case opEnqueue, opEnqueueIntoReservation:
+					needToDispatchQueries = true
+				case opReleaseDimensionInflight:
+					needToDispatchQueries = wasAtLimit && !released.atLimit(q.connectedConsumerWorkers.Load())
+				}
 			}
 		case waitingDequeueReq := <-q.waitingDequeueRequests:
 			requestSent := q.trySendNextItemForConsumer(waitingDequeueReq)
@@ -350,7 +377,9 @@ func (q *Queue) dispatcherLoop() {
 		if needToDispatchQueries {
 			currentElement := q.waitingDequeueRequestsToDispatch.Front()
 
-			for currentElement != nil && !q.queueBroker.isEmpty() {
+			// No waiting dequeue can take an item of a dimension at its limit, so the walk stops when
+			// only those dimensions hold items.
+			for currentElement != nil && q.queueBroker.hasItemOutsideDimensions(q.dimensionsAtLimit()) {
 				call := currentElement.Value.(*ConsumerWorkerDequeueRequest)
 				nextElement := currentElement.Next() // We have to capture the next element before calling Remove(), as Remove() clears it.
 
@@ -442,6 +471,12 @@ func (q *Queue) processProducerOperation(r producerOperation) error {
 	case opReapReservations:
 		return q.reapReservations(r)
 
+	case opReleaseDimensionInflight:
+		if limiter, ok := q.limitedDimensions[r.queueDimension]; ok {
+			limiter.dec()
+		}
+		return nil
+
 	default:
 		return fmt.Errorf("unknown queue op: %v", r.op)
 	}
@@ -504,8 +539,7 @@ func (q *Queue) enqueue(r *producerOperation, res *Reservation) error {
 // a) a query request which was successfully dequeued for the consumer, or
 // b) an ErrConsumerShuttingDown indicating the consumer has been placed in a graceful shutdown state.
 func (q *Queue) trySendNextItemForConsumer(dequeueReq *ConsumerWorkerDequeueRequest) (done bool) {
-
-	dequeued, tenant, idx, err := q.queueBroker.dequeueItemForConsumer(dequeueReq)
+	dequeued, tenant, idx, err := q.queueBroker.dequeueItemForConsumer(dequeueReq, q.dimensionsAtLimit())
 	if err != nil {
 		// If this consumer has told us it's shutting down, terminate AwaitItemForConsumer with an error now...
 		dequeueReq.sendError(err)
@@ -526,6 +560,9 @@ func (q *Queue) trySendNextItemForConsumer(dequeueReq *ConsumerWorkerDequeueRequ
 
 	sent := dequeueReq.sendResponse(response)
 	if sent {
+		if limiter, ok := q.limitedDimensions[dequeued.queueDimension]; ok {
+			limiter.inc()
+		}
 		if dequeued.reservation != nil {
 			q.returnReservedSlot(dequeued.reservation)
 		}
@@ -544,6 +581,45 @@ func (q *Queue) trySendNextItemForConsumer(dequeueReq *ConsumerWorkerDequeueRequ
 		}
 	}
 	return true
+}
+
+// dimensionsAtLimit returns the limited dimensions at their limit. The next call reuses the
+// returned slice. Only dispatcherLoop calls it.
+func (q *Queue) dimensionsAtLimit() []string {
+	q.skipNodes = q.skipNodes[:0]
+	connected := q.connectedConsumerWorkers.Load()
+	for dimension, limiter := range q.limitedDimensions {
+		if limiter.atLimit(connected) {
+			q.skipNodes = append(q.skipNodes, dimension)
+		}
+	}
+	return q.skipNodes
+}
+
+// LimitDimensionInflightConsumption limits the items of dimension that consumers received and did
+// not release yet. The limit is maxRatio of the connected consumer-workers, and at least 1. At the
+// limit, a dequeue skips dimension. A consumer must call SubmitReleaseDimensionInflight once for each
+// item of dimension that it receives. A maxRatio of 0 or less removes the limit. A second call for the
+// same dimension replaces the first limit. Call it before the Queue service starts.
+func (q *Queue) LimitDimensionInflightConsumption(dimension string, maxRatio float64) {
+	if maxRatio <= 0 {
+		delete(q.limitedDimensions, dimension)
+		return
+	}
+	if q.limitedDimensions == nil {
+		q.limitedDimensions = map[string]*dimensionInflightLimit{}
+	}
+	q.limitedDimensions[dimension] = &dimensionInflightLimit{maxRatio: maxRatio}
+}
+
+// SubmitReleaseDimensionInflight releases one item of queueDimension that a consumer received, after
+// the consumer finished or skipped it. It does nothing when LimitDimensionInflightConsumption does
+// not limit queueDimension. Returns ErrStopped if the Queue service stopped first.
+func (q *Queue) SubmitReleaseDimensionInflight(queueDimension string) error {
+	if _, ok := q.limitedDimensions[queueDimension]; !ok {
+		return nil
+	}
+	return q.submitProducerOperation(producerOperation{op: opReleaseDimensionInflight, queueDimension: queueDimension})
 }
 
 // SubmitItemToEnqueue handles a query request from the query frontend or scheduler and submits it to the queue.

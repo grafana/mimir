@@ -2430,6 +2430,128 @@ func strongEnqueue(queryID uint64) *schedulerpb.FrontendToScheduler {
 	}
 }
 
+func TestSchedulerStrongReadConsistencyLimit_FinishedRequestReleasesTheInflightCount(t *testing.T) {
+	_, frontendClient, querierClient := setupScheduler(t, nil, func(cfg *Config) {
+		// 1 or 2 querier-worker connections give a limit of 1.
+		cfg.StrongReadConsistencyMaxQuerierWorkersRatio = 0.5
+	})
+	fl := initFrontendLoop(t, frontendClient, "frontend-1")
+	frontendToScheduler(t, fl, strongEnqueue(1))
+	frontendToScheduler(t, fl, strongEnqueue(2))
+
+	querierA := testQuerier{loop: initQuerierLoop(t, querierClient, "querier-1")}
+	require.Equal(t, uint64(1), querierA.receive(t))
+
+	querierB := initQuerierLoop(t, querierClient, "querier-2")
+	received := make(chan uint64, 1)
+	go func() {
+		msg, err := querierB.Recv()
+		if err == nil {
+			received <- msg.QueryID
+		}
+	}()
+	select {
+	case id := <-received:
+		require.Failf(t, "expected querier-2 to wait while request 1 runs", "got request %d", id)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	querierA.finish(t)
+	select {
+	case id := <-received:
+		require.Equal(t, uint64(2), id)
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "querier-2 did not receive request 2 after request 1 finished")
+	}
+}
+
+func TestSchedulerStrongReadConsistencyLimit_CancelledRequestReleasesTheInflightCount(t *testing.T) {
+	_, frontendClient, querierClient := setupScheduler(t, nil, func(cfg *Config) {
+		// 1 querier-worker connection gives a limit of 1.
+		cfg.StrongReadConsistencyMaxQuerierWorkersRatio = 0.5
+	})
+	fl := initFrontendLoop(t, frontendClient, "frontend-1")
+	frontendToScheduler(t, fl, strongEnqueue(1))
+	frontendToScheduler(t, fl, &schedulerpb.FrontendToScheduler{Type: schedulerpb.CANCEL, QueryID: 1})
+	frontendToScheduler(t, fl, strongEnqueue(2))
+
+	// QuerierLoop dequeues and skips the cancelled request 1. Without its release, the limit stops
+	// the dequeue of request 2.
+	querier := testQuerier{loop: initQuerierLoop(t, querierClient, "querier-1")}
+	received := make(chan uint64, 1)
+	go func() {
+		msg, err := querier.loop.Recv()
+		if err == nil {
+			received <- msg.QueryID
+		}
+	}()
+	select {
+	case id := <-received:
+		require.Equal(t, uint64(2), id)
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "the querier did not receive request 2")
+	}
+}
+
+func TestSchedulerStrongReadConsistencyLimit_DisconnectedQuerierReleasesTheInflightCount(t *testing.T) {
+	_, frontendClient, querierClient := setupScheduler(t, nil, func(cfg *Config) {
+		// 1 or 2 querier-worker connections give a limit of 1.
+		cfg.StrongReadConsistencyMaxQuerierWorkersRatio = 0.5
+	})
+	fl := initFrontendLoop(t, frontendClient, "frontend-1")
+	frontendToScheduler(t, fl, strongEnqueue(1))
+	frontendToScheduler(t, fl, strongEnqueue(2))
+
+	ctx, disconnect := context.WithCancel(t.Context())
+	defer disconnect()
+	loopA, err := querierClient.QuerierLoop(ctx)
+	require.NoError(t, err)
+	require.NoError(t, loopA.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
+	querierA := testQuerier{loop: loopA}
+	require.Equal(t, uint64(1), querierA.receive(t))
+
+	querierB := testQuerier{loop: initQuerierLoop(t, querierClient, "querier-2")}
+	received := make(chan uint64, 1)
+	go func() {
+		msg, err := querierB.loop.Recv()
+		if err == nil {
+			received <- msg.QueryID
+		}
+	}()
+
+	// querier-1 closes its stream while it runs request 1, as a crashed querier does.
+	disconnect()
+	select {
+	case id := <-received:
+		require.Equal(t, uint64(2), id)
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "querier-2 did not receive request 2 after querier-1 disconnected")
+	}
+}
+
+func TestConfig_Validate_StrongReadConsistencyMaxQuerierWorkersRatio(t *testing.T) {
+	for _, tc := range []struct {
+		ratio float64
+		valid bool
+	}{
+		{ratio: -0.1, valid: false},
+		{ratio: 0, valid: true},
+		{ratio: 0.5, valid: true},
+		{ratio: 1, valid: true},
+		{ratio: 1.1, valid: false},
+		{ratio: math.NaN(), valid: false},
+	} {
+		cfg := Config{}
+		flagext.DefaultValues(&cfg)
+		cfg.StrongReadConsistencyMaxQuerierWorkersRatio = tc.ratio
+		if tc.valid {
+			require.NoError(t, cfg.Validate(), "ratio %v", tc.ratio)
+		} else {
+			require.ErrorIs(t, cfg.Validate(), errInvalidStrongReadConsistencyMaxQuerierWorkersRatio, "ratio %v", tc.ratio)
+		}
+	}
+}
+
 func TestSchedulerQueueDurationLabelJoinsTheQueueDimensions(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	_, frontendClient, querierClient := setupScheduler(t, reg)
