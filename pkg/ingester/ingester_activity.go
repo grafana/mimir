@@ -161,6 +161,15 @@ func (i *ActivityTrackerWrapper) SearchLabelValues(request *client.SearchLabelVa
 	return i.ing.SearchLabelValues(request, server)
 }
 
+func (i *ActivityTrackerWrapper) SearchMetricsMetadata(request *client.SearchMetricsMetadataRequest, server client.Ingester_SearchMetricsMetadataServer) error {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(server.Context(), "Ingester/SearchMetricsMetadata", request)
+	})
+	defer i.tracker.Delete(ix)
+
+	return i.ing.SearchMetricsMetadata(request, server)
+}
+
 func (i *ActivityTrackerWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(r.Context(), "Ingester/FlushHandler", nil)

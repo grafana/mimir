@@ -66,6 +66,39 @@ func TestNewParamsRejectsInvalid(t *testing.T) {
 	}
 }
 
+func TestParamsHasTermContainingNewline(t *testing.T) {
+	newTerms := func(terms ...string) func() (*Params, error) {
+		return func() (*Params, error) { return NewParams(terms, true, FuzzAlgSubstring, 0) }
+	}
+	newExpression := func(expression string) func() (*Params, error) {
+		return func() (*Params, error) { return NewExpressionParams(expression, true, FuzzAlgSubstring, 0) }
+	}
+	tests := map[string]struct {
+		params func() (*Params, error)
+		want   bool
+	}{
+		"no terms":                         {params: newTerms(), want: false},
+		"terms without the substring":      {params: newTerms("a", "b"), want: false},
+		"second term holds the substring":  {params: newTerms("a", "b\nc"), want: true},
+		"quoted term":                      {params: newExpression("\"a\nb\""), want: true},
+		"term under AND":                   {params: newExpression("x AND \"a\nb\""), want: true},
+		"term under OR":                    {params: newExpression("x OR \"a\nb\""), want: true},
+		"term under NOT":                   {params: newExpression("x AND NOT \"a\nb\""), want: true},
+		"nested term":                      {params: newExpression("(x OR y) AND NOT (z OR \"a\nb\")"), want: true},
+		"newline between terms is a space": {params: newExpression("x\nAND\ny"), want: false},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			p, err := tc.params()
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, p.HasTermContaining("\n"))
+		})
+	}
+
+	var nilParams *Params
+	assert.False(t, nilParams.HasTermContaining("\n"))
+}
+
 func TestNewExpressionParamsAcceptsValid(t *testing.T) {
 	tests := []struct {
 		name          string

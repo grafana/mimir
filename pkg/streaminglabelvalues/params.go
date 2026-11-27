@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 
 	"github.com/prometheus/prometheus/util/searchexpr"
@@ -184,4 +185,29 @@ func (p *Params) validate() error {
 		return searchexpr.Validate(p.expressionExpr)
 	}
 	return nil
+}
+
+// HasTermContaining reports if a search term of p, or a term of its
+// expression, contains substr. A nil p has no terms.
+func (p *Params) HasTermContaining(substr string) bool {
+	if p == nil {
+		return false
+	}
+	return slices.ContainsFunc(p.Terms, func(t string) bool { return strings.Contains(t, substr) }) ||
+		exprHasTermContaining(p.expressionExpr, substr)
+}
+
+func exprHasTermContaining(e searchexpr.Expr, substr string) bool {
+	switch e := e.(type) {
+	case searchexpr.Term:
+		return strings.Contains(e.Value, substr)
+	case searchexpr.And:
+		return exprHasTermContaining(e.Left, substr) || exprHasTermContaining(e.Right, substr)
+	case searchexpr.Or:
+		return exprHasTermContaining(e.Left, substr) || exprHasTermContaining(e.Right, substr)
+	case searchexpr.Not:
+		return exprHasTermContaining(e.Expr, substr)
+	default:
+		return false
+	}
 }
