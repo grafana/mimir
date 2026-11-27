@@ -22,6 +22,15 @@
     {
       "source": {
         "git": {
+          "remote": "https://github.com/grafana/jsonnet-libs.git",
+          "subdir": "grafana-databases-lib"
+        }
+      },
+      "version": "master"
+    },
+    {
+      "source": {
+        "git": {
           "remote": "https://github.com/grafana/rollout-operator.git",
           "subdir": "operations/rollout-operator-mixin"
         }

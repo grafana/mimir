@@ -721,31 +721,7 @@ local filename = 'mimir-writes.json';
       $._config.autoscaling.ingester.enabled,
       $.row('Ingester – autoscaling')
       .addPanel(
-        local replicaTemplateQueries = [
-          'max(kube_customresource_replicatemplate_spec_replicas{%(namespace_matcher)s, name=~"%(replica_template_name)s"})' % {
-            namespace_matcher: $.namespaceMatcher(),
-            replica_template_name: $._config.autoscaling.ingester.replica_template_name,
-          },
-          'max(kube_customresource_replicatemplate_status_replicas{%(namespace_matcher)s, name=~"%(replica_template_name)s"})' % {
-            namespace_matcher: $.namespaceMatcher(),
-            replica_template_name: $._config.autoscaling.ingester.replica_template_name,
-          },
-        ];
-
-        local replicaTemplateLegends = [
-          'Template spec replicas',
-          'Template status replicas',
-        ];
-
-        $.autoScalingActualReplicas('ingester', replicaTemplateQueries, replicaTemplateLegends) + { title: 'Replicas (HPA + ReplicaTemplate)' } +
-        $.panelDescription(
-          'Replicas (HPA + ReplicaTemplate)',
-          |||
-            The minimum, maximum, and current number of replicas reported by the HPA for the ReplicaTemplate object.
-            If available, also the spec and status replicas fields for the ReplicaTemplate object itself.
-            Rollout-operator will keep ingester replicas updated based on the ReplicaTemplate spec field, and then update the template's status field once the ingester count changes.
-          |||
-        )
+        $.autoScalingActualReplicas('ingester')
       )
       .addPanel(
         $.timeseriesPanel('Replicas (Ingesters)') +
@@ -769,16 +745,10 @@ local filename = 'mimir-writes.json';
         ),
       )
       .addPanel(
-        $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel('ingester', '', '') + {
-          title: 'Desired replicas (ReplicaTemplate)',
-          description: std.strReplace(super.description, '### Desired replicas\n', '### %s\n' % self.title),
-        }
+        $.autoScalingDesiredReplicasPanel('ingester')
       )
       .addPanel(
-        $.autoScalingFailuresPanel('ingester') + {
-          title: 'Autoscaler failures rate (ReplicaTemplate)',
-          description: std.strReplace(super.description, '### Autoscaler failures rate\n', '### %s\n' % self.title),
-        }
+        $.autoScalingFailuresPanel('ingester')
       ),
     )
     .addRow(
