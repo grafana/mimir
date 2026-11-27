@@ -100,6 +100,8 @@ func (c *HTTPClient) Query(ctx context.Context, tenant, query string, ts time.Ti
 	stats := serverTimingValues(header.Get(serverTimingHeader))
 	res.LookupResponseBytes = stats["native_lookup_response_bytes"]
 	res.TargetInfoFallbacks = stats["native_target_info_fallbacks"]
+	res.OwnSeries = stats["native_info_own_series"]
+	res.JoinSeries = stats["native_info_join_series"]
 	return res, nil
 }
 

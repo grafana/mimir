@@ -104,6 +104,8 @@ func TestInfoFunction_OwnMode(t *testing.T) {
 		return querierapi.NativeSeriesResourceVersion{MinTime: fromMinute * minute, MaxTime: 20 * minute, Labels: targetInfoA(host)}
 	}
 
+	// The last run's per-query stats.
+	var lastStats *stats.SafeStats
 	run := func(t *testing.T, fake *fakeOwnResources, query string) map[string][]int64 {
 		opts := NewTestEngineOpts()
 		opts.InfoSeriesQueryable = func(q storage.Queryable) storage.Queryable { return ownResourcesQueryable{Queryable: q, fake: fake} }
@@ -111,10 +113,12 @@ func TestInfoFunction_OwnMode(t *testing.T) {
 		require.NoError(t, err)
 		engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 		require.NoError(t, err)
-		q, err := engine.NewRangeQuery(t.Context(), store, nil, query, time.UnixMilli(0), time.UnixMilli(20*minute), time.Minute)
+		queryStats, ctx := stats.ContextWithEmptyStats(t.Context())
+		lastStats = queryStats
+		q, err := engine.NewRangeQuery(ctx, store, nil, query, time.UnixMilli(0), time.UnixMilli(20*minute), time.Minute)
 		require.NoError(t, err)
 		defer q.Close()
-		res := q.Exec(t.Context())
+		res := q.Exec(ctx)
 		require.NoError(t, res.Err)
 		matrix, err := res.Matrix()
 		require.NoError(t, err)
@@ -135,6 +139,9 @@ func TestInfoFunction_OwnMode(t *testing.T) {
 	t.Run("own resources the stored target_info's give the join's answer", func(t *testing.T) {
 		fake := &fakeOwnResources{ownMode: true, resources: ownA(math.MinInt64, last(0, "stored-a"))}
 		own := run(t, fake, `info(up)`)
+		// The query's stats count the inner series by what enriched them, which the native metadata prober reads.
+		require.Equal(t, uint64(1), lastStats.LoadNativeInfoOwnSeries())
+		require.Equal(t, uint64(1), lastStats.LoadNativeInfoJoinSeries())
 		require.Equal(t, run(t, &fakeOwnResources{}, `info(up)`), own)
 		require.Len(t, fake.lookups, 1)
 		require.Equal(t, map[string]int{querierapi.NativeInfoSourceOwn: 1, querierapi.NativeInfoSourceNotReturned: 1}, fake.observed)

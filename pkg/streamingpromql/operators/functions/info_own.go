@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -98,6 +99,7 @@ func (f *InfoFunction) startOwnMode(ctx context.Context, innerMetadata []types.S
 	if reason != "" {
 		m.joinCount = len(enrichable)
 		resources.ObserveNativeInfoInnerSeries(reason, m.joinCount)
+		stats.FromContext(ctx).AddNativeInfoJoinSeries(uint64(m.joinCount))
 		return m, nil
 	}
 	// Released once the own signatures have the versions, or when the query ends before.
@@ -147,6 +149,9 @@ func (f *InfoFunction) startOwnMode(ctx context.Context, innerMetadata []types.S
 		m.ownCount++
 	}
 	m.joinCount = len(enrichable) - m.ownCount
+	queryStats := stats.FromContext(ctx)
+	queryStats.AddNativeInfoOwnSeries(uint64(m.ownCount))
+	queryStats.AddNativeInfoJoinSeries(uint64(m.joinCount))
 	for source, count := range map[string]int{querierapi.NativeInfoSourceOwn: m.ownCount, querierapi.NativeInfoSourceNotReturned: notReturned, querierapi.NativeInfoSourceMerged: mergedCount} {
 		if count > 0 {
 			resources.ObserveNativeInfoInnerSeries(source, count)

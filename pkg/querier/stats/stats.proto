@@ -80,6 +80,10 @@ message Stats {
   uint64 native_lookup_series_visited = 22;
   // The selects of target_info that native info() made with the join instead, for the native metadata prototype.
   uint64 native_target_info_fallbacks = 23;
+  // The inner series native info()'s own mode enriched from their own native resources, and those it enriched by the
+  // join instead, for the native metadata prototype.
+  uint64 native_info_own_series = 24;
+  uint64 native_info_join_series = 25;
 }
 
 // SelectorCardinality records the number of series selected by a single selector over a time range,

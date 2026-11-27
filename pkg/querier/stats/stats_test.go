@@ -391,6 +391,8 @@ func TestStats_Copy(t *testing.T) {
 			NativeLookupResponseBytes: 20,
 			NativeLookupSeriesVisited: 21,
 			NativeTargetInfoFallbacks: 22,
+			NativeInfoOwnSeries:       23,
+			NativeInfoJoinSeries:      24,
 		},
 
 		selectorCardinalitiesMtx: sync.Mutex{},

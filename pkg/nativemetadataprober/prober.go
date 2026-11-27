@@ -45,6 +45,8 @@ type QueryResult struct {
 	LookupResponseBytes uint64
 	// The selects of target_info that fell back to the join.
 	TargetInfoFallbacks uint64
+	// The inner series info()'s own mode enriched from their own resources, and by the join.
+	OwnSeries, JoinSeries uint64
 }
 
 // Lookup is one of the native metadata lookup endpoints.
@@ -199,6 +201,14 @@ func (p *Prober) RunOnce(ctx context.Context, now time.Time) {
 const (
 	notNativeFallback = "fallback"
 	notNativeNoLookup = "no_lookup"
+	// info()'s own mode enriched no inner series from its own resource.
+	notNativeOwnModeJoin = "own_mode_join"
+)
+
+// Kinds of answers of info()'s own mode: every inner series enriched from its own resource, or some by the join.
+const (
+	ownAnswer   = "own"
+	mixedAnswer = "mixed"
 )
 
 // How many of a mismatch's differences are logged.
@@ -221,6 +231,13 @@ func (p *Prober) probeQuery(ctx context.Context, tenant string, q Query, ts time
 	switch {
 	case native.TargetInfoFallbacks > 0:
 		p.metrics.queryNotNative.WithLabelValues(tenant, q.Name, notNativeFallback).Inc()
+	case native.OwnSeries > 0 && native.JoinSeries > 0:
+		p.metrics.queryOwn.WithLabelValues(tenant, q.Name, mixedAnswer).Inc()
+	case native.OwnSeries > 0:
+		p.metrics.queryOwn.WithLabelValues(tenant, q.Name, ownAnswer).Inc()
+	case native.JoinSeries > 0:
+		// Own mode needn't look up anything, for an inner expression whose series aren't stored ones.
+		p.metrics.queryNotNative.WithLabelValues(tenant, q.Name, notNativeOwnModeJoin).Inc()
 	case native.LookupResponseBytes == 0:
 		// With MQE's fallback on, a query MQE doesn't support runs on Prometheus' engine, whose info() is the join.
 		p.metrics.queryNotNative.WithLabelValues(tenant, q.Name, notNativeNoLookup).Inc()
@@ -232,6 +249,10 @@ func (p *Prober) probeQuery(ctx context.Context, tenant string, q Query, ts time
 	}
 	p.metrics.queryMismatches.WithLabelValues(tenant, q.Name).Inc()
 	p.metrics.queryMismatchedSeries.WithLabelValues(tenant, q.Name).Add(float64(len(differences)))
+	if native.OwnSeries > 0 {
+		// Own resources differ from the join where a series' own resource isn't its target's, a class of its own.
+		p.metrics.queryOwnMismatches.WithLabelValues(tenant, q.Name).Inc()
+	}
 	logged := differences[:min(len(differences), loggedDifferences)]
 	level.Warn(p.logger).Log("msg", "native info() and the join differ", "tenant", tenant, "query", q.Name, "time", ts.UTC().Format(time.RFC3339), "series", len(differences), "differences", strings.Join(logged, "; "))
 }
@@ -294,7 +315,9 @@ type metrics struct {
 	queryFailures         *prometheus.CounterVec
 	queryEmpty            *prometheus.CounterVec
 	queryNotNative        *prometheus.CounterVec
+	queryOwn              *prometheus.CounterVec
 	queryMismatches       *prometheus.CounterVec
+	queryOwnMismatches    *prometheus.CounterVec
 	queryMismatchedSeries *prometheus.CounterVec
 	queryDuration         *prometheus.HistogramVec
 	lookupResponseBytes   *prometheus.CounterVec
@@ -336,6 +359,14 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 		queryMismatches: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "native_metadata_prober_query_mismatches_total",
 			Help: "Compared queries whose native answer differed from the join's.",
+		}, []string{"tenant", "query"}),
+		queryOwn: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "native_metadata_prober_query_own_total",
+			Help: "Compared queries whose native answer info()'s own mode gave, by kind: own, every inner series enriched from its own native resource, or mixed, some by the join.",
+		}, []string{"tenant", "query", "kind"}),
+		queryOwnMismatches: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "native_metadata_prober_query_own_mismatches_total",
+			Help: "Compared queries whose native answer from info()'s own mode differed from the join's.",
 		}, []string{"tenant", "query"}),
 		queryMismatchedSeries: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "native_metadata_prober_query_mismatched_series_total",

@@ -368,6 +368,40 @@ func (s *SafeStats) LoadNativeTargetInfoFallbacks() uint64 {
 	return atomic.LoadUint64(&s.NativeTargetInfoFallbacks)
 }
 
+// AddNativeInfoOwnSeries counts inner series that native info()'s own mode enriched from their own native resources.
+func (s *SafeStats) AddNativeInfoOwnSeries(series uint64) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddUint64(&s.NativeInfoOwnSeries, series)
+}
+
+func (s *SafeStats) LoadNativeInfoOwnSeries() uint64 {
+	if s == nil {
+		return 0
+	}
+
+	return atomic.LoadUint64(&s.NativeInfoOwnSeries)
+}
+
+// AddNativeInfoJoinSeries counts inner series that native info()'s own mode enriched by the join instead.
+func (s *SafeStats) AddNativeInfoJoinSeries(series uint64) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddUint64(&s.NativeInfoJoinSeries, series)
+}
+
+func (s *SafeStats) LoadNativeInfoJoinSeries() uint64 {
+	if s == nil {
+		return 0
+	}
+
+	return atomic.LoadUint64(&s.NativeInfoJoinSeries)
+}
+
 // AddSeenSelectorCardinality records the cardinality of a single selector.
 //
 // The caller must not mutate sc, or any slice or string it references, after calling this method.
@@ -459,6 +493,8 @@ func (s *SafeStats) Merge(other *SafeStats) {
 	s.AddNativeLookupResponseBytes(other.LoadNativeLookupResponseBytes())
 	s.AddNativeLookupSeriesVisited(other.LoadNativeLookupSeriesVisited())
 	s.AddNativeTargetInfoFallbacks(other.LoadNativeTargetInfoFallbacks())
+	s.AddNativeInfoOwnSeries(other.LoadNativeInfoOwnSeries())
+	s.AddNativeInfoJoinSeries(other.LoadNativeInfoJoinSeries())
 
 	for _, sc := range other.LoadSeenSelectorCardinalities() {
 		s.AddSeenSelectorCardinality(sc)

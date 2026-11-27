@@ -46,6 +46,8 @@ func TestProber_RunOnce_Queries(t *testing.T) {
 		nativeErr    error
 		// What the round counts, by metric.
 		probes, failures, empty, fallbacks, noLookups, mismatches, mismatchedSeries, lookupBytes float64
+		// What info()'s own mode's answers count.
+		ownAnswers, mixedAnswers, ownModeJoins, ownMismatches float64
 	}{
 		"native equals the join": {
 			native: QueryResult{Samples: []Sample{enriched("node-1", "1"), other}, LookupResponseBytes: 100},
@@ -69,6 +71,24 @@ func TestProber_RunOnce_Queries(t *testing.T) {
 			native: QueryResult{Samples: []Sample{enriched("node-1", "1")}},
 			join:   QueryResult{Samples: []Sample{enriched("node-1", "1")}},
 			probes: 1, noLookups: 1,
+		},
+		// info()'s own mode enriched every inner series from its own resource.
+		"own mode": {
+			native: QueryResult{Samples: []Sample{enriched("node-1", "1")}, LookupResponseBytes: 100, OwnSeries: 1},
+			join:   QueryResult{Samples: []Sample{enriched("node-1", "1")}},
+			probes: 1, lookupBytes: 100, ownAnswers: 1,
+		},
+		// Own mode enriched some by the join, and its answer differs from the join's: a mismatch of its own class.
+		"own mode, mixed and differing": {
+			native: QueryResult{Samples: []Sample{enriched("node-2", "1"), other}, LookupResponseBytes: 100, OwnSeries: 1, JoinSeries: 1},
+			join:   QueryResult{Samples: []Sample{enriched("node-1", "1"), other}},
+			probes: 1, lookupBytes: 100, mixedAnswers: 1, mismatches: 1, mismatchedSeries: 2, ownMismatches: 1,
+		},
+		// Own mode enriched every inner series by the join, with no lookup, which isn't Prometheus' engine's fallback.
+		"own mode by the join": {
+			native: QueryResult{Samples: []Sample{enriched("node-1", "1")}, JoinSeries: 1},
+			join:   QueryResult{Samples: []Sample{enriched("node-1", "1")}},
+			probes: 1, ownModeJoins: 1,
 		},
 		// Nothing to enrich, which info() needn't look up for: not a native answer that wasn't native.
 		"both answers empty": {
@@ -96,6 +116,10 @@ func TestProber_RunOnce_Queries(t *testing.T) {
 			require.Equal(t, tc.mismatches, testutil.ToFloat64(m.queryMismatches.WithLabelValues("tenant", "plain")), "mismatches")
 			require.Equal(t, tc.mismatchedSeries, testutil.ToFloat64(m.queryMismatchedSeries.WithLabelValues("tenant", "plain")), "mismatched series")
 			require.Equal(t, tc.lookupBytes, testutil.ToFloat64(m.lookupResponseBytes.WithLabelValues("tenant", "plain")), "lookup bytes")
+			require.Equal(t, tc.ownAnswers, testutil.ToFloat64(m.queryOwn.WithLabelValues("tenant", "plain", ownAnswer)), "own answers")
+			require.Equal(t, tc.mixedAnswers, testutil.ToFloat64(m.queryOwn.WithLabelValues("tenant", "plain", mixedAnswer)), "mixed answers")
+			require.Equal(t, tc.ownModeJoins, testutil.ToFloat64(m.queryNotNative.WithLabelValues("tenant", "plain", notNativeOwnModeJoin)), "own mode's joins")
+			require.Equal(t, tc.ownMismatches, testutil.ToFloat64(m.queryOwnMismatches.WithLabelValues("tenant", "plain")), "own mismatches")
 			// Both modes are evaluated at the same time, before the round, so that they see the same samples.
 			require.Equal(t, []time.Time{now.Add(-time.Minute), now.Add(-time.Minute)}, client.queryTimes)
 		})

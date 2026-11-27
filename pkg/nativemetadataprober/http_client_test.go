@@ -86,7 +86,7 @@ func TestHTTPClient_Query(t *testing.T) {
 			{"metric":{"__name__":"latency","job":"api"},"histogram":[1700000000.5,{"count":"2","sum":"3","buckets":[[0,"0","1","2"]]}]}
 		]}}`
 		// The stats the query-frontend returns, of which the native metadata prototype's are the counts named native_.
-		const serverTiming = "querier_wall_time;dur=1.5, native_lookup_response_bytes;val=1234, native_lookup_series_visited;val=5, native_target_info_fallbacks;val=1, fetched_series_count;val=9"
+		const serverTiming = "querier_wall_time;dur=1.5, native_lookup_response_bytes;val=1234, native_lookup_series_visited;val=5, native_target_info_fallbacks;val=1, native_info_own_series;val=3, native_info_join_series;val=2, fetched_series_count;val=9"
 		client, req := serve(t, http.StatusOK, body, serverTiming)
 
 		res, err := client.Query(t.Context(), "tenant", "info(up)", ts, ModeNative)
@@ -104,6 +104,8 @@ func TestHTTPClient_Query(t *testing.T) {
 		}, res.Samples)
 		require.Equal(t, uint64(1234), res.LookupResponseBytes)
 		require.Equal(t, uint64(1), res.TargetInfoFallbacks)
+		require.Equal(t, uint64(3), res.OwnSeries)
+		require.Equal(t, uint64(2), res.JoinSeries)
 	})
 
 	// The query-frontend reports the native stats only for a query that made lookups or fell back.

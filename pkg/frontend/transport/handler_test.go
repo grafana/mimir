@@ -1307,7 +1307,9 @@ func TestHandler_RootQueryID(t *testing.T) {
 func TestHandler_ResponseQueryStatsNativeLookups(t *testing.T) {
 	for name, testCase := range map[string]struct {
 		lookupResponseBytes, lookupSeriesVisited, targetInfoFallbacks uint64
-		expectedFields                                                []string
+		// The inner series info()'s own mode enriched from their own resources, and by the join.
+		ownSeries, joinSeries uint64
+		expectedFields        []string
 	}{
 		"query with native lookups": {
 			lookupResponseBytes: 1234,
@@ -1326,6 +1328,18 @@ func TestHandler_ResponseQueryStatsNativeLookups(t *testing.T) {
 			targetInfoFallbacks: 2,
 			expectedFields:      []string{"native_target_info_fallbacks;val=2"},
 		},
+		// info()'s own mode, whose join series are reported with its own, also when it made no lookup.
+		"query in info()'s own mode": {
+			lookupResponseBytes: 1234,
+			lookupSeriesVisited: 56,
+			ownSeries:           3,
+			joinSeries:          2,
+			expectedFields:      []string{"native_lookup_response_bytes;val=1234", "native_lookup_series_visited;val=56", "native_info_own_series;val=3", "native_info_join_series;val=2"},
+		},
+		"query in info()'s own mode, all by the join": {
+			joinSeries:     2,
+			expectedFields: []string{"native_info_own_series;val=0", "native_info_join_series;val=2"},
+		},
 		"query without native lookups": {},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -1335,6 +1349,8 @@ func TestHandler_ResponseQueryStatsNativeLookups(t *testing.T) {
 				querierStats.AddNativeLookupResponseBytes(testCase.lookupResponseBytes)
 				querierStats.AddNativeLookupSeriesVisited(testCase.lookupSeriesVisited)
 				querierStats.AddNativeTargetInfoFallbacks(testCase.targetInfoFallbacks)
+				querierStats.AddNativeInfoOwnSeries(testCase.ownSeries)
+				querierStats.AddNativeInfoJoinSeries(testCase.joinSeries)
 				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
 			})
 			handler := NewHandler(HandlerConfig{MaxBodySize: 1024}, roundTripper, &testLogger{}, prometheus.NewPedanticRegistry())

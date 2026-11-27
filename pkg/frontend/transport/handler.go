@@ -469,6 +469,9 @@ func (f *Handler) reportQueryStats(
 	if fallbacks := stats.LoadNativeTargetInfoFallbacks(); fallbacks > 0 {
 		logMessage = append(logMessage, "native_target_info_fallbacks", fallbacks)
 	}
+	if own, join := stats.LoadNativeInfoOwnSeries(), stats.LoadNativeInfoJoinSeries(); own > 0 || join > 0 {
+		logMessage = append(logMessage, "native_info_own_series", own, "native_info_join_series", join)
+	}
 	if fields.fetchedSeries {
 		logMessage = append(logMessage, fetchedSeriesCount, numSeries)
 	}
@@ -838,6 +841,9 @@ func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes i
 	}
 	if fallbacks := stats.LoadNativeTargetInfoFallbacks(); fallbacks > 0 {
 		statsResponse = append(statsResponse, statsValue("native_target_info_fallbacks", fallbacks))
+	}
+	if own, join := stats.LoadNativeInfoOwnSeries(), stats.LoadNativeInfoJoinSeries(); own > 0 || join > 0 {
+		statsResponse = append(statsResponse, statsValue("native_info_own_series", own), statsValue("native_info_join_series", join))
 	}
 
 	return statsResponse
