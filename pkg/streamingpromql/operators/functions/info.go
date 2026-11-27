@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -279,6 +280,14 @@ type InfoFunction struct {
 
 	nextInnerSeriesIndex  int
 	nextStoredSeriesIndex int
+
+	// Own mode's state, nil without it (info_own.go): its decision and lookup, its second select, the own inner
+	// series' signatures by inner series index, and the info series' samples until all signatures are walked.
+	own           *ownMode
+	ownSecond     *selectors.InstantVectorSelector
+	ownSignatures []*infoSignature
+	heldSamples   [][]promql.FPoint
+	prepareParams *types.PrepareParams
 }
 
 func NewInfoFunction(
@@ -320,19 +329,51 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 		if syntheticMatcher := syntheticInfoNameMatcher(f.Info.Selector.Matchers); syntheticMatcher != nil {
 			infoMatchers = append(infoMatchers, *syntheticMatcher)
 		}
+		if f.own, err = f.startOwnMode(ctx, innerMetadata, ignoreSeries); err != nil {
+			return nil, err
+		}
+	}
+	// In own mode, the selects read the stored series only, the main one without target_info if no inner series takes
+	// the join, or not at all if it could select nothing else, and a second one target_info before the cutover.
+	infoCtx := ctx
+	skipMainSelect := skipQueryingInfo
+	ownMatchers := infoMatchers
+	if f.own != nil {
+		infoCtx = querierapi.ContextWithNativeInfoOwnMode(ctx)
+		if f.own.joinCount == 0 {
+			if selectsOnlyTargetInfo(f.Info.Selector.Matchers) {
+				skipMainSelect = true
+			} else {
+				infoMatchers = append(slices.Clone(infoMatchers), types.Matcher{Type: labels.MatchNotEqual, Name: model.MetricNameLabel, Value: targetInfoMetricName})
+			}
+		}
 	}
 	var infoMetadata []types.SeriesMetadata
-	if skipQueryingInfo {
+	if skipMainSelect {
 		infoMetadata = []types.SeriesMetadata{}
 	} else {
-		infoMetadata, err = f.Info.SeriesMetadata(ctx, infoMatchers)
+		infoMetadata, err = f.Info.SeriesMetadata(infoCtx, infoMatchers)
 		if err != nil {
 			return nil, err
 		}
 		defer types.SeriesMetadataSlicePool.Put(&infoMetadata, f.MemoryConsumptionTracker)
 	}
 
-	hashIDs, err := f.processSamplesFromInfoSeries(ctx, infoMetadata, innerMetadata, ignoreSeries)
+	var hashIDs map[string]labelSetsHashID
+	if f.own != nil {
+		var secondMetadata []types.SeriesMetadata
+		selector := f.Info.Selector
+		start, _ := selectors.ComputeQueriedTimeRange(selector.TimeRange, selector.Timestamp, 0, selector.Offset, selector.LookbackDelta, false, false)
+		if f.own.ownCount > 0 && f.own.cutover > start {
+			if secondMetadata, err = f.startSecondSelect(infoCtx, ownMatchers); err != nil {
+				return nil, err
+			}
+			defer types.SeriesMetadataSlicePool.Put(&secondMetadata, f.MemoryConsumptionTracker)
+		}
+		hashIDs, err = f.processSamplesOwnMode(ctx, infoMetadata, secondMetadata, innerMetadata, ignoreSeries)
+	} else {
+		hashIDs, err = f.processSamplesFromInfoSeries(ctx, infoMetadata, innerMetadata, ignoreSeries)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -557,7 +598,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 
 		signature.remainingSeries--
 		if signature.remainingSeries == 0 {
-			if err := signature.complete(&walker, f.infoMetricCount, f.timeRange.IntervalMilliseconds, hashIDs, f.MemoryConsumptionTracker); err != nil {
+			if err := signature.complete(&walker, f.infoMetricCount, f.timeRange.IntervalMilliseconds, hashIDs, f.MemoryConsumptionTracker, true); err != nil {
 				return nil, err
 			}
 		}
@@ -567,9 +608,9 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 }
 
 // complete finds the groups of the info series of s once all of them have been read, records where the group
-// changes in s.transitions, and returns the samples of the info series to the pool. hashIDs interns the label sets
-// hashes of the groups, and is shared by all signatures of the query. interval is the step of the query.
-func (s *infoSignature) complete(walker *infoGroupWalker, metricCount int, interval int64, hashIDs map[string]labelSetsHashID, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
+// changes in s.transitions, and returns the samples of the info series to the pool, with returnSamples. hashIDs interns
+// the label sets hashes of the groups, and is shared by all signatures of the query. interval is the step of the query.
+func (s *infoSignature) complete(walker *infoGroupWalker, metricCount int, interval int64, hashIDs map[string]labelSetsHashID, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, returnSamples bool) error {
 	if len(s.series) == 0 {
 		return nil
 	}
@@ -622,7 +663,9 @@ func (s *infoSignature) complete(walker *infoGroupWalker, metricCount int, inter
 		s.transitions = append(s.transitions, infoGroupTransition{t: previousT + interval, hashID: innerSeriesHashID})
 	}
 
-	s.returnSamplesToPool(memoryConsumptionTracker)
+	if returnSamples {
+		s.returnSamplesToPool(memoryConsumptionTracker)
+	}
 	s.series = nil
 
 	return nil
@@ -817,7 +860,11 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 		}
 
 		var labelSetsMap map[string][]labels.Labels
-		if signatureIndex, exists := f.signatureIndexes[infoSignatureKey(f.signatureKey(innerSeries.Labels))]; exists {
+		if f.ownSignatures != nil && f.ownSignatures[i] != nil {
+			// In own mode, the inner series takes its own resource, by a signature of its own.
+			f.innerSignatures[i] = f.ownSignatures[i]
+			labelSetsMap = f.ownSignatures[i].labelSetsByHash
+		} else if signatureIndex, exists := f.signatureIndexes[infoSignatureKey(f.signatureKey(innerSeries.Labels))]; exists {
 			f.innerSignatures[i] = &f.signatures[signatureIndex]
 			labelSetsMap = f.signatures[signatureIndex].labelSetsByHash
 		}
@@ -877,6 +924,11 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 	f.signatureIndexes = nil
 	for i := range f.signatures {
 		f.signatures[i].labelSetsByHash = nil
+	}
+	for _, s := range f.ownSignatures {
+		if s != nil {
+			s.labelSetsByHash = nil
+		}
 	}
 
 	return result, nil
@@ -1066,6 +1118,8 @@ func (f *InfoFunction) ExpressionPosition() posrange.PositionRange {
 }
 
 func (f *InfoFunction) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	// Own mode's second select is prepared when it's made.
+	f.prepareParams = params
 	if err := f.Inner.Prepare(ctx, params); err != nil {
 		return err
 	}
@@ -1085,11 +1139,19 @@ func (f *InfoFunction) FinishedReading(ctx context.Context) error {
 	if err := f.Inner.FinishedReading(ctx); err != nil {
 		return err
 	}
+	if f.ownSecond != nil {
+		if err := f.ownSecond.FinishedReading(ctx); err != nil {
+			return err
+		}
+	}
 
 	return f.Info.FinishedReading(ctx)
 }
 
 func (f *InfoFunction) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	if f.ownSecond != nil {
+		return types.FinalizeAndCombine[types.Finalizer](ctx, f.Inner, f.Info, f.ownSecond)
+	}
 	return types.FinalizeAndCombine[types.Finalizer](ctx, f.Inner, f.Info)
 }
 
@@ -1099,6 +1161,7 @@ func (f *InfoFunction) Close() {
 		f.signatures[i].returnSamplesToPool(f.MemoryConsumptionTracker)
 	}
 	f.signatures = nil
+	f.closeOwnMode()
 
 	if f.Inner != nil {
 		f.Inner.Close()

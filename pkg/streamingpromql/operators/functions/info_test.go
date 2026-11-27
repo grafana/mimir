@@ -335,7 +335,7 @@ func TestInfoSignature_CompleteAndInfoGroupLookup(t *testing.T) {
 			hashIDs := map[string]labelSetsHashID{innerSeriesKey: innerSeriesHashID}
 			var walker infoGroupWalker
 			// The query has a step of one second.
-			require.NoError(t, signature.complete(&walker, testCase.metricCount, time.Second.Milliseconds(), hashIDs, tracker))
+			require.NoError(t, signature.complete(&walker, testCase.metricCount, time.Second.Milliseconds(), hashIDs, tracker, true))
 
 			// The samples are not needed after the transitions have been found.
 			require.Nil(t, signature.series)
