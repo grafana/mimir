@@ -1157,8 +1157,11 @@ func (f *InfoFunction) Finalize(ctx context.Context) (*types.OperatorEvaluationS
 
 func (f *InfoFunction) Close() {
 	// Return the samples of info series of signatures that were not completed, e.g. if reading the info series failed.
-	for i := range f.signatures {
-		f.signatures[i].returnSamplesToPool(f.MemoryConsumptionTracker)
+	// In own mode, the signatures only refer to the samples, which own mode holds and returns instead.
+	if f.own == nil {
+		for i := range f.signatures {
+			f.signatures[i].returnSamplesToPool(f.MemoryConsumptionTracker)
+		}
 	}
 	f.signatures = nil
 	f.closeOwnMode()

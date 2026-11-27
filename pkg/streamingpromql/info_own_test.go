@@ -263,6 +263,11 @@ func TestInfoFunction_OwnModeCollidingStoredTargetInfo(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, matrix, 1)
 	require.Equal(t, "own", matrix[0].Metric.Get("host_name"))
+
+	// In own mode, an inner series the lookup didn't return takes the join, which fails as the join does, and the
+	// failed query gives back every info series' samples once: own mode holds them, not its signatures.
+	_, err = query(&fakeOwnResources{ownMode: true, resources: querierapi.NativeSeriesResources{CoverageStart: math.MinInt64}})
+	require.ErrorContains(t, err, "found duplicate series for info metric", "own mode's join")
 }
 
 func stepsByLabels(matrix promql.Matrix) map[string][]int64 {
