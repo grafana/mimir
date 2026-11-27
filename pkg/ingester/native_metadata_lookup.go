@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -180,7 +181,8 @@ func nativeLookupMatcherSets(sets []*client.LabelMatchers) ([][]*labels.Matcher,
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "error parsing label matchers: %v", err)
 		}
-		if !slices.ContainsFunc(matchers, func(m *labels.Matcher) bool { return !m.Matches("") }) {
+		// A query shard keeps a share of the series, but doesn't narrow them down.
+		if !slices.ContainsFunc(matchers, func(m *labels.Matcher) bool { return m.Name != sharding.ShardLabel && !m.Matches("") }) {
 			return nil, status.Error(codes.InvalidArgument, "every matcher set of a native metadata lookup needs a matcher that doesn't match the empty string")
 		}
 		out = append(out, matchers)

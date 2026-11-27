@@ -9,10 +9,12 @@ import (
 	"sync/atomic"
 
 	promlabels "github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
 // The engine's native resources' API, over the store resources.go keeps them in.
@@ -107,15 +109,28 @@ func NativeResourcesPaths() (set, unsorted, memo uint64) {
 }
 
 // NativeResourcesCapped is NativeResources that also returns how many series with resources matched, and with a
-// positive maxSeries, fails with ErrLookupTooManySeries as soon as more than that many do, with opts' paths.
+// positive maxSeries, fails with ErrLookupTooManySeries as soon as more than that many do, with opts' paths. A matcher
+// set's query shard keeps the series of that shard, as a select's does, so that a sharded query's lookup by series
+// looks up the series its shard selects.
 func (e *Engine) NativeResourcesCapped(ctx context.Context, matcherSets [][]*promlabels.Matcher, mint, maxt int64, limit, maxSeries int, opts NativeResourcesOptions) ([]NativeResourcesSeries, bool, int, error) {
 	compiled := make([][]compiledMatcher, 0, len(matcherSets))
+	// The matcher sets without their shards, which the shadow check pairs with the compiled matchers.
+	unsharded := make([][]*promlabels.Matcher, 0, len(matcherSets))
 	usesSet := false
 	for _, matchers := range matcherSets {
-		c, err := compilePromMatchersWith(nil, matchers, opts.SetMatching)
+		shard, matchers, err := sharding.RemoveShardFromMatchers(matchers)
 		if err != nil {
 			return nil, false, 0, err
 		}
+		var hints *storage.SelectHints
+		if shard != nil {
+			hints = &storage.SelectHints{ShardIndex: shard.ShardIndex, ShardCount: shard.ShardCount}
+		}
+		c, err := compilePromMatchersWith(hints, matchers, opts.SetMatching)
+		if err != nil {
+			return nil, false, 0, err
+		}
+		unsharded = append(unsharded, matchers)
 		for index := range c {
 			usesSet = usesSet || (c[index].re != nil && c[index].re.set != nil)
 		}
@@ -182,7 +197,7 @@ func (e *Engine) NativeResourcesCapped(ctx context.Context, matcherSets [][]*pro
 		return nil, false, len(seen), err
 	}
 	if usesSet {
-		e.shadowCheckSets(ctx, matcherSets, compiled)
+		e.shadowCheckSets(ctx, unsharded, compiled)
 	}
 	if opts.Unsorted && limit <= 0 {
 		nativeResourcesPaths.unsorted.Add(1)

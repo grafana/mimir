@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -191,6 +192,10 @@ func TestIngester_NativeResources(t *testing.T) {
 
 			// A matcher set has to narrow the lookup down.
 			_, err = lookup(&client.NativeResourcesRequest{MatcherSets: nativeLookupMatchers(&client.LabelMatcher{Type: client.REGEX_MATCH, Name: "pod", Value: ".*"})})
+			require.Equal(t, codes.InvalidArgument, status.Code(err))
+			// A query shard keeps a share of the series, but doesn't narrow them down either.
+			shard := &client.LabelMatcher{Type: client.EQUAL, Name: sharding.ShardLabel, Value: sharding.FormatShardIDLabelValue(0, 2)}
+			_, err = lookup(&client.NativeResourcesRequest{MatcherSets: nativeLookupMatchers(&client.LabelMatcher{Type: client.REGEX_MATCH, Name: "pod", Value: ".*"}, shard)})
 			require.Equal(t, codes.InvalidArgument, status.Code(err))
 
 			// Before the series' first versions, the lookup finds none in force, but the engine's native resources
