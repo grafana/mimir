@@ -371,6 +371,10 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	return udb, nil
 }
 
+func (b *TSDBBuilder) IngestRecord(context.Context, []byte, int) error {
+	return errors.New("block builder requires decoded requests")
+}
+
 func (b *TSDBBuilder) NotifyPreCommit(_ context.Context) error {
 	return nil
 }

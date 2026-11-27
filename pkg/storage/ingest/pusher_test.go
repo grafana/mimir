@@ -47,6 +47,10 @@ func (p pusherFunc) PushToStorageAndReleaseRequest(ctx context.Context, request 
 	return p(ctx, request)
 }
 
+func (p pusherFunc) IngestRecord(context.Context, []byte, int) error {
+	return errors.New("test pusher requires decoded requests")
+}
+
 func (p pusherFunc) NotifyPreCommit(_ context.Context) error {
 	return nil
 }
@@ -247,7 +251,7 @@ func TestPusherConsumer(t *testing.T) {
 
 			logs := &concurrency.SyncBuffer{}
 			metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-			c := NewPusherConsumer(pusher, KafkaConfig{}, metrics, log.NewLogfmtLogger(logs))
+			c := NewPusherConsumer(pusher, false, KafkaConfig{}, metrics, log.NewLogfmtLogger(logs))
 			err := c.Consume(context.Background(), kafkaRecordsAll(t, tc.records))
 			if tc.expErr == "" {
 				assert.NoError(t, err)
@@ -365,7 +369,7 @@ func TestPusherConsumer_Consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 
 		reg := prometheus.NewPedanticRegistry()
 		logs := &concurrency.SyncBuffer{}
-		consumer := NewPusherConsumer(pusher, KafkaConfig{}, NewPusherConsumerMetrics(reg), log.NewLogfmtLogger(logs))
+		consumer := NewPusherConsumer(pusher, false, KafkaConfig{}, NewPusherConsumerMetrics(reg), log.NewLogfmtLogger(logs))
 
 		return consumer, logs, reg
 	}
@@ -526,7 +530,7 @@ func TestPusherConsumer_Consume_ShouldNotLeakGoroutinesOnServerError(t *testing.
 		}
 
 		metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-		consumer := NewPusherConsumer(pusher, cfg, metrics, log.NewNopLogger())
+		consumer := NewPusherConsumer(pusher, false, cfg, metrics, log.NewNopLogger())
 
 		// We expect consumption to fail.
 		err := consumer.Consume(context.Background(), kafkaRecordsAll(t, records))
@@ -639,6 +643,10 @@ func asDeserializedWriteRequest(wr *mimirpb.WriteRequest) *mimirpb.WriteRequest 
 		panic(err)
 	}
 	return &preq.WriteRequest
+}
+
+func (m *mockPusher) IngestRecord(context.Context, []byte, int) error {
+	return errors.New("mock pusher requires decoded requests")
 }
 
 func (m *mockPusher) NotifyPreCommit(_ context.Context) error {
@@ -1697,7 +1705,7 @@ func BenchmarkPusherConsumer(b *testing.B) {
 		flagext.DefaultValues(&kcfg)
 		kcfg.IngestionConcurrencyMax = 0
 		metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-		c := NewPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
+		c := NewPusherConsumer(pusher, false, kcfg, metrics, log.NewNopLogger())
 		b.ResetTimer()
 
 		for range b.N {
@@ -1711,7 +1719,7 @@ func BenchmarkPusherConsumer(b *testing.B) {
 		flagext.DefaultValues(&kcfg)
 		kcfg.IngestionConcurrencyMax = 2
 		metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-		c := NewPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
+		c := NewPusherConsumer(pusher, false, kcfg, metrics, log.NewNopLogger())
 		b.ResetTimer()
 
 		for range b.N {
@@ -1760,7 +1768,7 @@ func BenchmarkPusherConsumer_ParallelPusher_MultiTenant(b *testing.B) {
 
 			b.Run(fmt.Sprintf("records=%d,tenants=%d", numRecords, numTenants), func(b *testing.B) {
 				metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-				c := NewPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
+				c := NewPusherConsumer(pusher, false, kcfg, metrics, log.NewNopLogger())
 
 				b.ResetTimer()
 				for range b.N {

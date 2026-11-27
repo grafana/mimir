@@ -124,10 +124,10 @@ type SingleClusterPartitionReader struct {
 	lastSeenOffset atomic.Int64
 }
 
-func NewSingleClusterPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID string, offsetFilePath string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*SingleClusterPartitionReader, error) {
+func NewSingleClusterPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID string, offsetFilePath string, pusher Pusher, useDirectIngest bool, logger log.Logger, reg prometheus.Registerer) (*SingleClusterPartitionReader, error) {
 	metrics := NewPusherConsumerMetrics(reg)
 	factory := consumerFactoryFunc(func() RecordConsumer {
-		return NewPusherConsumer(pusher, kafkaCfg, metrics, logger)
+		return NewPusherConsumer(pusher, useDirectIngest, kafkaCfg, metrics, logger)
 	})
 	return newSingleClusterPartitionReader(kafkaCfg, partitionID, instanceID, offsetFilePath, factory, pusher, logger, reg)
 }
