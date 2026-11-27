@@ -27,6 +27,10 @@ import (
 
 type DataLabelSelector struct {
 	*selectors.InstantVectorSelector
+
+	// OwnResourcesMatchers are the matchers of the selector whose series info()'s inner series are, one to one, if
+	// they are, by which own mode looks up the inner series' own native resources.
+	OwnResourcesMatchers []*labels.Matcher
 }
 
 // identifyingLabels are the labels we consider as identifying for info metrics.

@@ -87,6 +87,11 @@ func MaterializeFunctionCall(ctx context.Context, f *FunctionCall, materializer 
 				dataLabelSelector.Selector.Timestamp = TimestampFromTime(ts)
 				dataLabelSelector.Selector.Offset = offset.Milliseconds()
 			}
+			// Here too, so that remote execution, which sends info() and its first argument together, needs nothing
+			// in the plan for it.
+			if matchers, ok := OwnResourcesMatchers(f.Args[0], params.QueryParameters.LookbackDelta); ok {
+				dataLabelSelector.OwnResourcesMatchers = matchers
+			}
 		}
 	}
 

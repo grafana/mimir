@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -22,6 +23,133 @@ import (
 type DataLabelSelector struct {
 	NodeIdentifier
 	*DataLabelSelectorDetails
+}
+
+// OwnResourcesMatchers returns the matchers of the one selector whose series info()'s first argument, node, maps one
+// to one onto its own series, with the filters of a shared selector on the way, and whether there is one: info()'s own
+// mode looks up the inner series' own native resources by them. lookback is the query's.
+//
+// Its series map one to one through a vector selector; a range function over a matrix selector, with a range of at
+// most lookback, since a longer one's output reaches past the series' newest sample plus the lookback, where the join
+// still enriches from the target's later samples; an element-wise function; and a binary operation with a scalar. The
+// plan's own nodes on the way are transparent: @'s step invariance, deduplication and name dropping, and common
+// subexpression elimination's shared selectors. Anything else maps its series otherwise, or not from a selector.
+func OwnResourcesMatchers(node planning.Node, lookback time.Duration) ([]*labels.Matcher, bool) {
+	var filters []LabelMatcher
+	// Whether a range function's matrix selector is next.
+	wantMatrix := false
+	for {
+		switch n := node.(type) {
+		case *VectorSelector:
+			if wantMatrix {
+				return nil, false
+			}
+			return withFilters(n.Matchers, filters)
+		case *MatrixSelector:
+			if !wantMatrix || n.Range > lookback {
+				return nil, false
+			}
+			return withFilters(n.Matchers, filters)
+		case *FunctionCall:
+			if wantMatrix {
+				return nil, false
+			}
+			next, isRange, ok := ownResourcesFunctionArg(n)
+			if !ok {
+				return nil, false
+			}
+			node, wantMatrix = next, isRange
+		case *BinaryExpression:
+			lhsScalar, rhsScalar := isScalarNode(n.LHS), isScalarNode(n.RHS)
+			switch {
+			case wantMatrix:
+				return nil, false
+			case lhsScalar && !rhsScalar:
+				node = n.RHS
+			case rhsScalar && !lhsScalar:
+				node = n.LHS
+			default:
+				return nil, false
+			}
+		case *StepInvariantExpression:
+			node = n.Inner
+		case *DeduplicateAndMerge:
+			node = n.Inner
+		case *DropName:
+			node = n.Inner
+		default:
+			// Common subexpression elimination's nodes, which this package can't name: a shared selector, and a
+			// filter of it that keeps its consumer's series.
+			switch node.NodeType() {
+			case planning.NODE_TYPE_DUPLICATE:
+				node = node.Child(0)
+			case planning.NODE_TYPE_DUPLICATE_FILTER:
+				details, ok := node.Details().(interface{ GetFilters() []LabelMatcher })
+				if !ok {
+					return nil, false
+				}
+				filters = append(filters, details.GetFilters()...)
+				node = node.Child(0)
+			default:
+				return nil, false
+			}
+		}
+	}
+}
+
+// ownResourcesRangeFunctions keep each series of their matrix selector apart, as one output series of its labels.
+// absent_over_time's output isn't a stored series.
+var ownResourcesRangeFunctions = map[functions.Function]struct{}{
+	functions.FUNCTION_RATE: {}, functions.FUNCTION_IRATE: {}, functions.FUNCTION_INCREASE: {},
+	functions.FUNCTION_DELTA: {}, functions.FUNCTION_IDELTA: {}, functions.FUNCTION_DERIV: {},
+	functions.FUNCTION_AVG_OVER_TIME: {}, functions.FUNCTION_COUNT_OVER_TIME: {}, functions.FUNCTION_FIRST_OVER_TIME: {},
+	functions.FUNCTION_LAST_OVER_TIME: {}, functions.FUNCTION_MAD_OVER_TIME: {}, functions.FUNCTION_MAX_OVER_TIME: {},
+	functions.FUNCTION_MIN_OVER_TIME: {}, functions.FUNCTION_PRESENT_OVER_TIME: {}, functions.FUNCTION_QUANTILE_OVER_TIME: {},
+	functions.FUNCTION_STDDEV_OVER_TIME: {}, functions.FUNCTION_STDVAR_OVER_TIME: {}, functions.FUNCTION_SUM_OVER_TIME: {},
+	functions.FUNCTION_TS_OF_FIRST_OVER_TIME: {}, functions.FUNCTION_TS_OF_LAST_OVER_TIME: {},
+	functions.FUNCTION_TS_OF_MAX_OVER_TIME: {}, functions.FUNCTION_TS_OF_MIN_OVER_TIME: {},
+}
+
+// ownResourcesElementWiseFunctions change each sample of their vector argument on its own.
+var ownResourcesElementWiseFunctions = map[functions.Function]struct{}{
+	functions.FUNCTION_ABS: {}, functions.FUNCTION_CEIL: {}, functions.FUNCTION_FLOOR: {}, functions.FUNCTION_ROUND: {},
+	functions.FUNCTION_CLAMP: {}, functions.FUNCTION_CLAMP_MIN: {}, functions.FUNCTION_CLAMP_MAX: {},
+	functions.FUNCTION_EXP: {}, functions.FUNCTION_LN: {}, functions.FUNCTION_LOG2: {}, functions.FUNCTION_LOG10: {},
+	functions.FUNCTION_SQRT: {}, functions.FUNCTION_SGN: {},
+}
+
+// ownResourcesFunctionArg returns the argument of f whose series f maps one to one onto its own, whether it's a range
+// function's, and whether f maps its series so: its other arguments are scalars.
+func ownResourcesFunctionArg(f *FunctionCall) (planning.Node, bool, bool) {
+	_, isRange := ownResourcesRangeFunctions[f.Function]
+	_, isElementWise := ownResourcesElementWiseFunctions[f.Function]
+	if !isRange && !isElementWise {
+		return nil, false, false
+	}
+	var arg planning.Node
+	for _, a := range f.Args {
+		if isScalarNode(a) {
+			continue
+		}
+		if arg != nil {
+			return nil, false, false
+		}
+		arg = a
+	}
+	return arg, isRange, arg != nil
+}
+
+func isScalarNode(node planning.Node) bool {
+	valueType, err := node.ResultType()
+	return err == nil && valueType == parser.ValueTypeScalar
+}
+
+func withFilters(matchers, filters []LabelMatcher) ([]*labels.Matcher, bool) {
+	out, err := LabelMatchersToPrometheusType(slices.Concat(matchers, filters))
+	if err != nil {
+		return nil, false
+	}
+	return out, true
 }
 
 // infoSelectTimestampAndOffset returns the @ timestamp and offset the info data label selector
