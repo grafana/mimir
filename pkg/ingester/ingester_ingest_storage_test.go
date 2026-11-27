@@ -367,10 +367,11 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 	)
 
 	tests := map[string]struct {
-		readConsistencyLevel   string
-		readConsistencyOffsets map[int32]int64
-		offsetsEncoding        string
-		expectedQueriedSeries  int
+		readConsistencyLevel          string
+		readConsistencyOffsets        map[int32]int64
+		offsetsEncoding               string
+		encodedReadConsistencyOffsets api.EncodedOffsets
+		expectedQueriedSeries         int
 	}{
 		"eventual read consistency": {
 			readConsistencyLevel: api.ReadConsistencyEventual,
@@ -402,6 +403,14 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 			readConsistencyOffsets: map[int32]int64{0: -2},
 			offsetsEncoding:        "v2",
 			expectedQueriedSeries:  0,
+		},
+		"strong read consistency with offsets for a different number of Kafka clusters falls back to last produced": {
+			readConsistencyLevel: api.ReadConsistencyStrong,
+
+			// The ingester consumes from 1 Kafka cluster, but the offsets are for 2 Kafka clusters. The
+			// ingester must ignore the negative offsets and wait for the last produced offset.
+			encodedReadConsistencyOffsets: api.EncodeOffsetsV2(map[int]kmeta.PartitionsOffsets{0: {0: kmeta.NewMultiClusterPartitionOffsets([]int64{-2, -2})}}),
+			expectedQueriedSeries:         1,
 		},
 	}
 
@@ -483,6 +492,9 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 				// Inject the requested offsets (if any), encoded with the case's format.
 				if len(testData.readConsistencyOffsets) > 0 {
 					queryCtx = api.ContextWithReadConsistencyEncodedOffsets(queryCtx, encodeSingleClusterReadConsistencyOffsets(testData.offsetsEncoding, testData.readConsistencyOffsets))
+				}
+				if testData.encodedReadConsistencyOffsets != "" {
+					queryCtx = api.ContextWithReadConsistencyEncodedOffsets(queryCtx, testData.encodedReadConsistencyOffsets)
 				}
 
 				close(queryIssued)

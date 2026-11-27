@@ -347,6 +347,14 @@ func TestIngester_Compartments_QueryStream_ReadConsistency(t *testing.T) {
 			readConsistencyOffsets: map[int]map[int32]kmeta.PartitionOffsets{0: {0: kmeta.NewMultiClusterPartitionOffsets([]int64{-2, -2})}},
 			expectedQueriedSeries:  numWriteCompartments,
 		},
+		"strong read consistency with offsets for a different number of Kafka clusters falls back to last produced": {
+			readConsistencyLevel: api.ReadConsistencyStrong,
+
+			// The ingester consumes from numWriteCompartments Kafka clusters, but the offsets are for 1 Kafka
+			// cluster only. The ingester must ignore the negative offset and wait for the last produced offset.
+			readConsistencyOffsets: map[int]map[int32]kmeta.PartitionOffsets{1: {0: kmeta.NewMultiClusterPartitionOffsets([]int64{-2})}},
+			expectedQueriedSeries:  numWriteCompartments,
+		},
 	}
 
 	for testName, testData := range tests {
