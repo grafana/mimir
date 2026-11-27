@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -96,6 +97,9 @@ type engineHead interface {
 	MinInOrderAppendTime() (int64, bool)
 
 	Index() (tsdb.IndexReader, error)
+	// Ownership counts series in the token ranges and calls onNonOwned once for each remaining ref.
+	// The callback runs synchronously without engine locks held.
+	Ownership(owned ring.TokenRanges, onNonOwned func(storage.SeriesRef)) int
 	// ShardSeries returns the series in shard shardIndex of shardCount, by ref.
 	ShardSeries(shardIndex, shardCount uint64) index.Postings
 	// LabelValuesBytes returns the bytes of the distinct values of each label name.
