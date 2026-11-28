@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -2998,4 +2999,34 @@ func BenchmarkOTLPMimirConverterErr(b *testing.B) {
 	for b.Loop() {
 		_ = c.Err()
 	}
+}
+
+func TestOTLPHandler_JSONZstdDoesNotLeakGoroutines(t *testing.T) {
+	// The request is larger than the limit, so decoding stops before the end of the zstd stream.
+	// The decoder owns background goroutines that are only released by closing it.
+	body := append([]byte(`{"resourceMetrics":[],"padding":"`), bytes.Repeat([]byte("a"), 8<<20)...)
+	body = append(body, `"}`...)
+	req := createOTLPRequest(t, body, "zstd", "application/json")
+
+	pushFunc := func(_ context.Context, pushReq *Request) error {
+		// The request is parsed lazily, when the write request is first read.
+		_, err := pushReq.WriteRequest()
+		pushReq.CleanUp()
+		return err
+	}
+	handler := OTLPHandler(
+		1024, nil, nil, false, validation.MockDefaultOverrides(), nil, nil,
+		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
+	)
+
+	// synctest.Test fails if any goroutine started in the bubble is still blocked when the function returns,
+	// which is the case for a zstd decoder that was not closed.
+	synctest.Test(t, func(t *testing.T) {
+		for i := range 20 {
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			require.Equal(t, http.StatusRequestEntityTooLarge, resp.Code, "iteration %d", i)
+			req.Body.(*reusableReader).Reset()
+		}
+	})
 }

@@ -18,7 +18,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -359,4 +361,20 @@ func newReadCloserObserver(wrapped io.ReadCloser) *readCloserObserver {
 func (o *readCloserObserver) Close() error {
 	o.closeCalled = true
 	return o.ReadCloser.Close()
+}
+
+func TestParseProtoReader_ZstdDoesNotLeakGoroutines(t *testing.T) {
+	enc, err := zstd.NewWriter(nil)
+	require.NoError(t, err)
+	// Large, compressible payload that exceeds the max size, so that decoding stops before the end of the stream.
+	body := enc.EncodeAll(bytes.Repeat([]byte("a"), 8<<20), nil)
+
+	// synctest.Test fails if any goroutine started in the bubble is still blocked when the function returns,
+	// which is the case for a zstd decoder that was not closed.
+	synctest.Test(t, func(t *testing.T) {
+		for range 20 {
+			_, err := ParseProtoReader(context.Background(), bytes.NewReader(body), 0, 1024, NewRequestBuffers(nil), &prompb.WriteRequest{}, Zstd)
+			require.Error(t, err)
+		}
+	})
 }

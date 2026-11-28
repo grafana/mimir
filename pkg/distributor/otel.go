@@ -338,10 +338,12 @@ func newOTLPParser(
 				case util.Lz4:
 					reader = io.NopCloser(lz4.NewReader(reader))
 				case util.Zstd:
-					reader, err = zstd.NewReader(reader)
+					zstdReader, err := zstd.NewReader(reader)
 					if err != nil {
 						return exportReq, 0, errors.Wrap(err, "create zstd reader")
 					}
+					defer zstdReader.Close()
+					reader = zstdReader
 				}
 
 				reader = http.MaxBytesReader(nil, io.NopCloser(reader), int64(maxRecvMsgSize))
