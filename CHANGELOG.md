@@ -135,6 +135,7 @@
 * [ENHANCEMENT] All: Reduce the CPU time that YAML encoding uses, for example in the ruler list rules API. #17522
 * [ENHANCEMENT] Usage-tracker: Reuse the temporary series buffer when loading snapshots, instead of allocating one for every tenant in every snapshot. #14904
 * [BUGFIX] Ruler: Count write requests rejected by the tenant request-rate, ingestion-rate or active-series limits as `client_error` in `cortex_ruler_write_requests_failed_total`, so they no longer trigger `MimirRulerTooManyFailedPushes`. Ingester overload is still counted as `server_error`. #17302
+* [BUGFIX] Ruler: Fix the rule group API returning rule expressions with changed leading whitespace when they are YAML block scalars with an indentation indicator. The API now responds with YAML indented by 2 spaces instead of 4. #17400
 * [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
 * [BUGFIX] Distributor: When a tenant has OTLP native delta ingestion disabled, drop only the delta metrics from an OTLP request and log a warning, instead of rejecting the whole request. #17506
 * [BUGFIX] Store-gateway: Allow cancelling prepare-shutdown when the sync directory does not exist. #16049
