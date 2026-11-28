@@ -6,19 +6,26 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strconv"
 	"testing"
 	"unsafe"
 
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/querier"
 )
 
 var _ = MetricsQueryRequest(&remoteReadQueryRequest{})
@@ -45,12 +52,12 @@ func TestParseRemoteReadRequestWithoutConsumingBody(t *testing.T) {
 			},
 			expectedParams: url.Values{
 				"start_0":    []string{"0"},
-				"end_0":      []string{"42"},
+				"end_0":      []string{"42000"},
 				"matchers_0": []string{`{__name__="some_metric",foo=~".*bar.*"}`},
-				"start_1":    []string{"10"},
-				"end_1":      []string{"20"},
+				"start_1":    []string{"10000"},
+				"end_1":      []string{"20000"},
 				"matchers_1": []string{`{__name__="up"}`},
-				"hints_1":    []string{`{"step_ms":1000,"start_ms":10,"end_ms":20}`},
+				"hints_1":    []string{`{"step_ms":1000,"start_ms":10000,"end_ms":20000}`},
 			},
 		},
 	}
@@ -79,28 +86,41 @@ func TestParseRemoteReadRequestWithoutConsumingBody(t *testing.T) {
 	}
 }
 
-type mockRoundTripper struct {
-	onRoundTrip func(*http.Request) (*http.Response, error)
+type remoteReadRoundTripperTestCase struct {
+	name            string
+	newRoundTripper func(http.RoundTripper, ...MetricsQueryMiddleware) http.RoundTripper
 }
 
-func (m *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	return m.onRoundTrip(req)
+func forEachRemoteReadRoundTripper(t *testing.T, test func(*testing.T, remoteReadRoundTripperTestCase)) {
+	t.Helper()
+
+	testCases := []remoteReadRoundTripperTestCase{
+		{
+			name:            "v1",
+			newRoundTripper: NewRemoteReadRoundTripper,
+		},
+		{
+			name: "v2",
+			newRoundTripper: func(next http.RoundTripper, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
+				return NewRemoteReadRoundTripperV2(next, &mockLimits{}, middlewares...)
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			test(t, tc)
+		})
+	}
 }
 
-type skipMiddleware struct {
-}
-
-func (s *skipMiddleware) Do(_ context.Context, _ MetricsQueryRequest) (Response, error) {
-	return nil, nil
-}
-
-type errorMiddleware struct {
-}
-
-func (s *errorMiddleware) Do(_ context.Context, _ MetricsQueryRequest) (Response, error) {
-	return nil, apierror.New(apierror.TypeBadData, "TestErrorMiddleware")
-}
-
+// This test is on purpose not run on the v2 and should arguably be removed / changed.
+// We could intead count the number of query executed downstream, but checking which
+// middlewares are called and downstream how many time isn't general enough anymore.
+//
+// Also, this test verify that a "skipping middleware" still call downstram, but that
+// test behavior that's potentially buggy. There is a note saying that it's this way
+// because there wasn't an easy way to return an empty response for a given query.
 func TestRemoteReadRoundTripperCallsDownstreamOnAll(t *testing.T) {
 	testCases := map[string]struct {
 		handler                MetricsQueryHandler
@@ -109,12 +129,16 @@ func TestRemoteReadRoundTripperCallsDownstreamOnAll(t *testing.T) {
 		expectError            string
 	}{
 		"skipping middleware": {
-			handler:                &skipMiddleware{},
+			handler: HandlerFunc(func(_ context.Context, _ MetricsQueryRequest) (Response, error) {
+				return nil, nil
+			}),
 			expectDownstreamCalled: 1,
 			expectMiddlewareCalled: 2,
 		},
 		"error middleware": {
-			handler:                &errorMiddleware{},
+			handler: HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+				return nil, apierror.New(apierror.TypeBadData, "TestErrorMiddleware")
+			}),
 			expectDownstreamCalled: 0,
 			expectMiddlewareCalled: 1,
 			expectError:            "remote read error (matchers_0: {__name__=\"some_metric\",foo=~\".*bar.*\"}): TestErrorMiddleware",
@@ -123,17 +147,16 @@ func TestRemoteReadRoundTripperCallsDownstreamOnAll(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			var actualDownstreamCalls int
-			roundTripper := &mockRoundTripper{
-				onRoundTrip: func(_ *http.Request) (*http.Response, error) {
-					actualDownstreamCalls++
-					return nil, nil
-				},
-			}
+			var actualDownstreamCalls atomic.Int64
+			downstream := makeDownstreamRoundTripper(t)
+			roundTripper := RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+				actualDownstreamCalls.Inc()
+				return downstream.RoundTrip(req)
+			})
 
-			actualMiddleWareCalls := 0
+			var actualMiddlewareCalls atomic.Int64
 			middleware := MetricsQueryMiddlewareFunc(func(_ MetricsQueryHandler) MetricsQueryHandler {
-				actualMiddleWareCalls++
+				actualMiddlewareCalls.Inc()
 				return tc.handler
 			})
 			rr := NewRemoteReadRoundTripper(roundTripper, middleware)
@@ -155,8 +178,8 @@ func TestRemoteReadRoundTripperCallsDownstreamOnAll(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
-			require.Equal(t, tc.expectDownstreamCalled, actualDownstreamCalls)
-			require.Equal(t, tc.expectMiddlewareCalled, actualMiddleWareCalls)
+			require.EqualValues(t, tc.expectDownstreamCalled, actualDownstreamCalls.Load())
+			require.EqualValues(t, tc.expectMiddlewareCalled, actualMiddlewareCalls.Load())
 		})
 	}
 }
@@ -169,11 +192,9 @@ type apiResponse struct {
 
 func TestRemoteReadRoundTripper_ShouldAllowMiddlewaresToManipulateRequest(t *testing.T) {
 	const (
-		expectedStartMs = 11
-		expectedEndMs   = 19
+		expectedStartMs = 11000
+		expectedEndMs   = 19000
 	)
-
-	origRemoteReadReq := makeTestRemoteReadRequest()
 
 	// Create a middleware that manipulate the query start/end timestamps.
 	middleware := MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
@@ -187,56 +208,160 @@ func TestRemoteReadRoundTripper_ShouldAllowMiddlewaresToManipulateRequest(t *tes
 		})
 	})
 
-	// Mock the downstream to capture the received request.
-	var downstreamReq *http.Request
-	downstream := &mockRoundTripper{
-		onRoundTrip: func(req *http.Request) (*http.Response, error) {
-			downstreamReq = req
-			return nil, nil
-		},
-	}
+	forEachRemoteReadRoundTripper(t, func(t *testing.T, implementation remoteReadRoundTripperTestCase) {
+		downstream := makeDownstreamRoundTripper(t)
+		origRemoteReadReq := makeTestRemoteReadRequest()
 
-	rr := NewRemoteReadRoundTripper(downstream, middleware)
-	_, err := rr.RoundTrip(makeTestHTTPRequestFromRemoteRead(origRemoteReadReq))
-	require.NoError(t, err)
-	require.NotNil(t, downstreamReq)
+		rr := implementation.newRoundTripper(downstream, middleware)
+		resp, err := rr.RoundTrip(makeTestHTTPRequestFromRemoteRead(origRemoteReadReq))
+		require.NoError(t, err)
+		defer func() { require.NoError(t, resp.Body.Close()) }()
 
-	// Ensure the downstream HTTP request has been correctly manipulated.
-	require.Equal(t, strconv.Itoa(int(downstreamReq.ContentLength)), downstreamReq.Header.Get("Content-Length")) // The two should match.
-	require.Equal(t, "snappy", downstreamReq.Header.Get("Content-Encoding"))
+		require.Equal(t, 200, resp.StatusCode)
+		require.Equal(t, "snappy", resp.Header.Get("Content-Encoding"))
+		require.Equal(t, "application/x-protobuf", resp.Header.Get("Content-Type"))
 
-	// Parse the HTTP request received by the downstream.
-	downstreamRemoteReadReq, err := unmarshalRemoteReadRequest(downstreamReq.Context(), downstreamReq.Body, int(downstreamReq.ContentLength))
-	require.NoError(t, err)
-	require.Len(t, downstreamRemoteReadReq.Queries, len(origRemoteReadReq.Queries))
+		// There must be one result per query, in the same order as the queries. The series within
+		// a result are not ordered: the sampled remote read path selects them with sortSeries=false.
+		rrResp := decodeSampledRemoteReadResponse(t, resp.Body)
+		require.Len(t, rrResp.Results, 2)
+		require.ElementsMatch(t, []*prompb.TimeSeries{
+			{
+				Labels:  []prompb.Label{{Name: "__name__", Value: "some_metric"}, {Name: "foo", Value: "drop_bar"}},
+				Samples: []prompb.Sample{{Timestamp: 15000, Value: 1}},
+			},
+		}, rrResp.Results[0].Timeseries)
+		require.ElementsMatch(t, []*prompb.TimeSeries{
+			{
+				Labels:  []prompb.Label{{Name: "__name__", Value: "up"}, {Name: "job", Value: "s1"}},
+				Samples: []prompb.Sample{{Timestamp: 15000, Value: 2}},
+			},
+			{
+				Labels:  []prompb.Label{{Name: "__name__", Value: "up"}, {Name: "job", Value: "s2"}},
+				Samples: []prompb.Sample{{Timestamp: 15000, Value: 2}},
+			},
+		}, rrResp.Results[1].Timeseries)
+	})
+}
 
-	// Ensure the downstream received the manipulated start/end timestamps.
-	for i, query := range downstreamRemoteReadReq.Queries {
-		require.Equal(t, int64(expectedStartMs), query.StartTimestampMs)
-		require.Equal(t, int64(expectedEndMs), query.EndTimestampMs)
+func TestRemoteReadRoundTripper_StreamedXorChunk(t *testing.T) {
+	forEachRemoteReadRoundTripper(t, func(t *testing.T, implementation remoteReadRoundTripperTestCase) {
+		downstream := makeDownstreamRoundTripper(t)
+		origRemoteReadReq := makeTestRemoteReadRequestWithResponseType(prompb.ReadRequest_STREAMED_XOR_CHUNKS)
 
-		if origRemoteReadReq.Queries[i].Hints != nil {
-			require.NotNil(t, query.Hints)
-			require.Equal(t, int64(expectedStartMs), query.Hints.StartMs)
-			require.Equal(t, int64(expectedEndMs), query.Hints.EndMs)
+		rr := implementation.newRoundTripper(downstream)
+		resp, err := rr.RoundTrip(makeTestHTTPRequestFromRemoteRead(origRemoteReadReq))
+		require.NoError(t, err)
+		defer func() { require.NoError(t, resp.Body.Close()) }()
+
+		require.Equal(t, 200, resp.StatusCode)
+		require.Equal(t, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse", resp.Header.Get("Content-Type"))
+
+		type testSample struct {
+			ts  int64
+			val float64
 		}
-	}
 
-	// Excluding the start/end timestamps, everything else should be equal.
-	// To run this comparison we override the start/end timestamp both in the original and downstream request.
-	for _, req := range []*prompb.ReadRequest{origRemoteReadReq, downstreamRemoteReadReq} {
-		for _, query := range req.Queries {
-			query.StartTimestampMs = 0
-			query.EndTimestampMs = 0
+		expectedSamplesByLabel := map[string][]testSample{
+			"{__name__=\"up\", job=\"s1\"}": {
+				{15000, 2},
+			},
+			"{__name__=\"some_metric\", foo=\"drop_bar\"}": {
+				{0, 0},
+				{15000, 1},
+				{30000, 2},
+			},
+			"{__name__=\"up\", job=\"s2\"}": {
+				{15000, 2},
+			},
+		}
 
-			if query.Hints != nil {
-				query.Hints.StartMs = 0
-				query.Hints.EndMs = 0
+		computedSamplesByLabel := map[string][]testSample{}
+		chunkedReader := remote.NewChunkedReader(resp.Body, math.MaxUint64, nil)
+		ss := remote.NewChunkedSeriesSet(chunkedReader, resp.Body, 0, 60*60*1000, func(err error) {
+			require.ErrorIs(t, err, io.EOF)
+		})
+
+		for ss.Next() {
+			require.NoError(t, ss.Err())
+			series := ss.At()
+
+			var samples []testSample
+			it := series.Iterator(nil)
+			for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
+				require.Equal(t, typ, chunkenc.ValFloat)
+				ts, val := it.At()
+				samples = append(samples, testSample{ts, val})
 			}
-		}
-	}
 
-	require.Equal(t, origRemoteReadReq, downstreamRemoteReadReq)
+			labels := series.Labels().String()
+			computedSamplesByLabel[labels] = samples
+		}
+
+		require.Equal(t, expectedSamplesByLabel, computedSamplesByLabel)
+	})
+}
+
+func TestRemoteReadRoundTripper_StreamedXorChunkWithMidStreamFailure(t *testing.T) {
+	forEachRemoteReadRoundTripper(t, func(t *testing.T, implementation remoteReadRoundTripperTestCase) {
+		downstream := makeDownstreamRoundTripper(t)
+		req := &prompb.ReadRequest{
+			Queries: []*prompb.Query{
+				{
+					Matchers: []*prompb.LabelMatcher{
+						{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "up"},
+					},
+					StartTimestampMs: 10000,
+					EndTimestampMs:   20000,
+				},
+			},
+			AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+		}
+
+		simulateFailure := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			resp, err := downstream.RoundTrip(r)
+			if err != nil {
+				return resp, err
+			}
+
+			reader := remote.NewChunkedReader(resp.Body, math.MaxUint64, nil)
+			pr, pw := io.Pipe()
+			writer := remote.NewChunkedWriter(pw, nil)
+			resp.Body = pr
+
+			go func() {
+				data, err := reader.Next()
+				if err != nil {
+					_ = pw.CloseWithError(err)
+					return
+				}
+
+				_, err = writer.Write(data)
+				if err != nil {
+					_ = pw.CloseWithError(err)
+					return
+				}
+
+				_ = pw.CloseWithError(io.ErrClosedPipe)
+			}()
+
+			return resp, nil
+		})
+
+		rr := implementation.newRoundTripper(simulateFailure)
+		resp, err := rr.RoundTrip(makeTestHTTPRequestFromRemoteRead(req))
+		require.NoError(t, err)
+		defer func() { require.NoError(t, resp.Body.Close()) }()
+
+		require.Equal(t, 200, resp.StatusCode)
+		require.Equal(t, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse", resp.Header.Get("Content-Type"))
+
+		chunkedReader := remote.NewChunkedReader(resp.Body, math.MaxUint64, nil)
+		_, err = chunkedReader.Next()
+		require.NoError(t, err)
+		_, err = chunkedReader.Next()
+		require.Error(t, err)
+	})
 }
 
 func TestRemoteReadRoundTripper_ShouldAllowMiddlewaresToReturnEmptyResponse(t *testing.T) {
@@ -247,26 +372,56 @@ func TestRemoteReadRoundTripper_ShouldAllowMiddlewaresToReturnEmptyResponse(t *t
 		})
 	})
 
-	// Mock the downstream to capture the received request.
-	var downstreamReq *http.Request
-	downstream := &mockRoundTripper{
-		onRoundTrip: func(req *http.Request) (*http.Response, error) {
-			downstreamReq = req
-			return nil, nil
-		},
-	}
+	var downstreamCalls atomic.Int64
+	downstream := makeDownstreamRoundTripper(t)
+	countedDownstream := RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		downstreamCalls.Inc()
+		return downstream.RoundTrip(req)
+	})
 
-	rr := NewRemoteReadRoundTripper(downstream, middleware)
+	rr := NewRemoteReadRoundTripper(countedDownstream, middleware)
 	origRemoteReadReq := makeTestRemoteReadRequest()
 
-	_, err := rr.RoundTrip(makeTestHTTPRequestFromRemoteRead(origRemoteReadReq))
+	resp, err := rr.RoundTrip(makeTestHTTPRequestFromRemoteRead(origRemoteReadReq))
 	require.NoError(t, err)
-	require.NotNil(t, downstreamReq)
+	defer func() { require.NoError(t, resp.Body.Close()) }()
 
-	// Ensure the HTTP request received by the downstream is equal to the original one.
-	downstreamRemoteReadReq, err := unmarshalRemoteReadRequest(downstreamReq.Context(), downstreamReq.Body, int(downstreamReq.ContentLength))
+	rrResp := decodeSampledRemoteReadResponse(t, resp.Body)
+	require.Len(t, rrResp.Results, len(origRemoteReadReq.Queries))
+	require.EqualValues(t, 1, downstreamCalls.Load())
+	for _, result := range rrResp.Results {
+		require.NotEmpty(t, result.Timeseries)
+	}
+}
+
+func TestRemoteReadRoundTripperV2_ShouldAllowMiddlewaresToReturnEmptyResponse(t *testing.T) {
+	// Create a middleware that return an empty response.
+	middleware := MetricsQueryMiddlewareFunc(func(_ MetricsQueryHandler) MetricsQueryHandler {
+		return HandlerFunc(func(_ context.Context, _ MetricsQueryRequest) (Response, error) {
+			return NewEmptyPrometheusResponse(), nil
+		})
+	})
+
+	var downstreamCalls atomic.Int64
+	downstream := makeDownstreamRoundTripper(t)
+	countedDownstream := RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		downstreamCalls.Inc()
+		return downstream.RoundTrip(req)
+	})
+
+	rr := NewRemoteReadRoundTripperV2(countedDownstream, &mockLimits{}, middleware)
+	origRemoteReadReq := makeTestRemoteReadRequest()
+
+	resp, err := rr.RoundTrip(makeTestHTTPRequestFromRemoteRead(origRemoteReadReq))
 	require.NoError(t, err)
-	require.Equal(t, origRemoteReadReq, downstreamRemoteReadReq)
+	defer func() { require.NoError(t, resp.Body.Close()) }()
+
+	rrResp := decodeSampledRemoteReadResponse(t, resp.Body)
+	require.Len(t, rrResp.Results, len(origRemoteReadReq.Queries))
+	require.Zero(t, downstreamCalls.Load())
+	for _, result := range rrResp.Results {
+		require.Empty(t, result.Timeseries)
+	}
 }
 
 func TestRemoteReadQueryRequest_WithStartEnd(t *testing.T) {
@@ -398,7 +553,8 @@ func TestRemoteReadQueryRequest_WithStartEnd(t *testing.T) {
 }
 
 func makeTestHTTPRequestFromRemoteRead(readReq *prompb.ReadRequest) *http.Request {
-	request := httptest.NewRequest("GET", "/api/v1/read", nil)
+	ctx := user.InjectOrgID(context.Background(), "test")
+	request := httptest.NewRequestWithContext(ctx, "GET", "/api/v1/read", nil)
 	request.Header.Add("User-Agent", "test-user-agent")
 	request.Header.Add("Content-Type", "application/x-protobuf")
 	request.Header.Add("Content-Encoding", "snappy")
@@ -410,7 +566,11 @@ func makeTestHTTPRequestFromRemoteRead(readReq *prompb.ReadRequest) *http.Reques
 }
 
 func makeTestRemoteReadRequest() *prompb.ReadRequest {
-	return &prompb.ReadRequest{
+	return makeTestRemoteReadRequestWithResponseType(prompb.ReadRequest_SAMPLES)
+}
+
+func makeTestRemoteReadRequestWithResponseType(respType prompb.ReadRequest_ResponseType) *prompb.ReadRequest {
+	req := &prompb.ReadRequest{
 		Queries: []*prompb.Query{
 			{
 				Matchers: []*prompb.LabelMatcher{
@@ -418,23 +578,57 @@ func makeTestRemoteReadRequest() *prompb.ReadRequest {
 					{Name: "foo", Type: prompb.LabelMatcher_RE, Value: ".*bar.*"},
 				},
 				StartTimestampMs: 0,
-				EndTimestampMs:   42,
+				EndTimestampMs:   42000,
 				Hints:            nil, // Don't add hints to this query so that we exercise code when the request query has no hints.
 			},
 			{
 				Matchers: []*prompb.LabelMatcher{
 					{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "up"},
 				},
-				StartTimestampMs: 10,
-				EndTimestampMs:   20,
+				StartTimestampMs: 10000,
+				EndTimestampMs:   20000,
 				Hints: &prompb.ReadHints{
-					StartMs: 10,
-					EndMs:   20,
+					StartMs: 10000,
+					EndMs:   20000,
 					StepMs:  1000,
 				},
 			},
 		},
 	}
+	req.AcceptedResponseTypes = []prompb.ReadRequest_ResponseType{respType}
+	return req
+}
+
+func makeDownstreamRoundTripper(t *testing.T) http.RoundTripper {
+	storage := promqltest.LoadedStorage(t, `
+	    load 15s
+	        some_metric{foo="drop_bar"} 0+1x10
+	        some_metric{foo="drop_rab"} 0+1x10
+	        up{job="s1"}                0+2x10
+	        up{job="s2"}                0+2x10
+	`)
+
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	handler := querier.RemoteReadHandler(storage, log.NewNopLogger(), querier.Config{})
+	return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, r)
+		return recorder.Result(), nil
+	})
+}
+
+func decodeSampledRemoteReadResponse(t *testing.T, body io.Reader) prompb.ReadResponse {
+	t.Helper()
+
+	data, err := io.ReadAll(body)
+	require.NoError(t, err)
+	data, err = snappy.Decode(nil, data)
+	require.NoError(t, err)
+
+	var resp prompb.ReadResponse
+	require.NoError(t, proto.Unmarshal(data, &resp))
+	return resp
 }
 
 // This is not a full test yet, only tests what's needed for the query blocker and stats.
