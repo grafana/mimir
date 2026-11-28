@@ -81,8 +81,18 @@ ruler_storage:
     bucket_name: mimir-ruler
 ```
 
-{{< admonition type="note" >}}
-Don't prefix the endpoint value with your bucket name. For example, if your bucket is named "my-storage-bucket", you cannot name the endpoint "my-storage-bucket.s3.amazonaws.com".
+{{< admonition type="warning" >}}
+Set `endpoint` to the S3 service endpoint, such as `s3.us-east-2.amazonaws.com`, and set the bucket in `bucket_name`.
+Don't include the bucket name in `endpoint`.
+Mimir refuses to start if the first dot-separated part of `endpoint` equals `bucket_name`, for example `endpoint: example-metrics.s3.us-east-2.amazonaws.com` with `bucket_name: example-metrics`.
+
+The S3 client that Mimir uses doesn't recognize an endpoint that starts with the bucket name as an AWS S3 endpoint, so it also adds the bucket name to the request path.
+S3 reads the bucket from the hostname and treats the repeated bucket name as part of the object key.
+The object storage check that Mimir runs at startup still passes, but later operations fail.
+For example, the store-gateway fails to synchronize TSDB blocks with the error `The specified key does not exist`.
+
+The check also applies to S3-compatible endpoints.
+If the hostname of your S3-compatible service starts with the bucket name, use a different bucket name or a service hostname that doesn't start with the bucket name.
 {{< /admonition >}}
 
 ### GCS
