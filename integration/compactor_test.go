@@ -224,18 +224,18 @@ func TestCompactVerticallyOverlappingBlocks(t *testing.T) {
 	}()
 
 	// All source blocks share this series. Each block contributes two samples
-	// at distinct, non-overlapping timestamps so the merged result is simply
-	// the union of all samples sorted by timestamp.
+	// at distinct timestamps so the merged result is simply the union of all
+	// samples sorted by timestamp.
 	seriesLabels := labels.FromStrings("case", "vertical_compaction", "series", "a")
 
 	metas := make([]*block.Meta, 0, numBlocks)
 	var expectedSamples []test.Sample
 
 	for i := 0; i < numBlocks; i++ {
-		// Two samples per block, spaced so blocks overlap within the same 2h
-		// range but no two samples share a timestamp.
-		ts1 := int64(i*1000 + 100)
-		ts2 := int64(i*1000 + 200)
+		// Interleaved timestamps make every block span roughly [100, 1000],
+		// so the block time ranges overlap while no two samples collide.
+		ts1 := int64(100 + i*10)
+		ts2 := int64(1000 + i*10)
 
 		spec := block.SeriesSpec{
 			Labels: seriesLabels,
