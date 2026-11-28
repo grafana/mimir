@@ -839,6 +839,8 @@ func truncatedErrorMessage(err error, maxLen int) string {
 // TimeseriesToOTLPRequest is used in tests to convert Prometheus types to OTEL types.
 //
 // If you provide exemplars they will be placed on the first float histogram sample.
+// Float samples of metrics with counter metadata are converted to a monotonic cumulative sum, and
+// other float samples to a gauge.
 //
 // NOTE: This should not be called from production code besides continuoustest.
 func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) pmetricotlp.ExportRequest {
@@ -865,15 +867,25 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 		if len(ts.Samples) > 0 {
 			metric := sm.AppendEmpty().Metrics().AppendEmpty()
 			metric.SetName(name)
-			metric.SetEmptyGauge()
+			counter := false
 			for _, m := range metadata {
 				if m.MetricFamilyName == name {
 					metric.SetDescription(m.GetHelp())
 					metric.SetUnit(m.GetUnit())
+					counter = m.GetType() == mimirpb.COUNTER
 				}
 			}
+			var datapoints pmetric.NumberDataPointSlice
+			if counter {
+				sum := metric.SetEmptySum()
+				sum.SetIsMonotonic(true)
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				datapoints = sum.DataPoints()
+			} else {
+				datapoints = metric.SetEmptyGauge().DataPoints()
+			}
 			for i, sample := range ts.Samples {
-				datapoint := metric.Gauge().DataPoints().AppendEmpty()
+				datapoint := datapoints.AppendEmpty()
 				datapoint.SetTimestamp(pcommon.Timestamp(sample.Timestamp * time.Millisecond.Nanoseconds()))
 				datapoint.SetDoubleValue(sample.Value)
 				attributes.CopyTo(datapoint.Attributes())
@@ -921,6 +933,7 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 				datapoint.Negative().BucketCounts().FromRaw(counts)
 
 				datapoint.SetSum(histogram.GetSum())
+				datapoint.SetZeroThreshold(histogram.GetZeroThreshold())
 				datapoint.SetZeroCount(histogram.GetZeroCountInt())
 				attributes.CopyTo(datapoint.Attributes())
 				if i == 0 {

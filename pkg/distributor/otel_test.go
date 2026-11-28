@@ -2987,6 +2987,44 @@ func TestTruncatedErrorMessage(t *testing.T) {
 	}
 }
 
+func TestTimeseriesToOTLPRequest_FloatSamples(t *testing.T) {
+	series := func(name string) prompb.TimeSeries {
+		return prompb.TimeSeries{
+			Labels:  []prompb.Label{{Name: model.MetricNameLabel, Value: name}},
+			Samples: []prompb.Sample{{Value: 2.5, Timestamp: 1000}},
+		}
+	}
+	req := TimeseriesToOTLPRequest(
+		[]prompb.TimeSeries{series("requests_total"), series("temperature"), series("untyped")},
+		[]mimirpb.MetricMetadata{
+			{Type: mimirpb.COUNTER, MetricFamilyName: "requests_total", Help: "Requests."},
+			{Type: mimirpb.GAUGE, MetricFamilyName: "temperature", Help: "Temperature."},
+		},
+	)
+
+	metrics := map[string]pmetric.Metric{}
+	rms := req.Metrics().ResourceMetrics()
+	for i := 0; i < rms.Len(); i++ {
+		m := rms.At(i).ScopeMetrics().At(0).Metrics().At(0)
+		metrics[m.Name()] = m
+	}
+	require.Len(t, metrics, 3)
+
+	counter := metrics["requests_total"]
+	require.Equal(t, pmetric.MetricTypeSum, counter.Type())
+	require.True(t, counter.Sum().IsMonotonic())
+	require.Equal(t, pmetric.AggregationTemporalityCumulative, counter.Sum().AggregationTemporality())
+	require.Equal(t, "Requests.", counter.Description())
+	require.Equal(t, 2.5, counter.Sum().DataPoints().At(0).DoubleValue())
+	require.Equal(t, pcommon.Timestamp(time.Second), counter.Sum().DataPoints().At(0).Timestamp())
+
+	for _, name := range []string{"temperature", "untyped"} {
+		gauge := metrics[name]
+		require.Equal(t, pmetric.MetricTypeGauge, gauge.Type(), name)
+		require.Equal(t, 2.5, gauge.Gauge().DataPoints().At(0).DoubleValue(), name)
+	}
+}
+
 func BenchmarkOTLPMimirConverterErr(b *testing.B) {
 	var errs error
 	for i := 0; i < 10000; i++ {

@@ -45,6 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/compactor"
 	compactorscheduler "github.com/grafana/mimir/pkg/compactor/scheduler"
 	"github.com/grafana/mimir/pkg/continuoustest"
+	"github.com/grafana/mimir/pkg/continuoustest/explore"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend"
@@ -1726,6 +1727,9 @@ func (t *Mimir) initContinuousTest() (services.Service, error) {
 	t.ContinuousTestManager.AddTest(continuoustest.NewWriteReadSeriesTest(t.Cfg.ContinuousTest.WriteReadSeriesTest, client, t.Cfg.ContinuousTest.Client.WriteProtocol, util_log.Logger, t.Registerer))
 	t.ContinuousTestManager.AddTest(continuoustest.NewIngestStorageRecordTest(t.Cfg.ContinuousTest.IngestStorageRecordTest, util_log.Logger, t.Registerer))
 	t.ContinuousTestManager.AddTest(continuoustest.NewWriteReadOOOTest(t.Cfg.ContinuousTest.WriteReadOOOTest, client, util_log.Logger, t.Registerer))
+	if t.Cfg.ContinuousTestExplore.Enabled {
+		t.ContinuousTestManager.AddTest(explore.NewTest(t.Cfg.ContinuousTestExplore, client, t.Cfg.ContinuousTest.Manager, util_log.Logger, t.Registerer))
+	}
 
 	return services.NewBasicService(nil, func(ctx context.Context) error {
 		return t.ContinuousTestManager.Run(ctx)
