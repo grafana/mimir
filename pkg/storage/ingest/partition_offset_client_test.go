@@ -651,3 +651,128 @@ func TestPartitionOffsetClient_ListTopicPartitionIDs(t *testing.T) {
 func pointerOf[T any](v T) *T {
 	return &v
 }
+
+func TestPartitionOffsetClient_RetriesTransientPartitionErrors(t *testing.T) {
+	const (
+		numPartitions = 1
+		topicName     = "test"
+		partitionID   = int32(0)
+	)
+
+	var (
+		ctx    = context.Background()
+		logger = log.NewNopLogger()
+	)
+
+	// failListOffsets makes the first failures ListOffsets requests return the given error code at the
+	// partition level (inside a successful response), as Kafka does after a leader election.
+	failListOffsets := func(cluster interface {
+		ControlKey(int16, func(kmsg.Request) (kmsg.Response, error, bool))
+		KeepControl()
+	}, failures int64, code int16) *atomic.Int64 {
+		requests := atomic.NewInt64(0)
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
+			if requests.Inc() > failures {
+				return nil, nil, false
+			}
+
+			req := kreq.(*kmsg.ListOffsetsRequest)
+			res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+			for _, topic := range req.Topics {
+				resTopic := kmsg.NewListOffsetsResponseTopic()
+				resTopic.Topic = topic.Topic
+				for _, partition := range topic.Partitions {
+					resPartition := kmsg.NewListOffsetsResponseTopicPartition()
+					resPartition.Partition = partition.Partition
+					resPartition.ErrorCode = code
+					resTopic.Partitions = append(resTopic.Partitions, resPartition)
+				}
+				res.Topics = append(res.Topics, resTopic)
+			}
+			return res, nil, true
+		})
+		return requests
+	}
+
+	for name, code := range map[string]int16{
+		"OFFSET_NOT_AVAILABLE":   kerr.OffsetNotAvailable.Code,
+		"NOT_LEADER_OR_FOLLOWER": kerr.NotLeaderForPartition.Code,
+	} {
+
+		t.Run("should retry "+name+" until it succeeds", func(t *testing.T) {
+			t.Parallel()
+
+			cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+			kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+			kafkaCfg.LastProducedOffsetRetryTimeout = 10 * time.Second
+
+			client := createTestKafkaClient(t, kafkaCfg)
+			reader := newPartitionOffsetClient(client, prometheus.NewPedanticRegistry(), logger)
+			produceRecord(ctx, t, client, topicName, partitionID, []byte("a"))
+
+			requests := failListOffsets(cluster, 3, code)
+
+			offsets, err := reader.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{topicName: {partitionID}})
+			require.NoError(t, err)
+			assert.Equal(t, map[string]map[int32]int64{topicName: {partitionID: 0}}, offsets)
+			assert.Equal(t, int64(4), requests.Load())
+		})
+
+		t.Run("should retry "+name+" when fetching the offset of a single partition", func(t *testing.T) {
+			t.Parallel()
+
+			cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+			kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+			kafkaCfg.LastProducedOffsetRetryTimeout = 10 * time.Second
+
+			client := createTestKafkaClient(t, kafkaCfg)
+			reader := newPartitionOffsetClient(client, prometheus.NewPedanticRegistry(), logger)
+			produceRecord(ctx, t, client, topicName, partitionID, []byte("a"))
+
+			requests := failListOffsets(cluster, 3, code)
+
+			offset, err := reader.FetchPartitionLastProducedOffset(ctx, topicName, partitionID)
+			require.NoError(t, err)
+			assert.Equal(t, int64(0), offset)
+			assert.Equal(t, int64(4), requests.Load())
+		})
+	}
+
+	t.Run("should give up and return the error once the retry timeout is hit", func(t *testing.T) {
+		t.Parallel()
+
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+		kafkaCfg.LastProducedOffsetRetryTimeout = time.Second
+
+		client := createTestKafkaClient(t, kafkaCfg)
+		reader := newPartitionOffsetClient(client, prometheus.NewPedanticRegistry(), logger)
+
+		requests := failListOffsets(cluster, 1<<30, kerr.OffsetNotAvailable.Code)
+
+		start := time.Now()
+		_, err := reader.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{topicName: {partitionID}})
+		require.ErrorIs(t, err, kerr.OffsetNotAvailable)
+		assert.GreaterOrEqual(t, time.Since(start), 900*time.Millisecond)
+		assert.Greater(t, requests.Load(), int64(1))
+	})
+
+	t.Run("should not retry non-retriable errors", func(t *testing.T) {
+		t.Parallel()
+
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+		kafkaCfg.LastProducedOffsetRetryTimeout = 10 * time.Second
+
+		client := createTestKafkaClient(t, kafkaCfg)
+		reader := newPartitionOffsetClient(client, prometheus.NewPedanticRegistry(), logger)
+
+		requests := failListOffsets(cluster, 1<<30, kerr.TopicAuthorizationFailed.Code)
+
+		_, err := reader.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{topicName: {partitionID}})
+		require.ErrorIs(t, err, kerr.TopicAuthorizationFailed)
+		assert.Equal(t, int64(1), requests.Load())
+	})
+}

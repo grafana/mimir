@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/backoff"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -141,6 +142,12 @@ func (p *partitionOffsetClient) FetchPartitionStartOffset(ctx context.Context, t
 }
 
 func (p *partitionOffsetClient) fetchPartitionOffset(ctx context.Context, topic string, partitionID int32, position int64) (int64, error) {
+	return retryOnPartitionError(ctx, p, func(ctx context.Context) (int64, error) {
+		return p.fetchPartitionOffsetOnce(ctx, topic, partitionID, position)
+	})
+}
+
+func (p *partitionOffsetClient) fetchPartitionOffsetOnce(ctx context.Context, topic string, partitionID int32, position int64) (int64, error) {
 	// Create a custom request to fetch the latest offset of a specific partition.
 	// We manually create a request so that we can request the offset for a single partition
 	// only, which is more performant than requesting the offsets for all partitions.
@@ -239,7 +246,9 @@ func (p *partitionOffsetClient) FetchPartitionsLastProducedOffsets(ctx context.C
 		}
 	}()
 
-	res, err := p.fetchPartitionsEndOffsets(ctx, partitionsByTopic)
+	res, err := retryOnPartitionError(ctx, p, func(ctx context.Context) (kadm.ListedOffsets, error) {
+		return p.fetchPartitionsEndOffsets(ctx, partitionsByTopic)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -331,6 +340,38 @@ func (p *partitionOffsetClient) fetchPartitionsEndOffsets(ctx context.Context, p
 	}
 
 	return list, nil
+}
+
+// retryOnPartitionError calls fn and retries it while it fails with a retriable Kafka error (e.g. OFFSET_NOT_AVAILABLE
+// or NOT_LEADER_OR_FOLLOWER) until the ListOffsets retry timeout of the Kafka client is hit. These errors are returned by
+// Kafka as partition-level errors within a successful response, so the Kafka client doesn't retry them on its own.
+// They're typically transient (e.g. right after a leader election). The last error is returned once the timeout is hit.
+func retryOnPartitionError[T any](ctx context.Context, p *partitionOffsetClient, fn func(context.Context) (T, error)) (T, error) {
+	var retryTimeout time.Duration
+	if timeoutFn, ok := p.client.OptValue(kgo.RetryTimeoutFn).(func(int16) time.Duration); ok && timeoutFn != nil {
+		retryTimeout = timeoutFn((*kmsg.ListOffsetsRequest)(nil).Key())
+	}
+
+	retryCtx, cancel := context.WithTimeout(ctx, retryTimeout)
+	defer cancel()
+
+	boff := backoff.New(retryCtx, backoff.Config{
+		MinBackoff: 100 * time.Millisecond,
+		MaxBackoff: time.Second,
+	})
+
+	for {
+		res, err := fn(ctx)
+		if err == nil || !kerr.IsRetriable(err) {
+			return res, err
+		}
+
+		// Wait before retrying. Give up (returning the last Kafka error) once the retry timeout is hit.
+		boff.Wait()
+		if boff.Err() != nil {
+			return res, err
+		}
+	}
 }
 
 // ListTopicPartitionIDs returns a list of all partition IDs in the input topic.
