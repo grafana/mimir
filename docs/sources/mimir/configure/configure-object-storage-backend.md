@@ -82,10 +82,19 @@ ruler_storage:
 ```
 
 {{< admonition type="note" >}}
-Set `endpoint` to the S3 service endpoint and specify the bucket separately in `bucket_name`.
-Mimir rejects the configuration at startup if the first dot-separated component of `endpoint` exactly matches `bucket_name`.
-For example, if `bucket_name` is `example-metrics`, change the rejected endpoint `example-metrics.s3.us-east-2.amazonaws.com` to `s3.us-east-2.amazonaws.com` and keep `bucket_name` set to `example-metrics`.
-The same check applies to custom S3-compatible endpoints. Use the service endpoint provided by your storage provider.
+Set `endpoint` to the S3 service endpoint, such as `s3.us-east-2.amazonaws.com`, and set the bucket in `bucket_name`.
+Don't include the bucket name in `endpoint`.
+Mimir refuses to start if the first dot-separated part of `endpoint` equals `bucket_name`, for example `endpoint: example-metrics.s3.us-east-2.amazonaws.com` with `bucket_name: example-metrics`.
+{{< /admonition >}}
+
+{{< admonition type="warning" >}}
+This startup check guards against a misconfiguration that Mimir's other startup checks don't catch.
+The S3 client that Mimir uses doesn't recognize an endpoint that starts with the bucket name as an AWS S3 endpoint, so it also adds the bucket name to the request path.
+S3 reads the bucket from the hostname and treats the repeated bucket name as part of the object key.
+The object storage check that Mimir runs at startup still passes, but later operations fail. For example, the store-gateway fails to synchronize TSDB blocks with the error `The specified key does not exist`.
+
+The check also applies to S3-compatible endpoints.
+If the hostname of your S3-compatible service starts with the bucket name, use a different bucket name or a service hostname that doesn't start with the bucket name.
 {{< /admonition >}}
 
 ### GCS
